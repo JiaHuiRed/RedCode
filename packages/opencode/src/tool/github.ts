@@ -140,26 +140,100 @@ function parseJson(raw: string): unknown {
   }
 }
 
-function runGh(args: string[], cwd: string): { ok: true; stdout: string } | { ok: false; error: string } {
-  let proc: ReturnType<typeof Bun.spawnSync>
+// 261024 Red RC-A02 读取上限：gh 单次输出收满 512KB 即停读并杀进程。
+// 输出端上限（diff 50KB / body 4K）不等于读取端上限——「给模型的diff有50KB限制」
+// 不代表「收集过程中也只占50KB」。512KB 对全部读侧操作绰绰有余（最大合法输出是
+// reviews 双查询 JSON，~30 条评论 × 1.2K 字符 ≈ 72KB），超限必属异常输入。
+const READ_MAX_BYTES = 512 * 1024
+const STDERR_MAX_BYTES = 64 * 1024
+
+// 261024 Red RC-A02 有界流读取：收满 limit 即 cancel，不再缓冲子进程的剩余输出。
+export async function readBounded(
+  stream: ReadableStream<Uint8Array> | undefined,
+  limit: number,
+): Promise<{ text: string; truncated: boolean }> {
+  if (!stream) return { text: "", truncated: false }
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  let truncated = false
+  while (total < limit) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    total += value.byteLength
+    if (total >= limit) {
+      truncated = true
+      break
+    }
+  }
+  if (truncated)
+    try {
+      await reader.cancel()
+    } catch {
+      // 261024 Red 进程被杀后流可能已关闭，cancel 失败无害——上限已达即目的达成
+    }
+  const merged = new Uint8Array(Math.min(total, limit))
+  let offset = 0
+  for (const chunk of chunks) {
+    if (offset >= merged.length) break
+    merged.set(chunk.subarray(0, merged.length - offset), offset)
+    offset += chunk.byteLength
+  }
+  return { text: new TextDecoder().decode(merged), truncated }
+}
+
+// 261024 Red RC-A02 spawnSync→异步：同步子进程会卡死整个后端事件循环（gh 撞上慢网络
+// 时 30s 内所有并发请求一起冻结）。异步 spawn + stdout/stderr 并发读取（防管道写满
+// 死锁）+ 超时 kill。bin/timeout 可注入仅为单测，生产路径恒为 gh / 30s。
+export async function runGh(
+  args: string[],
+  cwd: string,
+  opts: { bin?: string; timeoutMs?: number } = {},
+): Promise<{ ok: true; stdout: string; truncated?: boolean } | { ok: false; error: string }> {
+  const bin = opts.bin ?? "gh"
+  const timeoutMs = opts.timeoutMs ?? GH_TIMEOUT_MS
+  let proc: Bun.Subprocess<"ignore", "pipe", "pipe">
   try {
-    proc = Bun.spawnSync(["gh", ...args], { cwd, timeout: GH_TIMEOUT_MS, stdout: "pipe", stderr: "pipe" })
+    proc = Bun.spawn([bin, ...args], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" })
   } catch {
     return { ok: false, error: "gh CLI 未安装或不在 PATH（安装后跑 gh auth login）" }
   }
-  const stdout = (proc.stdout ?? Buffer.alloc(0)).toString()
-  const stderr = (proc.stderr ?? Buffer.alloc(0)).toString()
-  if (proc.exitCode !== 0) {
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    try {
+      proc.kill()
+    } catch {
+      // 261024 Red 已退出的进程 kill 会抛；此时无需再杀
+    }
+  }, timeoutMs)
+  let stdout: { text: string; truncated: boolean }
+  let stderr: { text: string; truncated: boolean }
+  try {
+    ;[stdout, stderr] = await Promise.all([
+      readBounded(proc.stdout, READ_MAX_BYTES),
+      readBounded(proc.stderr, STDERR_MAX_BYTES),
+    ])
+    await proc.exited
+  } finally {
+    clearTimeout(timer)
+  }
+  if (timedOut || proc.exitCode === null)
+    return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 超时（${Math.round(timeoutMs / 1000)}s），已终止子进程` }
+  if (proc.exitCode !== 0 && !stdout.truncated) {
     // gh pr checks 在检查未全绿时也用非零退出码，但 stdout 就是状态表——有输出即视为成功。
-    if (args[0] === "pr" && args[1] === "checks" && stdout.trim().length > 0) return { ok: true, stdout }
-    const hint = /auth/i.test(stderr)
+    if (args[0] === "pr" && args[1] === "checks" && stdout.text.trim().length > 0) return { ok: true, stdout: stdout.text }
+    const hint = /auth/i.test(stderr.text)
       ? "（gh 未认证：gh auth login）"
-      : /no git remotes|not a git repository|could not determine/i.test(stderr)
+      : /no git remotes|not a git repository|could not determine/i.test(stderr.text)
         ? "（当前目录不是 GitHub 仓库）"
         : ""
-    return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 失败 (exit ${proc.exitCode ?? "?"}): ${capText((stderr || stdout).trim(), 400)}${hint}` }
+    return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 失败 (exit ${proc.exitCode}): ${capText((stderr.text || stdout.text).trim(), 400)}${hint}` }
   }
-  return { ok: true, stdout }
+  // 261024 Red RC-A02 stdout 被我们主动截断时，子进程随后因管道关闭吃 EPIPE 非零退出
+  // 是截断的副作用而非 gh 失败——按截断上报，不按错误上报。
+  return { ok: true, stdout: stdout.text, ...(stdout.truncated ? { truncated: true } : {}) }
 }
 
 export const GitHubTool = Tool.define(
@@ -182,9 +256,11 @@ export const GitHubTool = Tool.define(
               : params.operation === "pr_diff"
                 ? ["pr", "diff", String(n)]
                 : ["pr", "checks", String(n)]
-          const result = yield* Effect.sync(() => runGh(args, cwd))
+          const result = yield* Effect.promise(() => runGh(args, cwd))
           if (!result.ok) return { title: "github", metadata: {}, output: result.error }
           if (params.operation === "pr") {
+            if (result.truncated)
+              return { title: `github pr #${n}`, metadata: {}, output: `PR 元数据超过 ${READ_MAX_BYTES}B 读取上限（异常大的 PR），已放弃解析` }
             const pr = parseJson(result.stdout) as PrInfo | undefined
             return {
               title: `github pr #${n}`,
@@ -208,16 +284,20 @@ export const GitHubTool = Tool.define(
 
         if (params.operation === "pr_reviews") {
           // 顶层 reviews（approve/request changes + 总结性评论）
-          const reviews = yield* Effect.sync(() =>
+          const reviews = yield* Effect.promise(() =>
             runGh(["pr", "view", String(n), "--json", "reviews"], cwd),
           )
           if (!reviews.ok) return { title: "github", metadata: {}, output: reviews.error }
           // 内联评论：REST API 一页 30 条，与 COMMENT_MAX_COUNT 同量级
-          const inline = yield* Effect.sync(() =>
+          const inline = yield* Effect.promise(() =>
             runGh(["api", `repos/{owner}/{repo}/pulls/${n}/comments`], cwd),
           )
           const lines: string[] = []
-          const parsedReviews = (parseJson(reviews.stdout) as { reviews?: Array<{ author?: { login?: string }; state?: string; body?: string }> } | undefined)?.reviews ?? []
+          if (reviews.truncated)
+            lines.push(`(reviews 超过 ${READ_MAX_BYTES}B 读取上限，已放弃解析)`)
+          const parsedReviews = reviews.truncated
+            ? []
+            : ((parseJson(reviews.stdout) as { reviews?: Array<{ author?: { login?: string }; state?: string; body?: string }> } | undefined)?.reviews ?? [])
           const substantive = parsedReviews.filter((review) => (review.body ?? "").trim().length > 0)
           if (substantive.length > 0) {
             lines.push("## reviews")
@@ -226,9 +306,12 @@ export const GitHubTool = Tool.define(
             lines.push("")
           }
           if (inline.ok) {
-            const comments = (parseJson(inline.stdout) as ReviewComment[] | undefined) ?? []
             lines.push("## inline comments")
-            lines.push(formatReviewComments(comments))
+            lines.push(
+              inline.truncated
+                ? `(inline comments 超过 ${READ_MAX_BYTES}B 读取上限，已放弃解析)`
+                : formatReviewComments((parseJson(inline.stdout) as ReviewComment[] | undefined) ?? []),
+            )
           } else {
             lines.push(`## inline comments\n(拉取失败: ${inline.error})`)
           }
@@ -236,13 +319,15 @@ export const GitHubTool = Tool.define(
         }
 
         if (params.operation === "issue") {
-          const result = yield* Effect.sync(() =>
+          const result = yield* Effect.promise(() =>
             runGh(
               ["issue", "view", String(n), "--json", "number,title,state,author,body,comments"],
               cwd,
             ),
           )
           if (!result.ok) return { title: "github", metadata: {}, output: result.error }
+          if (result.truncated)
+            return { title: `github issue #${n}`, metadata: {}, output: `issue 内容超过 ${READ_MAX_BYTES}B 读取上限（异常大的 issue），已放弃解析` }
           const issue = parseJson(result.stdout) as
             | { number: number; title: string; state: string; body?: string; author?: { login?: string }; comments?: IssueComment[] }
             | undefined
@@ -258,7 +343,7 @@ export const GitHubTool = Tool.define(
         // list
         const kind = params.kind ?? "pr"
         const limit = Math.min(Math.max(params.limit ?? 20, 1), 50)
-        const result = yield* Effect.sync(() =>
+        const result = yield* Effect.promise(() =>
           runGh(
             [
               kind,
@@ -274,6 +359,8 @@ export const GitHubTool = Tool.define(
           ),
         )
         if (!result.ok) return { title: "github", metadata: {}, output: result.error }
+        if (result.truncated)
+          return { title: `github ${kind} list`, metadata: {}, output: `列表输出超过 ${READ_MAX_BYTES}B 读取上限，请加 limit 参数收窄` }
         const rows = (parseJson(result.stdout) as Array<{ number: number; title: string; author?: { login?: string } }> | undefined) ?? []
         return {
           title: `github ${kind} list`,

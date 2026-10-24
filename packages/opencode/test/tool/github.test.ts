@@ -7,11 +7,14 @@ import {
   formatPr,
   formatReviewComments,
   Parameters,
+  readBounded,
+  runGh,
 } from "@/tool/github"
 import { Schema } from "effect"
 
 // 261024 Red github 工具的纯函数面：截断边界、格式化输出、参数 schema。
-// spawn 不进测试面（会碰真 gh 与网络）；runGh 的错误分支靠首用实测。
+// 261024 Red RC-A02 runGh 改异步+有界读取后，bin/timeout 可注入——进程面测试用
+// bun -e 自证（超时 kill / 大输出 512KB 停读 / CLI 缺失），不碰真 gh 与网络。
 
 describe("capText / capBytes", () => {
   test("short text passes through untouched", () => {
@@ -104,5 +107,62 @@ describe("Parameters schema", () => {
   test("accepts list without number and rejects pr without it only at execute time", () => {
     const decoded = Schema.decodeUnknownSync(Parameters)({ operation: "list", kind: "issue", limit: 10 })
     expect(decoded.operation).toBe("list")
+  })
+})
+
+describe("readBounded (RC-A02)", () => {
+  test("limit 内的流完整通过", async () => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode("hello world"))
+        c.close()
+      },
+    })
+    expect(await readBounded(stream, 1024)).toEqual({ text: "hello world", truncated: false })
+  })
+
+  test("收满 limit 停读并标记 truncated", async () => {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode("x".repeat(10_000)))
+        c.close()
+      },
+    })
+    const r = await readBounded(stream, 100)
+    expect(r.text.length).toBe(100)
+    expect(r.truncated).toBe(true)
+  })
+
+  test("undefined 流返回空串", async () => {
+    expect(await readBounded(undefined, 10)).toEqual({ text: "", truncated: false })
+  })
+})
+
+describe("runGh (RC-A02 注入面：真进程、假 gh)", () => {
+  test("CLI 缺失返回 PATH 错误而非抛出", async () => {
+    const r = await runGh(["anything"], process.cwd(), { bin: "definitely-missing-redcode-bin" })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("不在 PATH")
+  })
+
+  test("超时 kill 子进程并回报终止", async () => {
+    const r = await runGh(["-e", "await new Promise((resolve) => setTimeout(resolve, 5000))"], process.cwd(), {
+      bin: "bun",
+      timeoutMs: 400,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("超时")
+  })
+
+  test("2MB 输出被压到 512KB 上限并标记 truncated", async () => {
+    const r = await runGh(["-e", "process.stdout.write('x'.repeat(2_000_000))"], process.cwd(), {
+      bin: "bun",
+      timeoutMs: 15_000,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.truncated).toBe(true)
+      expect(Buffer.byteLength(r.stdout)).toBeLessThanOrEqual(512 * 1024)
+    }
   })
 })
