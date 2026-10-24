@@ -1,5 +1,6 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
+import { resolveTemplate } from "@/command/template"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { Global } from "@redcode-ai/core/global"
@@ -72,7 +73,16 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     })
 
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
-      return yield* command.list()
+      const list = yield* command.list()
+      // 261024 Red MCP prompt 命令的 template 是懒 Promise，响应体 JSON 校验会把它拒成
+      // "Expected JSON value at [14][\"template\"]"，/command 整条 400 → GUI 每个项目
+      // bootstrap 都弹「无法重新加载」。在边界落地成字符串（预算+兜底见 @/command/template）；
+      // 提交路径 session/prompt.ts 仍直接 await 原始 Promise，不受影响。
+      return yield* Effect.all(
+        list.map((cmd) =>
+          Effect.promise(async () => ({ ...cmd, template: await resolveTemplate(cmd.template) })),
+        ),
+      )
     })
 
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {
