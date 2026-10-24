@@ -753,10 +753,39 @@ export interface UIMessagesWithTools {
   >
 }
 
+// 261024 Red 驱逐标记预扫描：key = "<partID>"（用户附件）或 "<partID>#<attachmentIndex>"
+//   （工具附件）。只管 image/*——pdf 等非图片附件不占窗口也不驱逐。keepRecent 为空或负数
+//   时整体关闭（返回空集，回放逐字节与关闭前一致）。
+function markEvictedMedia(input: WithParts[], keepRecent: number | undefined): Set<string> {
+  if (keepRecent === undefined || keepRecent < 0) return new Set()
+  const evicted = new Set<string>()
+  let seen = 0
+  for (let i = input.length - 1; i >= 0; i--) {
+    const parts = input[i].parts
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const part = parts[j]
+      if (part.type === "file" && part.mime?.startsWith("image/")) {
+        seen++
+        if (seen > keepRecent) evicted.add(part.id)
+      }
+      if (part.type === "tool" && part.state.status === "completed") {
+        const attachments = part.state.attachments ?? []
+        for (let k = attachments.length - 1; k >= 0; k--) {
+          if (attachments[k].mime?.startsWith("image/")) {
+            seen++
+            if (seen > keepRecent) evicted.add(`${part.id}#${k}`)
+          }
+        }
+      }
+    }
+  }
+  return evicted
+}
+
 export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
 ) {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
@@ -820,6 +849,12 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
   }
 
   let processed = 0
+  // 261024 Red 历史图片驱逐（experimental.mediaEviction）：从尾部数保留最近 keepRecentMedia
+  //   张图，更早的在回放层换成占位符——多模态会话里旧截图每轮重读是 read 账单大头（实测
+  //   一会话 15 张用户图 28MB + read 读图附件单条 3-4MB）。驱逐结算于冷缓存序列化点
+  //   （会话启动/续接、模型切换、压缩边界——stitchModelMessages 的缓存前缀只认重建），
+  //   不在轮中主动打缓存：一张图重读走缓存价，为驱逐提前 bust 一次是全量 miss，得不偿失。
+  const evictedMedia = markEvictedMedia(input, options?.keepRecentMedia)
   for (const msg of input) {
     // 260707 Red toUIMessages 同步遍历全部历史消息（含 truncateToolOutput 等重活），
     //   长会话下这个循环本身是一次性同步跑完、中间没有任何让出点——之前 260706 的
@@ -844,7 +879,13 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
           })
         // text/plain and directory files are converted into text parts, ignore them
         if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
-          if (options?.stripMedia && isMedia(part.mime)) {
+          // 261024 Red 历史图片驱逐：超出保留窗口的用户附件换占位符，保留文件名供反查
+          if (evictedMedia.has(part.id)) {
+            userMessage.parts.push({
+              type: "text",
+              text: `[Historical image removed: ${part.filename ?? part.mime}]`,
+            })
+          } else if (options?.stripMedia && isMedia(part.mime)) {
             userMessage.parts.push({
               type: "text",
               text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
@@ -955,12 +996,21 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
             // 260923 Red 模型侧硬预算：工具结果在**落地那一刻**已经过 tool/truncate.ts
             // 的 result() 闸门，这里是历史消息的第二道 —— 覆盖本次改动之前落库的结果，
             // 以及绕过 truncate 的写入方。纯函数、不碰 fs，所以这里只能丢不能存。
+            // 261024 Red 历史图片驱逐：被标记的图片附件不随工具结果重放，输出文本补一行
+            //   说明——否则模型看到「Image read successfully」却没有图，会重读同一张旧图，
+            //   一次驱逐省下的 tokens 反手烧回去。
+            const rawAttachments = part.state.attachments ?? []
+            const keptAttachments = rawAttachments.filter((_, idx) => !evictedMedia.has(`${part.id}#${idx}`))
+            const evictedHere = keptAttachments.length !== rawAttachments.length
             const fitted = ImageTokens.fitToolResult(
               {
-                text: part.state.time.compacted
-                  ? "[Old tool result content cleared]"
-                  : truncateToolOutput(part.state.output, options?.toolOutputMaxChars),
-                attachments: part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? []),
+                text:
+                  part.state.time.compacted
+                    ? "[Old tool result content cleared]"
+                    : truncateToolOutput(part.state.output, options?.toolOutputMaxChars) +
+                      (evictedHere && !options?.stripMedia ? "\n[historical image attachment removed]" : ""),
+                attachments:
+                  part.state.time.compacted || options?.stripMedia ? [] : keptAttachments,
               },
               model,
               { notice: BUDGET_NOTICE },
@@ -1089,7 +1139,7 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
 ) {
   const { messages, tools } = yield* toUIMessages(input, model, options)
   // 260706 Red: yield here so event loop can serve heartbeat + health check before next sync work
@@ -1109,7 +1159,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 export function toModelMessages(
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
 ): Promise<ModelMessage[]> {
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))
 }

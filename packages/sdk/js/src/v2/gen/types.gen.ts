@@ -2084,6 +2084,13 @@ export type Config = {
       idleMs?: number
     }
     /**
+     * Replace historical images (user attachments + tool-result attachments) older than the keepRecent window with placeholders at replay. Enabled by default with keepRecent=5; settles at cold-cache serialization points (session start/resume, model switch, compaction boundary).
+     */
+    mediaEviction?: {
+      enabled?: boolean
+      keepRecent?: number | "Infinity" | "-Infinity" | "NaN"
+    }
+    /**
      * Warn when a background child task sits in one busy/retry segment past this duration; never aborts on its own.
      */
     childStall?: {

@@ -2323,3 +2323,87 @@ describe("stitchModelMessages", () => {
     expect(MessageV2.stitchModelMessages(cached, raw, sanitized)).toBe(sanitized.messages)
   })
 })
+
+// 261024 Red 历史图片驱逐（experimental.mediaEviction）：占位符、附件丢弃、窗口边界、关闭态。
+describe("media eviction (keepRecentMedia)", () => {
+  const imagePart = (msgID: string, pid: string, name: string) =>
+    ({ ...basePart(msgID, pid), type: "file", mime: "image/png", filename: name, url: "data:image/png;base64,Zm9v" }) as MessageV2.Part
+
+  const flatText = (content: unknown) =>
+    Array.isArray(content)
+      ? content.flatMap((p) => (p && typeof p === "object" && (p as { type: string }).type === "text" ? [(p as { text: string }).text] : []))
+      : typeof content === "string"
+        ? [content]
+        : []
+  const hasFilePart = (content: unknown) =>
+    Array.isArray(content) && content.some((p) => p && typeof p === "object" && (p as { type: string }).type.startsWith("file"))
+
+  test("evicts user images beyond the keep window with a named placeholder", async () => {
+    const input: MessageV2.WithParts[] = [
+      { info: userInfo("m-mev-u1"), parts: [imagePart("m-mev-u1", "p1", "old.png")] },
+      { info: userInfo("m-mev-u2"), parts: [imagePart("m-mev-u2", "p2", "new.png")] },
+    ]
+    const out = await MessageV2.toModelMessages(input, model, { keepRecentMedia: 1 })
+    expect(flatText(out[0]?.content)).toContain("[Historical image removed: old.png]")
+    expect(hasFilePart(out[0]?.content)).toBe(false)
+    expect(hasFilePart(out[1]?.content)).toBe(true)
+  })
+
+  test("evicts old tool-result image attachments and says so in the output", async () => {
+    const assistantID = "m-mev-a"
+    const toolPart = (pid: string, callID: string) =>
+      ({
+        ...basePart(assistantID, pid),
+        type: "tool",
+        callID,
+        tool: "read",
+        state: {
+          status: "completed",
+          input: { filePath: "x.png" },
+          output: "Image read successfully",
+          title: "Read",
+          metadata: {},
+          time: { start: 0, end: 1 },
+          attachments: [imagePart(assistantID, `${pid}-img`, `${callID}.png`)],
+        },
+      }) as MessageV2.Part
+    const input: MessageV2.WithParts[] = [
+      { info: userInfo("m-mev-u3"), parts: [{ ...basePart("m-mev-u3", "t"), type: "text", text: "compare" }] as MessageV2.Part[] },
+      { info: assistantInfo(assistantID, "m-mev-u3"), parts: [toolPart("old", "call-1"), toolPart("new", "call-2")] },
+    ]
+    const out = await MessageV2.toModelMessages(input, model, { keepRecentMedia: 1 })
+    // 两个 tool-result 同在一条 tool 消息里——按 toolCallId 逐条取，别按消息取
+    const results = out
+      .filter((m) => m.role === "tool")
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+    const old = JSON.stringify(results.find((r) => (r as { toolCallId?: string }).toolCallId === "call-1"))
+    const recent = JSON.stringify(results.find((r) => (r as { toolCallId?: string }).toolCallId === "call-2"))
+    expect(old).toContain("[historical image attachment removed]")
+    expect(old).not.toContain("file-data")
+    expect(recent).toContain("file-data")
+    expect(recent).not.toContain("[historical image attachment removed]")
+  })
+
+  test("off without the option — byte-identical to before", async () => {
+    const input: MessageV2.WithParts[] = [
+      { info: userInfo("m-mev-u4"), parts: [imagePart("m-mev-u4", "p1", "old.png")] },
+      { info: userInfo("m-mev-u5"), parts: [imagePart("m-mev-u5", "p2", "new.png")] },
+    ]
+    const out = await MessageV2.toModelMessages(input, model)
+    expect(hasFilePart(out[0]?.content)).toBe(true)
+    expect(hasFilePart(out[1]?.content)).toBe(true)
+    expect(flatText(out[0]?.content).some((t) => t.includes("Historical image removed"))).toBe(false)
+  })
+
+  test("non-image attachments never occupy the window", async () => {
+    const pdf = (msgID: string, pid: string) =>
+      ({ ...basePart(msgID, pid), type: "file", mime: "application/pdf", filename: "doc.pdf", url: "data:application/pdf;base64,Zm9v" }) as MessageV2.Part
+    const input: MessageV2.WithParts[] = [
+      { info: userInfo("m-mev-u6"), parts: [pdf("m-mev-u6", "p1"), imagePart("m-mev-u6", "p2", "shot.png")] },
+    ]
+    // 窗口 0：图片全驱逐，pdf 不受影响
+    const out = await MessageV2.toModelMessages(input, model, { keepRecentMedia: 0 })
+    expect(flatText(out[0]?.content)).toContain("[Historical image removed: shot.png]")
+    expect(hasFilePart(out[0]?.content)).toBe(true)
+  })
+})

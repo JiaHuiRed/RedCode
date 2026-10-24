@@ -17416,6 +17416,27 @@
                 },
                 "additionalProperties": false
               },
+              "mediaEviction": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "keepRecent": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Replace historical images (user attachments + tool-result attachments) older than the keepRecent window with placeholders at replay. Enabled by default with keepRecent=5; settles at cold-cache serialization points (session start/resume, model switch, compaction boundary)."
+              },
               "childStall": {
                 "type": "object",
                 "properties": {

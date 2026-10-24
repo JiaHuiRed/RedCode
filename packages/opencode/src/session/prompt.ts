@@ -1869,6 +1869,14 @@ export const layer = Layer.effect(
           const soulID = _caches.souls.has(sessionID)
             ? undefined
             : (yield* sessions.get(sessionID).pipe(Effect.orDie)).soul
+          // 261024 Red 历史图片驱逐（experimental.mediaEviction，默认开、窗口 5 张）：
+          //   结算于冷缓存序列化点（会话启动/续接、模型切换、压缩边界），轮中不主动打
+          //   缓存——取舍见 message-v2.ts markEvictedMedia 注释。
+          const mediaEviction = (yield* config.get()).experimental?.mediaEviction
+          const mediaOptions =
+            mediaEviction?.enabled === false
+              ? undefined
+              : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
           const [skills, env, instructions, mcpGuide, modelMsgs, soul] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -1877,7 +1885,7 @@ export const layer = Layer.effect(
             // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
             cachedSystem ? Effect.succeed(cachedSystem.mcpGuide) : mcpGuideText(),
-            MessageV2.toModelMessagesEffect(visibleMsgs, model),
+            MessageV2.toModelMessagesEffect(visibleMsgs, model, mediaOptions),
             sessionSoul(sessionID, soulID, souls),
           ])
           if (!cachedSystem) {
