@@ -65,16 +65,7 @@
 # 版本与文档
 
 - **单一版本线**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
-- **版本更新 checklist（每次升版必须全过）**：
-  1. `packages/opencode/package.json` + `packages/desktop/package.json` — **同号同升**（TUI 运行时与 GUI 标题栏徽章各自从这两处注入，缺一则显示分裂）
-  2. 其余 `@redcode-ai/*` 包、`packages/sdk/js` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
-  3. `README.md` — 中文版"版本"徽章更新
-  4. `README.en.md` — **英文版 Version 徽章同步更新**
-  5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段。**升版 = 收编，不是另起一段**：把 `[Unreleased]` 整段改名成新版本号（保持它在最顶），并跑 `git log <上一版 bump 提交>..HEAD --oneline` 逐条对照——每个提交要么有条目、要么明确并入某条，漏了就补。0.12.20 踩过两连坑：在 `[Unreleased]` 上方插新段（段序反了、旧段悬空），且 5 条 0.12.20 树里的条目没被收编、6 条提交完全没进任何版本段，直到 0.13.0 才补录
-  6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
-  7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
-  8. README 正文 — 本次改动有**特色级变化**（新能力、定位变化）时中英两版同步更新；纯 bump 不动正文（README 是让别人了解项目特色的，不是版本号挂件）
-  9. 版本提交并通过自检后，创建本地 annotated tag `v<版本号>`；不创建 GitHub Release、不 push tag（push 仍需用户明确授权）
+- **升版 checklist 不在本文件**（261024 迁出：升版是低频过程内容，不该占每轮固定前缀）——完整清单在 bump-version skill 的「项目专属清单：RedCode」节；无该 skill 时按 CHANGELOG 顶部说明 + `script/check-version-consistency.ts` 的断言执行。核心纪律一句话：**升版 = 收编 `[Unreleased]` 并用 `git log <上一版 bump>..HEAD` 逐条对照**（0.12.20 曾漏收编 5 条、漏记 6 条、段序倒挂，0.13.0 补录修正）；本地 annotated tag `v<版本号>`，不 push。
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
 - **决策记录 `docs/notes/`，写完必须回链**（规则与模板见其 README）：4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷不是待办**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段；新增段落同理，**追加到文件末尾，别插在中间**。
   - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，查库：实际读取 0 次、跑了一个月零命中，已删。那个动作没有触发点，别加回来。）
