@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **轻量跨会话取证工具 `session_query`**：按工程、会话、角色和消息时间检索历史正文与已结束工具的参数/结果/报错，返回有界片段及 session/message/part 定位，支持游标续查和按原文偏移回读。复用现有 SQLite，不建索引库、不改数据库结构；默认只查当前工程的其它会话，跨工程需显式指定。历史内容不作为当前授权；模型输入与预算四问见 [session-query 决策](docs/notes/implemented/feature/2026-10-25-session-query.md)。
 - **权限拒绝错误文案补「勿重试」引导**（`permission/index.ts`）：`DeniedError` 此前只陈述「用户规则阻止了此调用」，确定性 deny（如子代理撞 external_directory 白名单外目录）被模型当普通错误反复重试，喂大 tool-failure-guard 失败预算直至熔断——实测四路子代理同日各自重试到熔断、额度白烧（RedMon 会话同病两次，三犯）。文案补「重试必然同败，换方法/换工具/停止上报」。模型可见四问：①仅 deny 发生轮次的工具错误文本追加两句引导，约 +50 token；②固定前缀零变化；③deny 走工具结果动态尾部，不碰 KV cache；④文案固定长度有界。同批核实：repeat-tool-reminder（260814 已自 DSH 吸收）与子代理委派深度闸（`task.ts` 沿 parent 链现场计数 + `subagent_depth` 配置）均为已有机制，外部学习清单剔除。
 - **Google key 检测 fixture 拼接化，消除 secret scanning 告警源**（`http-recorder/test/record-replay.test.ts`）：secret 检测测试的 fixture 是完整 Google key 形状的字面量，随 initial state 公开了 5 个月，被 GitHub secret scanning 补报 Public leak。改为运行时拼接构造——源码文本不再含完整 key 形状（scanner 扫不到），运行时仍命中 `redaction.ts` 的 `AIza` 正则，三条检测断言原样通过。测试 20/20、typecheck 绿。历史 blob 不重写（公开仓已 5 个月，scanner/爬虫均扫过，重写收益低于代价）；告警处置（吊销或标 false positive）需仓库所有者在 Google 控制台与 GitHub 页面操作。
 - **vcs diff 刷新在飞跳过，不再取消重算**（`app/pages/session.tsx`）：文件树/review 面板开着时，agent 每次写文件经 `file.watcher.updated` → 1s 防抖 invalidate → cancelRefetch 取消在飞请求重发——单次 diff 在外接盘工程实测 3-26 秒（git diff+stats+status 三进程 + 逐文件 patch），实测风暴期 4 分钟约 80 次请求大半被取消浪费。现在在飞时跳过 invalidate，漏掉的变更由下一波 watcher 事件或 busy→idle 补刷；外接盘大仓从持续 IO 饱和降到约 2 秒一次完整 diff。

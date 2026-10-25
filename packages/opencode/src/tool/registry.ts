@@ -69,6 +69,7 @@ import { Snippet } from "@/session/snippet"
 import { RunCodeTool } from "./run-code"
 import { RunCodeSdk } from "./run-code-sdk"
 import { ToolJsonSchema } from "./json-schema"
+import { SessionQueryTool } from "./session-query"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -143,6 +144,7 @@ export const layer = Layer.effect(
     const contextRead = yield* ContextReadTool
     const contextSearch = yield* ContextSearchTool
     const contextRestore = yield* ContextRestoreTool
+    const sessionQuery = yield* SessionQueryTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -293,6 +295,7 @@ export const layer = Layer.effect(
           context_read: Tool.init(contextRead),
           context_search: Tool.init(contextSearch),
           context_restore: Tool.init(contextRestore),
+          session_query: Tool.init(sessionQuery),
         })
 
         // 260606 Red search helper extracted — avoid closure-capturing all()
@@ -363,6 +366,7 @@ export const layer = Layer.effect(
             searchToolsDef,
             ...(flags.experimentalRunCode ? [tool.run_code] : []),
             ...(nativeEnabled ? [tool.context_read, tool.context_search, tool.context_restore] : []),
+            tool.session_query,
           ],
           task: tool.task,
           read: tool.read,

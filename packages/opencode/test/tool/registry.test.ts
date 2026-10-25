@@ -201,6 +201,20 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes session_query without enabling native compaction", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const build = yield* (yield* Agent.Service).get("build")
+      if (!build) throw new Error("build agent not found")
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })
+      expect(tools.some((tool) => tool.id === "session_query")).toBe(true)
+    }),
+  )
+
   scout.instance("shows repo research tools when experimental scout is enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
