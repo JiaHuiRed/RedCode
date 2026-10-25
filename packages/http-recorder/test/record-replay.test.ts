@@ -9,6 +9,11 @@ import { HttpRecorder } from "../src"
 import { redactedErrorRequest } from "../src/effect"
 import type { Interaction } from "../src/schema"
 
+// 261025 Red Google key 形状的检测 fixture 用运行时拼接构造：secret scanning 会把源码里
+// 任何完整 key 形状的字面量当 Public leak 报警（本文件曾因此吃 GitHub alert），拼接后
+// 源码文本不含完整串，运行时仍命中 redaction.ts 的 /\bAIza[0-9A-Za-z_-]{20,}\b/。
+const googleKeyFixture = "AIza" + "Sy" + "placeholder" + "0123456789".repeat(3)
+
 const seedCassetteDirectory = (directory: string, name: string, interactions: ReadonlyArray<Interaction>) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -126,7 +131,7 @@ describe("http-recorder", () => {
               method: "POST",
               url: "https://example.test/path?key=sk-123456789012345678901234",
               headers: {},
-              body: JSON.stringify({ nested: "AIzaSyDHibiBRvJZLsFnPYPoiTwxY4ztQ55yqCE" }),
+              body: JSON.stringify({ nested: googleKeyFixture }),
             },
             response: {
               status: 200,
