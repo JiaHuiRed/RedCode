@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **vcs diff 刷新在飞跳过，不再取消重算**（`app/pages/session.tsx`）：文件树/review 面板开着时，agent 每次写文件经 `file.watcher.updated` → 1s 防抖 invalidate → cancelRefetch 取消在飞请求重发——单次 diff 在外接盘工程实测 3-26 秒（git diff+stats+status 三进程 + 逐文件 patch），实测风暴期 4 分钟约 80 次请求大半被取消浪费。现在在飞时跳过 invalidate，漏掉的变更由下一波 watcher 事件或 busy→idle 补刷；外接盘大仓从持续 IO 饱和降到约 2 秒一次完整 diff。
 - **LLM 流错误日志不再落盘完整请求体**（`session/llm.ts`）：`streamText` 的 `onError` 此前把 AI SDK 错误对象整体序列化，`APICallError.requestBodyValues` 携带完整请求体（system+历史+图片 base64），断流重试反复落盘——实测单日 sidecar 日志 146MB、单条 16-44MB，诊断 grep 被巨行污染，system prompt 与用户消息明文落盘。现在 `APICallError.isInstance` 窄化后只留 `name/message(截500)/url/statusCode/isRetryable`，非 API 错误同样只留元数据。请求前缀取证不受影响（request-evidence 早已哈希化，本次修的是它的邻居）。验证：opencode/app typecheck 绿、llm.test.ts 31 pass（2 fail 为 native runtime 存量，stash 基线一致）。
 - **压缩摘要的折叠指示更直观**（`ui/components/message-part.css`）：收起时箭头朝右、展开时朝下，替代原来的朝下／朝上，不再把展开状态画成向上；展开逻辑与内容保持不变。
 - **Yuqi 主题视觉升级**（`ui/theme/themes/yuqi.json`、`app/index.css`）：浓茄紫底改为低彩度鸢尾石墨，浅色改为雾白；重新配正文、语法、输入框与浮层，紫色留给交互与强调，薄荷青点亮代码。代码块改为更清晰的灰蓝底、细描边与轻迎光，玻璃掺色减轻，v1/v2 强调色统一，输入框聚焦保留克制的细环。仅影响 Yuqi，不改用户字体、其它主题或推理强度条逻辑。UI/App typecheck 通过；明暗隔离样本与窄视口实测边界见 [Yuqi 主题决策](docs/notes/implemented/feature/2026-10-25-yuqi-iris-theme.md)。

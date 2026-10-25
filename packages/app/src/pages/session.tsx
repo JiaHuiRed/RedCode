@@ -433,8 +433,13 @@ export default function Page() {
         : skipToken,
     }
   })
-  // 260901 Red 文件变更风暴时 100ms 防抖会让 vcs diff 请求堆积成灾（单次 diff 对未跟踪文件是 O(N) git 进程）
-  const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 1000)
+ // 260901 Red 文件变更风暴时 100ms 防抖会让 vcs diff 请求堆积成灾（单次 diff 对未跟踪文件是 O(N) git 进程）
+ // 261025 Red 在飞时跳过 invalidate：cancelRefetch 会取消跑了几秒的 git diff 重来（F 盘工程实测
+ // 单次 3-26s、风暴期连续 80 次大半被取消）。漏掉的变更由下一波 watcher 事件或 busy→idle 补刷。
+ const refreshVcs = debounce(() => {
+   if (vcsQuery.isFetching) return
+   void queryClient.invalidateQueries({ queryKey: vcsKey() })
+ }, 1000)
   const reviewDiffs = () => {
     if (store.changes === "git" || store.changes === "branch")
       // avoids suspense
