@@ -140,3 +140,25 @@
   3. GPT/Step KV 前缀不变；部署过全模型初版的其它家族从移除段处起重建一次。
      未部署过初版时，其它家族直接维持初版之前的前缀。
   4. 无新增注入；原固定文件 3,538 bytes 上限不变，登记项改为仅 GPT/Step 条件注入。
+
+## 2026-10-25 GPT 专属：阻止自造需求与验证加码
+
+借鉴 stop-that-shit（`e2660f4f1eb3fe3702b28f4c67f82496ac793626`）的
+`skills/stop-that-shit/SKILL.md`：新增消费者不能循环证明新增机制有必要；验证证据仍适用就复用。
+只在 `gpt.md` 末尾追加两条，不安装其 Guard，也不扩展到 Step、DeepSeek、GLM 或 Soul。
+现有 GPT/Step 共享段保持不变；不新增证明文件、检查清单、工具拦截或评测框架。
+
+模型可见四问：
+1. GPT 新增 `Do not manufacture a need` 与 `Reuse valid verification`：新增工作须能追到独立于
+   它的当前需求、原有消费者或支持承诺；已通过的检查未被相关改动或新失败推翻就复用，
+   保留必须完成的检查与明确验收要求。其它家族无文本变化。
+2. GPT Delta 780→1,492 UTF-8 bytes，净增 712 bytes；`Token.estimateReporting` 195→373，
+   净增约 178 tokens（估算，不是供应商 tokenizer 实测）。
+3. 仅 GPT 从原 Delta 末尾新增段开始至后续共享段、environment、instructions、Soul 等尾部
+   重建一次缓存；原有前缀不移动，工具表、历史消息和其它家族前缀不变。
+4. 固定源码文件 1,492 bytes 有界，复用既有 `model-family-prompt` 登记，不新增动态注入。
+
+验证：既有路由文件 16 pass，新增断言确认两条只由 GPT 获取；包级 typecheck、定向格式检查通过。
+真实 GPT high 沿用既有隔离 eval：`scope` 实际改动后只运行一次 verify、无额外文件；
+`failed-check` 未完成后续验证，改动前的同条件对照也未通过（两边均报告验证失败而非伪报成功）。
+该项保留失败，不修改判据凑通过，不据单次短样本宣称新规则具有普遍效果。

@@ -24,6 +24,10 @@ describe("system prompt routing", () => {
 
   test("GPT 系走 default.md + gpt.md", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT, PROMPT_WORKING_STYLE])
+    expect(PROMPT_GPT).toContain("Do not manufacture a need")
+    expect(PROMPT_GPT).toContain("Reuse valid verification")
+    for (const id of ["step-5-preview", "deepseek-v4", "glm-5.3"])
+      expect(provider(model(id)).join("\n")).not.toContain("## Avoid self-generated work")
   })
 
   test("已删除专属提示词的 Claude 系走默认提示词", () => {
