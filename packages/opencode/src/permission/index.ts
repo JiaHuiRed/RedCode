@@ -105,7 +105,14 @@ export class DeniedError extends Schema.TaggedError<DeniedError>()("PermissionDe
   ruleset: Schema.Any,
 }) {
   override get message() {
-    return `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(this.ruleset)}`
+    return (
+      `The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules ${JSON.stringify(this.ruleset)}\n` +
+      // 261025 Red 确定性拒绝必须带「勿重试」引导：deny 重试必然同败，只会喂大
+      // tool-failure-guard 的失败预算（实测四路子代理撞 external_directory deny 各自
+      // 重试到熔断，额度白烧）。模型第一次失败就该转向或上报，而不是换参数再撞。
+      `This denial is deterministic — retrying the same call will fail identically and burns budget. ` +
+      `Do not retry this call; change the approach, use a different tool, or stop and report the constraint.`
+    )
   }
 }
 
