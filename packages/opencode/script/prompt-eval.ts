@@ -441,7 +441,7 @@ const program = Effect.gen(function* () {
     const prompt = [
       sources["session/prompt/default.md"],
       sources[`session/prompt/${family}.md`],
-      sources["session/prompt/working-style.md"],
+      ...(family === "gpt" || family === "step" ? [sources["session/prompt/working-style.md"]] : []),
     ].join("\n\n")
     for (const scenario of cases.filter((item) => selectedCases.includes(item.id))) {
       const virtual = virtualProject(scenario)

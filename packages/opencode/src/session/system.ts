@@ -51,14 +51,12 @@ export const wantsStepAnchor = (modelID: string, providerID: string) =>
 // docs/notes/implemented/architecture/2026-09-21-prompt-common-base.md。
 const withDefaultPrompt = (prompt: string) => [PROMPT_DEFAULT, prompt]
 
-export function provider(model: Provider.Model) {
-  // 261025 Red 通用交付契约追加到所有路由，不再只修 GPT；独立档保留原前缀。
-  // injection-registry: delivery-interaction-contract
-  // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md
-  return [...modelPrompts(model), PROMPT_WORKING_STYLE]
-}
+// 261025 Red 交付调优仅绑定有失效证据的 GPT/Step，其它家族保留原提示词与锚点。
+// injection-registry: delivery-interaction-contract
+// docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md
+const withDeliveryPrompt = (prompt: string) => [...withDefaultPrompt(prompt), PROMPT_WORKING_STYLE]
 
-function modelPrompts(model: Provider.Model) {
+export function provider(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   // 260902 cc beast.md（gpt-4 / o1 / o3 专属档）已删：哥哥判定不会再拿上上代模型干活。
   // gpt-4* 含 "gpt"，落下面的 gpt.md（在维护的那份）；o1/o3 落 default.md。
@@ -68,7 +66,7 @@ function modelPrompts(model: Provider.Model) {
   // 260902 Red GPT 系列统一走 gpt.md。原 codex.md 是 Codex CLI 的遗留，其独有内容已并入
   // gpt.md（后者与 default.md 合并）；分开维护只会让同系列的 sol/terra/luna 与 *-codex
   // 拿到两套工程约束。
-  if (model.api.id.includes("gpt")) return withDefaultPrompt(PROMPT_GPT)
+  if (model.api.id.includes("gpt")) return withDeliveryPrompt(PROMPT_GPT)
   if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
   if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
@@ -99,7 +97,7 @@ function modelPrompts(model: Provider.Model) {
   //   需要逐份看过再决定。doubao.md 已删——哥哥确认不再用火山方舟，且那份逐条读下来
   //   没有任何 Doubao 特有内容，全部被重写后的 default.md 覆盖。
   if (model.api.id.toLowerCase().includes("grok")) return [PROMPT_GROK]
-  if (model.api.id.toLowerCase().includes("step")) return withDefaultPrompt(PROMPT_STEP)
+  if (model.api.id.toLowerCase().includes("step")) return withDeliveryPrompt(PROMPT_STEP)
   // 260802 Red sensenova 自家模型（flash-lite / u1-fast 等）——当时是为了不落 default.md
   // 那套「不超过 4 行、单词回答最好」的旧限制（260822 已移除，见上）。
   // deepseek/glm 模型已在上面命中各自专属，不会走到这里。
