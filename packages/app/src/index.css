@@ -763,7 +763,7 @@
   }
 }
 
-/* 261025 Red Yuqi：石墨与雾白承载内容，鸢尾紫只作强调；v1/v2 共用同一组交互色。 */
+/* 261025 Red Yuqi：午夜蓝紫底、赤红强调与金色代码，侧栏掺紫而非青，避免壁纸透出灰绿。 */
 :root[data-theme="yuqi"] {
   --v2-background-bg-accent: var(--surface-brand-base);
   --v2-text-text-accent: var(--text-interactive-base);
@@ -774,7 +774,7 @@
 
   --frost-tint-amount: 88%;
   --frost-tint-bubble: color-mix(in srgb, var(--text-interactive-base) 24%, transparent);
-  --frost-tint-aside: color-mix(in srgb, var(--syntax-property) 20%, transparent);
+  --frost-tint-aside: color-mix(in srgb, var(--syntax-keyword) 32%, transparent);
   --frost-tint-summary: var(--frost-tint-bubble);
   --frost-tint-summary-amount: var(--frost-tint-amount);
   --frost-spot-color: color-mix(in srgb, var(--text-interactive-base) 12%, transparent);

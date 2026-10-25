@@ -64,6 +64,22 @@ const SPARKLES = [
   { x: 87, y: 55, s: 0.24, o: 0.9, d: -0.55 },
 ]
 
+// 261025 Red 满档加一层细星点，次高档沿用原有光点的错峰闪烁。
+const MAX_SPARKLES = [
+  { x: 8, y: 68, s: 0.12, o: 0.8, d: -0.85 },
+  { x: 19, y: 46, s: 0.14, o: 0.95, d: -0.35 },
+  { x: 29, y: 32, s: 0.1, o: 0.7, d: -1.2 },
+  { x: 38, y: 73, s: 0.13, o: 0.85, d: -0.6 },
+  { x: 43, y: 22, s: 0.11, o: 0.75, d: -0.95 },
+  { x: 52, y: 42, s: 0.15, o: 0.95, d: -0.15 },
+  { x: 60, y: 72, s: 0.12, o: 0.8, d: -0.75 },
+  { x: 65, y: 24, s: 0.1, o: 0.7, d: -1.05 },
+  { x: 73, y: 46, s: 0.14, o: 0.95, d: -0.4 },
+  { x: 81, y: 74, s: 0.11, o: 0.8, d: -1.15 },
+  { x: 90, y: 26, s: 0.12, o: 0.9, d: -0.5 },
+  { x: 92, y: 68, s: 0.1, o: 0.75, d: -0.1 },
+]
+
 const sparkleStyle = (spark: (typeof SPARKLES)[number]) => ({
   "--spark-x": `${spark.x}%`,
   "--spark-y": `${spark.y}%`,
@@ -158,6 +174,7 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
           data-slot="effort-slider-v2"
           data-dragging={drag() !== undefined ? "" : undefined}
           data-unselected={hasSelection() ? undefined : ""}
+          data-sparkling={hasSelection() && position() >= Math.max(1, last() - 1) ? "" : undefined}
           data-max={hasSelection() && position() >= last() ? "" : undefined}
           class={local.class}
           style={{ ...local.style, "--effort-progress": progress() }}
@@ -181,6 +198,7 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
             <div data-slot="effort-slider-v2-fill" />
             <div data-slot="effort-slider-v2-sparkles" aria-hidden="true">
               <For each={SPARKLES}>{(spark) => <span style={sparkleStyle(spark)} />}</For>
+              <For each={MAX_SPARKLES}>{(spark) => <span data-max-only="" style={sparkleStyle(spark)} />}</For>
             </div>
           </div>
           <Kobalte.Track data-slot="effort-slider-v2-track">

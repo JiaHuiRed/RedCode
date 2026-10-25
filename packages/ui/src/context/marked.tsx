@@ -1,13 +1,11 @@
 /// <reference path="./markdown-it-task-lists.d.ts" />
 import MarkdownIt from "markdown-it"
 import taskLists from "markdown-it-task-lists"
-import { bundledLanguages, type BundledLanguage } from "shiki"
+import type { BundledLanguage } from "shiki"
+import { bundledLanguages } from "shiki/langs"
 import { createSimpleContext } from "./helper"
-import { getSharedHighlighter, registerCustomTheme } from "@pierre/diffs"
 import { redcodeShikiTheme } from "./shiki-theme"
 import { highlightPoolAvailable, highlightViaWorker } from "./highlight-pool"
-
-registerCustomTheme("RedCode", () => Promise.resolve(redcodeShikiTheme()))
 
 // 260901 cc katex 改成用到才加载。
 //
@@ -110,6 +108,11 @@ function normalizeLang(lang: string | undefined): BundledLanguage | "text" {
 
 /** 主线程兜底：worker 池不可用/单块失败时走这条，行为与改动前完全一致。 */
 async function highlightOnMainThread(code: string, language: BundledLanguage | "text"): Promise<string> {
+  // 261025 Red 只在兜底时加载 diff 高亮依赖；注册不再依赖应用启动副作用。见下方 worker 决策记录。
+  const { getSharedHighlighter, registerCustomTheme, RegisteredCustomThemes } = await import("@pierre/diffs")
+  if (!RegisteredCustomThemes.has("RedCode")) {
+    registerCustomTheme("RedCode", () => Promise.resolve(redcodeShikiTheme()))
+  }
   const highlighter = await getSharedHighlighter({
     themes: ["RedCode"],
     langs: [],

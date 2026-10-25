@@ -27,3 +27,18 @@
 ## 2026-10-13 更新：载体文件已迁 packages/ui
 
 本文点名的 `context/marked.tsx`、`context/highlight-worker.ts`、`context/highlight-pool.ts`、`context/shiki-theme.ts` 现位于 `packages/ui/src/context/`（当时在 `packages/app/src/`）。worker 池高亮与主线程兜底链机制不变，以 ui 包现行代码为准。
+
+## 2026-10-25 更新：收紧启动依赖与主题注册边界
+
+- `MarkedProvider` 是首屏静态依赖，但 `@pierre/diffs` 只在 Worker 不可用/失败的主线程兜底路径被消费。
+  将这一个运行时 import 移入异步兜底，不改解析、高亮、流式跳过或块缓存语义，不新增 loader 层。
+  语言目录直接取 `shiki/langs`，不经完整高亮入口；全仓无消费者的 `getWorkerPools()` 包装一并删除，
+  保留实际被文件与 diff 使用的按需 `getWorkerPool(style)`。
+- diff 池的主线程初始化也需要 RedCode 主题。注册移到 `pierre/worker.ts` 同步执行，
+  主线程兜底则在动态 import 完成后注册；两处都查库自带的 `RegisteredCustomThemes`，先到者注册。
+  不能改成模块顶层 `void import(...)` 后假定微任务先后，避免 diff-first 时主题尚未就绪。
+- 同一工作树、同一 App 构建命令前后对照：主块 1168.21→985.62 kB，减少 182.59 kB（15.6%）；
+  gzip 403.96→344.29 kB。这是首屏主块大小，不是总分发体积或实测启动耗时。
+- UI/App typecheck 与 App build 通过。浏览器先初始化 diff 池（2 Worker、`workersFailed=false`），
+  再对同一 TypeScript 代码块比较 Markdown Worker 与禁用 Worker 后的兜底 HTML，逐字节一致；
+  `highlight:false` 仍不高亮，无重复主题注册或运行时错误。模型可见内容与固定前缀均不变。

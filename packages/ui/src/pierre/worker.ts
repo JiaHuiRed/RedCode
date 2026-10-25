@@ -1,5 +1,13 @@
+import { registerCustomTheme, RegisteredCustomThemes } from "@pierre/diffs"
 import { WorkerPoolManager } from "@pierre/diffs/worker"
 import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
+import { redcodeShikiTheme } from "../context/shiki-theme"
+
+// 261025 Red diff 池在主线程解析主题，必须先同步注册，不能等 markdown 兜底路径替它注册。
+// docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md
+if (!RegisteredCustomThemes.has("RedCode")) {
+  registerCustomTheme("RedCode", () => Promise.resolve(redcodeShikiTheme()))
+}
 
 export type WorkerPoolStyle = "unified" | "split"
 
@@ -42,11 +50,4 @@ export function getWorkerPool(style: WorkerPoolStyle | undefined): WorkerPoolMan
 
   if (!unified) unified = createPool("none")
   return unified
-}
-
-export function getWorkerPools() {
-  return {
-    unified: getWorkerPool("unified"),
-    split: getWorkerPool("split"),
-  }
 }

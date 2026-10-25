@@ -54,9 +54,7 @@
   background:
     linear-gradient(180deg, var(--v2-alpha-light-14), var(--v2-alpha-light-0)),
     linear-gradient(90deg, var(--v2-green-600) 0%, var(--v2-blue-500) 50%, var(--v2-purple-500) 100%);
-  clip-path: inset(
-    0 calc((1 - var(--effort-progress, 0)) * (100% - var(--_thumb)) + var(--_thumb) / 2) 0 0
-  );
+  clip-path: inset(0 calc((1 - var(--effort-progress, 0)) * (100% - var(--_thumb)) + var(--_thumb) / 2) 0 0);
   transform: translateZ(0);
   transition: clip-path 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -65,8 +63,7 @@
   opacity: 0;
 }
 
-/* 261024 Red 光点：随档位逐个浮现（阈值 --spark-t 由 tsx 按 x + 6% 给出），
-   满档（data-max）以错峰相位缓慢闪烁。浮在渐变上，白色带柔光晕。 */
+/* 261025 Red 次高档沿用错峰闪烁，满档追加细星点并提亮；两档都保留填充进度门控。 */
 [data-slot="effort-slider-v2-sparkles"] {
   position: absolute;
   inset: 0;
@@ -84,29 +81,43 @@
   corner-shape: round;
   background: var(--v2-grey-100);
   box-shadow: 0 0 calc(var(--effort-slider-v2-height, 12px) * 0.4) var(--v2-alpha-light-40);
-  opacity: calc(clamp(0, (var(--effort-progress, 0) - var(--spark-t)) * 8, 1) * var(--spark-o));
+  --_spark-opacity: calc(clamp(0, (var(--effort-progress, 0) - var(--spark-t)) * 8, 1) * var(--spark-o));
+  opacity: var(--_spark-opacity);
   transition: opacity 140ms ease-out;
+}
+
+[data-slot="effort-slider-v2-sparkles"] span[data-max-only] {
+  display: none;
 }
 
 @keyframes effort-slider-v2-twinkle {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: var(--spark-o);
+    transform: translate(-50%, -50%) scale(var(--_spark-peak, 1));
+    opacity: var(--_spark-opacity);
   }
   50% {
     transform: translate(-50%, -50%) scale(0.65);
-    opacity: calc(var(--spark-o) * 0.3);
+    opacity: calc(var(--_spark-opacity) * 0.3);
   }
 }
 
-[data-slot="effort-slider-v2"][data-max] [data-slot="effort-slider-v2-sparkles"] span {
-  animation: effort-slider-v2-twinkle 1.8s ease-in-out infinite;
+[data-slot="effort-slider-v2"][data-sparkling] [data-slot="effort-slider-v2-sparkles"] span {
+  animation: effort-slider-v2-twinkle var(--_spark-duration, 1.8s) ease-in-out infinite;
   animation-delay: var(--spark-d);
 }
 
-/* 261024 Red 满档辉光：胶囊与填充一起泛一层蓝紫光晕，最高档可辨识。 */
+/* 261025 Red 满档在次高档的蓝紫光晕上，增加星点密度、亮峰与闪烁频率。 */
 [data-slot="effort-slider-v2"][data-max] {
+  --_spark-duration: 1.25s;
+  --_spark-peak: 1.25;
+}
+
+[data-slot="effort-slider-v2"][data-max] [data-slot="effort-slider-v2-sparkles"] span[data-max-only] {
+  display: block;
+}
+
+[data-slot="effort-slider-v2"][data-sparkling] {
   box-shadow:
     0 0 14px color-mix(in srgb, var(--v2-blue-500) 35%, transparent),
     0 0 28px color-mix(in srgb, var(--v2-purple-500) 25%, transparent),
@@ -221,8 +232,8 @@
     transition: none;
   }
 
-  /* 261024 Red 光点闪烁一并关掉：opacity 定格在进度门控的静态值。 */
-  [data-slot="effort-slider-v2"][data-max] [data-slot="effort-slider-v2-sparkles"] span {
+  /* 261025 Red 两个高档的闪烁一并关掉，保留密度差异与静态进度门控。 */
+  [data-slot="effort-slider-v2"][data-sparkling] [data-slot="effort-slider-v2-sparkles"] span {
     animation: none;
   }
 }
