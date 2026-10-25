@@ -5,7 +5,7 @@ import { Context, Duration, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
-import { streamText, wrapLanguageModel, type AssistantContent, type ModelMessage, type Tool } from "ai"
+import { APICallError, streamText, wrapLanguageModel, type AssistantContent, type ModelMessage, type Tool } from "ai"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import type { LLMClientService } from "@redcode-ai/llm/route"
@@ -328,9 +328,24 @@ const live: Layer.Layer<
       // withContinuation 会把已生成内容作为 assistant 前缀自动发起续写请求。
       const streamOnce = (msgs: ModelMessage[]) =>
         streamText({
-          onError(error) {
+          onError(event) {
+            // 261025 Red APICallError.requestBodyValues 是完整请求体（system+历史+图片 base64，
+            // 实测单条 16-44MB、断流重试反复落盘把单日日志吃到 146MB）。只留错误元数据；
+            // message 截断防 provider 把整页错误响应塞进 message。
+            const err = event.error
+            if (APICallError.isInstance(err)) {
+              l.error("stream error", {
+                name: err.name,
+                message: err.message.slice(0, 500),
+                url: err.url,
+                statusCode: err.statusCode,
+                isRetryable: err.isRetryable,
+              })
+              return
+            }
             l.error("stream error", {
-              error,
+              name: err instanceof Error ? err.name : typeof err,
+              message: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
             })
           },
           async experimental_repairToolCall(failed) {
