@@ -355,10 +355,12 @@
     .compaction-summary-chevron {
       flex: none;
       margin-left: auto;
+      /* 261025 Red 折叠朝右、展开朝下，箭头表示内容状态。 */
+      transform: rotate(-90deg);
       transition: transform 0.15s ease;
 
       &.is-open {
-        transform: rotate(180deg);
+        transform: rotate(0deg);
       }
     }
   }
