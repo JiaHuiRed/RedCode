@@ -17,7 +17,7 @@ Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI">
+  <img src="docs/assets/screenshot.png" width="760" alt="RedCode desktop workspace with file tree, composer, and context dashboard">
 </p>
 
 ## ❤️ Why RedCode?
@@ -25,6 +25,8 @@ Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode
 **Choose your models freely.** Connect coding plans, compatible APIs, or local models from different providers, and pick the right model for each task without being tied to one service.
 
 **Put AI to work on real development.** File editing, terminal commands, code search, MCP tools, and subagents come together in a complete development workflow.
+
+**A desktop workspace, not just a chat box.** Keep the file tree, change review, terminal, and context dashboard together. Choose your theme, Soul, and reasoning effort where the model supports it.
 
 **Built for long-running collaboration.** Session management, context compaction, prefix-cache management, and memory help carry complex work forward.
 
@@ -50,7 +52,9 @@ bun dev
 bun run dev:desktop
 ```
 
-After the first launch, configure your model provider to get started.
+After the first launch, connect your own model provider or local model. Model service credits are not included. See [Add an AI model](MANUAL.md#21-添加-ai-模型) for configuration examples (Chinese).
+
+Keep API keys and machine-specific paths in your local `~/.redcode/redcode.local.jsonc`, not in version control.
 
 For installation, model setup, permissions, and Soul configuration, see [MANUAL.md](MANUAL.md) (Chinese).
 

@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI 界面">
+  <img src="docs/assets/screenshot.png" width="760" alt="RedCode 桌面工作台：文件树、输入区与上下文看板">
 </p>
 
 ## ❤️ Why RedCode?
@@ -25,6 +25,8 @@
 **自由选择模型。** 接入不同供应商的 Coding Plan、兼容 API 或本地模型，根据任务选择适合的模型，而不受限于单一服务。
 
 **让 AI 真正参与开发。** 文件编辑、终端执行、代码检索、MCP 工具和子代理共同组成完整的开发工作流。
+
+**桌面工作台，不只是聊天窗口。** 文件树、变更审查、终端与上下文看板放在同一界面；主题、Soul 和模型支持的推理强度都可以自行选择。
 
 **适合长期协作。** 通过会话管理、上下文压缩、前缀缓存管理和记忆系统，支持持续推进复杂任务。
 
@@ -50,7 +52,9 @@ bun dev
 bun run dev:desktop
 ```
 
-首次启动后，配置你使用的模型供应商即可开始工作。
+首次启动后，需要接入自己的模型供应商或本地模型，软件不附带模型服务额度。配置示例见手册的[添加 AI 模型](MANUAL.md#21-添加-ai-模型)。
+
+密钥和机器专属路径放在本机的 `~/.redcode/redcode.local.jsonc`，不要提交到仓库。
 
 更多安装、模型接入、权限与 Soul 配置说明见 [MANUAL.md](MANUAL.md)。
 

@@ -61,7 +61,7 @@ cd packages/desktop && bun run build && bun run package
 
 1. 创建 `~/.redcode/` 目录（存放全局配置和记忆），以及 `souls/` 子目录（`memory/` 只作归档，不再写入）
 2. 保留式迁移旧 `Tsoul.md` / `Gsoul.md`，再补齐 `souls/karina.md`、`souls/yuqi.md` 与 `MEMORY.md` 的缺省模板——模板**编译时内嵌在二进制里**，已有文件与自定义正文不覆盖，旧文件保留
-3. 若当前目录是 RedCode 仓库的克隆，额外把 `seed/skill/` 下的技能播种到 `~/.redcode/skill/`（同样只补不覆盖）；拿 release 二进制直接用的话这一步跳过，技能可自行放进 `~/.redcode/skill/`
+3. 从可找到的 `seed/skill/` 播种技能到 `~/.redcode/skill/`（只补不覆盖）。先查当前目录，再查可执行文件上一级的 `seed/skill/`；单独复制 exe 不保证附带这些文件，缺失时会记录警告，技能也可自行安装
 4. 加载配置、MCP 服务器与 skill 技能
 5. 启动 TUI/GUI 界面
 
@@ -75,7 +75,7 @@ cd packages/desktop && bun run build && bun run package
 
 RedCode 支持多种模型。首次启动后，你需要至少配置一个 provider 才能对话。
 
-在 `~/.redcode/redcode.jsonc`（全局）或项目下的 `redcode.jsonc`（项目级）中添加：
+建议先在 `~/.redcode/redcode.local.jsonc`（全局、仅本机）中添加。下面的密钥只是占位符，真实密钥不要写进要提交或同步的配置：
 
 ```jsonc
 {
@@ -127,13 +127,13 @@ provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api
 
 ### 2.2 设置称呼
 
-对话里 AI 怎么称呼你，由 `redcode.jsonc` 的 `username` 字段决定（不填则用系统用户名）：
+`redcode.jsonc` 的 `username` 字段提供用户名称（不填则用电脑名）：
 
 ```jsonc
 { "username": "哥哥" }
 ```
 
-至于 AI 的性格、语气、怎么跟你协作，全部写在灵魂文件里（见 5.1）。0.8.2 之前这些散在
+具体称呼、AI 的性格、语气与协作方式写在灵魂文件里（见 5.1）。0.8.2 之前这些散在
 `~/.redcode/USER.md`，与灵魂文件大量重复，已下线；老用户那份文件留着不会再被加载，可以自行删除。
 
 ### 2.3 自定义 AI 人格
@@ -211,24 +211,24 @@ ollama pull qwen2.5-coder:7b
 
 ## 4. MCP 服务器
 
-MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI 能做到的事越多。
+MCP（Model Context Protocol）让 AI 按需要接入外部工具。
 
-以下所有 MCP 服务器已在 `~/.redcode/redcode.jsonc` 中预配置好，无需手动编辑配置即可启用。
+仓库的 `seed/redcode.home.jsonc` 提供以下服务的配置模板，不代表首次启动就已安装全部依赖。先安装对应程序，再启用所需服务；本机是否可用，以实际配置与连接状态为准。
 
 ### 4.1 代码智能
 
-| 服务器         | 用途                                                                 | 首次使用前                                                                                                      |
-| -------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **TypeGraph**  | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测             | —                                                                                                               |
-| **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检） | `jcodemunch-mcp index`（本仓配置里 `JCODEMUNCH_USE_AI_SUMMARIES` 为 `false`，索引更快；需要 AI 摘要再自行打开） |
+| 服务器         | 用途                                                               | 首次使用前                                                                                |
+| -------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **jCodeMunch** | 结构化代码检索：符号、引用、调用链与影响范围，具体工具取决于白名单 | 安装服务后，让 AI 用 `jcodemunch_index_folder` 索引目标工程；模板关闭 AI 摘要，可按需开启 |
 
 ### 4.2 文件与文档
 
-| 服务器           | 用途                                                                                   | 首次使用前 |
-| ---------------- | -------------------------------------------------------------------------------------- | ---------- |
-| **markitdown**   | 二进制文档转 Markdown：`.docx`/`.xlsx`/`.pptx`/`.pdf` 等 read 读不了的文件用它提取文本 | —          |
-| **fff**          | 高性能文件查找/grep（`fff_find_files`/`fff_grep`/`fff_multi_grep`）                    | —          |
-| **sqlite-query** | 结构化查询 SQLite 数据库，免 shell 转义                                                | —          |
+| 服务器         | 用途                                                                                   | 首次使用前 |
+| -------------- | -------------------------------------------------------------------------------------- | ---------- |
+| **markitdown** | 二进制文档转 Markdown：`.docx`/`.xlsx`/`.pptx`/`.pdf` 等 read 读不了的文件用它提取文本 | —          |
+| **fff**        | 高性能文件查找/grep（`fff_find_files`/`fff_grep`/`fff_multi_grep`）                    | —          |
+
+SQLite 结构化查询使用原生工具 `sqlite_query`，不再是 MCP 服务器；源码构建时由同步脚本把 `seed/tool/sqlite.ts` 播种到 `~/.redcode/tool/`。
 
 ### 4.3 网络与视觉
 
@@ -239,10 +239,10 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 ### 4.4 记忆与进程
 
-| 服务器               | 用途                                                                                                                                                                                                     | 首次使用前 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| **su-prememory**     | ~~本地语义记忆：SQLite+FTS5 全文搜索，纯离线~~ **已废弃**：当前配置 `tools: []` 一个工具都不暴露，回忆工具不可用（260825 核实）；记忆检索实际走 memory-recall 插件自动注入 + `sqlite_query` 原生工具查库 | —          |
-| **mcp-process-mgmt** | 管理交互式/长驻 shell 会话（REPL、dev server 等需要 stdin 的进程）                                                                                                                                       | —          |
+| 服务器               | 用途                                                                                                          | 首次使用前           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------- |
+| **su-prememory**     | 可选的本地记忆库服务；模板的 `tools: []` 不向模型暴露工具，需要时再配置白名单。记忆维护仍须遵守索引与全文双写 | 本地记忆库与服务依赖 |
+| **mcp-process-mgmt** | 管理交互式/长驻 shell 会话（REPL、dev server 等需要 stdin 的进程）                                            | —                    |
 
 > 曾预配置过的 **gbrain**（记忆）、**Exa Search**（语义搜索）、**Agent Reach**（B站/抖音/GitHub 统一搜索）已彻底移除（gbrain 元数据损坏且功能被 su-prememory 覆盖；Exa 与 Web Search 冗余；Agent Reach 实际使用率过低，插件源码已删除）。
 
@@ -326,9 +326,9 @@ description: 擅长简洁分析与清晰解释
 
 ### 6.1 概述
 
-RedCode 内置自动化记忆系统（skill `memory`），在启动/收工时自动运作，分两层：
+长期记忆由规则与 `memory` skill 引导 AI 维护，引擎负责加载已有的记忆文件，不会把每段对话自动提炼成长期教训。记忆分两层：
 
-- **项目级** `.redcode/MEMORY.md`——当前项目专有的进度、决策与踩坑
+- **项目级** `.redcode/MEMORY.md`——当前项目的决策、踩坑与工作路标
 - **全局级** `~/.redcode/MEMORY.md`——跨项目通用的历史教训
 
 两层同时注入（全局在前、项目在后），不是二选一。
@@ -342,7 +342,7 @@ RedCode 内置自动化记忆系统（skill `memory`），在启动/收工时自
 配套核对机制：
 
 - 自检脚本 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs`——每个 `#NN` 索引行必须对数据库全文，缺则列出
-- 私仓 pre-commit 已挂自动检查——动 MEMORY.md 的提交缺全文直接阻断
+- 长期记忆只在本机维护，`MEMORY.md` 与 `supermemory.db` 不进入同步仓库；双写核对在本机运行
 - 260825 定案：索引化前的存量项目（正文无 `#NN` 索引行结构）不做一次性迁移，在该工作区整理记忆或收尾时**就地索引化**（全文入库 + 正文改写为索引行）
 
 ### 6.3 教训提炼
@@ -353,7 +353,7 @@ RedCode 内置自动化记忆系统（skill `memory`），在启动/收工时自
 2. 把**跨项目通用**的教训摘入全局 `~/.redcode/MEMORY.md`
 3. 每条过三道门禁（换项目仍成立？忘了会再踩且修复贵？未被 AGENTS.md/skill 覆盖？）
 
-全局记忆每轮都要付 token，只留值得长期持有的条目。另有两项注入面纪律：状态类内容（进度）只记最近四天；参考文档（借鉴清单等）不进 MEMORY.md，放项目 `.redcode/` 下文档并留一句指针。
+全局记忆每轮都要付 token，只留值得长期持有的条目。进度正文放项目 `.redcode/docs/`，MEMORY.md 只留工作路标；参考文档同样放在项目 `.redcode/` 下，只留一句指针。
 
 ### 6.4 关闭记忆
 
@@ -388,7 +388,15 @@ RedCode 内置自动化记忆系统（skill `memory`），在启动/收工时自
 
 ### 7.2 权限门控
 
-权限门控由**代码强制层**（doom_loop 检测，服务端拦截）兜底，配合各 agent 的 PermissionV2 规则（见 `~/.redcode/agent/` 定义）工作。行为指令层（ECC_PROFILE guardrail）已于 260808 退役。
+权限门控由**代码强制层**（doom_loop 检测，服务端拦截）兜底，配合默认规则、配置中的 `permission` 与各 agent 的规则工作。内置子代理定义随程序编译，自定义子代理可放在 `~/.redcode/agent/`。行为指令层（ECC_PROFILE guardrail）已退役。
+
+`ask`、`allow`、`deny` 分别表示询问、放行、拒绝；工具调用权限接口不代表一定弹窗，命中 `allow` 时会直接执行。例如，想让历史会话查询先询问，可以配置：
+
+```jsonc
+{ "permission": { "session_query": "ask" } }
+```
+
+`session_query` 默认只查当前工程的其它会话，显式指定 `directory: "*"` 才会跨工程。这个参数只是查询范围，不是用户授权；历史内容也不构成当前操作的授权。
 
 #### 代码强制层（防空转，软硬双层）
 
@@ -415,7 +423,9 @@ AI 正在干活时你发的消息怎么处理，`redcode.jsonc` 顶层 `busy_ent
 }
 ```
 
-**TUI 和 GUI 都可以直接 `/busy-enter` 切换**（命令面板同样可搜"繁忙时消息"），**GUI 还可以在 设置 → 通用设置 → 繁忙时消息送达 下拉切换**。三个入口都走 API 写回 `redcode.jsonc` 并强制重载配置，**立即生效不用重启**；手改配置文件则需重启。TUI 消息列表里繁忙期发送的消息会带 `QUEUED` 徽标；注意 steer 模式下徽标虽在，消息其实很快就送达了（界面状态细化在计划中）。
+**TUI 和 GUI 都可以直接 `/busy-enter` 切换**（命令面板同样可搜"繁忙时消息"），**GUI 还可以在 设置 → 通用设置 → 繁忙时消息送达 下拉切换**。三个入口都走 API 写回 `redcode.jsonc` 并强制重载配置，**立即生效不用重启**；手改配置文件则需重启。
+
+排队消息由服务端持久化，重启后仍可恢复：TUI 用 `/pending` 逐条送达、编辑或取消，GUI 在排队消息上直接操作。TUI 的 `QUEUED` 徽标表示消息尚未装配进模型上下文，不等于消息已丢失。
 
 ### 7.4 归档会话（仅 GUI）
 
@@ -435,29 +445,26 @@ AI 正在干活时你发的消息怎么处理，`redcode.jsonc` 顶层 `busy_ent
 
 ### 7.6 上下文用量：在哪看、怎么读
 
-| 界面 | 位置                                                                                     |
-| ---- | ---------------------------------------------------------------------------------------- |
-| TUI  | 侧边栏 **Context** 块（常驻）                                                            |
-| GUI  | prompt 控件行（agent \| 模型 \| 档位）里模型名旁边的**圆环**，点开是侧栏「上下文」标签页 |
+| 界面 | 位置                                                                                                       |
+| ---- | ---------------------------------------------------------------------------------------------------------- |
+| TUI  | 侧边栏 **Context** 块（常驻）                                                                              |
+| GUI  | 输入控件行里模型名旁边的**圆环**；悬浮看用量，点击弹出**精简会话**确认窗。详细账本从右侧「上下文」入口打开 |
 
 两边都显示：当前占用 / 模型标称窗口 · 占用率、会话累计、解码速率与首字延迟、in/out/思考
 token、缓存读写与命中率、花费。
 
-**进度条和圆环的颜色不是按百分比，是「引擎下一步会做什么」。**
+**颜色按绝对上下文用量提示，不按百分比，也不代表正在执行某种压缩操作。** 当前 GUI 的提醒档位：
 
-| 颜色 | 档位    | 引擎在做什么                                       |
-| ---- | ------- | -------------------------------------------------- |
-| 绿   | ok      | 不动                                               |
-| 黄   | soft    | 只记一条提示，**刻意不动前缀**                     |
-| 橙   | prune   | 开始裁陈旧的工具输出（本地改写，不花钱、不调模型） |
-| 红   | compact | 真正的摘要压缩，重写前缀 + 一次模型调用            |
+| 颜色 | 上下文用量 |
+| ---- | ---------- |
+| 绿   | < 320k     |
+| 黄   | 320k–360k  |
+| 橙   | 360k–400k  |
+| 红   | ≥ 400k     |
 
-（GUI 收成三档：黄 = soft 与 prune 合并，红 = compact。）
+原生自动压缩开启时，模板的 `compaction.native.trigger_tokens` 为 400k，实际触发还受模型可用窗口限制。旧的工具输出 prune 在当前模板中已关闭，不能把橙色理解成“已经开始裁剪工具结果”。
 
-为什么不按百分比：档位是相对 `min(硬顶, usable)` 算的，而进度条的分母是模型**标称**的窗口，
-两者不是一个数。以 step-3.7-flash 为例，context 256k、usable≈224k，三条线换算成进度条是
-52% / 70% / 88%——按「60 黄 85 红」上色会比引擎实际动手慢半拍，拿它当「要不要手动压缩」的
-依据会误判。数字保持诚实（标称值），信号交给颜色。
+日常可主动精简：TUI 在命令面板选择 `/compact` 或按 `<leader>c`，GUI 点击圆环或在命令面板选择精简会话，都会先确认。用量数字仍以模型标称窗口为分母显示，与颜色档位分开读取。
 
 **解码速率与首字延迟是两回事，所以分开显示。** `52.4 tok/s · 首字 2.3s`——首字慢是排队与
 预填（供应商侧负载、上下文长度），解码慢是吐字本身。合成一个「总速度」会让这两种完全不同
@@ -486,7 +493,7 @@ token、缓存读写与命中率、花费。
 
 ## 8. 内置命令
 
-在对话框中输入（TUI 和 GUI 均支持）：
+以下包含内置入口和随仓库播种的命令；客户端差异在表内注明：
 
 | 命令               | 作用                                                                                                |
 | ------------------ | --------------------------------------------------------------------------------------------------- |
@@ -506,8 +513,10 @@ token、缓存读写与命中率、花费。
 | `/ai-deps`         | 排查 AI SDK 依赖可升级的 minor/patch 版本                                                           |
 | `/lan`             | 打开或查看手机（局域网）远程访问入口                                                                |
 | `/busy-enter`      | 切换繁忙时消息送达：插话 ↔ 排队（TUI/GUI 均内置，立即生效，见 [7.3](#73-繁忙时消息送达busy_enter)） |
+| `/compact`         | 打开精简会话确认：TUI 命令面板或 `<leader>c`；GUI 命令面板或上下文圆环                              |
+| `/pending`         | 管理排队消息，逐条送达、编辑或取消（TUI；GUI 在排队消息上直接操作）                                 |
 
-命令文件位于 `seed/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改；`/soul` 与 `/busy-enter` 是引擎内置命令，不在命令文件里。
+命令文件位于 `seed/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改；`/soul`、`/busy-enter`、`/compact`、`/pending` 是内置入口，不在命令文件里。
 
 ### 8.1 钉住的目标：钉了之后在哪看
 
@@ -541,31 +550,25 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **memory**                   | 记忆的写与剪：双层 MEMORY.md 注入 + 索引化双写 + 剪枝阈值                | "整理记忆""记忆太长了"     |
 | **ce-code-review**           | 结构化多维度代码审查                                                     | "帮我看看代码""review一下" |
 | **diagnose**                 | 形式化 bug 诊断循环                                                      | "查bug""排查一下""debug"   |
-| **defensive-agent**          | 防止 AI 假阳性报告、无意义修改                                           | "小心点""别乱改"           |
+| **tdd-flow**                 | 测试先行、假阳性过滤与置信度门控，已整合原 defensive-agent               | "认真做""用 TDD""别乱改"   |
 | **goal-automation**          | 检测大任务并建议钉住目标                                                 | 自动检测                   |
-| **vision-autoagent**         | 模型不支持图片时，派多模态子代理读图（260807 起取代本地 Vision MCP）     | 自动触发                   |
+| **gui-regression**           | 用 webqa 实测长会话、流式输出、IME、分页与面板拖拽                       | GUI 改动后的定向回归       |
 | **frontend-design**          | 生成 macOS 风格的高质量前端界面，避免 AI 通用观感                        | "做个页面""写个组件"       |
 | **simplify**                 | 检测过度工程，建议精简                                                   | "太复杂了""精简一下"       |
-| **red-scribe**               | 按 Red 的写作风格输出                                                    | "按我的风格写""red风格"    |
-| **yuqi-slop**                | 中文去 AI 味                                                             | "去AI味""褪AI味"           |
-| **stop-slop**                | 英文去 AI 味                                                             | "英文去AI味"               |
+| **red-scribe**               | Red 的写作风格与中英去 AI 味，已整合 yuqi-slop、stop-slop                | "按我的风格写""去AI味"     |
 | **effect**                   | 在本仓编写与调试 Effect v4 代码（service / layer / Schema / 类型化错误） | 写或调 Effect 代码时       |
 | **harmonyos-android-compat** | Android 应用移植/验证到华为鸿蒙（HarmonyOS 6+、卓易通）                  | 鸿蒙移植与兼容验证时       |
 
-以上 13 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
+以上 11 个随仓库分发（`seed/skill/`），找到种子目录时会播种到 `~/.redcode/skill/`。播种不覆盖本机已有的同名技能；更新仓库不等于自动更新个人修改过的副本。
 
 下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——举例说明个人库可以怎么扩展（**不是全量清单**，个人库随维护者习惯持续增删）：
 
-| Skill          | 作用            | 触发词               |
-| -------------- | --------------- | -------------------- |
-| new-project    | 新项目脚手架    | "新项目""搭个项目"   |
-| species-design | RedMon 精灵设计 | "设计精灵""新精灵"   |
-| ai-daily       | AI 热点日报     | "日报""今天ai新闻"   |
-| game-daily     | 游戏热点日报    | "游戏日报""游戏新闻" |
-| bump-version   | 一键升版        | "升版""bump""放版"   |
-| tdd-flow       | TDD 流程        | "tdd""先写测试"      |
-
-另有一批「思维视角」类 skill（`nuwa-skill` 蒸馏体系）——如 `karina-perspective`／`yuqi-perspective`／`munger-perspective` 等，把特定人物的思维框架蒸馏成可注入的决策顾问，触发词为视角名称（"用芒格的视角想一下"）。
+| Skill                   | 作用                  | 触发词              |
+| ----------------------- | --------------------- | ------------------- |
+| new-project             | 新项目脚手架          | "新项目""搭个项目"  |
+| bump-version            | 一键升版              | "升版""bump""放版"  |
+| config-edit             | 安全修改 RedCode 配置 | "改配置""加 MCP"    |
+| technical-documentation | 构建与检查技术文档    | "写 README""审文档" |
 
 ### 9.2 添加自定义 Skill
 
@@ -604,13 +607,15 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 seed/                          ~/.redcode/
 ├── skill/           ← 种子     ├── souls/*.md         ← 你的人格（karina / yuqi，首启由内嵌模板播种）
 ├── command/         ← 种子     ├── MEMORY.md       ← 你的记忆
-├── agents/          ← 种子     ├── memory/         ← 日志归档（只读）
+├── tool/sqlite.ts   ← 种子     ├── supermemory.db  ← 本机长期记忆全文
 ├── scripts/         ← 种子     ├── skill/ command/ agent/
 └── redcode.home.jsonc ← 配置模板 └── data/           ← 会话 DB / 日志 / 快照
 
-（seed/ 里的东西引擎不直接加载，由 script/sync-home.bat 播种到 ~/.redcode/ 才生效；
+（seed/ 是播种源，不是项目配置目录；技能首启播种见第 1 节，其余共享资源由 script/sync-home.bat 同步。
 　人格与 MEMORY 模板已内嵌进二进制，见 packages/opencode/src/project/template/）
 ```
+
+内置子代理（explore/execute）定义在 `packages/opencode/src/agent/definition/`，构建时内联，不复制到用户目录；自行编写的 `~/.redcode/agent/*.md` 仍可使用。
 
 - 仓库**仅包含模板和共享配置**，没有任何你的个人数据
 - `~/.redcode/` **不在仓库中**，不会被推送
@@ -618,22 +623,34 @@ seed/                          ~/.redcode/
 
 ### 10.2 多机同步
 
-如果你在多台电脑上使用，建议建一个私有 GitHub 仓库同步 `~/.redcode/`：
+多台电脑可用私有 GitHub 仓库同步人格、技能、自定义命令、插件与**不含密钥**的共享配置，不要直接同步整个 `~/.redcode/`。
 
-```bash
+长期记忆只在本机维护和备份：`MEMORY.md`、`supermemory.db` 及其备份不进入同步仓库。会话数据、凭据和本地覆盖配置也必须排除。
+
+```powershell
 # 第一台电脑：初始化私有仓
 cd ~/.redcode
 # 创建 .gitignore 排除机器本地数据
-# 重要：data/ 里有 redcode.db（会话数据库）和 auth.json（各家 provider 的密钥），
-# 必须排除，否则会连同密钥一起推到远端仓库
+# data/ 含会话数据库和凭据；长期记忆、备份和本地配置也不共享
 @'
 data/
 cache/
 state/
 locks/
 node_modules/
+MEMORY.md
+MEMORY-archive.md
+supermemory.db*
+memory/
+backup/
+scripts/
+temp/
+redcode.local.json
+redcode.local.jsonc
 '@ | Set-Content -Encoding utf8 .gitignore
-git init && git add -A && git commit -m "init"
+git init
+git add .gitignore
+git commit -m "init"
 # 在 GitHub 创建一个 Private 仓库
 git remote add origin https://github.com/你的用户名/redcode-private.git
 git push -u origin main
@@ -643,6 +660,8 @@ cd ~
 git clone https://github.com/你的用户名/redcode-private.git .redcode
 git clone https://github.com/JiaHuiRed/RedCode.git
 ```
+
+之后只用 `git add <具体文件>` 暂存确认可共享的内容，例如 `git add souls/karina.md`。`.gitignore` 不会自动移除已经被 Git 跟踪的文件，同步前要检查暂存内容；共享配置中也不能包含 `provider.options.apiKey` 等真实密钥。
 
 日常同步：
 
