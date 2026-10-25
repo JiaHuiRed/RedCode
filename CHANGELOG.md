@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.13.1] - 2026-10-25
 
 - **推理强度粒子分档**（`ui/v2/components/effort-slider-v2.*`）：原满档的错峰慢闪下放至次高档；满档由 8 个布点增至 20 个，并提高亮峰与闪烁频率。低档与未选择状态不持续闪烁，两档模型的最低档不套用高档动效；保留减少动态效果设置与拖动、键盘交互。
 - **Markdown 启动依赖收缩**（`ui/context/marked.tsx`、`ui/pierre/worker.ts`）：diff 高亮依赖只在主线程兜底时动态加载，diff 池自行同步注册主题，不再依赖 Markdown 启动副作用。实际 App 构建主块从 1168.21 kB 降至 985.62 kB（-15.6%，gzip 403.96→344.29 kB），不是总包体积或启动耗时指标；Worker 与主线程兜底 HTML 逐字节一致，diff-first 初始化正常。见 [高亮依赖边界](docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md)。
@@ -22,6 +22,8 @@
 - **GPT 专属反过度工程约定**（`prompt/gpt.md`）：吸收 stop-that-shit 的两项判断，新增工作不能靠自己新造的消费者循环自证；已通过的验证仍覆盖最终状态时复用，不为求心安追加最后一轮审计、探针或复审。必须完成的检查和明确验收要求保留，仅追加到 GPT Delta，不影响 Step、DeepSeek、GLM，也不新增 Guard 或证明产物。路由回归 16 pass、typecheck 与格式检查通过。四问与来源见 [prompt-instruction-ownership](docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md)。
 - **GPT／Step 交付与交互定向调优**（`session/system.ts`、`prompt/working-style.md`）：仅在有失效证据的 GPT、Step 分支追加工作约定，使用既有流程、按改动验证、完成已要求的产物与素材，不以核查报告替代实现；正文和复盘沿用 Soul 称呼，不用套话和认错故事替代动作。初版全模型推广已撤回，DeepSeek、GLM 及其它模型恢复原有提示词与锚点，不把两家的纠偏推及所有模型。GPT 移除重复工作法与固定三项报告限制。未采用「编辑器」特例或事实纠正同义禁令，不把提示词声称为强制执行器。真实模型验证器修复丢弃 assistant 正文的回放缺口，支持选择实际推理档位：GPT 默认/high 两场景均完成实际修改与一次验证；Step 实现和称呼通过，但进度场景仍有套话，未宣称全部解决。四问与证据边界见 [prompt-instruction-ownership](docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md)。本次范围回归 16 pass、跨模型推理剥离 4 pass、typecheck 通过。
 - **explore 子代理跨工程 Git 查询放行（权限第三次迭代：派发模型演进，闸假设过期）**（`tool/shell.ts`、`agent/definition/explore.md`）：RedMind 跨工程派发 explore 后自然 git 查询必经 `-C <目标仓库>`，而 261017 的 -C 分支还是「仓库自证 4 条」窄桩——实证 RedMon 会话 3 连拒（`git -C <repo> log --oneline -20` 等字面只读命令）、重复失败熔断停跑。现在 -C 分支复用与无 -C 相同的七子命令只读清单 + 原 flag 禁令（新增 --no-index）；rev-list 仍限 --count；`git status` 经用户裁定放行（写面仅 .git/index stat cache，git 内部缓存）。信任边界不降：实例上下文内 = 裸 git 同一边界，上下文外走既有 external_directory 授权（explore 默认 deny）。拒绝文案补静态允许形状（零指导 = 盲试撞熔断）。实现教训：扩容分支重审每条 return 路径——结尾 `return undefined` 在旧窄桩下恰好正确、扩容后让 external_directory 授权整体失效，回归测试当场抓住。模型可见四问：①拒绝文案换固定带形状短句、合规查询放行 ②固定前缀零增减、retry 净减 ③explore 权限规则变化限于该 agent 会话一次 ④文案 ~300 字符有界不回显命令。决策演进见 [explore-scoped-git-queries](docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md)。验证：shell 120/120、typecheck 0 错。
+
+- **维护流程与验证门禁收口**：注入门禁统一从 git index 取证，避免工作区与暂存内容混用导致假通过（`bea34297`）；seed 配置模板压缩退役历史注释，约减少 5.6KB，不改变配置值（`6d558c58`）；升版清单迁入 bump-version skill，AGENTS 保留指针，并补齐既有 Skill 整合记录（`d32a03f5`、`587dcdca`）。本次按上一版升版提交以来的完整提交范围收编，不保留悬空的 `[Unreleased]` 段。
 
 ### [0.13.0] - 2026-10-24
 
