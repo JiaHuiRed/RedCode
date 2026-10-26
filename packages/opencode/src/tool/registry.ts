@@ -77,6 +77,9 @@ const log = Log.create({ service: "tool.registry" })
 // external-directory 0 次、ast_grep 4 次），默认从模型工具表剔除——省固定前缀 schema token，
 // 也避免低频工具诱导模型走弯路（如让 lsp 干 typegraph 的活）。需要时显式开：
 // provider.<id>.models.<id>.tools.<id> = true（与 tools() 的 explicit 分支兼容）。
+// 261026 Red 补模型侧出口（借鉴 dsh-ops 的 discovery）：search_tools 搜到 gated 工具时可
+// {"enable":"<id>"} 激活，下一请求进工具表；配置 explicit 布尔仍最优先，激活集合只在
+// 配置缺省时兜底，权限 deny 过滤先于本集合，激活不越权。
 const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "external-directory"])
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
@@ -91,6 +94,8 @@ type State = {
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
+  // 261026 Red 模型经 search_tools {"enable"} 激活的 gated 工具（实例级，激活后保持可用）
+  activated: Set<string>
 }
 
 export interface Interface {
@@ -312,19 +317,51 @@ export const layer = Layer.effect(
         const searchToolsDef: Tool.Def = {
           id: "search_tools",
           description:
-            "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task.",
+            "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task. Gated tools (registered but hidden from your tool list) appear marked [gated]; activate one by calling again with {\"enable\": \"<id>\"} — it joins your tool list on the next request.",
           parameters: Schema.Struct({
             query: Schema.String.annotate({ description: "Search keywords to find relevant tools" }),
+            enable: Schema.optional(
+              Schema.String.annotate({
+                description: "Exact id of a gated tool from a previous search to activate for this instance",
+              }),
+            ),
           }),
-          execute: (params: { query: string }, ctx) =>
+          execute: (params: { query: string; enable?: string }, ctx) =>
             Effect.gen(function* () {
               const s = yield* InstanceState.get(state)
               const all = [...s.builtin, ...s.custom] as Tool.Def[]
+              // 261026 Red gated 工具激活出口：只收 GATED_TOOLS 成员；权限/配置过滤仍发生在
+              // tools()，激活集合放行不了被 deny 的工具。输出有界（单行确认，不回显 schema）。
+              if (params.enable !== undefined) {
+                const target = all.find((tool) => tool.id === params.enable)
+                if (!target) {
+                  return {
+                    title: "Unknown tool",
+                    metadata: { enable: params.enable, activated: false },
+                    output: `No tool named "${params.enable}" is registered. Available tools: ${all.map((tool) => tool.id).join(", ")}.`,
+                  }
+                }
+                if (!GATED_TOOLS.has(target.id)) {
+                  return {
+                    title: "Not a gated tool",
+                    metadata: { enable: params.enable, activated: false },
+                    output: `Tool "${target.id}" is not gated — it is already registered${target.description.length > 160 ? `: ${target.description.slice(0, 160)}...` : `: ${target.description}`}`,
+                  }
+                }
+                s.activated.add(target.id)
+                return {
+                  title: `Activated ${target.id}`,
+                  metadata: { enable: target.id, activated: true },
+                  output: `Tool "${target.id}" activated for this instance. Its full schema joins your tool list on the next request.`,
+                }
+              }
               const matches = searchToolsSearch(params.query, all)
-              const lines = matches.map(
-                (t, i) =>
-                  `${i + 1}. **${t.id}**: ${t.description.length > 120 ? t.description.slice(0, 120) + "..." : t.description}`,
-              )
+              const lines = matches.map((t, i) => {
+                // gated 且未激活的才标注；已激活的下一请求就在表里，不必再标
+                const gated = GATED_TOOLS.has(t.id) && !s.activated.has(t.id)
+                const summary = t.description.length > 120 ? t.description.slice(0, 120) + "..." : t.description
+                return `${i + 1}. **${t.id}**: ${summary}${gated ? ' [gated — call again with {"enable": "' + t.id + '"} to activate]' : ""}`
+              })
               return {
                 title: `Tools matching "${params.query}"`,
                 metadata: { count: matches.length, total: all.length },
@@ -370,6 +407,7 @@ export const layer = Layer.effect(
           ],
           task: tool.task,
           read: tool.read,
+          activated: new Set<string>(),
         }
       }),
     )
@@ -458,7 +496,9 @@ export const layer = Layer.effect(
         const explicit = modelTools?.[tool.id]
         if (explicit !== undefined) return explicit
 
-        if (GATED_TOOLS.has(tool.id)) return false
+        // 261026 Red 模型侧激活出口：search_tools {"enable"} 加入 activated 后放行；
+        // 配置 explicit 布尔仍最优先（上面已 return），权限 deny 在 deniedTools 已剔除。
+        if (GATED_TOOLS.has(tool.id) && !s.activated.has(tool.id)) return false
 
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })

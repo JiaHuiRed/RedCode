@@ -201,6 +201,102 @@ describe("tool.registry", () => {
     }),
   )
 
+  // 261026 Red 模型侧 gated 工具激活出口（dsh-ops discovery 的最小等价）：
+  // search_tools 列出 gated 候选并标注，{"enable"} 激活后下一请求进工具表。
+  it.instance("search_tools lists gated tools and activates them on request", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const model = { providerID: ProviderID.redcode, modelID: ModelID.make("test") }
+      const ctx = {
+        sessionID: SessionID.make("ses_discover"),
+        messageID: MessageID.make("msg_discover"),
+        agent: build.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context
+
+      const baseline = yield* registry.tools({ ...model, agent: build })
+      expect(baseline.some((tool) => tool.id === "ast_grep")).toBe(false)
+
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+      const listed = yield* search.execute({ query: "ast_grep" }, ctx)
+      expect(listed.output).toContain("ast_grep")
+      expect(listed.output).toContain("[gated")
+
+      const enabled = yield* search.execute({ query: "ast_grep", enable: "ast_grep" }, ctx)
+      expect(enabled.metadata).toMatchObject({ enable: "ast_grep", activated: true })
+
+      const after = yield* registry.tools({ ...model, agent: build })
+      expect(after.some((tool) => tool.id === "ast_grep")).toBe(true)
+    }),
+  )
+
+  it.instance("search_tools enable rejects unknown and non-gated ids", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const ctx = {
+        sessionID: SessionID.make("ses_discover_bad"),
+        messageID: MessageID.make("msg_discover_bad"),
+        agent: build.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+
+      const unknown = yield* search.execute({ query: "", enable: "does_not_exist" }, ctx)
+      expect(unknown.metadata).toMatchObject({ enable: "does_not_exist", activated: false })
+      expect(unknown.output).toContain("No tool named")
+
+      const notGated = yield* search.execute({ query: "", enable: "read" }, ctx)
+      expect(notGated.metadata).toMatchObject({ enable: "read", activated: false })
+      expect(notGated.output).toContain("not gated")
+    }),
+  )
+
+  it.instance("activating a gated tool cannot bypass agent permission denial", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const denied = {
+        ...build,
+        permission: [...build.permission, { permission: "ast_grep", pattern: "*", action: "deny" as const }],
+      }
+      const ctx = {
+        sessionID: SessionID.make("ses_discover_deny"),
+        messageID: MessageID.make("msg_discover_deny"),
+        agent: build.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+
+      yield* search.execute({ query: "", enable: "ast_grep" }, ctx)
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: denied,
+      })
+      expect(tools.some((tool) => tool.id === "ast_grep")).toBe(false)
+    }),
+  )
+
   it.instance("exposes session_query without enabling native compaction", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
