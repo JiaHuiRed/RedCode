@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **API 400 错误附网关瞬时拒绝引导**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：现场排查发现 step_plan 网关前置层偶发对正常请求返回 400 `input_invalid`（响应头 `x-upstream-latency: 0`，同请求稍后重发即成功）。400 维持不自动重试，TUI 错误框对 `APIError` 400 追加一行「网关可能瞬时拒绝：稍后可重试同模型」，渲染回归见 conversation-snapshot。
 - **search_tools 支持激活 gated 工具**（`packages/opencode/src/tool/registry.ts`、`test/tool/registry.test.ts`）：借鉴 dsh-ops 的 discovery，给默认从工具表剔除的低频工具补模型侧出口——`search_tools` 搜到 gated 工具时标注并可用 `{"enable": "<id>"}` 激活，下一请求进工具表；配置显式布尔与权限 deny 优先级不变，激活不越权。固定前缀增量约 40–60 token，决策与四问见 [note](docs/notes/implemented/feature/2026-10-26-search-tools-gated-activation.md)。
 - **修复原生压缩提交并发与失败显示**：账本提交、恢复、失效和克隆改用 immediate 写事务，避免读快照后升级写锁触发 `SQLITE_BUSY_SNAPSHOT`，不通过重跑模型掩盖提交失败。持久错误与日志保留有界 SQLite 因果信息、排除 SQL/摘要参数；TUI 失败或取消时不再借后续请求计算虚假净增减。同批多块的幂等回执按插入顺序返回，消除随机 UUID 排序换位。复现与边界见 [原生压缩](docs/notes/implemented/feature/2026-10-10-native-compaction.md)。
 - **更新项目门面与用户手册**：中英文 README 换用桌面工作台截图，补充 GUI 使用场景、模型接入入口与本机密钥说明；手册校正上下文圆环的精简入口、持久化队列管理、11 个随仓库分发的 Skill、MCP 与原生工具的边界，以及首启播种条件。多机同步明确排除长期记忆、凭据与备份，补充 `session_query` 已有的询问权限配置；本次不改权限或查询实现。

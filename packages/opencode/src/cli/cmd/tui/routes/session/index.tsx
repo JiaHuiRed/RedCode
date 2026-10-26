@@ -1958,6 +1958,16 @@ function WaitingForModel(props: { start: number; label?: string }) {
   )
 }
 
+// 261026 Red 网关前置层偶发 400 input_invalid（响应头 x-upstream-latency=0，请求未到模型层；
+// 现场同一请求稍后重发即成功）。400 维持 isRetryable=false 不自动重试，防无效请求浪费；
+// 这里只给用户一条低成本出路。
+function apiRetryHint(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return
+  const e = error as { name?: unknown; data?: { statusCode?: unknown } }
+  if (e.name !== "APIError" || e.data?.statusCode !== 400) return
+  return "网关可能瞬时拒绝：稍后可重试同模型"
+}
+
 export function AssistantMessage(props: { message: AssistantMessageInfo; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
@@ -2025,6 +2035,9 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
           borderColor={theme.error}
         >
           <text fg={theme.textMuted}>{errorMessage(props.message.error)}</text>
+          <Show when={apiRetryHint(props.message.error)}>
+            <text fg={theme.textMuted}>{apiRetryHint(props.message.error)}</text>
+          </Show>
         </box>
       </Show>
       <Switch>

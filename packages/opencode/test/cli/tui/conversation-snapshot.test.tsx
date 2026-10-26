@@ -150,4 +150,22 @@ describe("TUI 会话记录整帧", () => {
       ),
     ).toMatchSnapshot()
   })
+
+  // 261026 Red APIError 400 带瞬时拒绝引导：网关前置层偶发 400 input_invalid，稍后重试同模型即过。
+  test("API 400 错误附网关瞬时拒绝引导", async () => {
+    const assistant = assistantMessage({
+      parts: [textPart("正在分析截图……")],
+      error: { name: "APIError", data: { message: "The input you provided is invalid", statusCode: 400 } },
+    })
+    const frame = await renderFrame(
+      () => (
+        <Transcript>
+          <AssistantMessage {...assistant} last={true} />
+        </Transcript>
+      ),
+      { width: WIDTH, height: 14 },
+    )
+    expect(frame).toContain("网关可能瞬时拒绝：稍后可重试同模型")
+    expect(frame).toContain("The input you provided is invalid")
+  })
 })
