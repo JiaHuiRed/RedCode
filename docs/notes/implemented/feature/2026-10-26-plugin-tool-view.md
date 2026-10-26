@@ -57,4 +57,4 @@ type ToolView = { summary?: string; sections?: ToolViewSection[] }
 
 - `packages/opencode`：`registry.test.ts` 41 pass / 0 fail，含「view 透传到 metadata」「超限 view 被丢弃」两条新用例。
 - 类型检查：`plugin` / `ui` / `app` / `opencode` 四个包 `exit=0`（opencode 走 tsgo 崩溃后的 TS5 回退，90s）。
-- **未做 GUI 动态实测**：没有起 dev server 验证真实插件工具在时间线里的展开效果。
+- **GUI 实测（dev 栈 4097 + 5173）**：打开本会话时间线，MCP 工具走的就是 `GenericTool`（标题形如「调用了 `webqa_webqa_interact`」）。点击已完成工具的折叠触发器后出现 `[data-component="tool-output"]`，`innerText` 长度 400 字符——改动前这里为空。运行中的工具仍不可展开，沿用 `BasicTool` 的既有 `pending()` 约束。
