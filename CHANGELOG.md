@@ -15,6 +15,7 @@
 - **修复原生压缩提交并发与失败显示**：账本提交、恢复、失效和克隆改用 immediate 写事务，避免读快照后升级写锁触发 `SQLITE_BUSY_SNAPSHOT`，不通过重跑模型掩盖提交失败。持久错误与日志保留有界 SQLite 因果信息、排除 SQL/摘要参数；TUI 失败或取消时不再借后续请求计算虚假净增减。同批多块的幂等回执按插入顺序返回，消除随机 UUID 排序换位。复现与边界见 [原生压缩](docs/notes/implemented/feature/2026-10-10-native-compaction.md)。
 - **更新项目门面与用户手册**：中英文 README 换用桌面工作台截图，补充 GUI 使用场景、模型接入入口与本机密钥说明；手册校正上下文圆环的精简入口、持久化队列管理、11 个随仓库分发的 Skill、MCP 与原生工具的边界，以及首启播种条件。多机同步明确排除长期记忆、凭据与备份，补充 `session_query` 已有的询问权限配置；本次不改权限或查询实现。
 - **Memory V4 正文归属与库级清理口径收口**：项目 MEMORY 保留当前进度摘要、相关教训和工作流索引，完整项目文档按需读取；已有权威文档不再向数据库复制全文，未文档化的独立长期教训仍双写。memory skill 区分日常索引整理与用户授权的完整库清理，不再用「教训一条不删」永久保留失效正文；seed 与本机 skill 同步，不改召回插件或数据库结构。说明与模型可见四问见 [Memory V4](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。后续补「低频深坑迁 docs」索引瘦身口径：MEMORY 只留每轮要被看见的触发器，低频深坑与长状态正文整条迁 `.redcode/docs/<主题>.md` 留指针，只迁不删（redcode 项目实测 6800→3140 字符）。
+- **入口静态依赖预算与隔离启动基准**（`script/check-entry-graphs.ts`、`script/bench-startup.ts`、`.husky/pre-commit`）：用 Bun 导入扫描与按 importer 解析替代 TypeScript 7 中已不可用的旧 compiler API；budget 覆盖 CLI index、Windows job-runner、project bootstrap、record utility 四条入口，显式检查静态源码数、forbid 路径和外部依赖。Windows runner guard 顺序与静态依赖分别有门禁；启动基准在隔离 scratch cwd、home、配置与 DB 下以 CLI 数字 marker 和真实 `/global/health` 健康响应判 ready，不读取 live 配置或数据。决策见 [入口启动预算](docs/notes/implemented/architecture/2026-10-26-entry-graph-startup-budgets.md)。
 
 ### [0.13.1] - 2026-10-25
 

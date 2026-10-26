@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "name": "cli",
+      "entry": "packages/opencode/src/index.ts",
+      "maxFiles": 1,
+      "forbid": [
+        "packages/opencode/src/cli/",
+        "packages/opencode/src/server/",
+        "packages/opencode/src/session/"
+      ],
+      "allowedExternal": [
+        "os",
+        "path"
+      ],
+      "startupGuard": "windows-job-runner"
+    },
+    {
+      "name": "windows-job-runner",
+      "entry": "packages/opencode/src/util/windows-job-runner.ts",
+      "maxFiles": 2,
+      "forbid": [
+        "packages/opencode/src/cli/",
+        "packages/opencode/src/server/",
+        "packages/opencode/src/session/"
+      ],
+      "allowedExternal": [
+        "bun:ffi",
+        "cross-spawn",
+        "node:fs"
+      ]
+    },
+    {
+      "name": "record-utility",
+      "entry": "packages/opencode/src/util/record.ts",
+      "maxFiles": 1,
+      "forbid": [],
+      "allowedExternal": []
+    }
+  ],
+  "startup": {
+    "warmup": 1,
+    "runs": 5,
+    "timeoutMs": 30000,
+    "probeTimeoutMs": 1000,
+    "pollIntervalMs": 50,
+    "cliEntry": "packages/opencode/src/index.ts",
+    "cliArgs": [
+      "--pure",
+      "debug",
+      "startup"
+    ],
+    "serverEntry": "packages/opencode/src/index.ts",
+    "serverArgs": [
+      "--pure",
+      "serve",
+      "--hostname",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--mdns=false"
+    ],
+    "healthPath": "/global/health"
+  }
+}

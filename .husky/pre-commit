@@ -16,3 +16,8 @@ fi
 if git diff --cached --name-only | grep -qE '^(docs/injection-registry\.jsonc|script/check-injection-registry\.ts|packages/opencode/src/(session|tool)/)'; then
   bun run check:injection-registry
 fi
+
+# 261026 Red Entry graph budgets and the runner's top-level dynamic-import guard.
+if git diff --cached --name-only | grep -qE '^(packages/[^/]+/src/|packages/sdk/js/src/|script/check-entry-graphs(\.test)?\.ts|script/entry-graph-budgets\.json|\.husky/pre-commit)$'; then
+  bun run check:entry-graphs
+fi

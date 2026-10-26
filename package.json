@@ -14,6 +14,8 @@
     "typecheck": "bun turbo typecheck && bun run typecheck:scripts",
     "typecheck:scripts": "bun run script/typecheck.ts -p script/tsconfig.json",
     "check:subprocess-timeout": "bun run script/check-subprocess-timeout.ts",
+    "check:entry-graphs": "bun run script/check-entry-graphs.ts",
+    "bench:startup": "bun run script/bench-startup.ts",
     "check:tool-description-budget": "bun run script/check-tool-description-budget.ts",
     "module:context": "bun run script/module-context.ts",
     "check:control-bytes": "bun run script/check-control-bytes.ts",
