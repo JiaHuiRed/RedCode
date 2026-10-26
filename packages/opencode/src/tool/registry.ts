@@ -1,5 +1,8 @@
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
+import type { SessionID } from "@/session/schema"
+import { PartTable } from "@/session/session.sql"
+import * as Database from "@/storage/db"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
@@ -70,6 +73,7 @@ import { RunCodeTool } from "./run-code"
 import { RunCodeSdk } from "./run-code-sdk"
 import { ToolJsonSchema } from "./json-schema"
 import { SessionQueryTool } from "./session-query"
+import { and, eq, sql } from "drizzle-orm"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -80,6 +84,7 @@ const log = Log.create({ service: "tool.registry" })
 // 261026 Red 补模型侧出口（借鉴 dsh-ops 的 discovery）：search_tools 搜到 gated 工具时可
 // {"enable":"<id>"} 激活，下一请求进工具表；配置 explicit 布尔仍最优先，激活集合只在
 // 配置缺省时兜底，权限 deny 过滤先于本集合，激活不越权。
+// 261026 Red 激活按 sessionID 隔离，并从 search_tools 成功 part 懒恢复；决策见 docs/notes/implemented/feature/2026-10-26-search-tools-gated-activation.md。
 const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "external-directory"])
 
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
@@ -94,15 +99,20 @@ type State = {
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
-  // 261026 Red 模型经 search_tools {"enable"} 激活的 gated 工具（实例级，激活后保持可用）
-  activated: Set<string>
+  // 261026 Red 每个 session 的激活缓存；loaded 区分空缓存与尚未从 part 表恢复。
+  activated: Map<SessionID, { loaded: boolean; tools: Set<string> }>
 }
 
 export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
-  readonly tools: (model: { providerID: ProviderID; modelID: ModelID; agent: Agent.Info }) => Effect.Effect<Tool.Def[]>
+  readonly tools: (model: {
+    providerID: ProviderID
+    modelID: ModelID
+    agent: Agent.Info
+    sessionID?: SessionID
+  }) => Effect.Effect<Tool.Def[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/ToolRegistry") {}
@@ -322,7 +332,7 @@ export const layer = Layer.effect(
             query: Schema.String.annotate({ description: "Search keywords to find relevant tools" }),
             enable: Schema.optional(
               Schema.String.annotate({
-                description: "Exact id of a gated tool from a previous search to activate for this instance",
+                description: "Exact id of a gated tool from a previous search to activate for this session",
               }),
             ),
           }),
@@ -348,17 +358,19 @@ export const layer = Layer.effect(
                     output: `Tool "${target.id}" is not gated — it is already registered${target.description.length > 160 ? `: ${target.description.slice(0, 160)}...` : `: ${target.description}`}`,
                   }
                 }
-                s.activated.add(target.id)
+                const activation = s.activated.get(ctx.sessionID) ?? { loaded: false, tools: new Set<string>() }
+                activation.tools.add(target.id)
+                s.activated.set(ctx.sessionID, activation)
                 return {
                   title: `Activated ${target.id}`,
                   metadata: { enable: target.id, activated: true },
-                  output: `Tool "${target.id}" activated for this instance. Its full schema joins your tool list on the next request.`,
+                  output: `Tool "${target.id}" activated for this session. Its full schema joins your tool list on the next request.`,
                 }
               }
               const matches = searchToolsSearch(params.query, all)
               const lines = matches.map((t, i) => {
                 // gated 且未激活的才标注；已激活的下一请求就在表里，不必再标
-                const gated = GATED_TOOLS.has(t.id) && !s.activated.has(t.id)
+                const gated = GATED_TOOLS.has(t.id) && !s.activated.get(ctx.sessionID)?.tools.has(t.id)
                 const summary = t.description.length > 120 ? t.description.slice(0, 120) + "..." : t.description
                 return `${i + 1}. **${t.id}**: ${summary}${gated ? ' [gated — call again with {"enable": "' + t.id + '"} to activate]' : ""}`
               })
@@ -407,7 +419,7 @@ export const layer = Layer.effect(
           ],
           task: tool.task,
           read: tool.read,
-          activated: new Set<string>(),
+          activated: new Map<SessionID, { loaded: boolean; tools: Set<string> }>(),
         }
       }),
     )
@@ -459,6 +471,39 @@ export const layer = Layer.effect(
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const ctx = yield* InstanceState.context
       const s = yield* InstanceState.get(state)
+      const activation =
+        input.sessionID === undefined
+          ? undefined
+          : {
+              sessionID: input.sessionID,
+              state: s.activated.get(input.sessionID) ?? { loaded: false, tools: new Set<string>() },
+            }
+      if (activation) {
+        s.activated.set(activation.sessionID, activation.state)
+        if (!activation.state.loaded) {
+          const rows = Database.use((db) =>
+            db
+              .select({
+                toolID: sql<string | null>`json_extract(${PartTable.data}, '$.state.metadata.enable')`,
+              })
+              .from(PartTable)
+              .where(
+                and(
+                  eq(PartTable.session_id, activation.sessionID),
+                  sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
+                  sql`json_extract(${PartTable.data}, '$.tool') = 'search_tools'`,
+                  sql`json_extract(${PartTable.data}, '$.state.status') = 'completed'`,
+                  sql`json_extract(${PartTable.data}, '$.state.metadata.activated') = 1`,
+                ),
+              )
+              .all(),
+          )
+          for (const row of rows) {
+            if (row.toolID && GATED_TOOLS.has(row.toolID)) activation.state.tools.add(row.toolID)
+          }
+          activation.state.loaded = true
+        }
+      }
 
       // 260810 cc audit R3: tools() 此前拿 agent 只用于生成 task/skill 描述，不按权限过滤——
       // permission.env="deny"（含 tools:{x:false} 的转译）对不调 ctx.ask 的工具完全失效，
@@ -496,9 +541,8 @@ export const layer = Layer.effect(
         const explicit = modelTools?.[tool.id]
         if (explicit !== undefined) return explicit
 
-        // 261026 Red 模型侧激活出口：search_tools {"enable"} 加入 activated 后放行；
-        // 配置 explicit 布尔仍最优先（上面已 return），权限 deny 在 deniedTools 已剔除。
-        if (GATED_TOOLS.has(tool.id) && !s.activated.has(tool.id)) return false
+        // 261026 Red 会话激活放行；配置 explicit 布尔仍最优先，权限 deny 已在此之前剔除。
+        if (GATED_TOOLS.has(tool.id) && !activation?.state.tools.has(tool.id)) return false
 
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })

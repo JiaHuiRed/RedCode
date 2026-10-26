@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import { ConfigProvider, Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import { Config } from "@/config/config"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -32,7 +33,7 @@ import { Reference } from "@/reference/reference"
 import { RepositoryCache } from "@/reference/repository-cache"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
-import { MessageID, SessionID } from "@/session/schema"
+import { MessageID, PartID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Snippet } from "@/session/snippet"
 import { capabilityDeniedForSet, profileCapabilitySet } from "@/tool/capability"
@@ -48,6 +49,7 @@ type RegistryLayerOptions = {
   native?: boolean
   flags?: Partial<RuntimeFlags.Info>
   plugin?: Layer.Layer<Plugin.Service>
+  config?: Layer.Layer<Config.Service>
 }
 
 // Plugin.defaultLayer does real work that these tests don't need: it dynamically
@@ -75,7 +77,7 @@ const noopPluginLayer = Layer.succeed(
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
-      Layer.provide(configLayer(opts.native)),
+      Layer.provide(opts.config ?? configLayer(opts.native)),
       Layer.provide(opts.plugin ?? noopPluginLayer),
       Layer.provide(Question.defaultLayer),
       Layer.provide(Todo.defaultLayer),
@@ -140,6 +142,69 @@ const noBackground = testEffect(
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
 )
+const withSession = testEffect(Layer.mergeAll(registryLayer(), Session.defaultLayer, node, Agent.defaultLayer))
+const explicitAstGrepOff = testEffect(
+  Layer.mergeAll(
+    registryLayer({
+      config: TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            provider: {
+              [ProviderID.redcode]: {
+                models: {
+                  test: {
+                    tools: { ast_grep: false },
+                  },
+                },
+              },
+            },
+          }),
+      }),
+    }),
+    node,
+    Agent.defaultLayer,
+  ),
+)
+
+function persistSearchToolRecord(session: Session.Info, enable: string, activated: boolean) {
+  return Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const now = Date.now()
+    const messageID = MessageID.ascending()
+    yield* sessions.updateMessage({
+      id: messageID,
+      sessionID: session.id,
+      role: "assistant",
+      time: { created: now, completed: now },
+      parentID: MessageID.ascending(),
+      agent: "build",
+      mode: "build",
+      providerID: ProviderID.make("test"),
+      modelID: ModelID.make("test"),
+      path: { cwd: session.directory, root: session.directory },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      finish: "stop",
+    })
+    // 261026 Red 通过 Session sync 写入真实 completed part；调用方不触发 search_tools，保持激活缓存冷态。
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: session.id,
+      messageID,
+      type: "tool",
+      callID: "call_search_tools",
+      tool: "search_tools",
+      state: {
+        status: "completed",
+        input: { query: enable, enable },
+        output: activated ? `Tool "${enable}" activated.` : `No tool named "${enable}" is registered.`,
+        title: activated ? `Activated ${enable}` : "Unknown tool",
+        time: { start: now, end: now },
+        metadata: { enable, activated },
+      },
+    })
+  })
+}
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -220,7 +285,7 @@ describe("tool.registry", () => {
         ask: () => Effect.void,
       } satisfies Tool.Context
 
-      const baseline = yield* registry.tools({ ...model, agent: build })
+      const baseline = yield* registry.tools({ ...model, agent: build, sessionID: ctx.sessionID })
       expect(baseline.some((tool) => tool.id === "ast_grep")).toBe(false)
 
       const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
@@ -232,8 +297,142 @@ describe("tool.registry", () => {
       const enabled = yield* search.execute({ query: "ast_grep", enable: "ast_grep" }, ctx)
       expect(enabled.metadata).toMatchObject({ enable: "ast_grep", activated: true })
 
-      const after = yield* registry.tools({ ...model, agent: build })
+      const after = yield* registry.tools({ ...model, agent: build, sessionID: ctx.sessionID })
       expect(after.some((tool) => tool.id === "ast_grep")).toBe(true)
+    }),
+  )
+
+  it.instance("isolates gated tool activation by session", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const model = { providerID: ProviderID.redcode, modelID: ModelID.make("test") }
+      const sessionA = SessionID.make("ses_gated_a")
+      const sessionB = SessionID.make("ses_gated_b")
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+      yield* search.execute(
+        { query: "", enable: "ast_grep" },
+        {
+          sessionID: sessionA,
+          messageID: MessageID.make("msg_gated_a"),
+          agent: build.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      const activated = yield* registry.tools({ ...model, agent: build, sessionID: sessionA })
+      const isolated = yield* registry.tools({ ...model, agent: build, sessionID: sessionB })
+      expect(activated.some((tool) => tool.id === "ast_grep")).toBe(true)
+      expect(isolated.some((tool) => tool.id === "ast_grep")).toBe(false)
+    }),
+  )
+
+  it.instance("keeps gated tools hidden when tools are resolved without a session id", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const sessionID = SessionID.make("ses_gated_no_session")
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+      yield* search.execute(
+        { query: "", enable: "ast_grep" },
+        {
+          sessionID,
+          messageID: MessageID.make("msg_gated_no_session"),
+          agent: build.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })
+      expect(tools.some((tool) => tool.id === "ast_grep")).toBe(false)
+    }),
+  )
+
+  withSession.instance("restores gated tool activation from persisted tool parts", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const sessions = yield* Session.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const session = yield* sessions.create({})
+      yield* persistSearchToolRecord(session, "ast_grep", true)
+
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+        sessionID: session.id,
+      })
+      expect(tools.some((tool) => tool.id === "ast_grep")).toBe(true)
+    }),
+  )
+
+  withSession.instance("does not restore gated activation from unsuccessful records", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const sessions = yield* Session.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const session = yield* sessions.create({})
+      yield* persistSearchToolRecord(session, "does_not_exist", false)
+
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+        sessionID: session.id,
+      })
+      expect(tools.some((tool) => tool.id === "ast_grep")).toBe(false)
+    }),
+  )
+
+  explicitAstGrepOff.instance("explicit tool opt-out overrides session activation", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const sessionID = SessionID.make("ses_gated_explicit_off")
+      const search = (yield* registry.all()).find((tool) => tool.id === "search_tools")
+      if (!search) throw new Error("search_tools tool was not loaded")
+      yield* search.execute(
+        { query: "", enable: "ast_grep" },
+        {
+          sessionID,
+          messageID: MessageID.make("msg_gated_explicit_off"),
+          agent: build.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+        sessionID,
+      })
+      expect(tools.some((tool) => tool.id === "ast_grep")).toBe(false)
     }),
   )
 
@@ -292,6 +491,7 @@ describe("tool.registry", () => {
         providerID: ProviderID.redcode,
         modelID: ModelID.make("test"),
         agent: denied,
+        sessionID: ctx.sessionID,
       })
       expect(tools.some((tool) => tool.id === "ast_grep")).toBe(false)
     }),

@@ -174,6 +174,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     modelID: ModelID.make(input.model.api.id),
     providerID: input.model.providerID,
     agent: input.agent,
+    sessionID: input.session.id,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
     // 260902 cc GPT-5 系走 Responses custom tool：入参是裸字符串而不是对象，见 tool/freeform.ts。
