@@ -34,6 +34,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { Snippet } from "@/session/snippet"
 import * as ContextCompaction from "../../src/session/context-compaction"
+import { Database } from "../../src/storage/db"
 
 void Log.init({ print: false })
 
@@ -990,6 +991,61 @@ describe("session.compaction.process", () => {
         enabled: true, trigger_tokens: 60000, target_tokens: 40000,
         reminder_tokens: 54000, summary_max_tokens: 1000,
       } }, { compaction: { model: "test/compaction-model", variant: "medium" } }),
+    }))
+  })
+
+  itCompaction.instance("native commit failure preserves the SQLite cause without repeating the model request", () => {
+    const evidence = spyOn(Log.create({ service: "session.compaction" }), "error")
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    const text = "PRIVATE SUMMARY: completed work retained."
+    responses.push(reply(text, (input) => inputs.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Native storage failure" })
+      const first = yield* createUserMessage(chat.id, "Preserve the original request.")
+      const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+        text: "Completed implementation and evidence. ".repeat(500),
+      })
+      yield* createUserMessage(chat.id, "Continue implementation.")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      const marker = messages.at(-1)!
+      const db = Database.Client().$client
+      db.exec(`CREATE TEMP TRIGGER fail_compaction_insert BEFORE INSERT ON context_compaction_block
+        WHEN NEW.session_id='${chat.id}' BEGIN SELECT RAISE(ABORT, 'forced compaction storage failure'); END`)
+      yield* Effect.addFinalizer(() => Effect.sync(() => db.exec("DROP TRIGGER fail_compaction_insert")))
+      expect(yield* SessionCompaction.use.process({
+        parentID: marker.info.id, messages, sessionID: chat.id, auto: false,
+      })).toBe("stop")
+      expect(inputs).toHaveLength(1)
+      expect(ContextCompaction.list(chat.id)).toEqual([])
+      const after = yield* ssn.messages({ sessionID: chat.id })
+      const summary = after.findLast((message) => message.info.role === "assistant" && message.info.summary)
+      const error = summary?.info.role === "assistant" ? summary.info.error : undefined
+      expect(error?.name).toBe("UnknownError")
+      const detail = error && "message" in error.data ? error.data.message : ""
+      expect(detail).toContain("SQLITE_CONSTRAINT")
+      expect(detail).toContain("forced compaction storage failure")
+      const failure = evidence.mock.calls.find((call) => call[0] === "native compaction commit failed")?.[1]
+      expect(failure).toMatchObject({ sessionID: chat.id, parentID: marker.info.id })
+      expect(JSON.stringify(failure)).toContain("SQLITE_CONSTRAINT")
+      expect(JSON.stringify(failure)).not.toContain(text)
+      expect(JSON.stringify(failure)).not.toContain("insert into")
+      expect(JSON.stringify(error)).not.toContain(text)
+      expect(JSON.stringify(error).length).toBeLessThan(2048)
+      expect(after.find((message) => message.info.id === marker.info.id)?.parts).toEqual(marker.parts)
+      expect(ContextCompaction.getRaw(chat.id, done.id)).toEqual(messages.find((message) => message.info.id === done.id)!)
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      provider: wide(),
+      config: cfg({ native: {
+        enabled: true, trigger_tokens: 60000, target_tokens: 40000,
+        reminder_tokens: 54000, summary_max_tokens: 1000,
+      } }),
     }))
   })
 

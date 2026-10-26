@@ -22,6 +22,7 @@ import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "./context-compaction"
 import * as NativeContext from "./native-context"
 import * as NativeRuntime from "./native-context-runtime"
+import { NamedError } from "@redcode-ai/core/util/error"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -164,6 +165,27 @@ function summaryText(message: MessageV2.WithParts) {
     .join("\n\n")
     .trim()
   return text || undefined
+}
+
+// 261026 Red 最多四层有界因果链；保留 SQLite code/errno，不记录 Drizzle SQL 或摘要参数。
+function commitFailure(error: unknown) {
+  const details: string[] = []
+  const seen = new Set<unknown>()
+  let cause = error
+  while (cause && typeof cause === "object" && !seen.has(cause) && details.length < 4) {
+    seen.add(cause)
+    const name = "name" in cause && typeof cause.name === "string" ? cause.name.slice(0, 64) : "Error"
+    const code = "code" in cause && typeof cause.code === "string" ? cause.code.slice(0, 64) : undefined
+    const errno = "errno" in cause && typeof cause.errno === "number" ? cause.errno : undefined
+    const message = cause instanceof Error && !("query" in cause)
+      ? cause.message.split("\n", 1)[0]?.slice(0, 256)
+      : undefined
+    details.push([name, code, errno, message].filter((value) => value !== undefined).join(": "))
+    cause = "cause" in cause ? cause.cause : undefined
+  }
+  return new NamedError.Unknown({
+    message: `Native compaction was not committed: ${details.join(" <- ") || "Unknown storage error"}`,
+  }, { cause: error })
 }
 
 function completedCompactions(messages: MessageV2.WithParts[]) {
@@ -572,9 +594,13 @@ export const layer = Layer.effect(
             requestID: `auto:${input.parentID}`,
             ranges: [{ startId: head[0]!.info.id, endId: head.at(-1)!.info.id, summary }],
           }),
-          catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+          catch: commitFailure,
         }).pipe(Effect.catch((error) => Effect.gen(function* () {
-          processor.message.error = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+          log.error("native compaction commit failed", {
+            sessionID: input.sessionID, parentID: input.parentID, summaryMessageID,
+            error: error.message,
+          })
+          processor.message.error = error.toObject()
           yield* session.updateMessage(processor.message)
           yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
           return []

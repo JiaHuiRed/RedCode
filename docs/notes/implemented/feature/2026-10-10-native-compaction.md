@@ -219,3 +219,27 @@ native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩�
 回归先复现两个未完成轮次缺少通知；修后四个 native/legacy × 忙/闲用例通过。真实 HTTP fixture 另覆盖工具调用进行中排入手动压缩，确认两条路径均发出摘要后正常任务请求、返回普通助手答复，而非返回摘要作为最终答复。仅使用隔离数据库与本地服务。
 
 模型可见四问：① 通知原文和摘要模板不改，只把既有续跑通知用于忙时手动压缩；② 固定前缀增量 0，变量历史增加一条既有固定短通知；③ 成功提交仍按原 revision 从改写历史处结算，不新增逐轮重置；④ 通知长度固定，摘要、消息、active/retained 硬预算沿用既有配置。
+
+## 2026-10-26：提交并发与失败指标
+
+### 现场与复现
+
+同一会话 09:15、09:19 两次摘要都正常完成，但 `context_compaction_block` 的 INSERT 抛 `DrizzleQueryError`，未提交；09:21 第三次成功，主请求实报 393653→128139。第一次失败后继续发送旧历史，TUI 却仍展示 381059→382065、“净增加 0%”。旧代码 `String(error)` 丢失嵌套 SQLite cause，不能据现存记录断言历史两次一定是锁竞争。
+
+隔离测试将真实 Session 历史复制到临时文件数据库，调用真实 `ContextCompaction.commit`，在事务先读之后由独立 SQLite 连接提交另一笔写入。旧实现稳定复现 `DrizzleQueryError → SQLITE_BUSY_SNAPSHOT / errno 517 / database is locked`。已有 `busy_timeout=5000` 不能等待一个已失效的读快照变新，盲目延长等待或重跑模型都不是修法。
+
+### 决策与边界
+
+- 数过同形写路径：`commit`、`deactivate`、`invalidate`、`clone` 共四条独立账本写事务统一显式采用 `behavior: "immediate"`，读取前取得写锁，沿用现有 busy timeout；嵌入既有父事务时仍遵循原父事务语义。不改全局数据库默认行为，不加重试次数或等待常量。
+- 提交失败归为现有 `UnknownError`，不再把数据库故障伪装成上下文超限。Error 对象保留 cause；持久消息和单条 `native compaction commit failed` 日志记录最多四层错误名、code、errno、首行原因。每层 name/code 各最多 64 字符、原因最多 256 字符，循环 cause 停止；Drizzle 的 query、params、摘要和原始历史不进入错误详情。
+- 失败仍完整回滚，保留未提交摘要供查看，不自动重跑模型或偷偷回退 legacy；选段、净收益、保护记录与 active 预算不放宽。
+- TUI 先判断错误：失败/取消统一“未提交”，不因后续主请求或新 marker 出现而展示虚假的压后值、净增减或“被取代”。成功请求的实报统计不变。
+- 同文件的多段幂等回归暴露既有换位：首次按 ranges 顺序返回，重放却按随机 UUID 排序，约半数会换位。幂等查询改用同批插入顺序（SQLite rowid），不新增字段、不改原始历史。
+
+### 验证
+
+- 并发用例修前读到确切 517；修后账本成功提交、另一连接在写锁期间得到 `SQLITE_BUSY`，事务结束后其写入正常完成，原始消息不变。
+- 真实临时 trigger 强制 INSERT 失败，验证 SQLite 原因与错误码同时进入持久消息和日志、SQL/摘要不泄漏、无半截 block、只请求一次模型。
+- 账本测试 16 pass、压缩流程 81 pass；TUI 真实 UserMessage 展开渲染 17 pass。失败帧为“Compaction 失败 / 未提交的摘要草稿 / 压前最近主请求实报 381,059 tokens · 未提交”，无净增减或压后首个请求数字。opencode typecheck 在 tsgo 崩溃后自动回退 TypeScript 5.9.3，通过、退出码 0。
+
+模型可见四问：① 运行时代码不改 system、工具 schema、摘要模板、投影渲染和正常请求原文，仅修正提交事务和客户端错误；项目 MEMORY 另删除已解决的 flaky 状态、改正文来源说明（见 Memory V4 note）；② 运行时不新增固定前缀，MEMORY 文案变化的精确 token 差未测；③ 成功仍由既有 revision 结算，失败不提交投影、不重置前缀，MEMORY 字节变化只影响新会话该段及之后的前缀；④ 无新增自动注入项，错误诊断有上述四层/逐字段硬限，不记录 SQL 参数或无界堆栈。源码需重新加载才能应用；隔离复现不能追认旧日志中已经丢失的底层错误码。

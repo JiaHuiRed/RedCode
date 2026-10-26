@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { and, eq, asc, desc } from "drizzle-orm"
+import { and, eq, asc, desc, sql } from "drizzle-orm"
 import * as Database from "@/storage/db"
 import { Token } from "@/util/token"
 import { MessageV2 } from "./message-v2"
@@ -130,10 +130,13 @@ export function windowBoundary(messages: MessageV2.WithParts[], blocks: Block[])
 }
 
 export function commit(input: CommitInput): Block[] {
+  // 261026 Red 四条账本写路径先取写锁，避免读快照升级触发 SQLITE_BUSY_SNAPSHOT。
+  // docs/notes/implemented/feature/2026-10-10-native-compaction.md
   return Database.transaction((db) => {
     const prior = db.select().from(Table)
       .where(and(eq(Table.session_id, input.sessionID), eq(Table.request_id, input.requestID)))
-      .orderBy(asc(Table.id)).all()
+      // 261026 Red 同批多块按插入顺序重放，随机 UUID 排序会让幂等回执偶发换位。
+      .orderBy(sql`rowid`).all()
     if (prior.length) return prior.map((row) => row.data)
     if (!input.requestID || input.requestID.length > 256) throw new Error("Invalid compression request ID")
     if (!input.ranges.length || input.ranges.length > input.limits.maxRanges)
@@ -244,7 +247,7 @@ message.parts.some((part) =>
       activeBytes: Buffer.byteLength(next.map(render).join("\n")),
     })
     return newBlocks
-  })
+  }, { behavior: "immediate" })
 }
 
 export function deactivate(sessionID: SessionID, blockID: string): void {
@@ -260,7 +263,7 @@ export function deactivate(sessionID: SessionID, blockID: string): void {
       const { consumedBy: _, ...data } = old.data
       db.update(Table).set({ active: true, data: { ...data, active: true } }).where(eq(Table.id, id)).run()
     }
-  })
+  }, { behavior: "immediate" })
 }
 
 export function invalidate(sessionID: SessionID, messageIDs: readonly string[]): void {
@@ -271,7 +274,7 @@ export function invalidate(sessionID: SessionID, messageIDs: readonly string[]):
       db.update(Table).set({ active: false, data: { ...block, active: false, disabledByUser: true } })
         .where(eq(Table.id, block.id)).run()
     }
-  })
+  }, { behavior: "immediate" })
 }
 
 export function clone(sourceSessionID: SessionID, targetSessionID: SessionID, idMap: ReadonlyMap<string, MessageID>): void {
@@ -297,7 +300,7 @@ export function clone(sourceSessionID: SessionID, targetSessionID: SessionID, id
         request_id: copied.requestID, committed_at: copied.committedAt, data: copied,
       }).run()
     }
-  })
+  }, { behavior: "immediate" })
 }
 
 export function read(sessionID: SessionID, ref: string, offset: number, limits: Limits) {

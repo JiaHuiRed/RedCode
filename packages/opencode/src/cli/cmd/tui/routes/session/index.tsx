@@ -1746,15 +1746,17 @@ export function UserMessage(props: {
         ? ` · 耗时 ${duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`}`
         : ""
     const context = compactionContext()
-    if (context?.before !== undefined && context.after !== undefined) {
+    const failed = compactionError()
+    // 261026 Red 摘要写库失败后，后续主请求不代表本次压缩已提交。
+    if (!failed && context?.before !== undefined && context.after !== undefined) {
       const delta = context.before - context.after
       const change = context.before > 0 ? Math.round((Math.abs(delta) / context.before) * 100) : 0
       return `压前最近主请求 ${context.before.toLocaleString()} → 压后首个主请求 ${context.after.toLocaleString()} tokens · ${delta >= 0 ? "净减少" : "净增加"} ${change}%${dur}`
     }
-    const state = context?.superseded
-      ? "本次未等到主请求实报，已被后续压缩取代"
-      : compactionError()
-        ? "未提交"
+    const state = failed
+      ? "未提交"
+      : context?.superseded
+        ? "本次未等到主请求实报，已被后续压缩取代"
         : compacting()
           ? "压缩中…"
           : "压后待主请求实报"

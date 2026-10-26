@@ -8,6 +8,9 @@ import { Token } from "../../src/util/token"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { Database } from "../../src/storage/db"
+import { Process } from "../../src/util/process"
+import path from "node:path"
 
 const it = testEffect(Layer.mergeAll(Session.defaultLayer, CrossSpawnSpawner.defaultLayer))
 const limits: ContextCompaction.Limits = {
@@ -44,6 +47,62 @@ function fixture() {
 }
 
 describe("native compression ledger", () => {
+  it.instance("serializes a compression commit before reading its snapshot", () => Effect.gen(function* () {
+    const f = yield* fixture()
+    const file = path.join((yield* TestInstance).directory, "concurrent.sqlite")
+    Database.Client().$client.query("VACUUM INTO ?").run(file)
+    const result = yield* Effect.promise(() => Process.run([process.execPath, "-e", `
+      import { Database as SQLite } from "bun:sqlite"
+      const { Database } = await import("./src/storage/db")
+      const Context = await import("./src/session/context-compaction")
+      const concurrent = new SQLite(process.env.REDCODE_DB)
+      concurrent.exec("PRAGMA busy_timeout=0")
+      const sessionID = ${JSON.stringify(f.chat.id)}
+      const ids = ${JSON.stringify(f.messages.map((message) => message.info.id))}
+      const messages = ids.map((id) => Context.getRaw(sessionID, id))
+      let attempted = false
+      let blocked
+      const write = () => concurrent.query("UPDATE session SET time_updated=time_updated+1 WHERE id=?").run(sessionID)
+      let blocks
+      try {
+        blocks = Context.commit({
+        sessionID, messages, limits: ${JSON.stringify(limits)}, mode: "auto", requestID: "concurrent-write",
+        ranges: [{
+          startId: ids[0], endId: ids[1],
+          get summary() {
+            if (!attempted) {
+              attempted = true
+              try {
+                write()
+              } catch (error) {
+                blocked = error
+              }
+            }
+            return "Investigation finished."
+          },
+        }],
+        })
+      } catch (error) {
+        console.error(JSON.stringify({ error: error.name, cause: error.cause?.message, code: error.cause?.code, errno: error.cause?.errno }))
+        process.exit(1)
+      }
+      const saved = Context.list(sessionID)
+      write()
+      concurrent.close()
+      Database.close()
+      console.log(JSON.stringify({ attempted, blocked: blocked?.code, blocks: blocks.length, saved: saved.length }))
+    `], {
+      cwd: path.resolve(import.meta.dirname, "../.."),
+      env: { ...process.env, REDCODE_DB: file },
+      timeout: 20000, nothrow: true, maxOutputBytes: 20000, maxErrorBytes: 20000,
+    }))
+    expect(result.code, result.stderr.toString()).toBe(0)
+    expect(JSON.parse(result.stdout.toString())).toEqual({
+      attempted: true, blocked: "SQLITE_BUSY", blocks: 1, saved: 1,
+    })
+    expect(yield* f.session.messages({ sessionID: f.chat.id })).toEqual(f.messages)
+  }))
+
   it.instance("protects exact user text, preserves raw history and idempotently commits", () => Effect.gen(function* () {
     const f = yield* fixture()
     const input = {

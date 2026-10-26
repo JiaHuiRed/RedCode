@@ -94,6 +94,26 @@ const render = (
     sync: syncWith(session, summary, messages, parts),
   })
 
+const expand = async (
+  summary: Record<string, unknown>,
+  messages: Record<string, unknown>[],
+  parts: Record<string, unknown[]> = {},
+) => {
+  const app = await mountFrame(
+    () => <UserMessage message={message} parts={[compactionPart(381_059)] as never} onMouseUp={() => {}} index={0} />,
+    {
+      width: WIDTH,
+      height: 20,
+      sync: syncWith(notCompacting, summary, messages, parts),
+    },
+  )
+  const row = frameText(app).split("\n").findIndex((line) => line.includes("Compaction"))
+  expect(row).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(Math.floor(WIDTH / 2), row)
+  await app.renderOnce()
+  return frameText(app)
+}
+
 describe("TUI 压缩 checkpoint 折叠行", () => {
   test("前后值取压缩前最近请求和压后首个主请求的实报，不显示本地估算", async () => {
     const before = mainMessage("msg_before", 1, 368_080)
@@ -251,6 +271,53 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
     expect(frameText(app)).toContain("未提交的摘要草稿")
     expect(frameText(app)).toContain(SUMMARY_TEXT)
     expect(frameText(app)).not.toContain("压缩中")
+  })
+
+  test("摘要持久化失败时不把后续主请求显示为压后实报", async () => {
+    const before = mainMessage("msg_before", 1, 381_059)
+    const after = mainMessage("msg_after", 3, 382_065)
+    const failedSummary = {
+      ...summaryMessage,
+      error: { name: "ContextOverflowError", data: { message: "DrizzleQueryError: failed to persist summary" } },
+    }
+    const frame = await expand(failedSummary, [before, message, failedSummary, after])
+    expect(frame).toContain("Compaction 失败")
+    expect(frame).toContain("DrizzleQueryError")
+    expect(frame).toContain("未提交")
+    expect(frame).not.toContain("压前最近主请求 381,059 → 压后首个主请求 382,065 tokens")
+    expect(frame).not.toContain("净增加")
+    expect(frame).not.toContain("净减少")
+    expect(frame).not.toContain("压后首个主请求")
+  })
+
+  test("取消的压缩不把后续主请求显示为压后实报", async () => {
+    const before = mainMessage("msg_before", 1, 381_059)
+    const after = mainMessage("msg_after", 3, 382_065)
+    const cancelledSummary = {
+      ...summaryMessage,
+      error: { name: "MessageAbortedError", data: { message: "摘要已取消" } },
+    }
+    const frame = await expand(cancelledSummary, [before, message, cancelledSummary, after])
+    expect(frame).toContain("Compaction 已取消")
+    expect(frame).toContain("未提交")
+    expect(frame).not.toContain("净增加")
+    expect(frame).not.toContain("净减少")
+    expect(frame).not.toContain("压后首个主请求")
+  })
+
+  test("失败压缩被后续 marker 覆盖时仍显示未提交", async () => {
+    const before = mainMessage("msg_before", 1, 381_059)
+    const next = { id: "msg_next_compaction", role: "user", sessionID: "ses_snapshot", time: { created: 4 } }
+    const failedSummary = {
+      ...summaryMessage,
+      error: { name: "ContextOverflowError", data: { message: "DrizzleQueryError: failed to persist summary" } },
+    }
+    const frame = await expand(failedSummary, [before, message, failedSummary, next], {
+      [next.id]: [{ type: "compaction" }],
+    })
+    expect(frame).toContain("Compaction 失败")
+    expect(frame).toContain("未提交")
+    expect(frame).not.toContain("已被后续压缩取代")
   })
 
   test("常驻指示随当前压缩启动和结束显示或消失", async () => {
