@@ -1055,6 +1055,92 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("passes a plugin declarative view through to tool metadata", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const customTools = path.join(test.directory, ".redcode", "tools")
+      const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
+      yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(customTools, "viewed.ts"),
+          [
+            `import { tool } from ${JSON.stringify(pluginTool)}`,
+            "export default tool({",
+            "  description: 'view tool',",
+            "  args: {},",
+            "  execute: async () => ({",
+            "    output: 'raw output',",
+            "    view: { summary: '3 files changed', sections: [{ type: 'text', title: 'Details', text: 'hello' }] },",
+            "  }),",
+            "})",
+            "",
+          ].join("\n"),
+        ),
+      )
+
+      const registry = yield* ToolRegistry.Service
+      const loaded = (yield* registry.all()).find((tool) => tool.id === "viewed")
+      if (!loaded) throw new Error("custom view tool was not loaded")
+      const agents = yield* Agent.Service
+      const result = yield* loaded.execute({}, {
+        sessionID: SessionID.make("ses_view"),
+        messageID: MessageID.make("msg_view"),
+        agent: (yield* agents.defaultInfo()).name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context)
+
+      expect((result.metadata as Record<string, unknown>).view).toEqual({
+        summary: "3 files changed",
+        sections: [{ type: "text", title: "Details", text: "hello" }],
+      })
+    }),
+  )
+
+  // 261026 Red view 是模型可见面前的自定义 JSON，必须有硬上限：超限整块丢弃，退回 output。
+  it.instance("drops an oversized plugin view instead of persisting it", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const customTools = path.join(test.directory, ".redcode", "tools")
+      const pluginTool = pathToFileURL(path.resolve(import.meta.dir, "../../../plugin/src/tool.ts")).href
+      yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(customTools, "huge-view.ts"),
+          [
+            `import { tool } from ${JSON.stringify(pluginTool)}`,
+            "export default tool({",
+            "  description: 'huge view tool',",
+            "  args: {},",
+            "  execute: async () => ({ output: 'raw output', view: { summary: 'x'.repeat(9000) } }),",
+            "})",
+            "",
+          ].join("\n"),
+        ),
+      )
+
+      const registry = yield* ToolRegistry.Service
+      const loaded = (yield* registry.all()).find((tool) => tool.id === "huge-view")
+      if (!loaded) throw new Error("custom oversized view tool was not loaded")
+      const agents = yield* Agent.Service
+      const result = yield* loaded.execute({}, {
+        sessionID: SessionID.make("ses_view_huge"),
+        messageID: MessageID.make("msg_view_huge"),
+        agent: (yield* agents.defaultInfo()).name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context)
+
+      expect((result.metadata as Record<string, unknown>).view).toBeUndefined()
+      expect(result.output).toBe("raw output")
+    }),
+  )
+
   for (const scenario of [
     { name: "string", result: "'unchanged output'", title: "callback title", source: "callback" },
     {

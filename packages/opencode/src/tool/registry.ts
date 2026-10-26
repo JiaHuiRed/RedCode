@@ -87,6 +87,9 @@ const log = Log.create({ service: "tool.registry" })
 // 261026 Red 激活按 sessionID 隔离，并从 search_tools 成功 part 懒恢复；决策见 docs/notes/implemented/feature/2026-10-26-search-tools-gated-activation.md。
 const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "external-directory"])
 
+// 261026 Red 插件声明式 view 的序列化上限（字符）。超过就整块丢弃，客户端退回 output 文本。
+const PluginViewLimit = 8 * 1024
+
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderID.redcode || flags.exa || flags.parallel
 }
@@ -205,7 +208,18 @@ export const layer = Layer.effect(
                 const result = yield* Effect.promise(() => def.execute(args as any, pluginCtx))
                 if (update.title !== undefined || update.metadata) yield* toolCtx.metadata(update)
                 const output = typeof result === "string" ? result : result.output
-                const metadata = { ...update.metadata, ...(typeof result === "string" ? {} : result.metadata) }
+                // 261026 Red 插件声明式 view 走 metadata，不新增 schema。它是模型可见面前的自定义
+                // JSON，必须有硬上限：超限整块丢弃并记日志，避免任意插件把大对象写进 part 表。
+                const view = typeof result === "string" ? undefined : result.view
+                const viewText = view === undefined ? undefined : JSON.stringify(view)
+                const keepView = viewText !== undefined && viewText.length <= PluginViewLimit
+                if (viewText !== undefined && !keepView)
+                  log.warn("dropping oversized plugin tool view", { tool: id, bytes: viewText.length })
+                const metadata = {
+                  ...update.metadata,
+                  ...(typeof result === "string" ? {} : result.metadata),
+                  ...(keepView ? { view } : {}),
+                }
                 const attachments = typeof result === "string" ? undefined : result.attachments
                 const info = yield* agent.get(toolCtx.agent)
                 const out = yield* truncate.result(

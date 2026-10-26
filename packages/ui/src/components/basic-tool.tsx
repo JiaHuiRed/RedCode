@@ -325,12 +325,36 @@ function args(input: Record<string, unknown> | undefined) {
 // 用户只能去别处找。折叠区渲染 output，并给一个字符上限，避免一次挂载整段大输出。
 const GENERIC_OUTPUT_LIMIT = 20_000
 
+// 261026 Red 插件可选声明式 view（packages/plugin/src/tool.ts 的 ToolView）。只认 text/items
+// 两种 section，其余一律忽略；没有 view 或 section 全不认识时退回原始 output。
+type GenericSection = {
+  type?: unknown
+  title?: unknown
+  text?: unknown
+  items?: unknown
+}
+
+function viewSections(metadata: Record<string, unknown> | undefined) {
+  const view = metadata?.view
+  if (!view || typeof view !== "object") return []
+  const sections = (view as { sections?: unknown }).sections
+  return Array.isArray(sections) ? (sections as GenericSection[]) : []
+}
+
+function viewSummary(metadata: Record<string, unknown> | undefined) {
+  const view = metadata?.view
+  if (!view || typeof view !== "object") return undefined
+  const summary = (view as { summary?: unknown }).summary
+  return typeof summary === "string" && summary.trim() ? summary.trim() : undefined
+}
+
 export function GenericTool(props: {
   tool: string
   status?: string
   hideDetails?: boolean
   input?: Record<string, unknown>
   output?: string
+  metadata?: Record<string, unknown>
 }) {
   const i18n = useI18n()
   const body = () => {
@@ -341,6 +365,7 @@ export function GenericTool(props: {
     if (trimmed.length <= GENERIC_OUTPUT_LIMIT) return trimmed
     return `${trimmed.slice(0, GENERIC_OUTPUT_LIMIT)}\n\n… ${trimmed.length - GENERIC_OUTPUT_LIMIT} more characters`
   }
+  const sections = () => viewSections(props.metadata)
 
   return (
     <BasicTool
@@ -348,16 +373,53 @@ export function GenericTool(props: {
       status={props.status}
       trigger={{
         title: i18n.t("ui.basicTool.called", { tool: props.tool }),
-        subtitle: label(props.input),
+        subtitle: viewSummary(props.metadata) ?? label(props.input),
         args: args(props.input),
       }}
       hideDetails={props.hideDetails}
     >
-      <Show when={body()}>
+      <Show when={sections().length > 0} fallback={<Show when={body()}>{renderBody(body())}</Show>}>
         <div data-component="tool-output" data-scrollable>
-          <Markdown text={body()} />
+          <For each={sections()}>{(section) => renderSection(section)}</For>
         </div>
       </Show>
     </BasicTool>
   )
+}
+
+function renderBody(text: string) {
+  return (
+    <div data-component="tool-output" data-scrollable>
+      <Markdown text={text} />
+    </div>
+  )
+}
+
+function renderSection(section: GenericSection) {
+  if (section.type === "text" && typeof section.text === "string")
+    return (
+      <div data-slot="generic-tool-section">
+        <Show when={typeof section.title === "string" && section.title}>
+          <div data-slot="generic-tool-section-title">{section.title as string}</div>
+        </Show>
+        <Markdown text={section.text} />
+      </div>
+    )
+  if (section.type === "items" && Array.isArray(section.items))
+    return (
+      <div data-slot="generic-tool-section">
+        <Show when={typeof section.title === "string" && section.title}>
+          <div data-slot="generic-tool-section-title">{section.title as string}</div>
+        </Show>
+        <For each={section.items as Array<{ label?: unknown; value?: unknown }>}>
+          {(item) => (
+            <div data-slot="generic-tool-item">
+              <span data-slot="generic-tool-item-label">{String(item?.label ?? "")}</span>
+              <span data-slot="generic-tool-item-value">{String(item?.value ?? "")}</span>
+            </div>
+          )}
+        </For>
+      </div>
+    )
+  return null
 }

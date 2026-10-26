@@ -693,7 +693,13 @@ export function MessageTimeline(props: {
             metadata && typeof metadata === "object" && "output" in metadata && typeof metadata.output === "string"
               ? metadata.output.length
               : 0
-          signature = `${part.id}:${part.tool}:${part.state.status}:${output}:${metadataOutput}`
+          // 261026 Red 插件声明式 view 只在工具结束时写入一次（不随流式变化），
+          // 用序列化长度进签名足够触发首次渲染，不必每帧 stringify 整个 view。
+          const metadataView =
+            metadata && typeof metadata === "object" && "view" in metadata && metadata.view
+              ? JSON.stringify(metadata.view).length
+              : 0
+          signature = `${part.id}:${part.tool}:${part.state.status}:${output}:${metadataOutput}:${metadataView}`
         } else {
           signature = `${part.id}:${part.type}`
         }
