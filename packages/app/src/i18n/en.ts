@@ -319,8 +319,8 @@ export const dict = {
   "prompt.compact.run": "Compact",
   "prompt.compact.confirm": "Context window {{window}} / {{limit}}. Compact this session now?",
   "prompt.compact.clickHint": "Click to compact session",
-  "prompt.delivery.queue": "Queue this",
-  "prompt.delivery.steer": "Deliver now",
+  "prompt.delivery.queue": "Next turn",
+  "prompt.delivery.steer": "Mid-turn",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
