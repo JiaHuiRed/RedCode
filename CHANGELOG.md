@@ -18,6 +18,7 @@
 - **Memory V4 正文归属与库级清理口径收口**：项目 MEMORY 保留当前进度摘要、相关教训和工作流索引，完整项目文档按需读取；已有权威文档不再向数据库复制全文，未文档化的独立长期教训仍双写。memory skill 区分日常索引整理与用户授权的完整库清理，不再用「教训一条不删」永久保留失效正文；seed 与本机 skill 同步，不改召回插件或数据库结构。说明与模型可见四问见 [Memory V4](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。后续补「低频深坑迁 docs」索引瘦身口径：MEMORY 只留每轮要被看见的触发器，低频深坑与长状态正文整条迁 `.redcode/docs/<主题>.md` 留指针，只迁不删（redcode 项目实测 6800→3140 字符）。
 - **入口静态依赖预算与隔离启动基准**（`script/check-entry-graphs.ts`、`script/bench-startup.ts`、`.husky/pre-commit`）：用 Bun 导入扫描与按 importer 解析替代 TypeScript 7 中已不可用的旧 compiler API；budget 覆盖 CLI index、Windows job-runner、record utility 三条轻量入口，显式检查静态源码数、forbid 路径和外部依赖。Windows runner guard 顺序与静态依赖分别有门禁；启动基准在隔离 scratch cwd、home、配置与 DB 下以 CLI 数字 marker 和真实 `/global/health` 健康响应判 ready，不读取 live 配置或数据。决策见 [入口启动预算](docs/notes/implemented/architecture/2026-10-26-entry-graph-startup-budgets.md)。
 - **通用工具显示正文输出**（`packages/ui/src/components/basic-tool.tsx`）：没有专用 renderer 的工具（插件工具、自定义工具）此前只显示「called <tool>」一行，正文完全看不到；折叠区现在渲染 output 并带 20000 字符截断，避免一次挂载整段大输出。插件可通过 `ToolResult.view` 提供声明式摘要与分段，宿主映射进 metadata（8KB 上限、超限丢弃），未知 section 类型退回原始 output；决策见 [插件结果展示](docs/notes/implemented/feature/2026-10-26-plugin-tool-view.md)。
+- **Queue/Steer 按钮文案对齐真实调度语义**（`packages/app/src/i18n/zh.ts`、`en.ts`）：原「本条排队 / 本条立即送达」的「立即送达」会被读成打断当前轮，实际 steer 只是在下一个 step 以 reminder 注入进行中的这一轮；改为「轮末排队 / 轮内插话」（en `Next turn` / `Mid-turn`），与设置项既有术语一致。GUI 本地默认 queue、服务端 `busy_enter` 默认 steer 的不一致未改，留作独立确认项，见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
 
 ### [0.13.1] - 2026-10-25
 
