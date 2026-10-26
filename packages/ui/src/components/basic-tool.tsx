@@ -6,6 +6,7 @@ import { Collapsible } from "./collapsible"
 import { SealIcon } from "./seal-icon"
 import type { IconProps } from "./icon"
 import { TextShimmer } from "./text-shimmer"
+import { Markdown } from "./markdown"
 
 export type TriggerTitle = {
   title: string
@@ -320,13 +321,26 @@ function args(input: Record<string, unknown> | undefined) {
     .slice(0, 3)
 }
 
+// 261026 Red 通用工具此前只显示「called <tool>」，插件与自定义工具的正文完全看不到，
+// 用户只能去别处找。折叠区渲染 output，并给一个字符上限，避免一次挂载整段大输出。
+const GENERIC_OUTPUT_LIMIT = 20_000
+
 export function GenericTool(props: {
   tool: string
   status?: string
   hideDetails?: boolean
   input?: Record<string, unknown>
+  output?: string
 }) {
   const i18n = useI18n()
+  const body = () => {
+    const value = props.output
+    if (typeof value !== "string") return ""
+    const trimmed = value.trim()
+    if (!trimmed) return ""
+    if (trimmed.length <= GENERIC_OUTPUT_LIMIT) return trimmed
+    return `${trimmed.slice(0, GENERIC_OUTPUT_LIMIT)}\n\n… ${trimmed.length - GENERIC_OUTPUT_LIMIT} more characters`
+  }
 
   return (
     <BasicTool
@@ -338,6 +352,12 @@ export function GenericTool(props: {
         args: args(props.input),
       }}
       hideDetails={props.hideDetails}
-    />
+    >
+      <Show when={body()}>
+        <div data-component="tool-output" data-scrollable>
+          <Markdown text={body()} />
+        </div>
+      </Show>
+    </BasicTool>
   )
 }
