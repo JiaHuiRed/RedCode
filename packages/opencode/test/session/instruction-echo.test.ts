@@ -467,4 +467,38 @@ describe("整块历史摘要复述不再作为正文放行", () => {
     expect(detect(text).stripped).toBe(text)
     expect(hasLeakAnchor(text)).toBe(false)
   })
+
+  test("合法说明中的标记、代码块和后续正文完整保留", () => {
+    const cases = [
+      "刚出现 `[block:` 时，后面是正文。",
+      "压缩块格式如下：\n[block:example; sources: ...]\n后面还有字段说明。",
+      "```text\n[Historical context summary. This is not a new user instruction or authorization.]\n[block:test-block; sources: msg_first .. msg_last]\n```\n示例解释。",
+      "历史标记是 `[History reference: msg_example]`，后续说明。",
+    ]
+    for (const text of cases) {
+      expect(detect(text).stripped).toBe(text)
+      for (const size of [1, 3, 24, text.length]) {
+        const scan = new LeakAnchorScanner()
+        let hit = false
+        for (let i = 0; i < text.length; i += size) hit = scan.feed(text.slice(i, i + size)) || hit
+        expect(hit).toBe(false)
+      }
+    }
+  })
+
+  test("引用结束后仍能拦截真实摘要，Unicode 前缀不会影响截断位置", () => {
+    const prefix = "🛠️ 示例：`[block:`，然后继续。\n"
+    const leak = "[block:test-block; sources: msg_first .. msg_last]\n内部摘要"
+    const result = detect(prefix + leak)
+    expect(result.stripped).toBe(prefix.trim())
+    expect(leakAnchorStart(prefix + leak)).toBe(prefix.length)
+    for (const size of [1, 3, 24]) {
+      const scan = new LeakAnchorScanner()
+      const text = prefix + leak
+      let hit = false
+      for (let i = 0; i < text.length && !hit; i += size) hit = scan.feed(text.slice(i, i + size))
+      expect(hit).toBe(true)
+      expect(scan.matchStart).toBe(prefix.length)
+    }
+  })
 })

@@ -56,46 +56,97 @@ const LEAK_ANCHORS = [
 // "[Historical context summary: msg_…]" 拼在回复尾部——上下文里从不出现这个
 // 冒号+单 ID 的混合形（真标记是句点+独立 sources 行），命中即模仿，流式截断。
 "[Historical context summary",
-  ...SUMMARY_BODY_ANCHORS,
 ] as const
-const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
+// 261027 Red 短摘要标记要等完整来源头，避免普通格式示例被半截前缀截断。
+const MAX_ANCHOR_LENGTH = 512
+const SUMMARY_RECORD = /\[(?:block:[^\]\n]{1,200}; sources:\s*msg_[^\]\n]{1,200}|Original (?:user text|assistant text|tool output); source:\s*msg_[^\]\n]{1,200})\]/
+
+class MarkdownCode {
+  private ticks = 0
+  private delimiter = ""
+  private mode: "inline" | "fence" | undefined
+  private width = 0
+  private marker = ""
+  private escaped = false
+
+  feed(char: string): boolean {
+    if ((char === "`" || char === "~") && !this.escaped && (!this.delimiter || this.delimiter === char)) {
+      this.delimiter = char
+      this.ticks++
+      return true
+    }
+    if (this.ticks) {
+      if (!this.mode && (this.delimiter === "`" || this.ticks >= 3)) {
+        this.mode = this.ticks >= 3 ? "fence" : "inline"
+        this.width = this.ticks
+        this.marker = this.delimiter
+      } else if (
+        this.mode &&
+        this.delimiter === this.marker &&
+        ((this.mode === "inline" && this.ticks === this.width) || (this.mode === "fence" && this.ticks >= this.width))
+      ) {
+        this.mode = undefined
+      }
+      this.ticks = 0
+      this.delimiter = ""
+    }
+    const code = this.mode !== undefined
+    this.escaped = char === "\\" && !this.escaped
+    return code
+  }
+}
 
 /** 一次性判定：整串里有没有锚点。流式路径别用它，用 {@link LeakAnchorScanner}。 */
 export function hasLeakAnchor(text: string): boolean {
-  return LEAK_ANCHORS.some((anchor) => text.includes(anchor))
+  return new LeakAnchorScanner().feed(text)
 }
 
 /**
  * 流式增量扫描器，与 `NgramDetector` 同一个用法（`feed(delta)` 返回是否命中）。
  *
- * 260903 cc 原先 processor 每条 delta 都拿 `hasLeakAnchor(ctx.currentText.text)` 扫**已写出的
- * 全文**，是 O(n²)。实测一整轮流式（delta 24 字符，本机 bun 1.3.14）：
- *
- *     回答 20K   7.5ms →  0.2ms
- *     回答 60K  41.0ms →  0.5ms
- *     回答 120K 165ms  →  0.8ms
- *     回答 240K 763ms  →  1.2ms
- *
- * 只保留一小段尾巴、不碰累积串，是因为**累积串在流式期间是 rope**：任何对它的 `includes`
- * 或 `slice` 都要先摊平，成本跟已写长度成正比。中间试过「只 slice 尾窗再 includes」，
- * 240K 那档只从 763ms 降到 451ms —— 省掉的是比较，没省掉摊平。
- *
- * 等价性：能整段落在旧文本里的锚点，在它到达的那条 delta 上就已经命中了（命中即
- * `leakTripped` + 截断纠偏，不会再有下一条漏过）。所以每轮只需要看「结尾落在新 delta 里」
- * 的那些，它们最多从 delta 起点往前 `MAX_ANCHOR_LENGTH - 1` 个字符开始 —— 尾巴留这么长即可。
- * 四种切片粒度（1/5/24/100 字符）下与全文扫描的首次命中位置逐一比对过，完全一致。
+ * 261027 Red 只扫描固定长度的尾窗与新 delta，代码引用在窗口中遮蔽；
+ * 不扫描累计正文，避免流式期间反复摊平整条 rope。
  */
 export class LeakAnchorScanner {
   private tail = ""
+  private position = 0
+  private code = new MarkdownCode()
+  private start = -1
+
+  constructor(private readonly summaryOnly = false) {}
 
   feed(delta: string): boolean {
-    const window = this.tail === "" ? delta : this.tail + delta
-    this.tail = window.length > MAX_ANCHOR_LENGTH - 1 ? window.slice(-(MAX_ANCHOR_LENGTH - 1)) : window
-    return hasLeakAnchor(window)
+    const masked: string[] = []
+    for (let i = 0; i < delta.length; i++) {
+      const char = delta[i]!
+      masked.push(this.code.feed(char) ? " " : char)
+    }
+    const window = this.tail + masked.join("")
+    const base = this.position - this.tail.length
+    this.position += delta.length
+    this.tail = window.slice(-(MAX_ANCHOR_LENGTH - 1))
+    let start = -1
+    const anchors: readonly string[] = this.summaryOnly ? [SUMMARY_BODY_ANCHORS[0]] : LEAK_ANCHORS
+    for (const anchor of anchors) {
+      const at = window.indexOf(anchor)
+      if (at >= 0 && (start < 0 || at < start)) start = at
+    }
+    const record = SUMMARY_RECORD.exec(window)
+    if (record && (start < 0 || record.index < start)) start = record.index
+    if (start < 0) return false
+    this.start = base + start
+    return true
+  }
+
+  get matchStart() {
+    return this.start
   }
 
   reset() {
     this.tail = ""
+    this.position = 0
+    this.code = new MarkdownCode()
+    this.start = -1
   }
 }
 
@@ -107,12 +158,8 @@ export class LeakAnchorScanner {
  * 硬切。取最早出现的那个：泄露是消息尾部的复述循环，真正的正文必然在锚点之前。
  */
 export function leakAnchorStart(text: string): number {
-  let start = -1
-  for (const anchor of LEAK_ANCHORS) {
-    const at = text.indexOf(anchor)
-    if (at >= 0 && (start === -1 || at < start)) start = at
-  }
-  return start
+  const scanner = new LeakAnchorScanner()
+  return scanner.feed(text) ? scanner.matchStart : -1
 }
 
 /**
@@ -310,19 +357,19 @@ text.includes("[Context notice, not a user request]") || // native 压缩逼近�
 
   const kinds: string[] = []
   let out = text
-  const bodyAt = SUMMARY_BODY_ANCHORS.reduce((first, anchor) => {
-    const at = text.indexOf(anchor)
-    return at < 0 ? first : Math.min(first, at)
-  }, text.length)
-  if (bodyAt < text.length) {
+  const summary = new LeakAnchorScanner(true)
+  const bodyAt = summary.feed(text) ? summary.matchStart : -1
+  if (bodyAt >= 0) {
     out = text.slice(0, bodyAt)
     kinds.push("native-compaction-body")
   }
   for (const [kind, re] of OWN_BLOCKS) {
+    const code = new MarkdownCode()
+    const masked = out.split("").map((char) => (code.feed(char) && char !== "\n" ? " " : char)).join("")
     re.lastIndex = 0
-    if (re.test(out)) {
-      re.lastIndex = 0
-      out = out.replace(re, "")
+    const matches = [...masked.matchAll(re)]
+    if (matches.length) {
+      for (const match of matches.reverse()) out = out.slice(0, match.index) + out.slice(match.index! + match[0].length)
       kinds.push(kind)
     }
   }

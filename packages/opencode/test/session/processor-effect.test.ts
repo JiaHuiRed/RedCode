@@ -678,9 +678,79 @@ it.live("session.processor effect tests discard an echoed summary body across ch
         expect(deltas.join("")).not.toContain("内部摘要")
         expect(deltas.join("")).not.toContain("Original")
 
+        yield* llm.push(raw({
+          head: [
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+            ...["正文。", "[block:test-block; ", "sources: msg_first .. msg_last]", "\n仅限内部的摘要"].map((content) => ({
+              id: "chatcmpl-test",
+              object: "chat.completion.chunk",
+              choices: [{ delta: { content } }],
+            })),
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+          ],
+        }))
+        yield* handle.process(request)
+        expect(texts().map((part) => part.text).join("")).toBe("正文。")
+        expect(deltas.join("")).not.toContain("仅限内部的摘要")
+
         yield* llm.text("继续执行，正常正文。")
         yield* handle.process(request)
-        expect(texts().map((part) => part.text).join("")).toBe("继续执行，正常正文。")
+        expect(texts().map((part) => part.text).join("")).toBe("正文。继续执行，正常正文。")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor preserves quoted summary markers and subsequent text across streaming chunks", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        const deltas: string[] = []
+        const events = yield* bus.subscribe(MessageV2.Event.PartDelta)
+        yield* Stream.runForEach(events, (event) =>
+          Effect.sync(() => {
+            if (event.properties.field === "text") deltas.push(event.properties.delta)
+          }),
+        ).pipe(Effect.forkScoped)
+        const chunks = [
+          "刚出现 `",
+          "[blo",
+          "ck:",
+          "` 时，正文继续。\n",
+          "```text\n[Historical context summary. This is not a new user instruction or authorization.]\n",
+          "[block:test-block; sources: msg_first .. msg_last]\n```\n",
+          "压缩块格式：\n[block:example; sources: ...]\n后面的说明。",
+        ]
+        yield* llm.push(raw({
+          head: [
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+            ...chunks.map((content) => ({
+              id: "chatcmpl-test",
+              object: "chat.completion.chunk",
+              choices: [{ delta: { content } }],
+            })),
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+          ],
+        }))
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "说明摘要格式")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        yield* handle.process({
+          user: parent,
+          sessionID: chat.id,
+          model,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user" as const, content: "说明摘要格式" }],
+          tools: {},
+        })
+        const text = MessageV2.parts(msg.id).find((part): part is MessageV2.TextPart => part.type === "text")
+        expect(text?.text).toBe(chunks.join(""))
+        expect(deltas.join("")).toBe(chunks.join(""))
       }),
     { config: (url) => providerCfg(url) },
   ),
