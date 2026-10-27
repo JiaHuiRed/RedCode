@@ -40,6 +40,9 @@ import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
+import { useServerSync } from "@/context/server-sync"
+import { quotaCompactSummary } from "@/components/session/session-context-summary"
+import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
@@ -143,6 +146,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
+  const globalSync = useServerSync()
   const settings = useSettings()
   const platform = usePlatform()
   const { params, tabs, view } = useSessionLayout()
@@ -1421,6 +1425,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     </Show>
   )
 
+  // 261027 Red UX-001（docs/2026-10-26-interaction-friction-audit.md）：模型按钮悬停第二行。
+  // 有窗口额度的供应商（GPT / GLM Coding Plan）直接给窗口占用；DeepSeek / Step Plan 这类
+  // 没有 quota API 的供应商回退本会话消耗（含子会话，口径与 Context tab 成本行一致）。
+  // 数据全部来自已就绪的 store，悬停不产生任何请求。多账号时判定不了归属，不猜数字。
+  const costFormatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const modelQuotaLine = createMemo(() => {
+    const providerID = local.model.current()?.provider?.id
+    if (!providerID) return undefined
+    const quotas = globalSync.data.provider_quota.filter((quota) => quota.providerID === providerID)
+    if (quotas.length === 1) return quotaCompactSummary(quotas[0], language.intl())
+    if (quotas.length > 1) return language.t("prompt.quota.multiAccount")
+    const id = params.id
+    if (!id) return undefined
+    const acc = { cny: 0, usd: 0 }
+    for (const session of sync.data.session) {
+      if (session.id !== id && session.parentID !== id) continue
+      acc.cny += session.costCny ?? 0
+      acc.usd += session.costUsd ?? 0
+    }
+    if (acc.cny <= 0 && acc.usd <= 0) return undefined
+    return language.t("prompt.quota.consumed", { amount: costFormatter().costBuckets(acc) })
+  })
+
   // 260930 Red 一个入口选择模型与推理档，供应商标志与推理图标在概览两侧对应。
   const modelOverview = (selectModel: () => void) => (
     <div class="flex flex-col gap-3 py-1">
@@ -1499,11 +1526,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
         class="flex min-w-0 items-center"
       >
-        <TooltipKeybind
+        <Tooltip
           placement="top"
           gutter={4}
-          title={language.t("command.model.choose")}
-          keybind={command.keybind("model.choose")}
+          value={
+            <div class="flex flex-col">
+              <div data-slot="tooltip-keybind">
+                <span>{language.t("command.model.choose")}</span>
+                <span data-slot="tooltip-keybind-key">{command.keybind("model.choose")}</span>
+              </div>
+              <Show when={modelQuotaLine()}>
+                <span class="text-[var(--text-invert-base)]">{modelQuotaLine()}</span>
+              </Show>
+            </div>
+          }
         >
           <ModelSelectorPopover
             model={local.model}
@@ -1539,7 +1575,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Show>
             <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
           </ModelSelectorPopover>
-        </TooltipKeybind>
+        </Tooltip>
       </div>
     </Show>
   )

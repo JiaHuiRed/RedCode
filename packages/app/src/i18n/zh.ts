@@ -284,6 +284,9 @@ export const dict = {
   "prompt.variant.faster": "更快",
   "prompt.variant.smarter": "更深入",
   "prompt.variant.modelDefault": "由模型或 Agent 决定",
+  // 261027 Red UX-001 模型按钮悬停的额度行：有窗口额度显示窗口，无 quota API 的供应商回退本会话消耗
+  "prompt.quota.consumed": "本会话已消耗 {{amount}}",
+  "prompt.quota.multiAccount": "多账号额度，详见上下文面板",
   "prompt.placeholder.shell": "输入 shell 命令... {{example}}",
   "prompt.placeholder.normal": '随便问点什么... "{{example}}"',
   "prompt.placeholder.simple": "随便问点什么...",
@@ -737,6 +740,13 @@ export const dict = {
 
   "status.popover.trigger": "状态",
   "status.connection.reconnecting": "状态 - 事件流已断开，正在重连",
+  "status.tooltip.ok": "一切正常",
+  "status.tooltip.checking": "正在获取状态…",
+  "status.tooltip.serverDown": "服务器连接失败",
+  "status.tooltip.mcpFailed": "MCP 服务异常",
+  "status.tooltip.mcpAuth": "MCP 需要授权",
+  "status.tooltip.reconnecting": "事件流已断开，正在重连",
+  "status.tooltip.details": "点击查看详情",
   "status.popover.ariaLabel": "服务器配置",
   "status.popover.tab.servers": "服务器",
   "status.popover.tab.mcp": "MCP",

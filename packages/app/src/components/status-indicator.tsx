@@ -1,6 +1,7 @@
 import { Button } from "@redcode-ai/ui/button"
 import { Icon } from "@redcode-ai/ui/icon"
-import { createMemo } from "solid-js"
+import { Tooltip } from "@redcode-ai/ui/tooltip"
+import { createMemo, Show } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -26,34 +27,62 @@ export function StatusIndicator(props: { onClick?: () => void }) {
   const triggerLabel = () =>
     streamDown() ? language.t("status.connection.reconnecting") : language.t("status.popover.trigger")
 
+  // 261027 Red UX-002（docs/2026-10-26-interaction-friction-audit.md）：悬停直接给出"哪一项不对"，
+  // 异常项排前面；三路信号全部来自已就绪的 store，不加任何轮询。未初始化按"获取中"说，不报失败。
+  const issues = createMemo(() => {
+    const list: string[] = []
+    if (server.healthy() === false) list.push(language.t("status.tooltip.serverDown"))
+    if (mcpIssue() === "critical") list.push(language.t("status.tooltip.mcpFailed"))
+    if (mcpIssue() === "warning") list.push(language.t("status.tooltip.mcpAuth"))
+    if (streamDown()) list.push(language.t("status.tooltip.reconnecting"))
+    return list
+  })
+  const summary = createMemo(() => {
+    if (server.healthy() === undefined || !ready()) return language.t("status.tooltip.checking")
+    const list = issues()
+    return list.length > 0 ? list.join(" · ") : language.t("status.tooltip.ok")
+  })
+
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      class="titlebar-icon w-8 h-6 p-0 box-border"
-      aria-label={triggerLabel()}
-      title={triggerLabel()}
-      disabled={!props.onClick}
-      onClick={props.onClick}
-      style={{ scale: 1 }}
+    <Tooltip
+      placement="bottom"
+      value={
+        <div class="flex flex-col">
+          <span>{summary()}</span>
+          <Show when={props.onClick}>
+            <span class="text-[var(--text-invert-base)]">{language.t("status.tooltip.details")}</span>
+          </Show>
+        </div>
+      }
     >
-      <span class="relative size-4">
-        <span class="badge-mask-tight size-4 flex items-center justify-center">
-          <Icon name="status" size="small" />
+      <Button
+        type="button"
+        variant="ghost"
+        class="titlebar-icon w-8 h-6 p-0 box-border"
+        aria-label={triggerLabel()}
+        title={triggerLabel()}
+        disabled={!props.onClick}
+        onClick={props.onClick}
+        style={{ scale: 1 }}
+      >
+        <span class="relative size-4">
+          <span class="badge-mask-tight size-4 flex items-center justify-center">
+            <Icon name="status" size="small" />
+          </span>
+          <span
+            classList={{
+              "absolute -top-px -right-px size-1.5 rounded-full": true,
+              "bg-icon-success-base": ready() && healthy() && !streamDown(),
+              "bg-icon-warning-base":
+                (ready() && server.healthy() === true && mcpIssue() === "warning") ||
+                (ready() && server.healthy() === true && streamDown()),
+              "bg-icon-critical-base":
+                server.healthy() === false || (ready() && server.healthy() === true && mcpIssue() === "critical"),
+              "bg-border-weak-base": server.healthy() === undefined || !ready(),
+            }}
+          />
         </span>
-        <span
-          classList={{
-            "absolute -top-px -right-px size-1.5 rounded-full": true,
-            "bg-icon-success-base": ready() && healthy() && !streamDown(),
-            "bg-icon-warning-base":
-              (ready() && server.healthy() === true && mcpIssue() === "warning") ||
-              (ready() && server.healthy() === true && streamDown()),
-            "bg-icon-critical-base":
-              server.healthy() === false || (ready() && server.healthy() === true && mcpIssue() === "critical"),
-            "bg-border-weak-base": server.healthy() === undefined || !ready(),
-          }}
-        />
-      </span>
-    </Button>
+      </Button>
+    </Tooltip>
   )
 }

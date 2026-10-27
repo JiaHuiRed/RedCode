@@ -4,7 +4,6 @@ import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Button } from "@redcode-ai/ui/button"
-import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme/context"
 import { Seal } from "@redcode-ai/ui/logo"
 import { IconButtonV2 } from "@redcode-ai/ui/v2/components/icon-button-v2.jsx"
@@ -418,9 +417,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       <Show when={statusDir()} keyed>
         {(directory) => (
           <SDKProvider directory={directory}>
-            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-              <StatusIndicator onClick={params.id ? openStatus : undefined} />
-            </Tooltip>
+            {/* 261027 Red UX-002：动态摘要 tooltip 移入 StatusIndicator，按健康状态拼接 */}
+            <StatusIndicator onClick={params.id ? openStatus : undefined} />
           </SDKProvider>
         )}
       </Show>
