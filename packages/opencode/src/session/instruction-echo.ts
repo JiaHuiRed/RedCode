@@ -112,6 +112,7 @@ export class LeakAnchorScanner {
   private position = 0
   private code = new MarkdownCode()
   private start = -1
+  private pending = 0
 
   constructor(private readonly summaryOnly = false) {}
 
@@ -125,6 +126,17 @@ export class LeakAnchorScanner {
     const base = this.position - this.tail.length
     this.position += delta.length
     this.tail = window.slice(-(MAX_ANCHOR_LENGTH - 1))
+    this.pending = 0
+    // 261027 Red 来源记录需完整闭合才判命中，候选头在发布前最多暂扣一个尾窗。
+    for (let i = Math.max(0, window.length - MAX_ANCHOR_LENGTH + 1); i < window.length; i++) {
+      if (window[i] !== "[") continue
+      const candidate = window.slice(i)
+      if (candidate.includes("]") || candidate.includes("\n")) continue
+      if (SUMMARY_BODY_ANCHORS.some((anchor) => anchor.startsWith(candidate) || candidate.startsWith(anchor))) {
+        this.pending = candidate.length
+        break
+      }
+    }
     let start = -1
     const anchors: readonly string[] = this.summaryOnly ? [SUMMARY_BODY_ANCHORS[0]] : LEAK_ANCHORS
     for (const anchor of anchors) {
@@ -142,11 +154,16 @@ export class LeakAnchorScanner {
     return this.start
   }
 
+  get pendingLength() {
+    return this.pending
+  }
+
   reset() {
     this.tail = ""
     this.position = 0
     this.code = new MarkdownCode()
     this.start = -1
+    this.pending = 0
   }
 }
 

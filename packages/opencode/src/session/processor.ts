@@ -125,6 +125,7 @@ interface ProcessorContext extends Input {
   // 261014 Red 泄露标记暂扣缓冲：锚点命中后，从锚点起的增量暂扣到这里，等闭合 `]`
   // 出现再放行（undefined = 不在暂扣态）。见 text-delta 分支。
   leakHold: string | undefined
+  leakPending: string
   // 260818 Red reasoning 流级 stall 检测：本 step 累积的 reasoning 字符数 +
   // 是否已产出过 text/tool（有产出即不算 stall）+ 是否已触发兜底
   reasoningChars: number
@@ -217,6 +218,7 @@ export const layer = Layer.effect(
         leakTripped: false,
         leakScanner: new InstructionEcho.LeakAnchorScanner(),
         leakHold: undefined,
+        leakPending: "",
         // 260818 Red reasoning 流级 stall 检测
         reasoningChars: 0,
         stepProduced: false,
@@ -1011,6 +1013,7 @@ export const layer = Layer.effect(
             ctx.leakTripped = false
             ctx.leakScanner.reset()
             ctx.leakHold = undefined
+            ctx.leakPending = ""
             // 260818 Red 有正文产出了，reasoning stall 检测解除
             ctx.stepProduced = true
             if (!ctx.assistantMessage.summary) {
@@ -1030,38 +1033,53 @@ export const layer = Layer.effect(
           case "text-delta": {
             if (!ctx.currentText) return
             let delta = value.text
-            // 261014 Red 泄露标记暂扣态：锚点已命中、标记还没闭合。此间的增量既不进正文
-            // 也不推客户端，攒到闭合 `]` 出现——丢掉标记本体、放行其余正文，并重新武装
-            // 扫描器（同一个 part 里可能出现第二个标记）。
-            if (ctx.leakHold !== undefined) {
-              // 261027 Red 整块摘要只保存常量丢弃态，正文不累积、不在标题闭合后重新放行。
-              if (InstructionEcho.summaryBodyAnchor(ctx.leakHold)) return
-              const hold = ctx.leakHold + delta
-              const release = InstructionEcho.releaseLeakHold(hold)
-              if (release === undefined) {
-                ctx.leakHold = InstructionEcho.summaryBodyAnchor(hold) ?? hold
-                return
+            while (true) {
+              // 261014 Red 泄露标记暂扣态：锚点已命中、标记还没闭合。此间的增量既不进正文
+              // 也不推客户端，攒到闭合 `]` 出现——丢掉标记本体、放行其余正文，并重新武装
+              // 扫描器（同一个 part 里可能出现第二个标记）。
+              if (ctx.leakHold !== undefined) {
+                // 261027 Red 整块摘要只保存常量丢弃态，正文不累积、不在标题闭合后重新放行。
+                if (InstructionEcho.summaryBodyAnchor(ctx.leakHold)) return
+                const hold = ctx.leakHold + delta
+                const release = InstructionEcho.releaseLeakHold(hold)
+                if (release === undefined) {
+                  ctx.leakHold = InstructionEcho.summaryBodyAnchor(hold) ?? hold
+                  return
+                }
+                ctx.leakHold = undefined
+                ctx.leakTripped = false
+                ctx.leakScanner.reset()
+                delta = release
+                if (!delta) return
               }
-              ctx.leakHold = undefined
-              ctx.leakTripped = false
-              ctx.leakScanner.reset()
-              delta = release
-              if (!delta) return
+              // 261014 Red 先扫描再落笔，命中后按锚点截断并立即下发纠偏。
+              if (!ctx.leakTripped && ctx.leakScanner.feed(delta)) {
+                ctx.leakTripped = true
+                const cut = InstructionEcho.cutAtLeakAnchor(ctx.currentText.text + ctx.leakPending + delta)
+                ctx.leakPending = ""
+                const prefix = cut.text.startsWith(ctx.currentText.text) ? cut.text.slice(ctx.currentText.text.length) : ""
+                ctx.currentText.text = cut.text
+                ctx.leakHold = InstructionEcho.summaryBodyAnchor(cut.hold) ?? cut.hold
+                if (prefix) yield* session.updatePartDelta({
+                  sessionID: ctx.currentText.sessionID,
+                  messageID: ctx.currentText.messageID,
+                  partID: ctx.currentText.id,
+                  field: "text",
+                  delta: prefix,
+                })
+                yield* session.updatePart(ctx.currentText)
+                slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
+                delta = ""
+                continue
+              }
+              break
             }
-            // 261014 Red 先扫描再落笔。原先先推 delta 再剥离，而已推送的增量撤不回
-            // （TUI/GUI 的 delta 都是纯追加），屏幕上的标记要挂到 text-end 才被整条
-            // 替换掉——GUI 实测约 2 秒。且剥离正则要求闭合 `]`，trip 时标记往往只到了一半，
-            // detect() 实际一个字都没剥。现在锚点命中的那条 delta 直接不推，按锚点起点
-            // 截断后的整条 part 立刻下发纠偏。
-            if (!ctx.leakTripped && ctx.leakScanner.feed(delta)) {
-              ctx.leakTripped = true
-              const cut = InstructionEcho.cutAtLeakAnchor(ctx.currentText.text + delta)
-              ctx.currentText.text = cut.text
-              ctx.leakHold = InstructionEcho.summaryBodyAnchor(cut.hold) ?? cut.hold
-              yield* session.updatePart(ctx.currentText)
-              slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
-              return
-            }
+            // 261027 Red 候选摘要头先暂扣，避免跨分片命中前 PartDelta 已不可撤回。
+            delta = ctx.leakPending + delta
+            const pendingLength = Math.min(ctx.leakScanner.pendingLength, delta.length)
+            ctx.leakPending = pendingLength ? delta.slice(-pendingLength) : ""
+            delta = pendingLength ? delta.slice(0, -pendingLength) : delta
+            if (!delta) return
             ctx.currentText.text += delta
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
@@ -1088,6 +1106,17 @@ export const layer = Layer.effect(
 
           case "text-end":
             if (!ctx.currentText) return
+            if (ctx.leakPending) {
+              ctx.currentText.text += ctx.leakPending
+              yield* session.updatePartDelta({
+                sessionID: ctx.currentText.sessionID,
+                messageID: ctx.currentText.messageID,
+                partID: ctx.currentText.id,
+                field: "text",
+                delta: ctx.leakPending,
+              })
+              ctx.leakPending = ""
+            }
             // 260728 Red 先摘掉文本态工具调用，再交给 plugin / canary / 落库，
             // 三者看到的都应该是干净正文
             salvageToolCalls(ctx.currentText, "text")
@@ -1148,6 +1177,17 @@ export const layer = Layer.effect(
         }
 
         if (ctx.currentText) {
+          if (ctx.leakPending) {
+            ctx.currentText.text += ctx.leakPending
+            yield* session.updatePartDelta({
+              sessionID: ctx.currentText.sessionID,
+              messageID: ctx.currentText.messageID,
+              partID: ctx.currentText.id,
+              field: "text",
+              delta: ctx.leakPending,
+            })
+            ctx.leakPending = ""
+          }
           const end = Date.now()
           ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
           yield* session.updatePart(ctx.currentText)

@@ -13,6 +13,7 @@
 - **减少 GUI 时间线贴底跳位**：采用 `56ed0719` 的修复，强制贴底期间不再混用估算行高定位与实测高度纠偏；见 [时间线贴底决策](docs/notes/implemented/bug-fix/2026-10-28-timeline-measured-bottom.md)。
 - **修复 GUI Git 变更在飞漏刷**：diff 请求期间的文件变更按项目合并，防抖到期后等待在飞请求结束再补刷；保留原有防抖，不取消正在执行的 diff。复现与取舍见 [刷新补刷决策](docs/notes/implemented/bug-fix/2026-10-28-vcs-refresh-catchup.md)。
 - **TUI 首页 MCP 快捷入口**：点击底栏的 MCP 连接数量即可打开现有服务器开关弹窗，无需输入 `/mcp`。
+- **修复摘要来源头流式闪现**：跨分块的候选来源头在发布增量前暂扣，确认回声后丢弃；普通示例及未完成的候选在结束或中断时放行。事件级回归与限制见 [压缩标记回声](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。
 - **调整子代理模型并显示本轮工具调用数**：explore 改用 Terra Medium，execute 改用 Terra High；TUI 与 GUI 回复脚注在耗时后显示本轮本会话直接工具调用数，历史重复调用记录按单条助手消息去重，子代理内部调用不计入父会话。
 - **修复摘要标记引用误截正文**（`packages/opencode/src/session/instruction-echo.ts`）：行内代码及代码围栏中的标记不再触发拦截；短摘要记录要求完整来源头，避免普通占位示例被截断。流式回放同时验证正常引用和真实摘要复述；仍无法无歧义地区分未引用的完整来源头与回声，见 [压缩标记回声](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。
 - **修复插件视图回退与大小限制**（`packages/ui/src/components/basic-tool.tsx`、`packages/opencode/src/tool/registry.ts`）：没有可渲染的 section 时显示原始输出；回调及最终元数据中的 view 统一按 UTF-8 字节执行 8KB 限制，避免绕过。

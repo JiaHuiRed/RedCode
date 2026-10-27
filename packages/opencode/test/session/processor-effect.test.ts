@@ -681,7 +681,7 @@ it.live("session.processor effect tests discard an echoed summary body across ch
         yield* llm.push(raw({
           head: [
             { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
-            ...["正文。", "[block:test-block; ", "sources: msg_first .. msg_last]", "\n仅限内部的摘要"].map((content) => ({
+            ...["正文。[block:test-block; ", "sources: msg_first .. msg_last]", "\n仅限内部的摘要"].map((content) => ({
               id: "chatcmpl-test",
               object: "chat.completion.chunk",
               choices: [{ delta: { content } }],
@@ -692,10 +692,26 @@ it.live("session.processor effect tests discard an echoed summary body across ch
         yield* handle.process(request)
         expect(texts().map((part) => part.text).join("")).toBe("正文。")
         expect(deltas.join("")).not.toContain("仅限内部的摘要")
+        expect(deltas.join("")).not.toContain("[block:")
+        expect(deltas.join("")).toContain("正文。")
+
+        const start = deltas.length
+        yield* llm.push(raw({
+          head: [
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+            ...["[blo", "oper] 正常正文 [block:test; sources: msg_first]内部摘要"].map((content) => ({
+              id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content } }],
+            })),
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+          ],
+        }))
+        yield* handle.process(request)
+        expect(deltas.slice(start).join("")).toBe("[blooper] 正常正文 ")
+        expect(texts().map((part) => part.text).join("")).toBe("正文。[blooper] 正常正文 ")
 
         yield* llm.text("继续执行，正常正文。")
         yield* handle.process(request)
-        expect(texts().map((part) => part.text).join("")).toBe("正文。继续执行，正常正文。")
+        expect(texts().map((part) => part.text).join("")).toBe("正文。[blooper] 正常正文 继续执行，正常正文。")
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -751,6 +767,92 @@ it.live("session.processor preserves quoted summary markers and subsequent text 
         const text = MessageV2.parts(msg.id).find((part): part is MessageV2.TextPart => part.type === "text")
         expect(text?.text).toBe(chunks.join(""))
         expect(deltas.join("")).toBe(chunks.join(""))
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor releases false summary prefixes and incomplete tails", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        const deltas: string[] = []
+        const off = yield* bus.subscribeCallback(MessageV2.Event.PartDelta, (event) => {
+          if (event.properties.field === "text") deltas.push(event.properties.delta)
+        })
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "test")
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        for (const chunks of [
+          ["普通正文 [blo", "oper] 继续"],
+          ["普通正文 [block:example; sources: ...]", " 继续"],
+          ["普通正文 [blo"],
+          ["普通正文 [block:" + Array.from({ length: 130 }, (_, i) => i.toString(36).padStart(4, "0")).join(""), " 继续"],
+          ["正文 [History reference: msg_test]后续"],
+        ]) {
+          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+          yield* llm.push(raw({
+            head: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+              ...chunks.map((content) => ({
+                id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content } }],
+              })),
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+            ],
+          }))
+          const start = deltas.length
+          yield* handle.process({
+            user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+            messages: [{ role: "user" as const, content: "test" }], tools: {},
+          })
+          const expected = chunks.join("").replace("[History reference: msg_test]", "")
+          expect(deltas.slice(start).join("")).toBe(expected)
+          expect(MessageV2.parts(msg.id).find((part) => part.type === "text")?.text).toBe(expected)
+        }
+        off()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor releases an incomplete summary prefix on interrupted cleanup", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const gate = defer<void>()
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        const deltas: string[] = []
+        const off = yield* bus.subscribeCallback(MessageV2.Event.PartDelta, (event) => {
+          if (event.properties.field === "text") deltas.push(event.properties.delta)
+        })
+        yield* llm.push(raw({
+          head: [
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: "普通正文 [blo" } }] },
+          ],
+          wait: gate.promise,
+          tail: [],
+        }))
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "test")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        const run = yield* handle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "test" }], tools: {},
+        }).pipe(Effect.forkChild)
+        yield* waitFor(Effect.sync(() => deltas.join("").includes("普通正文 ") ? true : undefined), "waiting for text")
+        yield* Fiber.interrupt(run)
+        gate.resolve()
+        yield* waitFor(Effect.sync(() => deltas.join("") === "普通正文 [blo" ? true : undefined), "waiting for cleanup delta")
+        expect(deltas.join("")).toBe("普通正文 [blo")
+        expect(MessageV2.parts(msg.id).find((part) => part.type === "text")?.text).toBe("普通正文 [blo")
+        off()
       }),
     { config: (url) => providerCfg(url) },
   ),
