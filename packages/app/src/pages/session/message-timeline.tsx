@@ -768,6 +768,8 @@ export function MessageTimeline(props: {
       // 会打断 IME 组合（与 anchorMeasuredBottom 同一门禁语义）。组合结束后由
       // compositionend 补一次，流式未停时后续 delta 也会再次走到这里。
       if (imeComposing) return
+      // 入场 force 锚定负责追踪实测底部，不能让估算行高的 scrollToIndex 与它争抢位置。
+      if (bottomAnchorForce) return
       if (isMeasuredBottom(listRoot)) return
       const keys = timelineRowKeys()
       if (keys.length === 0) return
@@ -801,11 +803,9 @@ export function MessageTimeline(props: {
     bottomAnchorSessionKey = key
     bottomAnchorRows = keys.length
     if (!props.shouldAnchorBottom()) return
-    // native 路径没有 handle：上面那次 scrollToIndex 是虚拟估算落点，这里交给实测锚定。
-    mounted?.handle.scrollToIndex(keys.length - 1, { align: "end" })
-    // 260822 cc scrollToIndex 用的是虚拟**估算**尺寸：缓存未命中时每行按 timelineFallbackItemSize
-    //   估，落点可以离真底部很远。再补一轮以实测高度为准的锚定（scrollTop = scrollHeight），
-    //   沉降完自动收工。少了这一步就是"切回会话掉在历史中间"。
+    // 切回会话或消息窗口大幅变化时，直接以实测高度追底。
+    // 不先 scrollToIndex：虚拟行高尚未稳定时它会跳向旧历史，随后又被 force 锚定拉回来。
+    // native 与 virtua 统一走这条路径；force 在行高重测期间持续纠偏。
     scheduleMeasuredBottomAnchor({ force: true })
   }
 
