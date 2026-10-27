@@ -49,6 +49,8 @@ RedCode 确实攒了一批状态：`provider_quota` 每分钟刷新并广播、`
 
 风险在**账号关联**，不在渲染：多 Provider、多账号时，当前模型属于哪个额度账号必须能可靠判定；判定不出来就显示"额度不可用"，不要猜一个账号的数字贴上去。另外外层已有 TooltipKeybind，模型选择是 Popover，两者嵌套要避免浮层冲突。
 
+**已落地（261027）**：取 tooltip 内容方案——模型按钮悬停的第二行按供应商形态区分：有窗口额度的（GPT / GLM Coding Plan）显示窗口占用，复用 `quotaCompactSummary`（导出）与 Context tab 同源不漂移；DeepSeek / Step Plan 这类没有 quota API 的供应商回退「本会话已消耗」，从会话行成本桶聚合（父会话 + 子会话，与 Context tab 成本口径一致），零请求、零 schema 改动。同一 provider 命中多条额度记录（多账号）时显示引导文案，不猜账号。
+
 ### UX-002 健康灯动态摘要
 
 健康灯（`status-indicator.tsx:9-59`）现在是纯色点，tooltip 是静态文案（`titlebar.tsx:420`）或 reconnecting 字样。判定所需的三样数据全部已在客户端：`server.healthy()`、`sync.data.mcp`、`globalSDK.event.connection()`。
@@ -58,6 +60,8 @@ RedCode 确实攒了一批状态：`provider_quota` 每分钟刷新并广播、`
 最小实现：把 `titlebar.tsx:420` 的静态 value 换成按状态拼的摘要，异常项排前面，并保留"点击查看详情"。正常状态不要写成三行报告，一句话够了。
 
 要点：**未初始化 ≠ 连接失败**。启动瞬间 MCP 还没连上时不能报红。
+
+**已落地（261027）**：动态摘要 tooltip 移入 `StatusIndicator`（titlebar 的外层静态 Tooltip 拆除），摘要与色点共用同一套判定；异常项排前面（服务器连接失败 → MCP 服务异常/需要授权 → 事件流重连），正常时一句话，可点击时附「点击查看详情」。未初始化显示「正在获取状态…」。零新增请求与轮询。
 
 ### UX-003 已实现，不建议重做
 
