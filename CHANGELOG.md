@@ -8,6 +8,12 @@
 
 ---
 
+### [Unreleased]
+
+- **调整子代理模型并显示本轮工具调用数**：explore 改用 Terra Medium，execute 改用 Terra High；TUI 与 GUI 回复脚注在耗时后显示本轮本会话直接工具调用数，历史重复调用记录按单条助手消息去重，子代理内部调用不计入父会话。
+- **修复摘要标记引用误截正文**（`packages/opencode/src/session/instruction-echo.ts`）：行内代码及代码围栏中的标记不再触发拦截；短摘要记录要求完整来源头，避免普通占位示例被截断。流式回放同时验证正常引用和真实摘要复述；仍无法无歧义地区分未引用的完整来源头与回声，见 [压缩标记回声](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。
+- **修复插件视图回退与大小限制**（`packages/ui/src/components/basic-tool.tsx`、`packages/opencode/src/tool/registry.ts`）：没有可渲染的 section 时显示原始输出；回调及最终元数据中的 view 统一按 UTF-8 字节执行 8KB 限制，避免绕过。
+
 ### [0.13.2] - 2026-10-27
 
 - **API 400 错误附网关瞬时拒绝引导**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：现场排查发现 step_plan 网关前置层偶发对正常请求返回 400 `input_invalid`（响应头 `x-upstream-latency: 0`，同请求稍后重发即成功）。400 维持不自动重试，TUI 错误框对 `APIError` 400 追加一行「网关可能瞬时拒绝：稍后可重试同模型」，渲染回归见 conversation-snapshot。
