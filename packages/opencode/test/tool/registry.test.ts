@@ -1142,6 +1142,44 @@ describe("tool.registry", () => {
   )
 
   for (const scenario of [
+    { name: "result metadata", body: "return { output: 'raw', metadata: { view: huge } }" },
+    { name: "callback metadata", body: "ctx.metadata({ metadata: { view: huge, source: 'callback' } }); return 'raw'" },
+    { name: "UTF-8 bytes", body: "return { output: 'raw', view: { summary: '\\u6570'.repeat(3000) } }" },
+    { name: "oversized result overrides metadata", body: "return { output: 'raw', metadata: { view: huge }, view: huge }" },
+  ]) {
+    it.instance(`bounds plugin view from ${scenario.name}`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const customTools = path.join(test.directory, ".redcode", "tools")
+        yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(customTools, "bounded.ts"),
+            `export default { description: 'bounded view', args: {}, execute: async (_args, ctx) => { const huge = { summary: 'x'.repeat(9000) }; ${scenario.body} } }`,
+          ),
+        )
+        const registry = yield* ToolRegistry.Service
+        const loaded = (yield* registry.all()).find((tool) => tool.id === "bounded")
+        if (!loaded) throw new Error("bounded view tool was not loaded")
+        const updates: Array<{ title?: string; metadata?: Record<string, unknown> }> = []
+        const result = yield* loaded.execute({}, {
+          sessionID: SessionID.make("ses_bounded_view"),
+          messageID: MessageID.make("msg_bounded_view"),
+          agent: (yield* (yield* Agent.Service).defaultInfo()).name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: (value) => Effect.sync(() => { updates.push(value) }),
+          ask: () => Effect.void,
+        } satisfies Tool.Context)
+        expect(result.metadata.view).toBeUndefined()
+        expect(updates.every((update) => update.metadata?.view === undefined)).toBe(true)
+        if (scenario.name === "callback metadata") expect(updates[0]?.metadata?.source).toBe("callback")
+        expect(result.output).toBe("raw")
+      }),
+    )
+  }
+
+  for (const scenario of [
     { name: "string", result: "'unchanged output'", title: "callback title", source: "callback" },
     {
       name: "structured",

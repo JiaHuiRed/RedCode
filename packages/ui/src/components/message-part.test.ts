@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { readPartText } from "./message-part-text"
+import { viewSections } from "./basic-tool"
+
+test("generic tool falls back when no section is renderable", () => {
+  expect(viewSections({ view: { sections: [{ type: "custom" }, null, { type: "text" }] } })).toEqual([])
+  const text = { type: "text", text: "details" }
+  expect(viewSections({ view: { sections: [{ type: "custom" }, text] } })).toEqual([text])
+})
 
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {

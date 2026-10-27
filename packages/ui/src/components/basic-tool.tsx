@@ -334,11 +334,17 @@ type GenericSection = {
   items?: unknown
 }
 
-function viewSections(metadata: Record<string, unknown> | undefined) {
+export function viewSections(metadata: Record<string, unknown> | undefined) {
   const view = metadata?.view
   if (!view || typeof view !== "object") return []
   const sections = (view as { sections?: unknown }).sections
-  return Array.isArray(sections) ? (sections as GenericSection[]) : []
+  if (!Array.isArray(sections)) return []
+  return (sections as GenericSection[]).filter(
+    (section) =>
+      section != null &&
+      ((section.type === "text" && typeof section.text === "string") ||
+        (section.type === "items" && Array.isArray(section.items))),
+  )
 }
 
 function viewSummary(metadata: Record<string, unknown> | undefined) {
