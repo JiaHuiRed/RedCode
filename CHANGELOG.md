@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **减少 GUI 时间线贴底跳位**：采用 `56ed0719` 的修复，强制贴底期间不再混用估算行高定位与实测高度纠偏；见 [时间线贴底决策](docs/notes/implemented/bug-fix/2026-10-28-timeline-measured-bottom.md)。
 - **修复 GUI Git 变更在飞漏刷**：diff 请求期间的文件变更按项目合并，防抖到期后等待在飞请求结束再补刷；保留原有防抖，不取消正在执行的 diff。复现与取舍见 [刷新补刷决策](docs/notes/implemented/bug-fix/2026-10-28-vcs-refresh-catchup.md)。
 - **TUI 首页 MCP 快捷入口**：点击底栏的 MCP 连接数量即可打开现有服务器开关弹窗，无需输入 `/mcp`。
 - **调整子代理模型并显示本轮工具调用数**：explore 改用 Terra Medium，execute 改用 Terra High；TUI 与 GUI 回复脚注在耗时后显示本轮本会话直接工具调用数，历史重复调用记录按单条助手消息去重，子代理内部调用不计入父会话。
