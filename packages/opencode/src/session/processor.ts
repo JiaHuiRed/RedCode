@@ -1034,9 +1034,12 @@ export const layer = Layer.effect(
             // 也不推客户端，攒到闭合 `]` 出现——丢掉标记本体、放行其余正文，并重新武装
             // 扫描器（同一个 part 里可能出现第二个标记）。
             if (ctx.leakHold !== undefined) {
-              const release = InstructionEcho.releaseLeakHold(ctx.leakHold + delta)
+              // 261027 Red 整块摘要只保存常量丢弃态，正文不累积、不在标题闭合后重新放行。
+              if (InstructionEcho.summaryBodyAnchor(ctx.leakHold)) return
+              const hold = ctx.leakHold + delta
+              const release = InstructionEcho.releaseLeakHold(hold)
               if (release === undefined) {
-                ctx.leakHold += delta
+                ctx.leakHold = InstructionEcho.summaryBodyAnchor(hold) ?? hold
                 return
               }
               ctx.leakHold = undefined
@@ -1054,7 +1057,7 @@ export const layer = Layer.effect(
               ctx.leakTripped = true
               const cut = InstructionEcho.cutAtLeakAnchor(ctx.currentText.text + delta)
               ctx.currentText.text = cut.text
-              ctx.leakHold = cut.hold
+              ctx.leakHold = InstructionEcho.summaryBodyAnchor(cut.hold) ?? cut.hold
               yield* session.updatePart(ctx.currentText)
               slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
               return

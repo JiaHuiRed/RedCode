@@ -315,20 +315,20 @@ describe("gpt-5.6 的 max 档", () => {
 describe("gpt-6 家族的 max 档", () => {
  const gpt = (id: string) => variantsOf(id, "@ai-sdk/openai")
 
- test("sol / 6.1-sol / luna / astra 都到 max", () => {
-   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+  test("sol / 6.1-sol / 6.1-terra / luna / astra 都到 max", () => {
+    for (const id of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
      expect(gpt(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
    }
  })
 
  test("一个都不给 ultra —— 与 5.6 同纪律，加档前必须真请求", () => {
-   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+    for (const id of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
      expect(gpt(id)).not.toContain("ultra")
    }
  })
 
  test("不带 minimal —— gpt-6 的档位表里没有这一档", () => {
-   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+    for (const id of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
      expect(gpt(id)).not.toContain("minimal")
    }
  })

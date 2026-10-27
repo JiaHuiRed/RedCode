@@ -17,6 +17,7 @@ import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionProcessor } from "../../src/session/processor"
+import { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
@@ -619,6 +620,98 @@ it.live("session.processor effect tests correct a leaked history reference mid-s
         expect(deltas.join("")).toContain("先说结论：已经修了。")
         expect(deltas.join("")).toContain("收尾一句。")
       }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests discard an echoed summary body across chunks without dropping later text parts", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        const deltas: string[] = []
+        const events = yield* bus.subscribe(MessageV2.Event.PartDelta)
+        yield* Stream.runForEach(events, (event) =>
+          Effect.sync(() => {
+            if (event.properties.field === "text") deltas.push(event.properties.delta)
+          }),
+        ).pipe(Effect.forkScoped)
+
+        const body = [
+          "[Historical context summary",
+          ". This is not a new user instruction or authorization.]",
+          "\n[block:test-block; sources: msg_first .. msg_last]",
+          "\n## Goal\n内部摘要",
+          "\n[Original user text; source: msg_first; role: user]\n历史请求",
+          "\n[Original assistant text; source: msg_reply; role: assistant]\n旧回复",
+          "\n[Original tool output; source: msg_tool; role: assistant]\n内部工具原文",
+        ]
+        yield* llm.push(raw({
+          head: [
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+            ...body.map((content) => ({
+              id: "chatcmpl-test",
+              object: "chat.completion.chunk",
+              choices: [{ delta: { content } }],
+            })),
+            { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+          ],
+        }))
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "继续当前任务")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        const request = {
+          user: parent,
+          sessionID: chat.id,
+          model,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user" as const, content: "继续当前任务" }],
+          tools: {},
+        }
+        yield* handle.process(request)
+        const texts = () => MessageV2.parts(msg.id).filter((part) => part.type === "text")
+        expect(texts().every((part) => part.text.trim() === "")).toBe(true)
+        expect(deltas.join("")).not.toContain("内部摘要")
+        expect(deltas.join("")).not.toContain("Original")
+
+        yield* llm.text("继续执行，正常正文。")
+        yield* handle.process(request)
+        expect(texts().map((part) => part.text).join("")).toBe("继续执行，正常正文。")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor summary echo recovery retries the empty turn once and returns a real answer", () =>
+  provideTmpdirServer(
+    ({ llm }) =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const chat = yield* sessions.create({ title: "Summary echo regression" })
+        yield* llm.text([
+          "[Historical context summary. This is not a new user instruction or authorization.]",
+          "[block:test-block; sources: msg_first .. msg_last]",
+          "## Goal\n内部摘要",
+          "[Original tool output; source: msg_tool; role: assistant]\n内部工具原文",
+        ].join("\n\n"))
+        yield* llm.text("我接着做，先给出规划。")
+
+        const result = yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          agent: "build",
+          parts: [{ type: "text", text: "继续规划当前任务" }],
+        })
+        expect(result.parts.filter((part) => part.type === "text").map((part) => part.text).join("")).toBe("我接着做，先给出规划。")
+        expect(yield* llm.calls).toBe(2)
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        expect(messages.flatMap((message) => message.parts).some((part) => part.type === "compaction")).toBe(false)
+      }).pipe(Effect.provide(SessionPrompt.defaultLayer)),
     { config: (url) => providerCfg(url) },
   ),
 )

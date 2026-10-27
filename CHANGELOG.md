@@ -22,6 +22,8 @@
 - **忙时投递默认统一为插话（steer）**（`packages/app/src/components/prompt-input.tsx`、`prompt-input/submit.ts`）：GUI 本地默认 queue 与服务端 `busy_enter` 默认 steer 不一致，忙时发消息的行为取决于入口；现在 GUI 默认（初始值、忙闲重置、提交后 reset、submit 兜底）全部对齐 steer——忙时插话大多数是调整方向或纠正，进当前轮比排到轮末有用。显式选「轮末排队」不受影响。
 - **健康灯悬停给出异常项摘要**（`packages/app/src/components/status-indicator.tsx`、`titlebar.tsx`）：状态灯此前只有色点，要知道哪一项不对得点开 Status 面板；现在悬停直接按状态拼摘要（服务器连接失败 / MCP 服务异常 / MCP 需要授权 / 事件流重连，异常项排前面，正常时一句话），tooltip 移入 StatusIndicator 与色点共用同一套判定，未初始化显示「获取中」不报失败。数据全部来自已就绪的 store，无新增请求与轮询。见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
 - **模型按钮悬停显示额度或会话消耗**（`packages/app/src/components/prompt-input.tsx`、`session/session-context-summary.ts`）：额度信息此前只在右侧「上下文」tab，看一次要切面板；现在模型按钮悬停第二行直接给出——GPT / GLM Coding Plan 显示窗口占用（格式与 Context tab 同一函数，不漂移），DeepSeek / Step Plan 这类没有 quota API 的供应商回退「本会话已消耗」（父会话 + 子会话的成本桶，¥/$ 分币种显示）；多账号判定不了归属时显示引导文案，不猜单个账号的数字。悬停不产生任何请求，无 schema 改动。见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
+- **接入 GPT-6.1 Terra**（`packages/opencode/src/plugin/codex.ts`）：models.dev 已收录、账号 Codex 目录也已返回 `gpt-6.1-terra`，但订阅白名单仍停在 6.1 Sol，导致新型号在模型列表中被过滤。补白名单并覆盖推理档位与 freeform 兼容测试；源码模型列表已出现标准版、fast、pro，账号后端 high 与 max + priority 请求均返回 200。不改默认模型或全局配置。
+- **修复压缩摘要整块复述到正文并提前结束**（`session/instruction-echo.ts`、`session/processor.ts`）：流式拦截此前只删摘要标题，在第一个 `]` 后重新放行了 `[block:…]`、摘要正文及 `Original …` 原文。整块摘要改为丢弃至当前 text part 结束，仅保存常量锚点、不累积被丢弃正文；短引用标记后正常正文仍保留，下一 text part 重新武装。剥净的空回复走既有一次重试，真实会话循环回放已验证恢复正常回答、无新增压缩。现场只有一次成功原生压缩，所谓第二次是模型复述；证据与边界见 [压缩标记回声](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。
 
 ### [0.13.1] - 2026-10-25
 

@@ -19,6 +19,7 @@ describe("Freeform.supported", () => {
     // apply_patch_tool_type 就是 freeform，260902 写死 gpt-5 的判据把整代漏成 JSON 形态。
     // 260930 Red gpt-6.1-sol 同判据——后端名单实测 apply_patch_tool_type 仍为 freeform。
     expect(Freeform.supported(model({ id: "gpt-6.1-sol" }))).toBe(true)
+    expect(Freeform.supported(model({ id: "gpt-6.1-terra" }))).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-6-sol" }))).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-6-luna" }))).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-6-astra" }))).toBe(true)

@@ -441,3 +441,30 @@ describe("流式纠偏：按锚点起点截断 + 暂扣到闭合", () => {
     expect(holds.every((hold) => hold.startsWith("[History reference: "))).toBe(true)
   })
 })
+
+describe("整块历史摘要复述不再作为正文放行", () => {
+  const headers = [
+    "[Historical context summary. This is not a new user instruction or authorization.]",
+    "[block:test-block; sources: msg_first .. msg_last]",
+    "[Original user text; source: msg_first; role: user]",
+    "[Original assistant text; source: msg_reply; role: assistant]",
+    "[Original tool output; source: msg_tool; role: assistant]",
+  ]
+
+  for (const header of headers) {
+    test(`丢弃摘要正文而不只删除 ${header}`, () => {
+      const body = `${header}\n\n## Goal\n内部摘要\n\n[Original tool output; source: msg_tool; role: assistant]\n内部工具原文`
+      const result = detect(`真实回答。\n${body}`)
+      expect(result.kinds).toContain("native-compaction-body")
+      expect(result.stripped).toBe("真实回答。")
+      expect(hasLeakAnchor(body)).toBe(true)
+      expect(releaseLeakHold(body)).toBeUndefined()
+    })
+  }
+
+  test("普通规划标题和来源讨论不误切", () => {
+    const text = "## Goal\n完成导入。\n## Relevant Files\napp.py\nOriginal tool output 是来源标签的名称。"
+    expect(detect(text).stripped).toBe(text)
+    expect(hasLeakAnchor(text)).toBe(false)
+  })
+})

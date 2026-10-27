@@ -32,6 +32,15 @@ export interface EchoResult {
 // 261014 Red 纠偏改为「按锚点起点截断 + 立刻下发整条 part + 暂扣增量到闭合」：
 // 不再要求闭合 `]`（trip 时标记通常只到一半，旧剥离是空操作），也不再设 shouldBreak
 // （断流会连带砍掉紧随的工具调用）。见 cutAtLeakAnchor / releaseLeakHold。
+// 261027 Red 整块摘要复述没有正文结束标记，必须扣到 text-end，不能在标题的 ] 后放行。
+// 决策：docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md
+const SUMMARY_BODY_ANCHORS = [
+  "[Historical context summary.",
+  "[block:",
+  "[Original user text; source:",
+  "[Original assistant text; source:",
+  "[Original tool output; source:",
+] as const
 const LEAK_ANCHORS = [
   "compressible ranges",
   "This is a system reminder injected",
@@ -47,6 +56,7 @@ const LEAK_ANCHORS = [
 // "[Historical context summary: msg_…]" 拼在回复尾部——上下文里从不出现这个
 // 冒号+单 ID 的混合形（真标记是句点+独立 sources 行），命中即模仿，流式截断。
 "[Historical context summary",
+  ...SUMMARY_BODY_ANCHORS,
 ] as const
 const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
 
@@ -122,8 +132,14 @@ export function cutAtLeakAnchor(text: string): { text: string; hold: string } {
  * 尚未闭合返回 undefined，调用方继续暂扣。
  */
 export function releaseLeakHold(hold: string): string | undefined {
+  if (summaryBodyAnchor(hold)) return undefined
   const close = hold.indexOf("]")
   return close < 0 ? undefined : hold.slice(close + 1)
+}
+
+// 261027 Red 返回常量锚点供流式处理保存丢弃态，不在暂扣缓冲里累积整段摘要。
+export function summaryBodyAnchor(hold: string): string | undefined {
+  return SUMMARY_BODY_ANCHORS.find((anchor) => hold.startsWith(anchor))
 }
 
 const EMPTY: string[] = []
@@ -294,6 +310,14 @@ text.includes("[Context notice, not a user request]") || // native 压缩逼近�
 
   const kinds: string[] = []
   let out = text
+  const bodyAt = SUMMARY_BODY_ANCHORS.reduce((first, anchor) => {
+    const at = text.indexOf(anchor)
+    return at < 0 ? first : Math.min(first, at)
+  }, text.length)
+  if (bodyAt < text.length) {
+    out = text.slice(0, bodyAt)
+    kinds.push("native-compaction-body")
+  }
   for (const [kind, re] of OWN_BLOCKS) {
     re.lastIndex = 0
     if (re.test(out)) {

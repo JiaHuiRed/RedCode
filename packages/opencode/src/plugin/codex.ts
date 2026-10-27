@@ -37,7 +37,9 @@ const ALLOWED_MODELS = new Set([
  // 260930 Red 补 gpt-6.1-sol：随 GPT-6.1 Sol 发布进入名单。后端
  // `GET /backend-api/codex/models?client_version=1.2.0`（≥1.0.0 才返回非空名单）实测在列，
  // apply_patch_tool_type 仍为 freeform，efforts 声称到 ultra（按 260907 教训不采信，档位表维持 none..max）。
- "gpt-6.1-sol",
+  "gpt-6.1-sol",
+  // 261027 Red 账号 models 目录在列，responses 真请求 200；freeform 与 priority 同 Sol 路径。
+  "gpt-6.1-terra",
 ])
 
 // 261012 Red x-codex-turn-state 粘性路由令牌（对齐 Codex 官方 harness，codex-rs/core/src/client.rs:289）：

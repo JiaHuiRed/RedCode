@@ -238,6 +238,11 @@ describe("plugin.codex", () => {
            providerID: "openai",
            api: { id: "gpt-6.1-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
+         "gpt-6.1-terra": {
+           id: "gpt-6.1-terra",
+           providerID: "openai",
+           api: { id: "gpt-6.1-terra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
          "gpt-6-sol": {
            id: "gpt-6-sol",
            providerID: "openai",
@@ -264,6 +269,7 @@ describe("plugin.codex", () => {
       "gpt-5.6-luna",
       "gpt-6-astra",
       "gpt-6.1-sol",
+      "gpt-6.1-terra",
       "gpt-6-sol",
       "gpt-6-luna",
     ])
