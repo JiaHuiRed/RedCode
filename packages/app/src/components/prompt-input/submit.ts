@@ -545,8 +545,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // 260927 Red 忙时每条消息单独决定排队或插队，始终先落服务端，不再本地 hold 新消息。
+    // 261027 Red 兜底默认从 queue 改 steer：与服务端 busy_enter 默认对齐（GUI 默认已同步改）。
     const delivery =
-      !isNewSession && mode === "normal" && input.shouldQueue?.() ? (input.delivery?.() ?? "queue") : undefined
+      !isNewSession && mode === "normal" && input.shouldQueue?.() ? (input.delivery?.() ?? "steer") : undefined
 
     input.onSubmit?.()
 

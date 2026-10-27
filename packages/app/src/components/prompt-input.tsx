@@ -292,13 +292,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     placeholder: Math.floor(Math.random() * EXAMPLES.length),
     draggingType: null,
     mode: "normal",
-    delivery: "queue",
+    // 261027 Red 默认插话（steer），与服务端 busy_enter 默认对齐——忙时插话多为纠偏/补充，
+    // 进当前轮比排到轮末更有用（用户拍板，审计 UX-005 的遗留确认项）。
+    delivery: "steer",
     applyingHistory: false,
   })
 
   createEffect(() => {
-    if (props.shouldQueue?.() || store.delivery === "queue") return
-    setStore("delivery", "queue")
+    if (props.shouldQueue?.() || store.delivery === "steer") return
+    setStore("delivery", "steer")
   })
 
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
@@ -1166,7 +1168,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     shouldQueue: props.shouldQueue,
     delivery: () => store.delivery,
-    onDeliveryReset: () => setStore("delivery", "queue"),
+    onDeliveryReset: () => setStore("delivery", "steer"),
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
     lastSoul: () => settings.personalization.lastSoul(),
