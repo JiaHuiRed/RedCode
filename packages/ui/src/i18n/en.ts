@@ -174,6 +174,7 @@ export const dict: Record<string, string> = {
   "ui.message.copied": "Copied",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
+  "ui.message.toolCalls": "{{count}} tool calls",
   "ui.message.interrupted": "Interrupted",
   "ui.message.truncated": "Output cut off (hit the token limit)",
   "ui.tool.bash.truncated": "First {{size}} omitted (large output, tail shown)",

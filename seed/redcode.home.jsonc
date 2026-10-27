@@ -235,20 +235,20 @@
     // provider.ollama 在本地层（按各机显存挑）；放这里会被 merge-home-config 当"缺键"补回。
     // anthropic 块 260729 起已删（占位 key + 模型 404）——模板与 live 必须同删，否则同步写回。
   },
-  // 261016 explore 定 GPT-6 Luna xhigh（Step 5 Preview 无额度期）；execute 保持 high。
+  // 261027 Red 子代理统一使用 Terra：explore medium、execute high。
   "agent": {
     // 261012 Red 压缩模型与档位继承触发该轮主会话，不要固定 compaction.model/variant。
     "explore": {
-      "model": "openai/gpt-6-luna",
+      "model": "openai/gpt-6.1-terra",
       "permission": {
         "jcodemunch_*": "allow",
         "indexgraph_*": "allow",
         "web-search_*": "allow",
         "vision_*": "allow"
       },
-      "variant": "xhigh"
+      "variant": "medium"
     },
-    "execute": { "model": "openai/gpt-6-luna", "variant": "high" },
+    "execute": { "model": "openai/gpt-6.1-terra", "variant": "high" },
   },
   "experimental": { "repeated_tool_failure_limit": 2 },
 }

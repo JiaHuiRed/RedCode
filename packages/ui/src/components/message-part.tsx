@@ -60,6 +60,7 @@ import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
+import { countTurnToolCalls } from "./turn-tool-count"
 import { copyText } from "../utils/clipboard"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
@@ -1570,6 +1571,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     })
   })
 
+  const toolCalls = createMemo(() => {
+    if (props.message.role !== "assistant" || props.message.summary || typeof props.turnDurationMs !== "number") return
+    const message = props.message
+    const messages = data.store.message[message.sessionID] ?? []
+    const user = messages.find((item) => item.role === "user" && item.id === message.parentID)
+    if (!user) return
+    return countTurnToolCalls(messages, data.store.part, message.parentID, user.time.created + props.turnDurationMs)
+  })
+
   const meta = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const agent = (props.message as AssistantMessage).agent
@@ -1577,6 +1587,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
       model(),
       duration(),
+      toolCalls() === undefined
+        ? ""
+        : i18n.t("ui.message.toolCalls", { count: numfmt().format(toolCalls()!) }),
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
     return items.filter((x) => !!x).join(" \u00B7 ")

@@ -182,6 +182,7 @@ export const dict = {
   "ui.toolErrorCard.copyError": "エラーをコピー",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",
+  "ui.message.toolCalls": "ツール呼び出し {{count}} 回",
   // 260810 cc 语种裁剪后补齐 ja 相对 en 的缺口
   "ui.sessionReview.title.git": "Git の変更",
   "ui.sessionReview.title.branch": "ブランチの変更",

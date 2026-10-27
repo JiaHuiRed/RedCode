@@ -1988,6 +1988,26 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
     return props.message.time.completed - user.time.created
   })
 
+  // 261027 Red 耗时覆盖整个 user turn，工具数用相同 parentID 跨 assistant step 统计；
+  // 同一消息的重复 callID 是历史迟到事件，只计一次，子代理内部调用属于子会话。
+  const toolCalls = createMemo(() => {
+    if (!duration()) return 0
+    return messages()
+      .filter(
+        (message): message is AssistantMessageInfo =>
+          message.role === "assistant" &&
+          message.parentID === props.message.parentID &&
+          message.time.created <= props.message.time.completed!,
+      )
+      .reduce((count, message) => {
+        const calls = new Set<string>()
+        for (const part of sync.data.part[message.id] ?? []) {
+          if (part.type === "tool") calls.add(part.callID)
+        }
+        return count + calls.size
+      }, 0)
+  })
+
   const childShortcut = useCommandShortcut("session.child.first")
 
   return (
@@ -2048,7 +2068,7 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
               <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
+                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())} · {toolCalls()} toolcalls</span>
               </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>

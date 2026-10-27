@@ -30,6 +30,8 @@ function assistantMessage(input: {
   error?: unknown
   modelID?: string
   providerID?: string
+  parentID?: string
+  finish?: string
 }) {
   return {
     message: {
@@ -43,6 +45,8 @@ function assistantMessage(input: {
       // 260828 起读的是 agent（mode 是历史遗留），两个都给，跟真消息一致。
       agent: "build",
       mode: "build",
+      parentID: input.parentID,
+      finish: input.finish,
       error: input.error,
       time: { created: 1_756_000_001_000, completed: 1_756_000_004_000 },
       tokens: { input: 1200, output: 340, reasoning: 0, cache: { read: 11_800, write: 0, miss: 1200 } },
@@ -96,6 +100,51 @@ describe("TUI 会话记录整帧", () => {
         { width: WIDTH, height: 14 },
       ),
     ).toMatchSnapshot()
+  })
+
+  test("回复末尾统计同一轮的工具调用，跨 step 去重但不混入其他轮次", async () => {
+    const assistant = assistantMessage({
+      parentID: "msg_user",
+      finish: "stop",
+      parts: [textPart("完成。")],
+    })
+    const frame = await renderFrame(
+      () => (
+        <Transcript>
+          <AssistantMessage {...assistant} last={true} />
+        </Transcript>
+      ),
+      {
+        width: WIDTH,
+        height: 14,
+        sync: {
+          data: {
+            config: {},
+            message: {
+              ses_snapshot: [
+                { id: "msg_user", role: "user", time: { created: 1_756_000_000_000 } },
+                { id: "msg_step", role: "assistant", parentID: "msg_user", time: { created: 1_756_000_001_000 } },
+                assistant.message,
+                { id: "msg_other", role: "assistant", parentID: "msg_other_user", time: { created: 1_756_000_002_000 } },
+                { id: "msg_later", role: "assistant", parentID: "msg_user", time: { created: 1_756_000_005_000 } },
+              ],
+            },
+            part: {
+              msg_step: [
+                { id: "p1", type: "tool", callID: "same" },
+                { id: "p2", type: "tool", callID: "same" },
+                { id: "p3", type: "tool", callID: "other" },
+              ],
+              msg_assistant: [{ id: "p4", type: "tool", callID: "same" }],
+              msg_other: [{ id: "p5", type: "tool", callID: "unrelated" }],
+              msg_later: [{ id: "p6", type: "tool", callID: "later" }],
+            },
+          },
+        },
+      },
+    )
+    expect(frame).toContain("4.0s")
+    expect(frame).toContain("3 toolcalls")
   })
 
   test("助手回复里的长文本按宽度折行", async () => {
