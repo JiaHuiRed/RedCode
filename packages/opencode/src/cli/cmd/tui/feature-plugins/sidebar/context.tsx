@@ -167,6 +167,26 @@ export function sessionUsage(
   }
 }
 
+/**
+ * 261028 Red 子代理费用并入（与 GUI session-context-summary.ts 的 childCost 三通道一致）：
+ * 桶任一存在按桶并入；双双缺失的旧行进 legacy 通道，由调用方按父账本币种归并。
+ * 子代理用量按会话行记账，父会话行自身的费用与 token 聚合都不含它们。
+ */
+export function subagentCost(
+  subagents: ReadonlyArray<{ cost?: number; costCny?: number; costUsd?: number }>,
+) {
+  const acc = { cny: 0, usd: 0, legacy: 0 }
+  for (const s of subagents) {
+    if (s.costCny !== undefined || s.costUsd !== undefined) {
+      acc.cny += s.costCny ?? 0
+      acc.usd += s.costUsd ?? 0
+    } else {
+      acc.legacy += s.cost ?? 0
+    }
+  }
+  return acc
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
@@ -272,13 +292,25 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
  // 260930 Red 分桶优先：每桶按原币种显示（「¥69.21 + $0.30」），不换算不混算。
  // 桶缺失的旧行退回「当前模型币种 + 全局折 CNY」的旧口径——那是 260615/260827 两轮
  // 都没根治的启发式，只作过渡期兜底，回填完成后随旧行一起退休。
+ // 261028 Red 子代理费用并入：与 GUI 模型按钮悬停的「本会话已消耗」同语义（父+子）。
+ // 桶路径按原币种并子代理桶；legacy 旧行按父账本币种并入（GUI 同款过渡期近似）。
+ // 无桶路径全部折算 CNY 显示，与原有行为一致。
+ const subagent = createMemo(() => subagentCost(children() ?? []))
  const costLabel = createMemo(() => {
-   const buckets = state().costBuckets
-   if (!buckets) return money.format(state().costCurrency === "CNY" ? cost() : cost() * USD_TO_CNY)
-   const parts: string[] = []
-   if (buckets.cny > 0) parts.push(money.format(buckets.cny))
-   if (buckets.usd > 0) parts.push(moneyUsd.format(buckets.usd))
-   return parts.length > 0 ? parts.join(" + ") : money.format(0)
+  const buckets = state().costBuckets
+  const child = subagent()
+  if (!buckets) {
+   const conv = state().costCurrency === "CNY" ? 1 : USD_TO_CNY
+   return money.format(cost() * conv + child.cny + child.usd * USD_TO_CNY + child.legacy * conv)
+  }
+  const legacyCny = state().costCurrency === "CNY" ? child.legacy : 0
+  const legacyUsd = state().costCurrency === "CNY" ? 0 : child.legacy
+  const cny = buckets.cny + child.cny + legacyCny
+  const usd = buckets.usd + child.usd + legacyUsd
+  const parts: string[] = []
+  if (cny > 0) parts.push(money.format(cny))
+  if (usd > 0) parts.push(moneyUsd.format(usd))
+  return parts.length > 0 ? parts.join(" + ") : money.format(0)
  })
   const created = createMemo(() => session()?.time?.created)
   const updated = createMemo(() => session()?.time?.updated)

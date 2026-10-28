@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bar, barColor, compact, contextSource, formatMs, sessionUsage } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { bar, barColor, compact, contextSource, formatMs, sessionUsage, subagentCost } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
 import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
@@ -175,5 +175,22 @@ describe("子代理用量并入会话累计", () => {
    expect(usage.output).toBe(100)
    expect(usage.subagentTotal).toBe(27000)
    expect(usage.sessionTotal).toBe(1100 + 27000)
+ })
+})
+
+// 261028 Red 子代理费用并入（GUI session-context-summary.ts childCost 三通道的 TUI 对应面）：
+// 桶行按桶并入，双双缺失的旧行单走 legacy，由调用方按父账本币种归并。
+describe("子代理费用并入", () => {
+ test("桶行按桶并入，legacy 旧行单走 legacy 通道", () => {
+   expect(subagentCost([{ costCny: 12.5, costUsd: 0 }, { costCny: 0, costUsd: 3.2 }, { cost: 99 }])).toEqual({
+     cny: 12.5,
+     usd: 3.2,
+     legacy: 99,
+   })
+ })
+
+ test("空列表与缺字段行不计", () => {
+   expect(subagentCost([])).toEqual({ cny: 0, usd: 0, legacy: 0 })
+   expect(subagentCost([{}, { cost: 0 }])).toEqual({ cny: 0, usd: 0, legacy: 0 })
  })
 })
