@@ -7,6 +7,7 @@ import { MessageTable } from "./session.sql"
 import { MessageID, PartID, type SessionID } from "./schema"
 import { ContextCompactionTable as Table } from "./context-compaction.sql"
 import * as Log from "@redcode-ai/core/util/log"
+import { cleanReferenceEchoes } from "./native-context"
 
 const log = Log.create({ service: "session.context-compaction" })
 
@@ -198,7 +199,9 @@ message.parts.some((part) =>
           continue
         }
         const raw = getRaw(input.sessionID, message.info.id)
-        if (fingerprint(raw) !== fingerprint(message)) throw new Error("Compression source content is stale")
+        // 261028 Red 投影视图已净化助手回声，校验时对原文应用同一投影；原文仍用于保护和记账。
+        if (fingerprint(cleanReferenceEchoes([raw])[0]!) !== fingerprint(message))
+          throw new Error("Compression source content is stale")
         sources.push(message.info.id)
         sourceHashes[message.info.id] = fingerprint(raw)
         protectedRecords.push(...protect(raw, input.limits))

@@ -4,6 +4,7 @@ import { Session } from "../../src/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID } from "../../src/session/schema"
 import * as ContextCompaction from "../../src/session/context-compaction"
+import * as NativeContext from "../../src/session/native-context"
 import { Token } from "../../src/util/token"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { TestInstance } from "../fixture/fixture"
@@ -47,6 +48,28 @@ function fixture() {
 }
 
 describe("native compression ledger", () => {
+  it.instance("commits cleaned reference echoes while rejecting real source changes", () => Effect.gen(function* () {
+    const f = yield* fixture()
+    yield* f.session.updatePart({
+      id: PartID.ascending(), messageID: f.assistant.id, sessionID: f.chat.id,
+      type: "text", text: "[Historical reference: msg_example]",
+    })
+    const raw = yield* f.session.messages({ sessionID: f.chat.id })
+    const view = NativeContext.cleanReferenceEchoes(raw)
+    const input = {
+      sessionID: f.chat.id, messages: view, limits, mode: "auto" as const, requestID: "cleaned-echo",
+      ranges: [{ startId: f.user.id, endId: f.assistant.id, summary: "Investigation finished." }],
+    }
+    const text = raw[1]!.parts.find((part) => part.type === "text")
+    if (!text || text.type !== "text") throw new Error("missing fixture text")
+    yield* f.session.updatePart({ ...text, text: "Changed after snapshot" })
+    expect(() => ContextCompaction.commit({ ...input, requestID: "changed-source" }))
+      .toThrow("Compression source content is stale")
+    yield* f.session.updatePart(text)
+    expect(ContextCompaction.commit(input)).toHaveLength(1)
+    expect(yield* f.session.messages({ sessionID: f.chat.id })).toEqual(raw)
+  }))
+
   it.instance("serializes a compression commit before reading its snapshot", () => Effect.gen(function* () {
     const f = yield* fixture()
     const file = path.join((yield* TestInstance).directory, "concurrent.sqlite")
