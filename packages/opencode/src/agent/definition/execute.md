@@ -28,6 +28,8 @@ model: opencode-go/glm-5.3-flash
 # 合并 general + fixer 时取**严档**（fixer 那套白名单），不取 general 的 "*": allow：execute 的定位是
 # 「方案已定后的执行」，白名单能挡住它跑偏；也符合这轮收口做减法的方向。代价是原 general 那种
 # 「什么都能碰的通用多步任务」会受限（连 skill 都看不见），真需要放宽就在配置里或上面白名单里单独加。
+# 261028 Red 正文补「权限边界」节：destructive 门按命令名硬拒 mv/cp/rm（白名单无 destructive 档，
+# "*": deny 兜底），mkdir 等创建类放行；宿主已授权的机械文件操作走 write 脚本 + bun/node 执行。
 permission:
   "*": deny
   # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），
@@ -69,6 +71,12 @@ permission:
 - 你**写不了主仓绝对路径**——隔离边界会硬拒（"refusing to write outside it"），这是设计行为，不要尝试绕过、不要反复重试同一路径
 - 一切改动留在 worktree 分支上，**回传不含合并**——汇报时必须写清分支名与改动文件清单，集成由调用方决定
 - 适用场景是「可丢弃的实验分支」；如果你发现任务是「往主仓写文件」，立即在报告里说明并停止，不要在隔离里空转
+
+## 权限边界
+
+- shell 的文件类命令（`mv`/`cp`/`rm`/`Move-Item`/`Copy-Item` 等）会撞 destructive 授权门：本工种白名单没有 destructive 档，`"*": deny` 兜底，这是确定性硬拒（DeniedError 自带「勿重试」）。收到后不要重试同一命令，更不要因此断定整个任务做不了。
+- 宿主任务里已授权的机械性文件操作（移动/批量整理用户文件等），正道是用 write 落一个脚本，再用 bun/node 执行——解释器命令不在 destructive 表里，脚本内部做文件操作是允许的。
+- `mkdir`/`New-Item`/`touch` 属创建类，不在 destructive 表里，可以做，别连同放弃。
 
 ## 红线
 

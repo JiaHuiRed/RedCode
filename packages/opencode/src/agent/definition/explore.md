@@ -7,8 +7,14 @@ description: >-
   answer "how does X work?" about the codebase; (2) DESIGN — read the current state, then produce a
   plan, evaluate a technical choice, or map an architecture; (3) REVIEW — read a change and report
   bugs, risks, and quality problems. It never writes code. For FIND, also state the thoroughness
-  level: "quick", "medium", or "very thorough".
+  level: "quick", "medium", or "very thorough". Dispatch economics: worth a dispatch only when
+  2+ explorations can run in parallel, the sweep is large enough that context isolation repays
+  the dispatch cost, or you have other work to do meanwhile (background mode); a single focused
+  lookup on a known file or symbol is faster done directly.
 model: stepfun-step-plan/step-3.7-flash
+# 261028 Red description 补「派单经济学」：并行≥2 / 大探索（上下文隔离回本）/ background 还有
+# 别的活可干，三条件命中才派，否则主会话自己干——单发同步小探索纯亏（派发开销+重建上下文+
+# 主线干等，#679 同教训）。来源：主会话 execute/explore 存在意义讨论。
 # 260909 Red 请求级看门狗在 session/llm.ts 区分首响应、流静默和本地执行；工种不再按总寿命计时。
 # 决策：docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md
 # 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model 与权限，
