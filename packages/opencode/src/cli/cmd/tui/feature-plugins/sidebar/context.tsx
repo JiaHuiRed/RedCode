@@ -187,6 +187,15 @@ export function subagentCost(
   return acc
 }
 
+/**
+* 261028 Red 会话行分币种桶（服务端 projector 按 part 的 currency 分桶维护）。
+* null = 未回填的旧行，调用方退「当前模型币种折算」旧口径——只作过渡期兜底。
+*/
+export function sessionCostBuckets(s: { costCny?: number; costUsd?: number } | undefined) {
+ if (!s || (s.costCny === undefined && s.costUsd === undefined)) return null
+ return { cny: s.costCny ?? 0, usd: s.costUsd ?? 0 }
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
@@ -225,14 +234,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         provider: null as string | null,
         providerID: null as string | null,
         costCurrency: null as "USD" | "CNY" | null,
-       // 260930 Red 分币种账直接来自 session 行聚合（服务端 projector 按 part 的 currency
-       // 分桶）。null = 未回填的旧行，此时 costCurrency 仍是「当前模型币种」的旧启发式——
-       // 会话中途换过模型它就错，只作过渡期兜底。
-       costBuckets: (() => {
-         const s = session()
-         if (s?.costCny === undefined && s?.costUsd === undefined) return null
-         return { cny: s?.costCny ?? 0, usd: s?.costUsd ?? 0 }
-       })(),
+       // 260930 Red 分币种账直接来自 session 行聚合。null = 未回填的旧行，此时
+       // costCurrency 仍是「当前模型币种」的旧启发式——会话中途换过模型它就错，
+       // 只作过渡期兜底。
+       costBuckets: sessionCostBuckets(session()),
         messageCount: msg().length,
         ...usage,
       }
@@ -248,7 +253,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       tokens,
       input: last.tokens.input,
       ...usage,
-      costBuckets: undefined,
+     // 261028 Red 正常分支同样读会话行分币种桶——此前恒 undefined，费用永远走
+     // 「当前模型币种折算」旧口径，而服务端 cost 是不同币种裸数字直接累加（projectors.ts
+     // 的 applyUsage 无条件 + delta），混合币种会话整体乘换算率必错。
+     costBuckets: sessionCostBuckets(session()),
       // 260819 cc 口径修复：percent 原来拿 tokens（= last.tokens.total）除上下文窗口，而 total 在
       // processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant 消息含几次工具
       // 往返就累加几次请求的 total —— 长工具链下显示成上下文的十几倍。下面 percentLabel 里那句

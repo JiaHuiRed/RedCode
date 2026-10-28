@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bar, barColor, compact, contextSource, formatMs, sessionUsage, subagentCost } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { bar, barColor, compact, contextSource, formatMs, sessionCostBuckets, sessionUsage, subagentCost } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
 import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
@@ -192,5 +192,15 @@ describe("子代理费用并入", () => {
  test("空列表与缺字段行不计", () => {
    expect(subagentCost([])).toEqual({ cny: 0, usd: 0, legacy: 0 })
    expect(subagentCost([{}, { cost: 0 }])).toEqual({ cny: 0, usd: 0, legacy: 0 })
+ })
+})
+
+// 261028 Red 会话行分币种桶（正常消息分支此前恒 undefined，混合币种被整体按当前模型币种折算）。
+describe("sessionCostBuckets", () => {
+ test("桶任一存在返回分币种桶，双双缺失的旧行返回 null 走旧口径", () => {
+   expect(sessionCostBuckets({ costCny: 12.5, costUsd: 0 })).toEqual({ cny: 12.5, usd: 0 })
+   expect(sessionCostBuckets({ costCny: 0, costUsd: 3.2 })).toEqual({ cny: 0, usd: 3.2 })
+   expect(sessionCostBuckets({ cost: 99 })).toBeNull()
+   expect(sessionCostBuckets(undefined)).toBeNull()
  })
 })
