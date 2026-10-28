@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.13.3] - 2026-10-28
 
 - **GUI「上下文」面板总 token 并入子代理用量**（`packages/app/src/components/session/session-context-summary.ts`、`i18n/{zh,en,ja}.ts`）：面板的「总 token」（折叠胶囊值、展开明细、摘要串三处）此前只算父会话自身。现在与既有的子代理费用并入（childCost）同源同行：三处显示一并并入，并单列一行「子代理用量」（>0 才显示，zh/en/ja 三语言）；命中率等比率没有子会话消息可算，仍只算本会话；ctx 缺失（本会话还没有 assistant 消息）时保持「—」，不把 0 捏造成总量。
 - **TUI 侧边栏 Session total 并入子代理用量**（`packages/opencode/src/cli/cmd/tui/feature-plugins/sidebar/context.tsx`）：侧边栏「Session total」与费用行此前都只算当前会话自己——子代理用量按会话行记账（projectors.ts 的 applyUsage 按 part 所属 session 增量），看父会话时完全看不到，要知道得逐个点子会话。现在经 session.children 端点拉全量子会话行（不走 sync.data.session 列表：那只是近期/有限条目，从列表求和会静默漏算老会话，261022 同款坑）：token 聚合并进总数并加一行「subagents +N」拆分明细，费用按三通道并入（`subagentCost` 与 GUI childCost 一致：桶行按桶、legacy 旧行按父账本币种归并，无桶路径全折 CNY 与原有显示一致），没有子代理时不占位；子会话行更新时随 session.updated 重拉。命中率等比率没有子会话消息可算，仍只覆盖本会话——总量含子代理、比率不含，口径不混。与 GUI 模型按钮悬停的父+子成本桶同语义。验证：sidebar-context 19 pass（新增 6 条并入用例）、opencode typecheck exit 0（tsgo 崩回退 TS 5.9.3）。
