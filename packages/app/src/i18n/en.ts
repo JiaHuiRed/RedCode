@@ -455,6 +455,7 @@ export const dict = {
   "context.stats.provider": "Provider",
   "context.stats.model": "Model",
   "context.stats.totalTokens": "Total Tokens",
+  "context.stats.subagentTokens": "Subagents",
   "context.stats.inputTokens": "Input (uncached)",
   "context.stats.outputTokens": "Output Tokens",
   "context.stats.reasoningTokens": "Reasoning Tokens",

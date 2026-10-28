@@ -150,6 +150,22 @@ export function useSessionContextSummaries() {
     return acc
   })
 
+  // 261028 Red 子代理 token 并入「总 token」（与 childCost 同源同行）：子代理用量按会话行
+  // 记账（projectors.ts 的 applyUsage 按 part 所属 session 增量），面板此前只显示父会话
+  // 自身。与 TUI 侧边栏 Session total 同语义；命中率等比率没有子会话消息可算，仍只算本会话。
+  const childTokens = createMemo(() => {
+    const id = params.id
+    if (!id) return 0
+    let sum = 0
+    for (const s of sync.data.session) {
+      if (s.parentID !== id) continue
+      const t = s.tokens
+      if (!t) continue
+      sum += t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+    }
+    return sum
+  })
+
   const cost = createMemo(() => {
     const m = metrics()
     const child = childCost()
@@ -172,6 +188,7 @@ export function useSessionContextSummaries() {
     counts,
     metrics,
     cost,
+    childTokens,
     ctx,
     formatter,
     inspectData: () => inspect.data,
@@ -179,7 +196,9 @@ export function useSessionContextSummaries() {
     context: () =>
       [
         `${counts().all.toLocaleString(language.intl())} ${language.t("context.stats.messages")}`,
-        formatter().number(ctx()?.total),
+        // 261028 Red 累计 token 并入子代理（与 childCost 同语义）。ctx 缺失（本会话还没有
+        // assistant 消息）时保持「—」，不把 0 捏造成有效总量。
+        formatter().number(ctx()?.total == null ? undefined : ctx()!.total + childTokens()),
         ctx()?.cacheHit != null
           ? `${language.t("context.stats.turnCacheHit")} ${formatter().percent(ctx()!.cacheHit!)}`
           : undefined,
@@ -245,10 +264,20 @@ export function useCapsuleSummaryGroups(summaries: ReturnType<typeof useSessionC
 
   // 260924 Red 主行常驻总量、缓存命中、成本，详情里保留完整 token；
   // 消息数由「原始消息」行唯一承载，避免重复。
+  // 261028 Red 总量并入子代理，并单列一行子代理用量（与 TUI 侧边栏 subagents 行同语义）：
+  // 没有子代理时不占位。命中率等比率没有子会话消息可算，仍只覆盖本会话。
   const contextDetails = createMemo<CapsuleSummaryDetail[]>(() => {
     const current = ctx()
     const f = formatter()
-    return [{ label: language.t("context.stats.totalTokens"), value: f.number(current?.total) }]
+    const child = summaries.childTokens()
+    const details: CapsuleSummaryDetail[] = [
+      {
+        label: language.t("context.stats.totalTokens"),
+        value: f.number(current?.total == null ? undefined : current.total + child),
+      },
+    ]
+    if (child > 0) details.push({ label: language.t("context.stats.subagentTokens"), value: f.number(child) })
+    return details
   })
 
   const cacheDetails = createMemo<CapsuleSummaryDetail[]>(() => {
@@ -333,7 +362,8 @@ export function useCapsuleSummaryGroups(summaries: ReturnType<typeof useSessionC
         id: "context",
         icon: "brain",
         label: language.t("context.summary.title"),
-        value: formatter().compact(ctx()?.total),
+        // 261028 Red 折叠态总量同样并入子代理，与详情行「总 token」同一个数
+        value: formatter().compact(ctx()?.total == null ? undefined : ctx()!.total + summaries.childTokens()),
         defaultExpanded: true,
         details: contextDetails(),
       },

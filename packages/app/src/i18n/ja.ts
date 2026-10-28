@@ -395,6 +395,7 @@ export const dict = {
   "context.stats.provider": "プロバイダー",
   "context.stats.model": "モデル",
   "context.stats.totalTokens": "総トークン数",
+  "context.stats.subagentTokens": "サブエージェント",
   "context.stats.inputTokens": "入力（未ヒット）",
   "context.stats.outputTokens": "出力トークン",
   "context.stats.reasoningTokens": "推論トークン",

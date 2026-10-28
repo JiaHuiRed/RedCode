@@ -453,6 +453,7 @@ export const dict = {
   "context.stats.provider": "提供商",
   "context.stats.model": "模型",
   "context.stats.totalTokens": "总 token",
+  "context.stats.subagentTokens": "子代理用量",
   "context.stats.inputTokens": "输入（未命中）",
   "context.stats.outputTokens": "输出 token",
   "context.stats.reasoningTokens": "推理 token",
