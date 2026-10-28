@@ -200,7 +200,7 @@ describe("sessionCostBuckets", () => {
  test("桶任一存在返回分币种桶，双双缺失的旧行返回 null 走旧口径", () => {
    expect(sessionCostBuckets({ costCny: 12.5, costUsd: 0 })).toEqual({ cny: 12.5, usd: 0 })
    expect(sessionCostBuckets({ costCny: 0, costUsd: 3.2 })).toEqual({ cny: 0, usd: 3.2 })
-   expect(sessionCostBuckets({ cost: 99 })).toBeNull()
+   expect(sessionCostBuckets({ costCny: undefined })).toBeNull()
    expect(sessionCostBuckets(undefined)).toBeNull()
  })
 })
