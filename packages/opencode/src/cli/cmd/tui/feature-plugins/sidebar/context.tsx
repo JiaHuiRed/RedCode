@@ -2,7 +2,9 @@ import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 import { USD_TO_CNY } from "@redcode-ai/core/currency"
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createResource, onCleanup, Show } from "solid-js"
+import { useEvent } from "@tui/context/event"
+import { useSDK } from "@tui/context/sdk"
 
 const id = "internal:sidebar-context"
 
@@ -97,9 +99,20 @@ export function contextSource(messages: ReadonlyArray<Message>) {
 // 加载子集，长会话下能比真实累计小一个数量级（本机现场 1.8 千万 vs 1.3 亿）。
 // 口径与 GUI session-context-metrics.ts 的 SessionAggregate 一致（260930 同款修复），
 // 命中率等比率仍按已加载消息算（聚合行没有 miss 分桶）。聚合缺失时退回子集累计。
+type TokenAggregate = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+
+// 261011 Red 会话累计（Session total）优先读服务端会话行聚合：msg() 只是分页已
+// 加载子集，长会话下能比真实累计小一个数量级（本机现场 1.8 千万 vs 1.3 亿）。
+// 口径与 GUI session-context-metrics.ts 的 SessionAggregate 一致（260930 同款修复），
+// 命中率等比率仍按已加载消息算（聚合行没有 miss 分桶）。聚合缺失时退回子集累计。
+// 261028 Red 第三参并入子代理用量：元素是子会话行，从 session.children 端点拿全量
+// （sync.data.session 只是近期/有限条目，从列表求和会静默漏算老会话——261022 同款
+// 坑），行上带 projector 随 step-finish 维护的 token 聚合。与 GUI 模型按钮悬停的
+// 父+子成本桶同语义；命中率等比率仍只算本会话（子会话消息不在已加载集里）。
 export function sessionUsage(
   messages: ReadonlyArray<Message>,
-  aggregate?: { tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } },
+  aggregate?: { tokens?: TokenAggregate },
+  subagents?: ReadonlyArray<{ tokens?: TokenAggregate }>,
 ) {
   // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
   // 260614 Red: cache hit = read / (read + miss). For DeepSeek, cache.write=0
@@ -127,6 +140,21 @@ export function sessionUsage(
     }
   }
   const cacheDenom = sumRead + sumMiss + sumWrite
+  const ownTotal = aggregate?.tokens
+    ? aggregate.tokens.input +
+      aggregate.tokens.output +
+      aggregate.tokens.reasoning +
+      aggregate.tokens.cache.read +
+      aggregate.tokens.cache.write
+    : sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite
+  const subagentTotal = (subagents ?? []).reduce(
+    (sum, s) =>
+      sum +
+      (s.tokens
+        ? s.tokens.input + s.tokens.output + s.tokens.reasoning + s.tokens.cache.read + s.tokens.cache.write
+        : 0),
+    0,
+  )
   return {
     output: sessionTotalOutput,
     reasoning: sessionTotalReasoning,
@@ -134,13 +162,8 @@ export function sessionUsage(
     cacheMiss: sumMiss,
     cacheWrite: sumWrite,
     cacheHit: cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null,
-    sessionTotal: aggregate?.tokens
-      ? aggregate.tokens.input +
-        aggregate.tokens.output +
-        aggregate.tokens.reasoning +
-        aggregate.tokens.cache.read +
-        aggregate.tokens.cache.write
-      : sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite,
+    sessionTotal: ownTotal + subagentTotal,
+    subagentTotal,
   }
 }
 
@@ -150,9 +173,24 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => session()?.cost ?? 0)
 
+  // 261028 Red 子代理用量并入 Session total（与 GUI 模型按钮悬停的父+子成本桶同语义）：
+  // 走 session.children 端点直查库拿全量子会话行——sync.data.session 只是近期/有限条目
+  // （261022），从列表求和会静默漏算老会话。行上带 projector 随 step-finish 维护的 token
+  // 聚合；子会话行更新时该事件同样会到，跟着重拉。
+  const sdk = useSDK()
+  const event = useEvent()
+  const [children, { refetch: refetchChildren }] = createResource(
+    () => props.session_id,
+    async (id) => {
+      const result = await sdk.client.session.children({ sessionID: id })
+      return result.data ?? []
+    },
+  )
+  onCleanup(event.on("session.updated", () => refetchChildren()))
+
   const state = createMemo(() => {
     const last = contextSource(msg())
-    const usage = sessionUsage(msg(), session())
+    const usage = sessionUsage(msg(), session(), children() ?? [])
     if (!last) {
       return {
         tokens: 0,
@@ -293,6 +331,13 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme()?.textMuted}>
         Session total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span>
       </text>
+      {/* 261028 Red 子代理并入后的拆分行：没有子代理时不占位。总数含子代理、命中率等
+          比率仍只算本会话（子会话消息不在已加载集里），两行放一起口径不会误读。 */}
+      <Show when={state().subagentTotal > 0}>
+        <text fg={theme()?.textMuted}>
+          subagents <span style={{ fg: tokenColor.total }}>+{state().subagentTotal.toLocaleString()}</span>
+        </text>
+      </Show>
       {/* 260819 cc 解码速率 · 首字延迟。两段分开显示是刻意的：它们是不同的东西 ——
           首字慢 = 排队/预填（供应商侧负载、上下文长度），解码慢 = 吐字本身。
           混成一个"总速度"会让这两种完全不同的问题看起来一样。 */}

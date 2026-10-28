@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { bar, barColor, compact, contextSource, formatMs, sessionUsage } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
-import type { AssistantMessage } from "@redcode-ai/sdk/v2"
+import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
 describe("sidebar context window 显示", () => {
@@ -122,4 +122,58 @@ describe("摘要请求与主会话用量分离", () => {
     expect(sessionUsage([first]).sessionTotal).toBe(124100)
     expect(sessionUsage([first], {}).sessionTotal).toBe(124100)
   })
+})
+
+
+// 261028 Red 子代理用量并入 Session total（GUI 模型按钮悬停「父+子成本桶」的 TUI 对应面）。
+// 数据源是 session.children 端点拿到的全量子会话行，行上带 projector 维护的 token 聚合；
+// 命中率等比率没有子会话消息可算，仍只覆盖本会话。
+describe("子代理用量并入会话累计", () => {
+ const row = (t: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }) => ({
+   tokens: t,
+ })
+ const msg = (read: number, miss: number) =>
+   ({
+     role: "assistant",
+     tokens: { input: miss, output: 100, reasoning: 0, cache: { read, miss, write: 0 } },
+   }) as unknown as Message
+
+ test("子代理用量并入 Session total，并单独给出拆分量", () => {
+   const usage = sessionUsage(
+     [],
+     { tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 800, write: 100 } } },
+     [row({ input: 400, output: 100, reasoning: 50, cache: { read: 2000, write: 200 } })],
+   )
+   expect(usage.subagentTotal).toBe(400 + 100 + 50 + 2000 + 200)
+   expect(usage.sessionTotal).toBe(100 + 50 + 0 + 800 + 100 + (400 + 100 + 50 + 2000 + 200))
+ })
+
+ test("多个子代理累加，缺 tokens 的旧行计 0", () => {
+   const usage = sessionUsage([], undefined, [
+     row({ input: 100, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }),
+     { tokens: undefined },
+     row({ input: 200, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }),
+   ])
+   expect(usage.subagentTotal).toBe(300)
+   expect(usage.sessionTotal).toBe(300)
+ })
+
+ test("不传子代理时行为不变（拆分量为 0）", () => {
+   const aggregate = {
+     tokens: { input: 500, output: 2000, reasoning: 1000, cache: { read: 130_000_000, write: 1_500_000 } },
+   }
+   const usage = sessionUsage([], aggregate)
+   expect(usage.subagentTotal).toBe(0)
+   expect(usage.sessionTotal).toBe(500 + 2000 + 1000 + 130_000_000 + 1_500_000)
+ })
+
+ test("命中率与输出明细仍只算本会话，不被子代理污染", () => {
+   const usage = sessionUsage([msg(800, 200)], undefined, [
+     row({ input: 9000, output: 9000, reasoning: 0, cache: { read: 9000, write: 0 } }),
+   ])
+   expect(usage.cacheHit).toBe(80)
+   expect(usage.output).toBe(100)
+   expect(usage.subagentTotal).toBe(27000)
+   expect(usage.sessionTotal).toBe(1100 + 27000)
+ })
 })
