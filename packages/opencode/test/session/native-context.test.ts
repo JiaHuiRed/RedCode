@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import type { MessageV2 } from "../../src/session/message-v2"
-import { annotate, assertExclusive, summaryPrompt, selectAutomatic, planAutomatic } from "../../src/session/native-context"
+import { annotate, assertExclusive, summaryPrompt, selectAutomatic, planAutomatic, cleanReferenceEchoes } from "../../src/session/native-context"
 
 const sessionID = SessionID.make("ses_native_context")
 const messageID = MessageID.make("msg_native_context")
@@ -65,6 +65,21 @@ describe("native context boundary", () => {
     }
     const out = annotate([message, assistant], 3)
     expect(out.at(-1)?.parts.at(-1)).toMatchObject({ synthetic: true, text: "[History reference: " + assistant.info.id + "]" })
+  })
+
+  test("historical reference echoes are removed only from the outgoing assistant copy", () => {
+    const marker = "[Historical reference: msg_001a180ffe3ca0015QYWW2GTomXHTT]"
+    const assistant = {
+      ...message,
+      info: { ...message.info, role: "assistant" } as MessageV2.Assistant,
+      parts: [{ id: PartID.make("prt_echo"), sessionID, messageID, type: "text" as const, text: `正文${marker}${marker}后续 \`${marker}\`` }],
+    } satisfies MessageV2.WithParts
+    const user: MessageV2.WithParts = { ...message, parts: [{ id: PartID.make("prt_user"), sessionID, messageID, type: "text", text: marker }] }
+    const before = structuredClone([assistant, user])
+    const out = cleanReferenceEchoes([assistant, user])
+    expect(out[0]?.parts[0]).toMatchObject({ text: `正文后续 \`${marker}\`` })
+    expect(out[1]).toBe(user)
+    expect([assistant, user]).toEqual(before)
   })
 
   test("queued user input remains untouched", () => {

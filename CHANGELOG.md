@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **修复历史引用标记改写后泄露与闪现**：模型将 `History reference` 改写为 `Historical reference` 时，流式拦截和完成后的剥离均识别该变体；跨分片的候选引用前缀暂扣，避免先显示再撤回。同轮连续闭合 ≥3 个引用标记且尚未开始工具调用时判定复述循环（阈值对齐 NgramDetector 的 3 次判定）：中止当前流、清理本次产物并自动重试一次，仍复述则写入一句固定可见说明并停止本轮；工具已开始的 step 只剥离不中止，在途调用不受影响。原生压缩出站副本净化助手历史中的引用回声，避免旧污染继续回灌；保留代码引用与用户原文，不改写已存历史。机制和缓存影响见 [引用回声](docs/notes/implemented/bug-fix/2026-10-14-native-history-reference-echo.md)。
+
 ### [0.13.3] - 2026-10-28
 
 - **GUI「上下文」面板总 token 并入子代理用量**（`packages/app/src/components/session/session-context-summary.ts`、`i18n/{zh,en,ja}.ts`）：面板的「总 token」（折叠胶囊值、展开明细、摘要串三处）此前只算父会话自身。现在与既有的子代理费用并入（childCost）同源同行：三处显示一并并入，并单列一行「子代理用量」（>0 才显示，zh/en/ja 三语言）；命中率等比率没有子会话消息可算，仍只算本会话；ctx 缺失（本会话还没有 assistant 消息）时保持「—」，不把 0 捏造成总量。

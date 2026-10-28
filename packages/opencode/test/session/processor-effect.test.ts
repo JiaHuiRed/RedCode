@@ -529,7 +529,7 @@ it.live("session.processor effect tests preserve text start time", () =>
 // 261014 Red 现场形态（GUI 实测）：正文尾部被模型复述出 `[History reference: msg_…]`，
 // 24 字符分片下 trip 命中时标记只到一半，旧剥离正则是空操作，屏幕上的标记挂到 text-end。
 // 纠偏改成「按锚点起点截断 + 立刻下发整条 part + 暂扣增量到闭合」。
-it.live("session.processor effect tests correct a leaked history reference mid-stream", () =>
+it.live("session.processor effect tests correct a leaked historical reference mid-stream", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -552,7 +552,7 @@ it.live("session.processor effect tests correct a leaked history reference mid-s
           return Effect.void
         }).pipe(Effect.forkScoped)
 
-        const marker = "[History reference: msg_001a1390917e9001YSr6HTGtsVdg4a]"
+        const marker = "[Historical reference: msg_001a1390917e9001YSr6HTGtsVdg4a]"
         yield* llm.push(
           raw({
             head: [
@@ -612,13 +612,64 @@ it.live("session.processor effect tests correct a leaked history reference mid-s
 
         // 标记整体消失，正文与闭合后的后续文字都保住
         expect(text?.text).toBe("先说结论：已经修了。收尾一句。")
-        expect(text?.text).not.toContain("History reference")
+        expect(text?.text).not.toContain("Historical reference")
         // 纠偏是流中间下发的（text-start 的空 part 之外还有一条）
         expect(updates.length).toBeGreaterThan(1)
         // 半截标记那条 delta 没有推给客户端——不会再闪一下
-        expect(deltas.join("")).not.toContain("History reference")
+        expect(deltas.join("")).not.toContain("Historical reference")
         expect(deltas.join("")).toContain("先说结论：已经修了。")
         expect(deltas.join("")).toContain("收尾一句。")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor retries a reference repetition once", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const marker = "[Historical reference: msg_001a180ffe3ca0015QYWW2GTomXHTT]"
+        yield* llm.push(reply().text(marker.repeat(30)).stop(), reply().text("正常继续").stop())
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "hi")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        const result = yield* handle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "hi" }], tools: {},
+        })
+        expect(result).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        const text = MessageV2.parts(msg.id).filter((part) => part.type === "text").map((part) => part.text).join("")
+        expect(text).toBe("正常继续")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor stops after a second reference repetition", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const marker = "[Historical reference: msg_001a180ffe3ca0015QYWW2GTomXHTT]"
+        yield* llm.push(reply().text(marker.repeat(30)).stop(), reply().text(marker.repeat(30)).stop())
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "hi")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        const result = yield* handle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "hi" }], tools: {},
+        })
+        expect(result).toBe("stop")
+        expect(yield* llm.calls).toBe(2)
+        const text = MessageV2.parts(msg.id).filter((part) => part.type === "text").map((part) => part.text).join("")
+        expect(text).toContain("自动重试一次后仍未停止")
+        expect(text).not.toContain("Historical reference")
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -791,6 +842,12 @@ it.live("session.processor releases false summary prefixes and incomplete tails"
           ["普通正文 [blo"],
           ["普通正文 [block:" + Array.from({ length: 130 }, (_, i) => i.toString(36).padStart(4, "0")).join(""), " 继续"],
           ["正文 [History reference: msg_test]后续"],
+          ["正文 [Hist", "orical reference: msg_one][Historical reference: msg_two]", "后续"],
+          ["正文 [Histor", "y reference: msg_one][History reference: msg_two]", "后续"],
+          ["正文 [Historical reference", ": msg_one]", "后续"],
+          ["正文 [History ", "reference: msg_one]", "后续"],
+          ["正文 [Hist", "ogram] 后续"],
+          ["正文 `[Historical reference: msg_one]` 后续"],
         ]) {
           const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
           const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
@@ -808,7 +865,7 @@ it.live("session.processor releases false summary prefixes and incomplete tails"
             user: parent, sessionID: chat.id, model, agent: agent(), system: [],
             messages: [{ role: "user" as const, content: "test" }], tools: {},
           })
-          const expected = chunks.join("").replace("[History reference: msg_test]", "")
+          const expected = chunks.join("").replace(/(?<!`)\[(?:History|Historical) reference: msg_(?:test|one|two)\](?!`)/g, "")
           expect(deltas.slice(start).join("")).toBe(expected)
           expect(MessageV2.parts(msg.id).find((part) => part.type === "text")?.text).toBe(expected)
         }

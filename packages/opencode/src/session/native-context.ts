@@ -1,5 +1,19 @@
 import type { MessageV2 } from "./message-v2"
 import { PartID } from "./schema"
+import { stripHistoryReferences } from "./instruction-echo"
+
+// 261028 Red 已落库的助手回声只在出站副本净化，用户原文与持久化历史不动。
+export function cleanReferenceEchoes(messages: MessageV2.WithParts[]): MessageV2.WithParts[] {
+  return messages.map((message) => {
+    if (message.info.role !== "assistant") return message
+    return {
+      ...message,
+      parts: message.parts.map((part) =>
+        part.type === "text" ? { ...part, text: stripHistoryReferences(part.text) } : part,
+      ),
+    }
+  })
+}
 
 // 261010 Red 原生压缩只在出站副本添加稳定引用，不改原文或每步刷新固定前缀。
 // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。

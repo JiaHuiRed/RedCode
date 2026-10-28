@@ -82,6 +82,15 @@ expect(r.stripped).toBe("真正的回答在这里。")
 expect(r.stripped).not.toContain("History reference")
 })
 
+test("Historical reference 改写形连续复述时剥离，代码引用保留", () => {
+  const marker = "[Historical reference: msg_001a180f87b6a001q1wE5znnZbNvqf]"
+  const result = detect(`正文。${marker}${marker}后续。`)
+  expect(result.kinds).toContain("native-history-reference")
+  expect(result.stripped).toBe("正文。后续。")
+  expect(detect(`解释 \`${marker}\` 的格式。`).stripped).toBe(`解释 \`${marker}\` 的格式。`)
+  expect(hasLeakAnchor(`解释 \`${marker}\` 的格式。`)).toBe(false)
+})
+
 test("[Context notice, not a user request] 逼近提醒被复述 —— 剥掉该段", () => {
 const t = [
 "[Context notice, not a user request] Context is approaching the 60000-token ceiling. Use compress for closed ranges when useful; preserve constraints, verification and unfinished work. Aim below 40000 tokens.",
@@ -371,6 +380,12 @@ describe("LeakAnchorScanner 增量扫描", () => {
     const scan = new LeakAnchorScanner()
     expect(scan.feed("先正常回答一段。")).toBe(false)
     expect(scan.feed("[History reference: msg_001a123fb674001QkKme94oUzr5S]")).toBe(true)
+  })
+  test("Historical reference 改写形跨分片命中", () => {
+    const scan = new LeakAnchorScanner()
+    expect(scan.feed("正文。[Hist")).toBe(false)
+    expect(scan.feed("orical reference: msg_")).toBe(true)
+    expect(scan.matchStart).toBe("正文。".length)
   })
 })
 

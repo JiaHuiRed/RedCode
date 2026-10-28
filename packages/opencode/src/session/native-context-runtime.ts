@@ -35,7 +35,10 @@ export function history(sessionID: SessionID, spec: NativeCompaction.Spec) {
 
 export function project(sessionID: SessionID, messages: MessageV2.WithParts[], spec: NativeCompaction.Spec) {
   return NativeContext.annotate(
-    ContextCompaction.project(NativeContext.removeArtifacts(messages), ContextCompaction.list(sessionID)),
+    ContextCompaction.project(
+      NativeContext.cleanReferenceEchoes(NativeContext.removeArtifacts(messages)),
+      ContextCompaction.list(sessionID),
+    ),
     spec.maxMessages,
   )
 }

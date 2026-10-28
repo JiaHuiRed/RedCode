@@ -106,6 +106,9 @@ type ToolCall = {
   sealed?: boolean
 }
 
+// 261028 Red 同一 text part 内连续闭合的引用标记达到该数即判复述循环（对齐 NgramDetector 的 3 次阈值）。
+const REFERENCE_LOOP_LIMIT = 3
+
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   shouldBreak: boolean
@@ -126,6 +129,9 @@ interface ProcessorContext extends Input {
   // 出现再放行（undefined = 不在暂扣态）。见 text-delta 分支。
   leakHold: string | undefined
   leakPending: string
+  // 261028 Red 连续闭合引用标记计数，达到 REFERENCE_LOOP_LIMIT 判复述循环
+  referenceMarkers: number
+  referenceLoop: boolean
   // 260818 Red reasoning 流级 stall 检测：本 step 累积的 reasoning 字符数 +
   // 是否已产出过 text/tool（有产出即不算 stall）+ 是否已触发兜底
   reasoningChars: number
@@ -218,7 +224,9 @@ export const layer = Layer.effect(
         leakTripped: false,
         leakScanner: new InstructionEcho.LeakAnchorScanner(),
         leakHold: undefined,
-        leakPending: "",
+  leakPending: "",
+  referenceMarkers: 0,
+  referenceLoop: false,
         // 260818 Red reasoning 流级 stall 检测
         reasoningChars: 0,
         stepProduced: false,
@@ -1046,6 +1054,16 @@ export const layer = Layer.effect(
                   ctx.leakHold = InstructionEcho.summaryBodyAnchor(hold) ?? hold
                   return
                 }
+                // 261028 Red 连续闭合的引用标记累计判复述循环；阈值对齐 NgramDetector 的 3 次
+                // 判定。已开始工具调用的 step 只剥离不触发（现场 13:34:07 标记串后紧跟真实
+                // edit 调用），避免砍掉在途工具。
+                if (/^\[(?:History|Historical) reference: msg_[^\]\n]*\]/.test(hold) && !ctx.toolsStarted) {
+                  ctx.referenceMarkers++
+                  if (ctx.referenceMarkers >= REFERENCE_LOOP_LIMIT) {
+                    ctx.referenceLoop = true
+                    return
+                  }
+                }
                 ctx.leakHold = undefined
                 ctx.leakTripped = false
                 ctx.leakScanner.reset()
@@ -1074,12 +1092,14 @@ export const layer = Layer.effect(
               }
               break
             }
-            // 261027 Red 候选摘要头先暂扣，避免跨分片命中前 PartDelta 已不可撤回。
+            // 261028 Red 候选摘要头和引用标记先暂扣，避免跨分片命中前 PartDelta 已不可撤回。
             delta = ctx.leakPending + delta
             const pendingLength = Math.min(ctx.leakScanner.pendingLength, delta.length)
             ctx.leakPending = pendingLength ? delta.slice(-pendingLength) : ""
             delta = pendingLength ? delta.slice(0, -pendingLength) : delta
             if (!delta) return
+            // 261028 Red 标记之间夹了正常正文就不算连续复述，重新计数。
+            ctx.referenceMarkers = 0
             ctx.currentText.text += delta
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
@@ -1292,9 +1312,11 @@ export const layer = Layer.effect(
             ctx.salvaged = []
             yield* status.set(ctx.sessionID, { type: "busy" })
             if (compactionTiming) compactionTiming.attempts++
-            const stream = llm.stream(streamInput)
-
-            yield* stream.pipe(
+            for (let attempt = 0; attempt < 2; attempt++) {
+              ctx.referenceLoop = false
+              ctx.referenceMarkers = 0
+              const stream = llm.stream(streamInput)
+              yield* stream.pipe(
               // 261020 Red 静默兜底（主判据）：供应商在 idleMs 内不再吐任何分片，判定这一路流
               // 已卡住。计时只覆盖「等上游下一个分片」的时间——tap 里执行工具时上游并未拉取，
               // 长工具不会被误判成静默。有思考无正文 → 提升收尾；纯静默无思考 → 只结束流，
@@ -1322,9 +1344,42 @@ export const layer = Layer.effect(
                   }
                 }),
               ),
-              Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped),
+              Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped || ctx.referenceLoop),
               Stream.runDrain,
             )
+              if (!ctx.referenceLoop) break
+              // 261028 Red 能走到这里说明本 attempt 未开始过工具（trip 条件含 !toolsStarted），
+              // 第二次仍复述就写入可见说明并停止本轮。
+              slog.warn("reference.loop", { attempt: attempt + 1 })
+              if (attempt === 1) {
+                // 261028 Red 循环外有 ctx.currentText = undefined 的赋值，闭包里的重建编译器
+                // 看不见，且 tsgo 会把收窄沿初始化传播进 const（连显式注解都收成 never）；
+                // 过一道函数取值彻底断开。
+                const tail = (): MessageV2.TextPart | undefined => ctx.currentText
+                const text = tail()
+                if (text) {
+                  text.text += "\n\n（模型连续复述历史引用标记，自动重试一次后仍未停止，本轮到此为止。可直接重发消息继续。）"
+                  yield* session.updatePart(text)
+                }
+                break
+              }
+              for (const part of MessageV2.parts(ctx.assistantMessage.id)) {
+                if (baseline.has(part.id)) continue
+                yield* session.removePart({
+                  sessionID: ctx.sessionID,
+                  messageID: ctx.assistantMessage.id,
+                  partID: part.id,
+                })
+              }
+              ctx.currentText = undefined
+              ctx.reasoningMap = {}
+              ctx.toolcalls = {}
+              ctx.salvaged = []
+              ctx.leakHold = undefined
+              ctx.leakPending = ""
+              ctx.leakTripped = false
+              ctx.leakScanner.reset()
+            }
           }).pipe(
             Effect.onInterrupt(() =>
               Effect.gen(function* () {
@@ -1359,6 +1414,7 @@ export const layer = Layer.effect(
           )
 
           if (ctx.needsCompaction) return "compact"
+          if (ctx.referenceLoop) return "stop"
           // 260818 Red reasoning stall 兜底触发：思考已提升为正文、finish 已置 stop，
           // 与正常收尾同路径退出（runLoop 里 finish="stop" 会走正常 break 分支）
           if (ctx.reasoningStallTripped) return "stop"

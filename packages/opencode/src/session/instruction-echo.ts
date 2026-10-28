@@ -51,6 +51,8 @@ const LEAK_ANCHORS = [
 // 261010 Red native 压缩的历史引用标记：exe 实测整楼回复都是它（同一 msg ID 复述数十遍），
 // 模型把出站副本里的机读标记当成要输出的内容。锚点出现即已泄露，流式路径立即截断。
 "[History reference: ",
+// 261028 Red step-5-preview 把 History 改写为 Historical，仍是同一引用标记回声。
+"[Historical reference: ",
 // 261024 Red 压缩块头的新模仿形（step-5-preview 实测，ses_ffe5e979…）：块渲染头
 // "[Historical context summary. This is not …]" 的句式被模型压缩改写成
 // "[Historical context summary: msg_…]" 拼在回复尾部——上下文里从不出现这个
@@ -132,7 +134,10 @@ export class LeakAnchorScanner {
       if (window[i] !== "[") continue
       const candidate = window.slice(i)
       if (candidate.includes("]") || candidate.includes("\n")) continue
-      if (SUMMARY_BODY_ANCHORS.some((anchor) => anchor.startsWith(candidate) || candidate.startsWith(anchor))) {
+      if (
+        SUMMARY_BODY_ANCHORS.some((anchor) => anchor.startsWith(candidate) || candidate.startsWith(anchor)) ||
+        ["[History reference: ", "[Historical reference: "].some((anchor) => anchor.startsWith(candidate))
+      ) {
         this.pending = candidate.length
         break
       }
@@ -208,6 +213,16 @@ export function summaryBodyAnchor(hold: string): string | undefined {
 
 const EMPTY: string[] = []
 
+// 261028 Red 仅净化回放副本里的引用回声，不改其他指令或代码示例。
+export function stripHistoryReferences(text: string): string {
+  if (!text.includes("[History reference: msg_") && !text.includes("[Historical reference: msg_")) return text
+  const code = new MarkdownCode()
+  const masked = text.split("").map((char) => (code.feed(char) && char !== "\n" ? " " : char)).join("")
+  const matches = [...masked.matchAll(/\[(?:History|Historical) reference: msg_[^\]\n]*\]/g)]
+  for (const match of matches.reverse()) text = text.slice(0, match.index) + text.slice(match.index! + match[0].length)
+  return text
+}
+
 // ── A 类：我们自己注入的包装块，整块剥离 ────────────────────────────
 // ── A 类：我们自己注入的包装块，整块剥离 ────────────────────────────
 const OWN_BLOCKS: Array<[string, RegExp]> = [
@@ -224,7 +239,7 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
 // 261010 Red native 压缩（compaction.native）注入的两种前缀，此前只收了 [System notice]，
 // 漏掉的这两种在 exe 上整楼复述。都是我们自己的注入、有明确起止，同 A 类整块剥。
 // 引用标记：每条历史消息一个，可能连续成百行，用全局替换一次吃干净。
- ["native-history-reference", /\[History reference: [^\n]*?\]\s*/g],
+  ["native-history-reference", /\[(?:History|Historical) reference: [^\n]*?\]\s*/g],
 // 261024 Red 压缩块头的模仿形：冒号+单 msg ID 的混合体，引擎从不生成这个形状（见 LEAK_ANCHORS）。
 ["native-compaction-summary", /\[Historical context summary[^\n]*?\]\s*/g],
 // 上下文逼近提醒：单段无闭合标签，与 system-notice 同形，剥到空行为止。
@@ -358,6 +373,7 @@ export function detect(text: string): EchoResult {
     text.includes("<dcp-system-reminder>") ||
     text.includes("[System notice]") ||
 text.includes("[History reference: ") || // native 压缩引用标记复述（261010）
+text.includes("[Historical reference: ") || // 引用标记改写形（261028）
 text.includes("[Historical context summary") || // 压缩块头模仿形（261024，step-5-preview）
 text.includes("[Context notice, not a user request]") || // native 压缩逼近提醒复述（261010）
     text.includes("Rules:") ||
