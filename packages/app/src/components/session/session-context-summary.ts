@@ -126,45 +126,68 @@ export function useSessionContextSummaries() {
     },
   }))
 
+ // 261028 Red 子会话行改走 session.children 端点全量拉取——sync.data.session 只是
+ // 近期/有限条目（261022 同款坑，TUI 侧边栏同批次已改端点），从列表过滤 parentID
+ // 会静默漏算老会话的子代理用量。queryKey 绑定子行派生信号：活跃子会话行更新时
+ // （session.updated → sync 列表 upsert），信号变化触发重拉全量。
+ const childRowStamp = createMemo(() => {
+   const id = params.id
+   if (!id) return ""
+   const rows = sync.data.session.filter((s) => s.parentID === id)
+   return `${rows.length}:${rows.map((s) => s.time?.updated ?? 0).join(",")}`
+ })
+ const children = useQuery(() => ({
+   queryKey: ["session", params.id ?? "", "children", childRowStamp()] as const,
+   enabled: () => !!params.id,
+   placeholderData: (previous) => previous,
+   queryFn: async () => {
+     const id = params.id
+     if (!id) return null
+     try {
+       const result = await sdk.client.session.children({ sessionID: id })
+       return result.data ?? []
+     } catch {
+       // children 端点失败不该拖垮整个面板（同 inspect 的容错口径），按无子会话显示
+       return null
+     }
+   },
+ }))
+ const childRows = () => children.data ?? []
+
   // 260706 Red 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
   // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
   // 260930 Red 子会话成本同样改读会话行聚合：原来遍历子会话已加载消息，没加载到的子会话直接漏计。
   // 260922 Red 从 session-context-tab.tsx 迁来：折叠胶囊也要显示总成本，两处各算一份必然漂移。
   // 260930 Red 子会话成本同样按桶走：裸数字相加再套父会话单一币种，会把 child 的
   // CNY 账按 USD 显示。桶缺失的旧行仍走标量 + 旧币种，过渡期与 metrics 同一判据。
-  const childCost = createMemo(() => {
-    const id = params.id
-    // 260930 Red 三通道：桶任一存在按桶并入；双双缺失的旧行进 legacy 通道。
-    // 原来裸 `?? 0` 把旧行子会话的标量账丢了（父显示总账少于真实）。
-    const acc = { cny: 0, usd: 0, legacy: 0 }
-    if (!id) return acc
-    for (const s of sync.data.session) {
-      if (s.parentID !== id) continue
-      if (s.costCny !== undefined || s.costUsd !== undefined) {
-        acc.cny += s.costCny ?? 0
-        acc.usd += s.costUsd ?? 0
-      } else {
-        acc.legacy += s.cost ?? 0
-      }
-    }
-    return acc
-  })
+ const childCost = createMemo(() => {
+   // 260930 Red 三通道：桶任一存在按桶并入；双双缺失的旧行进 legacy 通道。
+   // 原来裸 `?? 0` 把旧行子会话的标量账丢了（父显示总账少于真实）。
+   const acc = { cny: 0, usd: 0, legacy: 0 }
+   for (const s of childRows()) {
+     if (s.costCny !== undefined || s.costUsd !== undefined) {
+       acc.cny += s.costCny ?? 0
+       acc.usd += s.costUsd ?? 0
+     } else {
+       acc.legacy += s.cost ?? 0
+     }
+   }
+   return acc
+ })
+
 
   // 261028 Red 子代理 token 并入「总 token」（与 childCost 同源同行）：子代理用量按会话行
   // 记账（projectors.ts 的 applyUsage 按 part 所属 session 增量），面板此前只显示父会话
   // 自身。与 TUI 侧边栏 Session total 同语义；命中率等比率没有子会话消息可算，仍只算本会话。
-  const childTokens = createMemo(() => {
-    const id = params.id
-    if (!id) return 0
-    let sum = 0
-    for (const s of sync.data.session) {
-      if (s.parentID !== id) continue
-      const t = s.tokens
-      if (!t) continue
-      sum += t.input + t.output + t.reasoning + t.cache.read + t.cache.write
-    }
-    return sum
-  })
+ const childTokens = createMemo(() => {
+   let sum = 0
+   for (const s of childRows()) {
+     const t = s.tokens
+     if (!t) continue
+     sum += t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+   }
+   return sum
+ })
 
   const cost = createMemo(() => {
     const m = metrics()
