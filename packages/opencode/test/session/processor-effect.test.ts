@@ -649,6 +649,34 @@ it.live("session.processor retries a reference repetition once", () =>
   ),
 )
 
+it.live("session.processor retries reference repetition when markers and newlines arrive as separate chunks", () =>
+ provideTmpdirServer(
+   ({ dir, llm }) =>
+     Effect.gen(function* () {
+       const { processors, session, provider } = yield* boot()
+       const marker = "[Historical reference: msg_001a180ffe3ca0015QYWW2GTomXHTT]"
+       // 261028 Red 分片边界回归：标记与换行分别到货时，换行不算正文、不得重置
+       // 连续计数——修复前 `\n` 分片走正文路径把 referenceMarkers 清零，永远攒不到判定。
+       const chunked = reply().text(marker).text("\n").text(marker).text("\n").text(marker).text("\n").stop()
+       yield* llm.push(chunked, reply().text("正常继续").stop())
+       const chat = yield* session.create({})
+       const parent = yield* user(chat.id, "hi")
+       const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+       const model = yield* provider.getModel(ref.providerID, ref.modelID)
+       const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+       const result = yield* handle.process({
+         user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+         messages: [{ role: "user" as const, content: "hi" }], tools: {},
+       })
+       expect(result).toBe("continue")
+       expect(yield* llm.calls).toBe(2)
+       const text = MessageV2.parts(msg.id).filter((part) => part.type === "text").map((part) => part.text).join("")
+       expect(text).toBe("正常继续")
+     }),
+   { config: (url) => providerCfg(url) },
+ ),
+)
+
 it.live("session.processor stops after a second reference repetition", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

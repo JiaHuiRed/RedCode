@@ -1098,8 +1098,9 @@ export const layer = Layer.effect(
             ctx.leakPending = pendingLength ? delta.slice(-pendingLength) : ""
             delta = pendingLength ? delta.slice(0, -pendingLength) : delta
             if (!delta) return
-            // 261028 Red 标记之间夹了正常正文就不算连续复述，重新计数。
-            ctx.referenceMarkers = 0
+           // 261028 Red 标记之间夹了正常正文就不算连续复述，重新计数；纯空白分隔
+           // （换行分片）不算正文——标记与换行分片交替到货时不能打断连续性。
+           if (/\S/.test(delta)) ctx.referenceMarkers = 0
             ctx.currentText.text += delta
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
