@@ -3,7 +3,7 @@ import { useRouteData } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { SplitBorder } from "@tui/component/border"
-import type { AssistantMessage } from "@redcode-ai/sdk/v2"
+import { subagentUsage } from "./subagent-usage"
 import { Locale } from "@/util/locale"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
@@ -30,28 +30,7 @@ export function SubagentFooter() {
     return { label, index: index + 1, total: siblings.length }
   })
 
-  const usage = createMemo(() => {
-    const msg = messages()
-    // 260612 Red session-aggregate cache rate
-    // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
-    // Fallback to input for providers that don't return miss metadata.
-    let sumRead = 0,
-      sumMiss = 0,
-      sumWrite = 0,
-      sumInput = 0
-    for (const m of msg) {
-      if (m.role === "assistant") {
-        sumRead += m.tokens.cache.read
-        sumMiss += m.tokens.cache.miss ?? 0
-        sumWrite += m.tokens.cache.write
-        sumInput += m.tokens.input
-      }
-    }
-    if (sumRead <= 0) return
-    const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
-    const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
-    return { cache: `Cache: ${cacheHitPct}%` }
-  })
+  const usage = createMemo(() => subagentUsage(messages(), session()))
 
   const { theme } = useTheme()
   const keymap = useOpencodeKeymap()
@@ -85,7 +64,7 @@ export function SubagentFooter() {
             <Show when={usage()}>
               {(item) => (
                 <text fg={theme.textMuted} wrapMode="none">
-                  {item().cache}
+                  {item().label}
                 </text>
               )}
             </Show>
