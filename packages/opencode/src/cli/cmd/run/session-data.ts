@@ -162,16 +162,15 @@ function formatUsage(
     return undefined
   }
 
-  // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
-  // Fallback to input for providers that don't return miss metadata.
+  // 261028 Red 口径与主会话/仪表盘对齐：入参是会话行聚合，行上没有 miss 桶，
+  // tokens.input 就是那一项（session.ts 里 tokens.cache.miss === tokens.input by
+  // construction），write 是另一桶，三桶无条件求和才是真总量。旧写法
+  // miss ?? write ?? input 是 260614 的 either/or 链，行上 miss 恒缺失 → 退化成
+  // write ?? input，write>0 时把 input 整桶丢掉——与 260707 在消息侧修掉的是同一个
+  // inflated hit。来龙去脉见 prompt/usage.ts:31-36、home-usage.tsx:437-446。
+  const read = tokens?.cache?.read ?? 0
   const cacheHitPct =
-    (tokens?.cache?.read ?? 0) > 0
-      ? Math.round(
-          ((tokens?.cache?.read ?? 0) /
-            ((tokens?.cache?.read ?? 0) + (tokens?.cache?.miss ?? tokens?.cache?.write ?? tokens?.input ?? 0))) *
-            1000,
-        ) / 10
-      : undefined
+    read > 0 ? Math.round((read / (read + (tokens?.input ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10 : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 
   const text =
