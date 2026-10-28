@@ -130,14 +130,22 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     ),
   )
 
+  // 261028 Red 依赖里加 flat()：模型这类列表异步到达，挂载时 rAF 找不到 current
+  //   项就静默返回，而列表到达后本效果不会重跑（依赖没变）——当前模型留在原处，
+  //   常在视野外或边缘，用户只能滚轮找。centeredKey 保证每个 current 只居中一次，
+  //   过滤时不跟用户的滚动抢位置（当前项被滤掉时也不记，滤回来再居中）。
+  let centeredKey: string | undefined
   createEffect(() => {
     const scroll = scrollRef()
     if (!scroll) return
     if (!props.current) return
     const key = props.key(props.current)
+    flat()
+    if (centeredKey === key) return
     requestAnimationFrame(() => {
       const element = findByKey(scroll, key)
       if (!element) return
+      centeredKey = key
       scrollIntoView(scroll, element, "center")
     })
   })
