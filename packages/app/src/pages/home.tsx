@@ -295,7 +295,10 @@ function HomeDesign() {
   }
 
   return (
-    <div class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[232px_minmax(0,1fr)] grid-rows-[1fr_auto]">
+    <div
+      data-component="home-dashboard"
+      class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[232px_minmax(0,1fr)] grid-rows-[1fr_auto]"
+    >
       <HomeProjectColumn
         projects={projects()}
         selected={selectedProject()?.worktree}
@@ -342,7 +345,10 @@ function HomeDesign() {
             aria-pressed={state.archived}
             class="size-7 shrink-0"
           />
-          <div class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5">
+          <div
+            data-component="home-view-switch"
+            class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5"
+          >
             <IconButtonV2
               data-action="home-view-list"
               variant={state.view === "list" ? "contrast" : "ghost-muted"}
@@ -700,7 +706,10 @@ function HomeSessionSearch(props: {
   const modKey = isMac ? "⌘" : "Ctrl"
   let inputRef: HTMLInputElement | undefined
   return (
-    <label class="ml-4 flex h-9 min-w-0 flex-1 sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
+    <label
+      data-component="home-session-search"
+      class="ml-4 flex h-9 min-w-0 flex-1 sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]"
+    >
       <IconV2 name="magnifying-glass" size="small" />
       <input
         ref={(el) => {

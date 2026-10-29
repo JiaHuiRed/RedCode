@@ -324,6 +324,14 @@
   --frost-edge-highlight: rgba(255, 255, 255, 0.42);
   --frost-edge-veil: rgba(255, 255, 255, 0.16);
 
+  /* 261029 Red 交互玻璃共用边缘与浮层底，不改变壁纸磨砂分档。 */
+  --glass-edge: var(--frost-edge-highlight);
+  --glass-border: var(--v2-border-border-base);
+  --glass-popover-alpha: 92%;
+  --glass-control-fill: color-mix(in srgb, var(--v2-background-bg-layer-02) 55%, transparent);
+  --glass-surface-fill: color-mix(in srgb, var(--v2-background-bg-base) 94%, transparent);
+  --glass-atmosphere: color-mix(in srgb, var(--text-interactive-base) 6%, transparent);
+
   /* ⑤ 光标辉光。半径 126px = Aqua / deepseek 官方特性卡那个 180px 的 70%
      —— 哥哥 260831 看过实机后定的，官方那档在本仓的窗口尺寸下偏大。
      颜色也不照搬（官方是青 rgba(90,215,255,.17)）——本仓玻璃的掺色语言是粉 + 蓝紫，
@@ -344,6 +352,7 @@
   --frost-edge-highlight: rgba(255, 255, 255, 0.08);
   --frost-edge-veil: rgba(0, 0, 0, 0.14);
   --frost-spot-color: rgba(168, 180, 240, 0.16);
+  --glass-popover-alpha: 94%;
 }
 
 /* ---------- 260901 cc 启动画面的底。
@@ -566,6 +575,168 @@
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
     var(--v2-elevation-raised);
+}
+
+/* 261029 Red 浮层走 Portal，按同一配方统一三页的菜单、选择器和对话框。 */
+:root [data-component="popover-content"],
+:root [data-component="select-content"],
+:root [data-component="dropdown-menu-content"],
+:root [data-component="dropdown-menu-sub-content"],
+:root [data-component="context-menu-content"],
+:root [data-component="context-menu-sub-content"],
+:root [data-component="dialog"] [data-slot="dialog-container"] [data-slot="dialog-content"] {
+  background-color: color-mix(
+    in srgb,
+    var(--surface-raised-stronger-non-alpha) var(--glass-popover-alpha),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-inline)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--frost-blur-inline)) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 0 0 1px var(--glass-border),
+    var(--v2-elevation-floating);
+}
+
+/* 261029 Red 有大段文字的对话框更实，不借壁纸保证对比度。 */
+:root [data-component="dialog"] [data-slot="dialog-container"] [data-slot="dialog-content"] {
+  background-color: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 97%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 0 0 1px var(--glass-border),
+    var(--v2-elevation-overlay);
+}
+
+[data-component="button"][data-variant="ghost"][data-action="prompt-model"] {
+  border-radius: 999px;
+  border-color: var(--glass-border);
+  background-color: var(--glass-control-fill);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+[data-component="button"][data-action="prompt-model"]:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 2px;
+}
+
+[data-component="session-composer"],
+[data-component="session-new-composer"] {
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    var(--v2-elevation-raised);
+}
+
+/* 261029 Red 外壳和卡片用边缘光，不给密集列表或正文叠加模糊。 */
+[data-component="home-dashboard"],
+[data-component="session-new-design"] {
+  background-image: radial-gradient(ellipse at 50% 0%, var(--glass-atmosphere), transparent 60%);
+}
+
+[data-component="home-session-search"],
+[data-component="home-view-switch"] {
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 0 0 1px var(--glass-border);
+}
+
+[data-component="home-session-search"]:focus-within {
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 0 0 1px var(--v2-border-border-focus),
+    var(--v2-elevation-raised);
+}
+
+[data-component="home-view-switch"] [data-action="home-view-list"],
+[data-component="home-view-switch"] [data-action="home-view-kanban"] {
+  border-radius: var(--radius-md);
+}
+
+[data-component="home-project-row"][data-selected] {
+  background-color: var(--glass-control-fill);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+[data-component="home-session-row"]:hover,
+[data-component="home-session-row"]:focus-visible {
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+[data-component="kanban-card"] {
+  background-color: var(--glass-surface-fill);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    var(--v2-elevation-raised);
+}
+
+[data-frost-surface="home-usage"] {
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    var(--v2-elevation-floating);
+}
+
+@media (min-width: 1024px) {
+  [data-frost-surface="home-sidebar"] {
+    box-shadow:
+      inset 0 1px 0 var(--glass-edge),
+      var(--v2-elevation-floating);
+  }
+}
+
+/* 261029 Red 新建页的项目选择和会话里的选择器与模型入口共用胶囊形态。 */
+[data-component="new-session-context"] [data-slot="select-select-trigger"],
+[data-slot="select-select-trigger"][data-action="prompt-agent"],
+[data-slot="select-select-trigger"][data-action="prompt-workspace"] {
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+[data-app-frost] [data-component="session-new-composer"] {
+  background-color: color-mix(
+    in srgb,
+    var(--v2-background-bg-base) calc(var(--frost-alpha-inline) * var(--frost-strength)),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-inline));
+  -webkit-backdrop-filter: blur(var(--frost-blur-inline));
+}
+
+/* 261029 Red 会话气泡和工作台工具条统一迎光边，正文与代码表面保持原样。 */
+[data-component="user-message"] [data-slot="user-message-text"] {
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    var(--v2-elevation-raised);
+}
+
+.session-side-panel__mode-actions {
+  border-color: var(--glass-border);
+  background-color: var(--glass-control-fill);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+[data-component="reasoning-part"] [data-slot="reasoning-toggle"] {
+  border-radius: var(--radius-md);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root [data-component="popover-content"],
+  :root [data-component="select-content"],
+  :root [data-component="dropdown-menu-content"],
+  :root [data-component="dropdown-menu-sub-content"],
+  :root [data-component="context-menu-content"],
+  :root [data-component="context-menu-sub-content"],
+  :root [data-component="dialog"] [data-slot="dialog-container"] [data-slot="dialog-content"] {
+    background-color: var(--surface-raised-stronger-non-alpha);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  [data-app-frost] [data-component="session-new-composer"] {
+    background-color: var(--v2-background-bg-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* ---------- ④ 浮起卡片（续）：文件树 / 审查栏脱边成卡。
