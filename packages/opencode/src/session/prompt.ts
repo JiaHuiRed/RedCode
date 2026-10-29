@@ -4,6 +4,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { ImageTokens } from "./image-tokens"
 import { overlayToolDefs, PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
+import { PromptPin } from "./prompt-pin"
 import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
 import * as Log from "@redcode-ai/core/util/log"
@@ -1726,11 +1727,20 @@ export const layer = Layer.effect(
           const cachedTools = _caches.tools.get(sessionID)
           if (cachedTools) overlayToolDefs(sortedTools, cachedTools.defs)
           else {
-            const defs = new Map<string, { description: string; inputSchema: unknown }>()
-            for (const [k, t] of Object.entries(sortedTools)) {
-              defs.set(k, { description: (t as any).description, inputSchema: (t as any).inputSchema })
-            }
+            // 261029 Red 重启续接：进程内钉住随旧进程丢失时，从磁盘 pin 恢复上一进程首轮的
+            // 工具定义并当作钉住初值，本轮立即 overlay 生效——否则 MCP 服务器升级后重建会
+            // 拿到新版 schema，续接首请求全价重建。无 pin（新会话）保持原样建立。
+            const pin = PromptPin.load(sessionID)
+            const defs = pin
+              ? new Map(Object.entries(pin.tools))
+              : new Map(
+                  Object.entries(sortedTools).map(([k, t]) => [
+                    k,
+                    { description: (t as any).description, inputSchema: (t as any).inputSchema },
+                  ]),
+                )
             _caches.tools.set(sessionID, { sessionID, defs })
+            if (pin) overlayToolDefs(sortedTools, defs)
           }
 
           if (step === 1)
@@ -1851,6 +1861,10 @@ export const layer = Layer.effect(
           // Key uses the same stable string as toUIMessages' differentModel check (`providerID/model.id`).
           const modelKey = `${model.providerID}/${model.id}`
           const cachedSystem = _caches.system.get(sessionID)?.get(modelKey)
+          // 261029 Red 冷组装（重启续接 / 进程内缓存被回收后首轮）时读一次磁盘 pin，
+          // 供本轮 tools 与 mcpGuide 恢复上一进程钉住的内容；cachedSystem 命中时短路。
+          // 命名避开下方 msgPin 循环的计数器 pinned。
+          const coldPin = cachedSystem ? undefined : PromptPin.load(sessionID)
           // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
           // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
           // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
@@ -1884,7 +1898,13 @@ export const layer = Layer.effect(
             // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
             // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
-            cachedSystem ? Effect.succeed(cachedSystem.mcpGuide) : mcpGuideText(),
+            // 261029 Red 重启续接时进程内缓存丢了，mcpGuide 优先用磁盘 pin 里的那份（与本轮
+            // tools 的恢复同源），保证跨进程同值；无 pin 才现算。
+            cachedSystem
+              ? Effect.succeed(cachedSystem.mcpGuide)
+              : coldPin
+                ? Effect.succeed(coldPin.mcpGuide)
+                : mcpGuideText(),
             MessageV2.toModelMessagesEffect(visibleMsgs, model, mediaOptions),
             sessionSoul(sessionID, soulID, souls),
           ])
@@ -1893,6 +1913,10 @@ export const layer = Layer.effect(
             const sessionSystem = _caches.system.get(sessionID)
             if (sessionSystem) sessionSystem.set(modelKey, systemCache)
             else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
+            // 261029 Red 冷组装定型后把工具定义与 MCP guide 落盘（prompt-pin），重启续接时
+            // 恢复同一份内容——否则 MCP 服务器升级后续接重建会拿到新版定义，供应商逐字节
+            // 比对失败，续接首请求全价重建（261029 实测 321k token 全冷，见 prompt-pin.ts）。
+            PromptPin.save({ sessionID, tools: _caches.tools.get(sessionID)!.defs, mcpGuide })
           }
           // 261007 Red tool-result 配对净化：steer 场景下单侧缓存拼接曾让同一批 tool-result
           // 复制发出（根因分析见 message-v2.ts 的 sanitizeToolResultPairing 注释）。净化放在

@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
+import { PromptPin } from "./prompt-pin"
 import type { Snapshot as SoulSnapshot } from "./soul"
 
 const log = Log.create({ service: "prompt-caches" })
@@ -97,6 +98,8 @@ const evictor = sessionEvictor({
 
 /** 把一个会话从全部四个缓存里彻底摘掉。settle 只管 msgPin/modelMsgs，这里连 system/tools 一起。 */
 export function dropSession(sessionID: string) {
+  // 261029 Red 磁盘 pin 与 system/tools 同生命周期，会话回收时一并清掉
+  PromptPin.drop(sessionID)
   const dropped =
     settlePromptCaches(sessionID, "evict") +
     (PromptCaches.system.delete(sessionID) ? 1 : 0) +
