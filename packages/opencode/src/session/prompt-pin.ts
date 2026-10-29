@@ -15,7 +15,10 @@ import { Global } from "@redcode-ai/core/global"
 //   - 会话被 evictor 回收时经 dropSession 一并删除
 // history 投影漂移（msgPin/modelMsgs 侧）是独立问题，不在本文件范围。
 
-const VERSION = 1
+// 261029 Red v2：v1 落盘的 inputSchema 是 AI SDK Schema 对象序列化后的残缺对象
+// （丢 Symbol 标记只剩 { jsonSchema: ... }），消费端重建会发出双层嵌套 schema。
+// v2 起落盘纯 JSON Schema 数据（见 extractSchema），旧格式靠版本号整体弃用回退现算。
+const VERSION = 2
 
 export interface Pin {
   version: number
@@ -54,11 +57,34 @@ export function load(sessionID: string): Pin | undefined {
   try {
     const parsed = JSON.parse(raw) as Pin
     if (parsed?.version !== VERSION || parsed.sessionID !== sessionID) return undefined
+    // 261029 Red 语法合法但结构损坏（tools 为 null/数组/条目缺字段）同样弃用回退：
+    // 否则坏 pin 流到消费端的 Object.entries/overlay 上炸掉冷启动轮，违背「损坏一律回退」
+    if (
+      typeof parsed.tools !== "object" ||
+      parsed.tools === null ||
+      Array.isArray(parsed.tools) ||
+      !Object.values(parsed.tools).every(
+        (t) => typeof t === "object" && t !== null && typeof t.description === "string" && "inputSchema" in t,
+      )
+    )
+      return undefined
     return parsed
   } catch {
     // 损坏的 pin 直接弃用：下次冷组装会用新内容覆盖它
     return undefined
   }
+}
+
+// 261029 Red inputSchema 运行时是 AI SDK Schema 对象（Symbol 标记 + getter + validate），
+// 直接 JSON.stringify 会丢标记只剩 { jsonSchema: ... } 残缺对象——消费端 prepareTools 的
+// asSchema() 分派会把它当函数调用直接 TypeError。落盘前提取纯 JSON Schema 数据；
+// 已是裸数据的（测试构造/非 SDK 形态）原样保留。
+function extractSchema(value: unknown): unknown {
+  if (typeof value === "object" && value !== null && "jsonSchema" in value) {
+    const s = (value as { jsonSchema: unknown }).jsonSchema
+    if (typeof s === "object" && s !== null) return s
+  }
+  return value
 }
 
 export function save(input: {
@@ -70,15 +96,20 @@ export function save(input: {
     version: VERSION,
     sessionID: input.sessionID,
     savedAt: Date.now(),
-    tools: Object.fromEntries(input.tools),
+    tools: Object.fromEntries(
+      [...input.tools].map(([k, t]) => [k, { description: t.description, inputSchema: extractSchema(t.inputSchema) }]),
+    ),
     ...(input.mcpGuide !== undefined ? { mcpGuide: input.mcpGuide } : {}),
   }
   writes++
+  // 261029 Red prune 判定在入队时定格：队列任务运行时再读全局会拿到终值，
+  // 集中排队恰好凑满 PRUNE_EVERY 时会连环触发目录扫描
+  const shouldPrune = writes % PRUNE_EVERY === 0
   writeChain = writeChain
     .then(async () => {
       await fsp.mkdir(dir(), { recursive: true })
       await fsp.writeFile(file(input.sessionID), JSON.stringify(pin), "utf-8")
-      if (writes % PRUNE_EVERY === 0) await prune()
+      if (shouldPrune) await prune()
     })
     .catch(() => {}) // 写失败不影响请求主路径：最坏下次重启没有 pin，多付一次全价重建（即部署前行为）
 }

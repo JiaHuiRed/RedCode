@@ -1732,7 +1732,15 @@ export const layer = Layer.effect(
             // 拿到新版 schema，续接首请求全价重建。无 pin（新会话）保持原样建立。
             const pin = PromptPin.load(sessionID)
             const defs = pin
-              ? new Map(Object.entries(pin.tools))
+              ? new Map(
+                  Object.entries(pin.tools).map(([k, t]) => [
+                    k,
+                    // 261029 Red pin 落盘的是纯 JSON Schema 数据（Schema 对象直接序列化会丢
+                    // Symbol 标记，prepareTools 的 asSchema 分派会把残缺对象当函数调用崩掉），
+                    // 必须重建成 SDK Schema 对象再 overlay
+                    { description: t.description, inputSchema: jsonSchema(t.inputSchema as JSONSchema7) },
+                  ]),
+                )
               : new Map(
                   Object.entries(sortedTools).map(([k, t]) => [
                     k,
