@@ -8,10 +8,21 @@
 
 ---
 
-### [Unreleased]
+### [0.13.4] - 2026-10-29
 
+- **修复 prompt-pin 恢复路径必崩与两处健壮性缺陷**（`packages/opencode/src/session/prompt-pin.ts`、`session/prompt.ts`）：落地前外部审计三项全部证实，其中 P1 比审计描述更严重——save 直接 `JSON.stringify` AI SDK Schema 对象，Symbol 标记被丢只剩 `{ jsonSchema: ... }` 残缺对象，恢复端 overlay 进 `prepareTools` 时 ai 包 `asSchema()` 分派把它当函数调用，ai-sdk 主路径（`llm.ts` streamText）续接首轮必抛 TypeError，比不装 pin（全价重建但能跑）更糟；native 路径 `nativeSchema` 是 duck-typing 只读 `.jsonSchema` 属性恰好不崩，真机验证只碰 native provider 会假绿。修法：落盘改提取纯 JSON Schema 数据、恢复端 `jsonSchema()` 重建成 Schema 对象（与 `tools.ts` 跨边界转换同构），`VERSION` 1→2 旧格式整体弃用回退。P2 `load()` 此前只校验 version/sessionID，`tools: null` 的合法 JSON 流到消费端 `Object.entries` 炸掉冷启动轮，补最小结构校验（tools 非数组对象、每条定义有 description 与 inputSchema），非法整体回退。P3 prune 判定在异步任务运行时才读全局计数，集中排队恰逢终值为 200 倍数时连环触发目录扫描，判定入队时定格布尔值。原「逐字节一致」测试喂普通对象（shadow 数据）没抓到 P1；新增真实 Schema 回环（重建后走 `prepareTools` 同款 `asSchema` 路径内容一致）、合法 JSON 非法结构 4 形态、旧版本格式弃用 3 条测试。模型可见四问：修复使恢复路径从必崩变为可用，未重启正常路径 wire 字节零变化；固定前缀零增减；KV cache 仅影响续接重建（崩溃 → 恢复后与 pin 前缀逐字节一致命中）；无新增注入项，上限沿用工具描述 32KB 预算与 mcp-guide 登记。验证：prompt-pin 10/10（7 存量 + 3 新增）、prompt-caches + prompt 109 pass、typecheck exit 0。
+- **重启续接从磁盘 pin 恢复 MCP 定义，防前缀全冷**（`packages/opencode/src/session/prompt-pin.ts` 新文件、`session/prompt.ts`）：实测关掉 exe 35 秒后重进同一会话，供应商缓存命中率 99.7% → 0、321k token 全价重建。根因不是供应商缓存过期，是进程内钉住（PromptCaches.tools / SystemCache.mcpGuide）随旧进程消失，续接重组时当天升级过的 jcodemunch 返回了新版工具定义与自述（request-evidence：system 段 +51B / tools 段 +64B），供应商逐字节比对失败。新增会话级磁盘 pin：冷组装定型后把工具定义与 MCP guide 落盘 `data/prompt-pin/<sessionID>.json`，重启续接时进程内缓存 miss 则优先恢复（tools 当轮 overlay、guide 直接复用），让重启后重建的前缀与未重启时逐字节一致；缺失/损坏/版本或会话不符回退现算（即部署前行为）。生效预期：首次重启仍冷一次并写下首份 pin，第二次重启起命中。history 投影漂移（msgPin/modelMsgs 侧）是独立问题不在此范围。模型可见四问与验证见提交 `b969b2e5`。
+- **GPT「Deliver, don't defend」交付原则替换行为黑名单**（`packages/opencode/src/session/prompt/gpt.md`）：GPT 系列反复出现自保型行为（以审计/汇报代替动手、回复末尾加未经请求的免责声明与范围承诺、复读已拍板决定、引用规则边界当挡箭牌），按形状逐条打补丁收敛为一条原则级规则——判据是每句话是否携带关于工作的新信息（改了什么/卡在哪/定了什么，否则删），条件句是授权拍板而非提案申请；已有形状降级为该判据的投影示例，未发明的新变体同受覆盖。模型可见四问：gpt.md 在 Tool usage 前新增一节一段 +4 行，GPT 固定前缀约 +130 token；插入点位于前缀中部，该点之后作废一次（一次性成本）；新增段约 1.1KB 静态文本有界。
 - **GUI 液态玻璃风格统一**：首页的搜索、视图切换、项目与会话看板，新建会话的输入与项目选择，以及聊天会话的气泡、输入和工作台共用玻璃边缘光与主题色；菜单、选择器和弹窗统一半透明浮层，并适配高对比度和减少透明度偏好。保留壁纸分层、推理强度粒子，以及正文和代码区的清晰底色。
 - **修复历史引用标记改写后泄露与闪现**：模型将 `History reference` 改写为 `Historical reference` 时，流式拦截和完成后的剥离均识别该变体；跨分片的候选引用前缀暂扣，避免先显示再撤回。同轮连续闭合 ≥3 个引用标记且尚未开始工具调用时判定复述循环（阈值对齐 NgramDetector 的 3 次判定）：中止当前流、清理本次产物并自动重试一次，仍复述则写入一句固定可见说明并停止本轮；工具已开始的 step 只剥离不中止，在途调用不受影响。原生压缩出站副本净化助手历史中的引用回声，避免旧污染继续回灌；保留代码引用与用户原文，不改写已存历史。机制和缓存影响见 [引用回声](docs/notes/implemented/bug-fix/2026-10-14-native-history-reference-echo.md)。
+- **修复净化引用后压缩提交误判过期**（`packages/opencode/src/session/`）：压缩视图剥离历史引用回声后，提交校验对原始消息应用相同净化再与视图比较，原始历史与保护记录不变——不再误拒绝本可提交的压缩，真实内容变化仍正常拒绝。模型可见四问：无新增或改写提示词；固定前缀零增减；成功压缩后从历史投影变化处起缓存失效；无新增注入项。回归测试覆盖成功提交与真实内容变化时的拒绝。
+- **修复引用复述计数被换行分片重置**（`packages/opencode/src/session/`）：复述循环判定的连续闭合计数此前被跨分片切开的引用标记重置，长文本下循环更难触发；分片拼接后计数保持。
+- **GUI 上下文面板子代理用量改走全量端点**（`packages/app/`）：childCost/childTokens 此前从 sync.data.session 有限近期列表过滤 parentID，历史子会话不在列表时静默漏算；改走 session.children 全量端点，与 TUI 侧边栏同源（261022 同款坑的 GUI 侧收口）。
+- **TUI 侧边栏费用正常分支改读会话行分币种桶**（`packages/opencode/src/cli/cmd/tui/`）：正常分支费用显示改读会话行分币种桶，与子代理页脚三通道口径一致，避免混币种会话费用显示偏差。
+- **修复模型选择列表打开时不滚到当前模型**（`packages/ui/src/components/list.tsx`）：「滚进视野」的 createEffect 依赖集合不含列表内容，模型列表经异步 resource 到达时挂载轮找不到 current 项静默返回、列表到达后效果依赖未变不再触发；补列表内容依赖。
+- **execute 子代理脚本路径判据收紧**（`packages/opencode/src/agent/definition/execute.md`）：脚本执行判据收紧为宿主明确点名，减少把宿主未授权的文件操作包装成脚本绕过的空间；防再次出现「没试就断定任务做不了」的派单事故（见下条 explore 派单经济学）。
+- **explore 派单经济学三条件 + execute 权限边界补文档**（`packages/opencode/src/agent/definition/explore.md`、`execute.md`）：explore description 补派单三条件（≥2 个探索可并发、探索面大需要上下文隔离、主线有并行活）与「已知文件/符号直接查，单发同步小探索纯亏」的反模式；execute.md 新增「权限边界」节（destructive 命令名硬拒、mkdir 等创建类放行、宿主已授权的机械文件操作走 write 脚本＋解释器执行）。均为 agent 定义模型可见改动，四问见提交 `65a21b4d`。
+- **修正旧费用桶测试类型错误**（`packages/opencode/test/`）：旧账本样例改为符合函数参数类型，保留缺失分桶时的回退断言，恢复 typecheck。
 
 ### [0.13.3] - 2026-10-28
 
