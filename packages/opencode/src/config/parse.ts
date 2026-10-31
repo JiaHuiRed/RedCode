@@ -3,6 +3,7 @@ export * as ConfigParse from "./parse"
 import { type ParseError as JsoncParseError, parse as parseJsoncImpl, printParseErrorCode } from "jsonc-parser"
 import { Cause, Exit, Schema as EffectSchema, SchemaIssue } from "effect"
 import type { DeepMutable } from "@redcode-ai/core/schema"
+import { isRecord } from "@/util/record"
 import { InvalidError, JsonError } from "./error"
 
 export function jsonc(text: string, filepath: string): unknown {
@@ -64,7 +65,7 @@ export function schema<S extends EffectSchema.Decoder<unknown, never>>(
   }
 
   const decoded = EffectSchema.decodeUnknownExit(schema)(data, { errors: "all" })
-  if (Exit.isSuccess(decoded)) return decoded.value as DeepMutable<S["Type"]>
+  if (Exit.isSuccess(decoded)) return restoreOrder(data, decoded.value) as DeepMutable<S["Type"]>
   const error = Cause.squash(decoded.cause)
 
   const issues = EffectSchema.isSchemaError(error)
@@ -86,6 +87,23 @@ export function schema<S extends EffectSchema.Decoder<unknown, never>>(
     },
     { cause: error },
   )
+}
+
+// 261031 Red Effect 4.x 移除了 decode 的 propertyOrder 选项：Struct 解码按 schema 声明顺序
+// 输出，rest（索引签名）键附在末尾。而 permission 的优先级靠配置里的书写顺序（evaluate
+// 取 findLast），顺序被打乱会让 `"*"` 恒排末尾、把工具级规则整片盖掉——permission.ts 里
+// 那句 "runtime config parsing uses propertyOrder: original" 自 4.0.5 起就不成立了。
+// 解码后按原始输入顺序重建一遍；schema 补出的默认值键附在末尾。
+function restoreOrder(input: unknown, value: unknown): unknown {
+  if (Array.isArray(value)) {
+    if (!Array.isArray(input)) return value
+    return value.map((item, index) => restoreOrder(input[index], item))
+  }
+  if (!isRecord(value) || !isRecord(input)) return value
+  const ordered: Record<string, unknown> = {}
+  for (const key of Object.keys(input)) if (key in value) ordered[key] = restoreOrder(input[key], value[key])
+  for (const key of Object.keys(value)) if (!(key in ordered)) ordered[key] = value[key]
+  return ordered
 }
 
 function topLevelExtraKeys(schema: EffectSchema.Top, data: unknown) {
