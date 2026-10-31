@@ -2283,9 +2283,14 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={i18n.t("ui.tool.shell")} active={pending()} />
               </span>
-              <Show when={!pending() && props.input.description}>
-                <ShellSubmessage text={props.input.description} animate={sawPending} />
-              </Show>
+             {/* 261031 Red 运行中显示命令原文（subtitle 单行截断），长命令不再黑箱等待；
+                 完成后仍切回 description 动画形态。 */}
+             <Show when={pending() && cmd()}>
+               <span data-slot="basic-tool-tool-subtitle">{cmd()}</span>
+             </Show>
+             <Show when={!pending() && props.input.description}>
+               <ShellSubmessage text={props.input.description} animate={sawPending} />
+             </Show>
             </div>
           </div>
         }

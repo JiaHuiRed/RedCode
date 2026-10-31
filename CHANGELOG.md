@@ -12,6 +12,7 @@
 
 - **忙碌引导改为待消费形态并新增打断发送**（`packages/opencode/src/session/`、`packages/app/src/components/prompt-input*`、`pages/session.tsx`、TUI `prompt/index.tsx`）：忙碌时的引导（steer）现在落 `pending_steer` 待消费形态——已进消息流（用户随时可编辑/撤回），但未领取前对模型隐藏（组装、`MessageV2.latest` 与 reminder 收集三处排除，防 promote 后落库的窗口竞态）；loop 每步组装前 `promotePendingSteer` 领取转 steer，与编辑/撤回在 queueLock 串行，领取后编辑明确 409 不悄悄改历史。busy 判定以服务端 Runner 为准（`isBusy` 查询），不信客户端快照。新增 `interruptPrompt` 服务端入口（`POST /session/:id/interrupt_prompt`）：单请求串行「取消当前 Runner → 提交新消息 → 开新轮」，客户端不再自己串 abort + prompt 两个请求；不碰 Git 快照、不回滚工作区文件，旧工具中断由 cancelTree 异步收尾。GUI 忙碌且输入非空时主按钮旁出现「打断并发送」按钮（与引导发送并存，纯停止仍是忙碌+空输入的 stop 形态），TUI 忙碌默认从 queue 对齐为 steer、`/pending` 同时管理 queued 与 pending_steer。GUI 待消费 dock 同时接受 queued 与 pending_steer 两形态（编辑/撤回/立即送达三键共用）。模型可见四问见 [引导与打断决策](docs/notes/implemented/feature/2026-10-31-steer-pending-interrupt.md)。
 
+- **Shell 运行中显示命令文本**（`packages/ui/src/components/message-part.tsx`）：bash 工具卡片运行期间在标题旁以副标题显示命令原文（沿用 subtitle 单行截断样式），长命令不再黑箱等待；完成后仍切回描述文本的动画形态。展示层改动，不影响工具输出与模型可见内容。
 - **赤随当前会话动态显示状态**：进入会话时从目录快照恢复运行中、待授权、等回复等真实状态，之后由实时事件驱动；固定常驻的「额度」按钮改为当前状态徽标，额度查看移到悬停入口。页面打开前已在运行的会话也能正确恢复；快照与事件乱序由 bootstrap journal 仲裁，不再出现复活旧权限或状态倒退。范围与数据口径见 [桌宠表现层决策](docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md)。
 - **修复会话列表目录与路径筛选**：Windows 查询兼容正斜杠和反斜杠两种已有记录；同时恢复传入 `path` 时的项目内路径筛选，不修改数据库中的路径。
 - **避免 MCP 慢启动时重复拉起进程**：首次连接与后续连接共用创建登记；断开后立即重连会等旧连接清理完成，避免重复进程和状态错乱。复现与边界见 [实例与孤儿进程决策](docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md)。
