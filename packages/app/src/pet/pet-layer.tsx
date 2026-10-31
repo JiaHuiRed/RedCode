@@ -1,15 +1,21 @@
-import { Show, createEffect, createMemo, onCleanup, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { useSettings } from "@/context/settings"
+import { useServerSync } from "@/context/server-sync"
+import { pathKey } from "@/utils/path-key"
 import { petState } from "./pet-store"
-import { DEFAULT_OUTFIT, outfitFor, resolvePet, type PetDisplay } from "./pet-state"
+import { DEFAULT_OUTFIT, outfitFor, resolvePet, resolveSessionPet, type PetDisplay } from "./pet-state"
 import {
   advancePetPresentation,
   clampPetPixels,
   clampPetPosition,
   createPetPresentation,
   petBubblePlacement,
+  petDetail,
+  petQuotaAvailable,
+  petQuotaLines,
+  petStatus,
   petPositionFromOffset,
   petStroke,
   petTouchAt,
@@ -41,6 +47,7 @@ import "./pet-layer.css"
 // 素材在 public/pet/ 下按状态命名；onError 回落 hamster.png 兜底（缺图不裂图）
 const PET_IMAGE: Record<PetDisplay["kind"], string> = {
   idle: "/pet/01-idle-look.png",
+  unknown: "/pet/01-idle-look.png",
   thinking: "/pet/03-thinking.png",
   coding: "/pet/05-coding.png",
   searching: "/pet/06-searching.png",
@@ -57,13 +64,15 @@ const COFFEE_IMAGE = "/pet/02-idle-coffee.png"
 
 const PLACEHOLDER = "/hamster.png"
 
-export function PetLayer() {
+export function PetLayer(props: { sessionID?: string; directory?: string }) {
   const settings = useSettings()
+  const sync = useServerSync()
   const [view, setView] = createStore({
     now: Date.now(),
     touch: undefined as PetTouch | undefined,
     touchUntil: undefined as number | undefined,
     dragging: false,
+    quotaOpen: false,
     viewport: { width: 0, height: 0 },
     position: { left: 0, top: 0, ready: false },
     rootSize: { width: 0, height: 0 },
@@ -95,8 +104,9 @@ export function PetLayer() {
   }
 
   const measure = () => {
-    if (!root) return
+    if (!root?.isConnected) return
     const rect = root.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
     setView("viewport", { width: window.innerWidth, height: window.innerHeight })
     setView("rootSize", { width: rect.width, height: rect.height })
     if (bubble) {
@@ -303,7 +313,7 @@ export function PetLayer() {
   })
 
   createEffect(() => {
-    const line = presentation.line
+    const line = presentation.line || petDetail(display()) || view.quotaOpen
     if (!bubble || !geometryObserver) return
     if (line) geometryObserver.observe(bubble)
     else geometryObserver.unobserve(bubble)
@@ -327,8 +337,20 @@ export function PetLayer() {
     onCleanup(() => clearInterval(timer))
   })
 
-  const display = createMemo(() => resolvePet(petState(), view.now))
+  const display = createMemo(() => {
+    const sessionID = props.sessionID
+    if (!sessionID) return resolvePet(petState(), view.now)
+    const directory = props.directory
+    const child = directory ? sync.peek(directory, { bootstrap: false })[0] : undefined
+    return resolveSessionPet(petState(), view.now, sessionID, child && {
+      status: child.session_status_ready ? child.session_status[sessionID] : undefined,
+      statusReady: child.session_status_ready,
+      permissions: child.permission[sessionID],
+      questions: child.question[sessionID],
+    }, directory ? pathKey(directory) : undefined)
+  })
   const displayKind = createMemo(() => display().kind)
+  const quotaVisible = createMemo(() => view.quotaOpen && petQuotaAvailable(displayKind()))
   const outfit = createMemo(() => outfitFor(petState(), display().sessionID))
   const sprite = createMemo(() =>
     outfit() === DEFAULT_OUTFIT
@@ -342,13 +364,28 @@ export function PetLayer() {
     untrack(resetInteraction)
   })
 
+  createEffect(() => {
+    if (!settings.general.petEnabled() || !petQuotaAvailable(displayKind())) setView("quotaOpen", false)
+  })
+
   // 261006 Red reducer 记住姿态边沿，1s tick 只收过期台词/推进闲时动作，不反复抽词。
+  let presentationScope: string | undefined
   createEffect(() => {
     const kind = display().kind
     const enabled = settings.general.petEnabled()
     const behavior = settings.general.petBehavior()
+    const scope = `${props.directory ?? ""}\0${props.sessionID ?? ""}`
     untrack(() =>
-      setPresentation(produce((draft) => advancePetPresentation(draft, kind, enabled, Date.now(), behavior))),
+      setPresentation(produce((draft) => {
+        if (presentationScope !== scope) {
+          presentationScope = scope
+          draft.enabled = false
+          draft.line = undefined
+          draft.action = undefined
+          draft.actionUntil = undefined
+        }
+        advancePetPresentation(draft, kind, enabled, Date.now(), behavior)
+      })),
     )
   })
 
@@ -362,6 +399,7 @@ export function PetLayer() {
           data-action={presentation.action}
           data-touch={view.touch}
           data-dragging={view.dragging ? "true" : "false"}
+          data-quota-open={quotaVisible() ? "true" : "false"}
           data-bubble-placement={bubbleLayout().placement}
           data-bubble-align={bubbleLayout().align}
           style={view.position.ready
@@ -369,15 +407,30 @@ export function PetLayer() {
             : undefined}
           onPointerLeave={handlePointerLeave}
         >
-          <Show when={presentation.line}>
-            {(line) => (
-              <div ref={setBubbleRef} class="pet-layer-bubble" role="status" aria-live="polite"
-                style={{ left: `${bubbleLeft()}px`, right: "auto" }}>
+          <Show when={quotaVisible() || presentation.line || petDetail(display())}>
+              <div ref={setBubbleRef} class="pet-layer-bubble" role={quotaVisible() ? "region" : "status"} aria-label={quotaVisible() ? "订阅额度快照" : undefined} aria-live="polite"
+                style={{ left: `${bubbleLeft()}px`, right: "auto", ...(quotaVisible() ? {
+                  "max-height": `${Math.max(0, Math.min(360, Math.max(view.position.top - 60, view.viewport.height - view.position.top - view.rootSize.height - 60)))}px`,
+                } : {}) }}>
                 <span class="pet-layer-bubble-label">赤</span>
-                <span class="pet-layer-bubble-text">{line().text}</span>
+                <Show when={quotaVisible()} fallback={<span class="pet-layer-bubble-text">{presentation.line?.text}{presentation.line && petDetail(display()) ? " · " : ""}{petDetail(display())}</span>}>
+                  <div class="pet-layer-quota-title">订阅额度</div>
+                  <div class="pet-layer-quota-hint">快照不代表当前会话账号</div>
+                  <For each={petQuotaLines(sync.data.provider_quota)}>{(line) => <p class="pet-layer-quota-line">{line}</p>}</For>
+                  <button class="pet-layer-quota-dismiss" type="button" onClick={() => setView("quotaOpen", false)}>关闭</button>
+                </Show>
               </div>
-            )}
           </Show>
+          <span class="pet-layer-status" role="status" aria-live="polite">{petStatus(displayKind())}</span>
+          <button
+            type="button"
+            aria-label="查看订阅额度"
+            aria-expanded={quotaVisible()}
+            disabled={!petQuotaAvailable(displayKind())}
+            title="查看订阅额度"
+            class="pet-layer-quota-toggle"
+            onClick={() => setView("quotaOpen", (open) => !open)}
+          >额度</button>
           <button
             ref={body}
             type="button"

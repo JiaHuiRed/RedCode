@@ -26,12 +26,12 @@ export type PetActivity =
   | { kind: "coding"; tool: string; at: number }
   | { kind: "searching"; tool: string; at: number }
   | { kind: "tool"; tool: string; at: number }
-  | { kind: "waiting"; at: number }
-  | { kind: "permission"; at: number }
+  | { kind: "waiting"; at: number; detail?: string }
+  | { kind: "permission"; at: number; detail?: string }
   | { kind: "compacting"; at: number }
 
 /** 瞬时态：回合收尾的短动画，FLASH_MS 后自动回落 idle。 */
-export type PetFlash = { kind: "success" | "error"; at: number }
+export type PetFlash = { kind: "success" | "error"; at: number; sessionID?: string; directory?: string }
 
 export type PetState = {
   sessions: Record<string, PetActivity | undefined>
@@ -42,24 +42,28 @@ export type PetState = {
    */
   worked: Record<string, boolean | undefined>
   models: Record<string, { providerID: string; modelID: string } | undefined>
+  blockers: Record<string, Record<string, Extract<PetActivity, { kind: "waiting" | "permission" }>> | undefined>
+  owners: Record<string, string | undefined>
+  bootstraps: Record<string, Record<string, PetEvent> | undefined>
   flash: PetFlash | undefined
 }
 
 /** 聚合后对外展示的状态（PetLayer 消费）。 */
 type PetDisplayBase =
   | { kind: "idle" }
+  | { kind: "unknown" }
   | { kind: "thinking" }
   | { kind: "coding"; tool: string }
   | { kind: "searching"; tool: string }
   | { kind: "tool"; tool: string }
-  | { kind: "waiting" }
-  | { kind: "permission" }
+  | { kind: "waiting"; detail?: string }
+  | { kind: "permission"; detail?: string }
   | { kind: "compacting" }
   | { kind: "success" }
   | { kind: "error" }
 
 export type PetDisplay = PetDisplayBase & {
-  /** 260930 Red 获胜会话：表现层（V0.2 装扮/语境）按它取模型上下文。flash 全局无归属，idle 为空。 */
+  /** 260930 Red 获胜会话：表现层按它取模型上下文；全局视角的 flash 和 idle 不带归属。 */
   sessionID?: string
 }
 
@@ -71,7 +75,7 @@ export const STALE_MS = 90_000
 export const COMPACTING_STALE_MS = 180_000
 
 export function createPetState(): PetState {
-  return { sessions: {}, worked: {}, models: {}, flash: undefined }
+  return { sessions: {}, worked: {}, models: {}, blockers: {}, owners: {}, bootstraps: {}, flash: undefined }
 }
 
 export function outfitFor(state: PetState, sessionID: string | undefined): string {
@@ -79,6 +83,58 @@ export function outfitFor(state: PetState, sessionID: string | undefined): strin
 }
 
 export type PetEvent = { type: string; properties?: unknown }
+
+// 261031 Red 仅在目录 bootstrap 在途时保留事件覆盖，提交后交还 child store。
+export function beginPetBootstrap(state: PetState, directory: string): void {
+  state.bootstraps[directory] = {}
+  if (state.flash?.directory === directory) state.flash = undefined
+  for (const [id, owner] of Object.entries(state.owners)) {
+    if (owner !== directory) continue
+    delete state.sessions[id]
+    delete state.worked[id]
+    delete state.models[id]
+    delete state.blockers[id]
+    delete state.owners[id]
+  }
+}
+
+export function recordPetBootstrapEvent(state: PetState, directory: string, event: PetEvent): void {
+  const journal = state.bootstraps[directory]
+  if (!journal) return
+  const props = (event.properties ?? {}) as SessionProps
+  if (!props.sessionID) return
+  const kind = event.type === "permission.asked" || event.type === "permission.replied" ? "permission" :
+    event.type === "question.asked" || event.type === "question.replied" || event.type === "question.rejected" ? "question" : undefined
+  const request = event.type.endsWith(".asked") ? props.id : props.requestID
+  const key = event.type === "session.status" ? `status:${props.sessionID}` :
+    kind && request ? `${kind}:${props.sessionID}:${request}` : undefined
+  if (!key) return
+  delete journal[key]
+  journal[key] = event
+}
+
+export function finishPetBootstrap(state: PetState, directory: string): PetEvent[] {
+  const events = Object.values(state.bootstraps[directory] ?? {})
+  delete state.bootstraps[directory]
+  return events
+}
+// 261031 Red 分区清算：快照写入完成（onSnapshot）时，把该分区 journal 事件交还给 child
+// reducer 按序重放——快照可能比窗口内已到达的事件旧（HTTP 往返间隙事件穿过），直接 reconcile
+// 会复活已回复的请求或覆盖更新的状态。asked/replied/status 的 child 处理都是幂等确定性操作
+// （按 id 二分插入/删除、整条 reconcile），重放净效果 = 事件流最终态。status 重放安全性穷举：
+// journal 最后一条 status 要么晚于快照生成时刻（重放即修正），要么其后的实时事件会再覆盖 store。
+export function settlePetBootstrap(state: PetState, directory: string, kind: "permission" | "question" | "session.status"): PetEvent[] {
+ const journal = state.bootstraps[directory]
+ if (!journal) return []
+ const prefix = kind === "session.status" ? "status:" : `${kind}:`
+ const events: PetEvent[] = []
+ for (const [key, event] of Object.entries(journal)) {
+   if (!key.startsWith(prefix)) continue
+   delete journal[key]
+   events.push(event)
+ }
+ return events
+}
 
 /** 工具名 → 展示分类。命中不了的归 tool（操作终端类）。词边界防 todowrite 被write 误吞。 */
 export function classifyTool(tool: string): "coding" | "searching" | "tool" {
@@ -98,12 +154,29 @@ type PetPart = {
 
 type SessionProps = {
   sessionID?: string
+  id?: string
+  requestID?: string
+  permission?: string
+  questions?: { header?: string; question?: string }[]
   status?: { type?: string }
   part?: PetPart
   info?: {
     sessionID?: string
     model?: { providerID: string; modelID: string }
   }
+}
+
+// 261031 Red 展示仅接受短标签；路径、命令、长标识和疑似凭据不进入气泡。
+export function safeLabel(value: unknown, title = false): string | undefined {
+  if (typeof value !== "string" || !value || value.length > (title ? 30 : 64)) return
+  if (title) {
+    if (/[/\\\r\n?？=:]|(?:token|secret|password|api.?key|密码|密钥)/i.test(value)) return
+    if (/[A-Za-z0-9_-]{16,}/.test(value)) return
+    return value.trim() || undefined
+  }
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value)) return
+  if (/(?:token|secret|password|api.?key)/i.test(value)) return
+  return value
 }
 
 function activityKind(activity: PetActivity): PetDisplay["kind"] {
@@ -146,10 +219,18 @@ export function resolvePet(state: PetState, now: number): PetDisplay {
       bestSession = id
     }
   }
+  for (const [id, entries] of Object.entries(state.blockers)) {
+    for (const activity of Object.values(entries ?? {})) {
+      if (!best || PRIORITY[activity.kind]! > PRIORITY[best.kind]!) {
+        best = activity
+        bestSession = id
+      }
+    }
+  }
   // 260929 Red 用户交互压过 flash：旧实现第一行就 return flash，error flash 的 5 秒窗口内
   // 到来的 permission/question 会被整段盖住——而「需要你允许一下」恰是最不能错过的提醒。
   if (best && (best.kind === "permission" || best.kind === "waiting"))
-    return { kind: best.kind, sessionID: bestSession }
+    return { kind: best.kind, sessionID: bestSession, ...(best.detail ? { detail: best.detail } : {}) }
   if (flashActive(state.flash, now)) return { kind: state.flash!.kind }
   if (best) {
     const kind = activityKind(best)
@@ -159,6 +240,54 @@ export function resolvePet(state: PetState, now: number): PetDisplay {
     return { kind, sessionID: bestSession }
   }
   return { kind: "idle" }
+}
+
+export type PetSnapshot = {
+  status?: { type: string }
+  statusReady?: boolean
+  permissions?: readonly { id: string; permission: string }[]
+  questions?: readonly { id: string; questions: readonly { header: string; question: string }[] }[]
+}
+
+// 261031 Red 当前会话只投影自己的事件和目录快照；缺状态不等于 idle。
+export function resolveSessionPet(state: PetState, now: number, sessionID: string, snapshot?: PetSnapshot, directory?: string): PetDisplay {
+  const journal = directory ? state.bootstraps[directory] : undefined
+  const permissions = snapshot?.permissions?.filter((item) =>
+    !journal?.[`permission:${sessionID}:${item.id}`] || journal[`permission:${sessionID}:${item.id}`]?.type === "permission.asked") ?? []
+  const questions = snapshot?.questions?.filter((item) =>
+    !journal?.[`question:${sessionID}:${item.id}`] || journal[`question:${sessionID}:${item.id}`]?.type === "question.asked") ?? []
+  const eventBlockers = Object.values(state.blockers[sessionID] ?? {})
+  const permission = permissions[0]
+  if (permission) {
+    const detail = safeLabel(permission.permission)
+    return { kind: "permission", sessionID, ...(detail ? { detail } : {}) }
+  }
+  const eventPermission = eventBlockers.find((item) => item.kind === "permission")
+  if (eventPermission) return { kind: "permission", sessionID, ...(eventPermission.detail ? { detail: eventPermission.detail } : {}) }
+  const question = questions[0]?.questions[0]
+  if (questions.length) {
+    const detail = question && question.header !== question.question ? safeLabel(question.header, true) : undefined
+    return { kind: "waiting", sessionID, ...(detail ? { detail } : {}) }
+  }
+  const eventQuestion = eventBlockers.find((item) => item.kind === "waiting")
+  if (eventQuestion) return { kind: "waiting", sessionID, ...(eventQuestion.detail ? { detail: eventQuestion.detail } : {}) }
+  const activity = state.sessions[sessionID]
+  if (flashActive(state.flash, now) && state.flash?.sessionID === sessionID &&
+      (!activity || entryExpired(activity, now) || activity.at < state.flash.at))
+    return { kind: state.flash.kind, sessionID }
+  if (activity && !entryExpired(activity, now)) {
+    if (activity.kind === "coding" || activity.kind === "searching" || activity.kind === "tool")
+      return { kind: activity.kind, tool: activity.tool, sessionID }
+    if (activity.kind === "permission" || activity.kind === "waiting")
+      return { kind: activity.kind, sessionID, ...(activity.detail ? { detail: activity.detail } : {}) }
+    return { kind: activity.kind, sessionID }
+  }
+  const status = (journal?.[`status:${sessionID}`]?.properties as SessionProps | undefined)?.status ?? snapshot?.status
+  if (status?.type === "idle") return { kind: "idle", sessionID }
+  if (status?.type === "busy" || status?.type === "retry")
+    return { kind: "thinking", sessionID }
+  if (!status && snapshot?.statusReady) return { kind: "idle", sessionID }
+  return { kind: "unknown", sessionID }
 }
 
 /**
@@ -178,6 +307,7 @@ function pruneStale(state: PetState, now: number): void {
       delete state.sessions[id]
       delete state.worked[id]
       delete state.models[id]
+      if (!state.blockers[id]) delete state.owners[id]
     }
   }
 }
@@ -198,6 +328,9 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
   pruneStale(state, now)
   const props = (event.properties ?? {}) as SessionProps
   const sessionID = props.sessionID
+  const clearBlockers = (id: string) => {
+    delete state.blockers[id]
+  }
   const setEntry = (activity: PetActivity) => {
     if (!sessionID) return
     state.sessions[sessionID] = activity
@@ -265,8 +398,9 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       const status = props.status?.type
       if (status === "idle") {
         delete state.sessions[sessionID]
+        clearBlockers(sessionID)
         delete state.models[sessionID]
-        if (state.worked[sessionID]) state.flash = { kind: "success", at: now }
+        if (state.worked[sessionID]) state.flash = { kind: "success", at: now, sessionID }
         delete state.worked[sessionID]
         return
       }
@@ -290,24 +424,37 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       setEntry({ kind: "thinking", at: now })
       return
     case "permission.asked":
-      setEntry({ kind: "permission", at: now })
+    case "question.asked": {
+      if (!sessionID) return
+      const kind = event.type === "permission.asked" ? "permission" : "waiting"
+      const question = props.questions?.[0]
+      const detail = kind === "permission"
+        ? safeLabel(props.permission)
+        : question?.header !== question?.question ? safeLabel(question?.header, true) : undefined
+      const entries = state.blockers[sessionID] ?? (state.blockers[sessionID] = {})
+      entries[`${kind}:${props.id ?? ""}`] = { kind, at: now, ...(detail ? { detail } : {}) }
       return
+    }
     case "permission.replied":
-      setEntry({ kind: "thinking", at: now })
-      return
-    case "question.asked":
-      setEntry({ kind: "waiting", at: now })
-      return
     case "question.replied":
-    case "question.rejected":
+    case "question.rejected": {
+      if (!sessionID) return
+      const kind = event.type === "permission.replied" ? "permission" : "waiting"
+      const entries = state.blockers[sessionID]
+      if (entries) {
+        delete entries[`${kind}:${props.requestID ?? ""}`]
+        if (!Object.keys(entries).length) delete state.blockers[sessionID]
+      }
       setEntry({ kind: "thinking", at: now })
       return
+    }
     case "session.error": {
-      state.flash = { kind: "error", at: now }
+      state.flash = sessionID ? { kind: "error", at: now, sessionID } : { kind: "error", at: now }
       if (sessionID) {
         delete state.sessions[sessionID]
         delete state.worked[sessionID]
         delete state.models[sessionID]
+        clearBlockers(sessionID)
       }
       return
     }

@@ -27,7 +27,9 @@
 }
 
 .pet-layer-body:focus-visible,
-.pet-layer-close:focus-visible {
+.pet-layer-close:focus-visible,
+.pet-layer-quota-toggle:focus-visible,
+.pet-layer-quota-dismiss:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 4px;
 }
@@ -174,6 +176,94 @@
   overflow-wrap: break-word;
 }
 
+.pet-layer[data-quota-open="true"] .pet-layer-bubble {
+  display: block;
+  min-height: 0;
+  padding: 20px;
+  border-radius: 24px;
+  overflow: auto;
+  text-align: left;
+  pointer-events: auto;
+}
+
+.pet-layer-quota-title {
+  font-size: var(--font-size-large);
+  font-weight: 700;
+}
+
+.pet-layer-quota-hint {
+  margin-top: 4px;
+  font-size: var(--font-size-small);
+}
+
+.pet-layer-quota-line {
+  margin: 12px 0;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.pet-layer-quota-toggle,
+.pet-layer-quota-dismiss {
+  border: 1px solid var(--pet-ink, #51202a);
+  border-radius: 999px;
+  background: #fff7f3;
+  color: #7d2c3f;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pet-layer-status {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  padding: 4px 10px;
+  border: 1px solid #51202a;
+  border-radius: 999px;
+  background: #fff7f3;
+  color: #7d2c3f;
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.pet-layer-quota-toggle {
+  position: absolute;
+  z-index: 1;
+  top: 34px;
+  left: 0;
+  min-height: 28px;
+  padding: 2px 10px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pet-layer:hover .pet-layer-quota-toggle,
+.pet-layer:focus-within .pet-layer-quota-toggle,
+.pet-layer[data-quota-open="true"] .pet-layer-quota-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pet-layer-quota-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pet-layer-quota-dismiss {
+  min-height: 32px;
+  padding: 4px 14px;
+}
+
+.pet-layer-quota-toggle:active,
+.pet-layer-quota-dismiss:active {
+  transform: scale(0.97);
+}
+
 .pet-layer[data-bubble-align="end"] .pet-layer-bubble {
   left: auto;
   right: 0;
@@ -297,6 +387,10 @@
 }
 
 @media (pointer: coarse) {
+  .pet-layer-quota-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
   .pet-layer-close {
     width: 40px;
     height: 40px;

@@ -27,6 +27,7 @@ function bootstrapInput(directory = "/project", handle = async (_request: Reques
     session: [],
     sessionTotal: 0,
     session_status: {},
+    session_status_ready: false,
     session_working(id: string) {
       return this.session_status[id]?.type !== "idle"
     },
@@ -87,11 +88,45 @@ function bootstrapInput(directory = "/project", handle = async (_request: Reques
 }
 
 describe("bootstrapDirectory", () => {
+  test("status readiness follows the actual status response", async () => {
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const input = bootstrapInput("/project", async (request) => {
+      if (new URL(request.url).pathname !== "/session/status") return
+      started.resolve()
+      await release.promise
+    })
+    const pending = bootstrapDirectory(input)
+    try {
+      await started.promise
+      expect(input.store.session_status_ready).toBe(false)
+    } finally {
+      release.resolve()
+      await pending
+      input.queryClient.clear()
+    }
+    expect(input.store.session_status_ready).toBe(true)
+    expect(input.store.session_status).toEqual({})
+  })
+
+  test("a failed status request never marks the snapshot ready", async () => {
+    const input = bootstrapInput("/project", async (request) => {
+      if (new URL(request.url).pathname === "/session/status") throw new Error("status unavailable")
+    })
+    try {
+      await bootstrapDirectory(input)
+      expect(input.store.session_status_ready).toBe(false)
+    } finally {
+      input.queryClient.clear()
+    }
+  })
+
   test("populates agents and flips agent_ready before resolving", async () => {
     const input = bootstrapInput()
     try {
       await bootstrapDirectory(input)
       expect(input.store.agent_ready).toBe(true)
+      expect(input.store.session_status_ready).toBe(true)
       expect(input.store.agent.map((item) => item.name)).toEqual(["build"])
     } finally {
       input.queryClient.clear()

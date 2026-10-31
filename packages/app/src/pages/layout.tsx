@@ -1201,7 +1201,7 @@ export default function Layout(props: ParentProps) {
              早先注释写的「contain-strict 使其成为定位基准」不成立，别照那句推理停靠位置。
              右下角与 dev DebugBar 重叠，故默认停主内容区左缘。261023 审计 P1-1：该浮层
              160×~233px 且 pointer-events:auto，会压住其下的可交互内容。 */}
-        <PetLayer />
+        <PetLayer sessionID={params.id} directory={currentDir()} />
         <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
           {props.children}
         </Show>

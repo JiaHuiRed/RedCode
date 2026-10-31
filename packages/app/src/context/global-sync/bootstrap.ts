@@ -108,6 +108,7 @@ export async function bootstrapGlobal(input: {
   formatMoreCount: (count: number) => string
   setGlobalStore: SetStoreFunction<GlobalStore>
   queryClient: QueryClient
+  onSnapshot?: (kind: "session.status" | "permission" | "question") => void
 }) {
   const slow = [
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.globalSDK)),
@@ -301,7 +302,12 @@ export async function bootstrapDirectory(input: {
     provider: NormalizedProviderListResponse
   }
   queryClient: QueryClient
+ // 261031 Red 快照写入完成信号（session.status / permission / question 各自 batch 内触发）。
+ // server-sync 用它清算 pet bootstrap journal 并把窗口内事件重放回 child store，
+ // 修正「快照响应晚于已处理事件」造成的复活/覆盖竞态。
+ onSnapshot?: (kind: "session.status" | "permission" | "question") => void
 }) {
+  input.setStore("session_status_ready", false)
   const seededProject = projectID(input.directory, input.global.project)
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
   if (seededProject) input.setStore("project", seededProject)
@@ -337,7 +343,14 @@ export async function bootstrapDirectory(input: {
     },
     () =>
       retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
-    () => retry(() => input.sdk.session.status().then((x) => input.setStore("session_status", x.data!))),
+    () => retry(() => input.sdk.session.status().then((x) => {
+      if (!x.data) throw new Error("Session status response has no data")
+      batch(() => {
+        input.setStore("session_status", x.data!)
+        input.setStore("session_status_ready", true)
+        input.onSnapshot?.("session.status")
+      })
+    })),
     !seededProject &&
       (() => retry(() => input.sdk.project.current()).then((x) => input.setStore("project", x.data!.id))),
     !seededPath &&
@@ -378,6 +391,7 @@ export async function bootstrapDirectory(input: {
                   ),
                 )
               }
+              input.onSnapshot?.("permission")
             }),
           )
         }),
@@ -403,6 +417,7 @@ export async function bootstrapDirectory(input: {
                   ),
                 )
               }
+              input.onSnapshot?.("question")
             }),
           )
         }),

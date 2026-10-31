@@ -41,7 +41,7 @@ import {
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
-import { feedPetEvent } from "@/pet/pet-store"
+import { endPetBootstrap, feedPetEvent, settlePetBootstrap, startPetBootstrap } from "@/pet/pet-store"
 import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
@@ -506,22 +506,47 @@ export function createServerSyncContext() {
       const cache = children.vcsCache.get(key)
       if (!cache) return
       const sdk = sdkFor(directory)
-      await bootstrapDirectory({
-        directory,
-        global: {
-          config: globalStore.config,
-          path: globalStore.path,
-          project: globalStore.project,
-          provider: globalStore.provider,
-        },
-        sdk,
-        store: child[0],
-        setStore: child[1],
-        vcsCache: cache,
-        loadSessions,
-        translate: language.t,
-        queryClient,
-      })
+      startPetBootstrap(key)
+      try {
+        await bootstrapDirectory({
+          directory,
+          global: {
+            config: globalStore.config,
+            path: globalStore.path,
+            project: globalStore.project,
+            provider: globalStore.provider,
+          },
+          sdk,
+          store: child[0],
+          setStore: child[1],
+          vcsCache: cache,
+          loadSessions,
+          translate: language.t,
+          queryClient,
+          // 261031 Red 快照落地的瞬间把 bootstrap 窗口内 journal 的事件按序重放回 child
+          // store：快照响应可能比窗口内已处理的事件旧（HTTP 往返间隙事件穿过），不做这一步
+          // 会复活已回复的 permission/question 或把 session_status 覆盖回旧值。asked/replied/
+          // status 的 child 处理幂等，重放净效果 = 事件流最终态；残余 journal 在下方 finally
+          // 丢弃（失败轮快照没写入，无需修正）。
+          onSnapshot: (kind) => {
+            for (const event of settlePetBootstrap(key, kind)) {
+              applyDirectoryEvent({
+                event: event as Parameters<typeof applyDirectoryEvent>[0]["event"],
+                directory,
+                store: child[0],
+                setStore: child[1],
+                push: queue.push,
+                setSessionTodo,
+                vcsCache: cache,
+                loadLsp: () => {},
+                isPinned: children.pinned(key),
+              })
+            }
+          },
+        })
+      } finally {
+        endPetBootstrap(key)
+      }
       // 261011 Red B0: 成功轮留痕（耗时 + 匿名目录 key，§11.2）
       guiDiagnostics.record("sync.bootstrap", {
         duration: performance.now() - started,
@@ -559,7 +584,7 @@ export function createServerSyncContext() {
     const key = directoryKey(directory)
     const event = e.details
     // 260929 Red Pet Layer 订阅同一条流做状态归一化；pet-store 自行过滤，此处零成本透传
-    feedPetEvent(event)
+    feedPetEvent(event, key)
     const recent = bootingRoot || Date.now() - bootedAt < 1500
 
     if (directory === "global") {

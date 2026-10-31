@@ -1,4 +1,76 @@
-import type { PetDisplay } from "./pet-state"
+import { safeLabel, type PetDisplay } from "./pet-state"
+import type { ProviderQuota } from "@redcode-ai/sdk/v2/client"
+
+// 261031 Red 快照逐条展示，不推断模型所属账号，也不把窗口用量当余额。
+export function petQuotaLines(quotas: ProviderQuota[]): string[] {
+  if (!quotas.length) return ["暂无订阅额度数据"]
+  return quotas.map((quota, index) => {
+    const label = (value: string) => value.trim().slice(0, 40) || "未知"
+    const time = (value: unknown, scale: number) => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return
+      const date = new Date(value * scale)
+      if (!Number.isFinite(date.getTime())) return
+      return date.toLocaleString()
+    }
+    const windows = [
+      ["主窗口", quota.primary],
+      ["次窗口", quota.secondary],
+      ["备用窗口", quota.reserve],
+    ] as const
+    const details = windows.flatMap(([name, window]) => {
+      if (!window) return []
+      const minutes = typeof window.windowMinutes === "number" && Number.isFinite(window.windowMinutes)
+        ? `${window.windowMinutes}分钟`
+        : "时长未知"
+      const used = typeof window.usedPercent === "number" && Number.isFinite(window.usedPercent)
+        ? `${window.usedPercent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
+        : "未知"
+      const reset = time(window.resetAt, 1_000)
+      return [`${name}（${minutes}）已用 ${used}${reset ? ` · 重置 ${reset}` : ""}`]
+    })
+    const captured = time(quota.capturedAt, 1)
+    const credits = quota.credits
+    const balance = credits && typeof credits.balance === "number" && Number.isFinite(credits.balance)
+      ? credits.balance.toLocaleString(undefined, { maximumFractionDigits: 20 })
+      : "未知"
+    return [
+      `快照 ${index + 1}：${label(quota.providerID)} · ${label(quota.planType)}`,
+      ...(captured ? [`快照时间：${captured}`] : []),
+      ...(details.length ? details : ["无窗口用量数据"]),
+      ...(credits ? [`Credits：${credits.has === true ? "有" : credits.has === false ? "无" : "有无未知"} · ${credits.unlimited === true ? "无限" : credits.unlimited === false ? "非无限" : "是否无限未知"} · 数值 ${balance}`] : []),
+    ].join("\n")
+  })
+}
+
+export function petQuotaAvailable(_kind: PetDisplay["kind"]) {
+  return true
+}
+
+export function petStatus(kind: PetDisplay["kind"]) {
+  const labels: Record<PetDisplay["kind"], string> = {
+    idle: "待命",
+    unknown: "状态未知",
+    thinking: "思考中",
+    coding: "编写中",
+    searching: "搜索中",
+    tool: "执行中",
+    waiting: "等回复",
+    permission: "待授权",
+    compacting: "整理中",
+    success: "已完成",
+    error: "出错了",
+  }
+  return labels[kind]
+}
+
+export function petDetail(display: PetDisplay): string | undefined {
+  if (display.kind === "coding" || display.kind === "searching" || display.kind === "tool") {
+    const tool = safeLabel(display.tool)
+    return tool ? `工具：${tool}` : undefined
+  }
+  if (display.kind === "permission") return display.detail ? `权限：${display.detail}` : undefined
+  if (display.kind === "waiting") return display.detail ? `问题：${display.detail}` : undefined
+}
 
 /**
  * V0.2 台词池与表现层调度（零 SolidJS 依赖，照 pet-state 惯例可测）。
@@ -12,6 +84,7 @@ import type { PetDisplay } from "./pet-state"
  */
 export const LINES: Record<PetDisplay["kind"], string[]> = {
   idle: ["在呢", "…", "随时开工", "今天也加油"],
+  unknown: [],
   thinking: ["让我想想…", "嗯，思路有了", "捋一下这里", "这个有点意思"],
   coding: ["在写了在写了", "改这里…", "敲键盘中", "几行的事"],
   searching: ["找找看", "翻一翻…", "不在这份，换一份", "有线索了"],
@@ -145,7 +218,7 @@ export function pickLine(pool: string[], rand: () => number = Math.random, avoid
  */
 export function shouldChatter(kind: PetDisplay["kind"], chance: number, rand: () => number = Math.random): boolean {
   if (kind === "permission" || kind === "waiting" || kind === "success" || kind === "error") return true
-  if (kind === "idle") return false
+  if (kind === "idle" || kind === "unknown") return false
   return rand() < chance
 }
 

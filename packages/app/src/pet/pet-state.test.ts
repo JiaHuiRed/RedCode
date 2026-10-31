@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test"
+import { createStore, produce } from "solid-js/store"
+import { applyDirectoryEvent } from "../context/global-sync/event-reducer"
+import type { State } from "../context/global-sync/types"
+import { petDetail } from "./pet-lines"
 import {
   applyPetEvent,
-  classifyTool,
+  beginPetBootstrap,
+  recordPetBootstrapEvent,
+ finishPetBootstrap,
+ settlePetBootstrap,
+ classifyTool,
   createPetState,
   DEFAULT_OUTFIT,
   FLASH_MS,
   outfitFor,
   resolvePet,
+  resolveSessionPet,
   STALE_MS,
   type PetState,
 } from "./pet-state"
@@ -28,6 +37,168 @@ function tool(
   feed(state, "message.part.updated", { part: { sessionID, type: "tool", tool, state: { status } } }, at)
 }
 
+describe("current session projection", () => {
+  test("bootstrap journal keeps newer reducer events until the snapshot is committed, then releases them", () => {
+    const state = createPetState()
+    beginPetBootstrap(state, "dir")
+    const reply = { type: "permission.replied", properties: { sessionID: "a", requestID: "p1" } }
+    const idle = { type: "session.status", properties: { sessionID: "a", status: { type: "idle" } } }
+    applyPetEvent(state, reply, NOW)
+    recordPetBootstrapEvent(state, "dir", reply)
+    applyPetEvent(state, idle, NOW + 1)
+    recordPetBootstrapEvent(state, "dir", idle)
+    const stale = { status: { type: "busy" }, permissions: [
+      { id: "p1", permission: "bash" }, { id: "p2", permission: "edit" },
+    ] }
+    expect(resolveSessionPet(state, NOW + 1, "a", stale, "dir")).toEqual({
+      kind: "permission", sessionID: "a", detail: "edit",
+    })
+    expect(resolveSessionPet(state, NOW + 1, "b", { status: { type: "busy" } }, "dir").kind).toBe("thinking")
+    expect(finishPetBootstrap(state, "dir")).toEqual([reply, idle])
+    expect(Object.keys(state.bootstraps)).toHaveLength(0)
+    expect(resolveSessionPet(state, NOW + 1, "a", { status: { type: "busy" } }, "dir").kind).toBe("thinking")
+  })
+
+  test("settle releases only the requested partition and keeps the rest for later snapshots", () => {
+    const state = createPetState()
+    beginPetBootstrap(state, "dir")
+    const reply = { type: "permission.replied", properties: { sessionID: "a", requestID: "p1" } }
+    const idle = { type: "session.status", properties: { sessionID: "a", status: { type: "idle" } } }
+    recordPetBootstrapEvent(state, "dir", reply)
+    recordPetBootstrapEvent(state, "dir", idle)
+    expect(settlePetBootstrap(state, "dir", "permission")).toEqual([reply])
+    expect(settlePetBootstrap(state, "dir", "permission")).toEqual([])
+    expect(resolveSessionPet(state, NOW + 1, "a", { status: { type: "busy" } }, "dir").kind).toBe("idle")
+    expect(finishPetBootstrap(state, "dir")).toEqual([idle])
+  })
+
+  test("new bootstrap accepts fresh snapshots after old idle and reply", () => {
+    const state = createPetState()
+    feed(state, "permission.replied", { sessionID: "s", requestID: "p" })
+    feed(state, "session.status", { sessionID: "s", status: { type: "idle" } })
+    beginPetBootstrap(state, "dir")
+    finishPetBootstrap(state, "dir")
+    expect(resolveSessionPet(state, NOW, "s", { status: { type: "busy" } }, "dir").kind).toBe("thinking")
+    expect(resolveSessionPet(state, NOW, "s", { permissions: [{ id: "p", permission: "bash" }] }, "dir").kind).toBe("permission")
+  })
+
+  test("commits concurrent replies and idle through the actual child reducer", () => {
+    const state = createPetState()
+    const [child, setChild] = createStore({
+      session_status: { a: { type: "busy" } },
+      permission: { a: [
+        { id: "p1", sessionID: "a", permission: "bash", patterns: [], metadata: {}, always: [] },
+        { id: "p2", sessionID: "a", permission: "edit", patterns: [], metadata: {}, always: [] },
+      ] },
+      question: {},
+    } as unknown as State)
+    beginPetBootstrap(state, "dir")
+    for (const event of [
+      { type: "permission.replied", properties: { sessionID: "a", requestID: "p1" } },
+      { type: "session.status", properties: { sessionID: "a", status: { type: "idle" } } },
+    ]) {
+      applyPetEvent(state, event, NOW)
+      recordPetBootstrapEvent(state, "dir", event)
+    }
+    for (const event of finishPetBootstrap(state, "dir")) {
+      applyDirectoryEvent({
+        event: event as Parameters<typeof applyDirectoryEvent>[0]["event"],
+        directory: "dir", store: child, setStore: setChild, push() {}, loadLsp() {},
+      })
+    }
+    expect(child.permission.a.map((item) => item.id)).toEqual(["p2"])
+    expect(child.session_status.a?.type).toBe("idle")
+    expect(Object.keys(state.bootstraps)).toHaveLength(0)
+  })
+
+  test("question replies stay scoped across sessions and journal generations", () => {
+    const state = createPetState()
+    const snapshot = { questions: [
+      { id: "q1", questions: [{ header: "第一题", question: "怎么选？" }] },
+      { id: "q2", questions: [{ header: "第二题", question: "怎么做？" }] },
+    ] }
+    for (let round = 0; round < 50; round++) {
+      beginPetBootstrap(state, "dir")
+      const event = { type: "question.rejected", properties: { sessionID: "a", requestID: "q1" } }
+      applyPetEvent(state, event, NOW)
+      recordPetBootstrapEvent(state, "dir", event)
+      expect(petDetail(resolveSessionPet(state, NOW, "a", snapshot, "dir"))).toBe("问题：第二题")
+      expect(petDetail(resolveSessionPet(state, NOW, "b", snapshot, "dir"))).toBe("问题：第一题")
+      finishPetBootstrap(state, "dir")
+      expect(Object.keys(state.bootstraps)).toHaveLength(0)
+    }
+  })
+
+  test("journal survives the actual Solid store producer and is released at commit", () => {
+    const [state, setState] = createStore(createPetState())
+    const event = { type: "question.replied", properties: { sessionID: "s", requestID: "q" } }
+    setState(produce((draft) => beginPetBootstrap(draft, "dir")))
+    setState(produce((draft) => {
+      applyPetEvent(draft, event, NOW)
+      recordPetBootstrapEvent(draft, "dir", event)
+    }))
+    let events: typeof event[] = []
+    setState(produce((draft) => {
+      events = finishPetBootstrap(draft, "dir") as typeof event[]
+    }))
+    expect(events).toEqual([event])
+    expect(Object.keys(state.bootstraps)).toHaveLength(0)
+  })
+
+  test("restores busy and pending requests from snapshots without leaking another session", () => {
+    const state = createPetState()
+    tool(state, "other", "edit", "running")
+    const snapshot = {
+      status: { type: "busy" },
+      permissions: [{ id: "p", permission: "bash" }],
+      questions: [{ id: "q", questions: [{ header: "选择方案", question: "选哪个？" }] }],
+    }
+    expect(resolveSessionPet(state, NOW, "current", { status: snapshot.status })).toEqual({ kind: "thinking", sessionID: "current" })
+    expect(resolveSessionPet(state, NOW, "current", snapshot)).toEqual({ kind: "permission", sessionID: "current", detail: "bash" })
+    expect(resolveSessionPet(state, NOW, "current", { questions: snapshot.questions })).toEqual({
+      kind: "waiting", sessionID: "current", detail: "选择方案",
+    })
+    expect(resolvePet(state, NOW).kind).toBe("coding")
+  })
+
+  test("real reducer events beat busy snapshots, expire, and clear replied requests", () => {
+    const state = createPetState()
+    beginPetBootstrap(state, "dir")
+    const snapshot = { status: { type: "busy" }, permissions: [{ id: "p", permission: "bash" }] }
+    tool(state, "current", "grep", "running")
+    expect(resolveSessionPet(state, NOW, "current", snapshot).kind).toBe("permission")
+    feed(state, "permission.replied", { sessionID: "current", requestID: "p" })
+    recordPetBootstrapEvent(state, "dir", { type: "permission.replied", properties: { sessionID: "current", requestID: "p" } })
+    tool(state, "current", "grep", "running")
+    expect(resolveSessionPet(state, NOW, "current", snapshot, "dir")).toEqual({ kind: "searching", tool: "grep", sessionID: "current" })
+    expect(resolveSessionPet(state, NOW + STALE_MS + 1, "current", snapshot, "dir")).toEqual({ kind: "thinking", sessionID: "current" })
+    feed(state, "session.status", { sessionID: "current", status: { type: "idle" } }, NOW + 1)
+    recordPetBootstrapEvent(state, "dir", { type: "session.status", properties: { sessionID: "current", status: { type: "idle" } } })
+    expect(resolveSessionPet(state, NOW + 1, "current", snapshot, "dir")).toEqual({ kind: "idle", sessionID: "current" })
+  })
+
+  test("session switching isolates owned flash and suppresses unowned flash", () => {
+    const state = createPetState()
+    feed(state, "session.error", { sessionID: "a" })
+    expect(resolveSessionPet(state, NOW, "a").kind).toBe("error")
+    expect(resolveSessionPet(state, NOW, "b").kind).toBe("unknown")
+    feed(state, "session.status", { sessionID: "a", status: { type: "busy" } })
+    expect(resolveSessionPet(state, NOW, "a").kind).toBe("thinking")
+    feed(state, "session.error")
+    expect(resolveSessionPet(state, NOW, "b").kind).toBe("unknown")
+    expect(resolvePet(state, NOW).kind).toBe("error")
+  })
+
+  test("empty or incomplete data is neutral, explicit idle remains idle", () => {
+    const state = createPetState()
+    expect(resolveSessionPet(state, NOW, "s")).toEqual({ kind: "unknown", sessionID: "s" })
+    expect(resolveSessionPet(state, NOW, "s", {})).toEqual({ kind: "unknown", sessionID: "s" })
+    expect(resolveSessionPet(state, NOW, "s", { statusReady: false })).toEqual({ kind: "unknown", sessionID: "s" })
+    expect(resolveSessionPet(state, NOW, "s", { statusReady: true })).toEqual({ kind: "idle", sessionID: "s" })
+    expect(resolveSessionPet(state, NOW, "s", { status: { type: "idle" } })).toEqual({ kind: "idle", sessionID: "s" })
+  })
+})
+
 describe("classifyTool", () => {
   test("edit/write 类归 coding", () => {
     expect(classifyTool("edit")).toBe("coding")
@@ -44,6 +215,73 @@ describe("classifyTool", () => {
 })
 
 describe("applyPetEvent", () => {
+  test("real event details follow the winning session and blocker lifecycle", () => {
+    const state = createPetState()
+    feed(state, "message.part.updated", { part: {
+      id: "prt1", sessionID: "s1", messageID: "m1", type: "tool", tool: "grep",
+      state: { status: "running", input: { pattern: "secret", path: "C:\\private" } },
+    } })
+    expect(petDetail(resolvePet(state, NOW))).toBe("工具：grep")
+    feed(state, "question.asked", {
+      id: "q1", sessionID: "s1", questions: [{ header: "选择方案", question: "完整问题 secret", options: [] }],
+    })
+    expect(petDetail(resolvePet(state, NOW))).toBe("问题：选择方案")
+    feed(state, "permission.asked", {
+      id: "p1", sessionID: "s1", permission: "bash", patterns: ["C:\\private"], metadata: { secret: "hidden" }, always: [],
+    })
+    expect(petDetail(resolvePet(state, NOW))).toBe("权限：bash")
+    tool(state, "s1", "edit", "running")
+    expect(petDetail(resolvePet(state, NOW))).toBe("权限：bash")
+    feed(state, "permission.replied", { sessionID: "s1", requestID: "p1", reply: "once" })
+    expect(petDetail(resolvePet(state, NOW))).toBe("问题：选择方案")
+    feed(state, "question.rejected", { sessionID: "s1", requestID: "q1" })
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+  })
+
+  test("same-kind winner switches details and idle/error clear blockers", () => {
+    const state = createPetState()
+    feed(state, "question.asked", { id: "q1", sessionID: "a", questions: [{ header: "方案一", question: "哪个方案？" }] })
+    feed(state, "question.asked", { id: "q2", sessionID: "b", questions: [{ header: "方案二", question: "怎么选？" }] })
+    expect(petDetail(resolvePet(state, NOW))).toBe("问题：方案一")
+    feed(state, "session.status", { sessionID: "a", status: { type: "idle" } })
+    expect(petDetail(resolvePet(state, NOW))).toBe("问题：方案二")
+    feed(state, "session.error", { sessionID: "b" })
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+    expect(state.blockers.b).toBeUndefined()
+  })
+
+  test("same-kind tool winner updates and expires without stale detail", () => {
+    const state = createPetState()
+    tool(state, "a", "read", "running")
+    tool(state, "b", "grep", "running")
+    expect(petDetail(resolvePet(state, NOW))).toBe("工具：read")
+    tool(state, "a", "read", "completed")
+    expect(petDetail(resolvePet(state, NOW))).toBe("工具：grep")
+    expect(petDetail(resolvePet(state, NOW + STALE_MS + 1))).toBeUndefined()
+  })
+
+  test("multiple requests in one session remain until their matching replies", () => {
+    const state = createPetState()
+    feed(state, "permission.asked", { id: "p1", sessionID: "s", permission: "bash" })
+    feed(state, "permission.asked", { id: "p2", sessionID: "s", permission: "edit" })
+    feed(state, "permission.replied", { sessionID: "s", requestID: "p1" })
+    expect(petDetail(resolvePet(state, NOW))).toBe("权限：edit")
+    feed(state, "permission.replied", { sessionID: "s", requestID: "p2" })
+    expect(resolvePet(state, NOW).kind).toBe("thinking")
+  })
+
+  test("unsafe or missing details never expose inputs, paths, secrets or full questions", () => {
+    const state = createPetState()
+    tool(state, "s1", "C:\\private\\secret", "running")
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+    feed(state, "question.asked", { id: "q", sessionID: "s1", questions: [{ header: "密码 secret", question: "完整问题" }] })
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+    feed(state, "question.asked", { id: "q", sessionID: "s1", questions: [{ header: "完整问题", question: "完整问题" }] })
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+    feed(state, "permission.asked", { id: "p", sessionID: "s1", permission: "C:\\private" })
+    expect(petDetail(resolvePet(state, NOW))).toBeUndefined()
+  })
+
   test("message.updated records the session provider outfit", () => {
     const state = createPetState()
     feed(state, "message.updated", {

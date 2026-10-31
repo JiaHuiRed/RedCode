@@ -72,3 +72,24 @@ GUI 中的赤已有真实事件归一化和静态姿态，权限、提问、成�
 - 隔离浏览器挂载生产 PetLayer、SettingsProvider 和 PlatformProvider，用真实鼠标移动、按下、拖动和键盘操作验证：头/腹反馈不同，离开与静止到期复位；跨越 1 秒 tick 的拖动不取消，拖动中 resize 不回到旧记位；松手保存、重新挂载恢复、Home 归位；权限台词不被覆盖且键盘触摸反馈会到期；375px 窄窗口和顶部翻边不溢出；关闭重开及 reduced motion 正常，浏览器运行时错误为零。
 - 浏览器暴露的边界已修正：几何 observer 只随开关建立，不随每秒 display 对象重建；测量拖动中的当前位置而非旧记位。气泡入场会缩放，边界计算使用 `offsetWidth/offsetHeight`，不能把动画中的 `getBoundingClientRect()` 尺寸当作最终布局宽度；圆形轮廓显式设 `corner-shape: round`，不继承全局方圆角。
 - 验证没有启动真实模型任务，也没有重启当前 Electron 应用；独立桌面窗口与原生多屏拖动不属于本次范围。交互回归脚本和截图留在本机 `.redcode/temp/pet-v3-qa.mjs`、`pet-v3-final.png`，未加入仓库级浏览器测试门禁。
+
+## 2026-10-31：事件详情与订阅额度
+
+赤复用现有事件展示正在使用的工具名、权限类型和问题短标题；同一会话的等待请求按请求 ID 分开保留，权限和提问始终优先于普通工作状态。工具输入、输出与权限匹配路径不进入气泡。问题标题仍是模型提供的自由文本，展示前仅做长度和常见敏感形状过滤，不宣称可以识别全部敏感内容。
+
+额度入口只消费 `server-sync` 已有的订阅额度快照，不新增请求或轮询。每个快照独立展示窗口占用、重置时间、采集时间及已有 Credits，不推断币种或当前会话账号，也不把订阅占用当账户余额。权限或提问出现时关闭额度面板，让重要提醒优先显示。
+
+首次挂载时不读取尚未接入 DOM 或尺寸为零的根节点；等待图片及布局完成再测量，避免把左上角零坐标保存为默认位置。
+
+参考 `E:\AI\DeepSeek-Balance-Whale-Widget` 的数据气泡和等待提醒，未复制其图片、音效或余额账本。该仓美术素材未授权再分发；此批沿用赤的现有素材。无模型可见改动。
+
+
+## 2026-10-31（第二批）：当前会话动态状态
+
+赤的固定「额度」按钮改为当前会话状态徽标；额度查看移到悬停入口，保持独立可用。会话路由存在时（`layout.tsx` 传入 sessionID 与目录），赤只投影该会话：目录 child store 的 `session_status`、`permission`、`question` 快照负责恢复页面打开前已在运行的状态，实时事件流提供工具细节与回合收尾；无会话路由时保留原全局聚合视角。
+
+关键边界：`session_status_ready` 由真实 status 请求成功驱动，未加载完成的目录显示「状态未知」而不是猜测 idle——status 接口只列非 idle 会话，快照缺键才是 idle。事件 blocker 永远优先于快照条目。
+
+快照与事件流的乱序竞态（HTTP 往返间隙事件穿过）用 bootstrap journal 仲裁：`beginPetBootstrap` 开启按目录的 journal，在途事件记录其中；快照写入 batch 内通过 `onSnapshot(kind)` 按分区清算（`settlePetBootstrap`）并把 journal 事件按序重放回 child reducer——asked/replied/status 的 child 处理都是幂等确定性操作，重放净效果等于事件流最终态，不复活已回复请求、不倒退状态。残余 journal 在 bootstrap 收尾丢弃（失败轮快照未写入，无需修正）。journal 生命周期等于单轮 bootstrap，无跨轮 tombstone。
+
+已知限制：status 残留最多活到该会话下一个 status 事件（回合结束必有 idle，自愈）；问题标题的敏感形状过滤同上一批，不宣称完整。

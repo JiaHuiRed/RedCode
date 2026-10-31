@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { PetDisplay } from "./pet-state"
+import type { ProviderQuota } from "@redcode-ai/sdk/v2/client"
 import {
   advancePetPresentation,
   clampPetPosition,
@@ -10,6 +11,9 @@ import {
   pickLine,
   petPositionFromOffset,
   petBubblePlacement,
+  petQuotaAvailable,
+  petQuotaLines,
+  petStatus,
   petStroke,
   petTouchIsExpired,
   resolvePetPosition,
@@ -20,6 +24,77 @@ import {
 } from "./pet-lines"
 
 describe("pet-lines", () => {
+  it("labels every live pet state instead of a fixed quota caption", () => {
+    expect(petStatus("idle")).toBe("待命")
+    expect(petStatus("unknown")).toBe("状态未知")
+    expect(petStatus("thinking")).toBe("思考中")
+    expect(petStatus("coding")).toBe("编写中")
+    expect(petStatus("waiting")).toBe("等回复")
+    expect(petStatus("permission")).toBe("待授权")
+    expect(petStatus("success")).toBe("已完成")
+    expect(petStatus("error")).toBe("出错了")
+  })
+
+  it("shows separate real quota snapshots and never invents zero for non-finite values", () => {
+    const window = { usedPercent: 42.25, windowMinutes: 300, resetAfterSeconds: 0, resetAt: 0 }
+    const quota: ProviderQuota = {
+      providerID: "openai", accountID: "private-account", capturedAt: 1, planType: "plus",
+      primary: window, secondary: { ...window, usedPercent: "NaN", windowMinutes: "Infinity" },
+      reserve: { ...window, usedPercent: Infinity },
+      credits: { balance: 12, has: true, unlimited: false },
+    }
+    const result = petQuotaLines([quota, { ...quota, accountID: "other", planType: "pro" }])
+    expect(result).toHaveLength(2)
+    expect(result[0]).toContain("快照 1：openai · plus")
+    expect(result[0]).toContain("主窗口（300分钟）已用 42.25%")
+    expect(result[0]).toContain("次窗口（时长未知）已用 未知")
+    expect(result[0]).toContain("备用窗口（300分钟）已用 未知")
+    expect(result[0]).not.toContain("private-account")
+    expect(result[0]).toContain("Credits：有 · 非无限 · 数值 12")
+    expect(result[1]).toContain("快照 2：openai · pro")
+    expect(petQuotaLines([])).toEqual(["暂无订阅额度数据"])
+    expect(petQuotaLines([{ providerID: "x", planType: "p", capturedAt: 0 }])[0]).toContain("无窗口用量数据")
+  })
+
+  it("shows snapshot and reset times in their actual units and omits invalid timestamps", () => {
+    const capturedAt = 1_700_000_000_000
+    const resetAt = 1_700_003_600
+    const quota: ProviderQuota = {
+      providerID: "p", planType: "plan", capturedAt,
+      primary: { usedPercent: 2, windowMinutes: 60, resetAt, resetAfterSeconds: 1 },
+      secondary: { usedPercent: 3, windowMinutes: 60, resetAt: "NaN", resetAfterSeconds: 1 },
+    }
+    const line = petQuotaLines([quota])[0]!
+    expect(line).toContain(`快照时间：${new Date(capturedAt).toLocaleString()}`)
+    expect(line).toContain(`重置 ${new Date(resetAt * 1_000).toLocaleString()}`)
+    expect(line.match(/重置 /g)).toHaveLength(1)
+    for (const invalid of [0, -1, Infinity, NaN, 9e30, "Infinity"] as const) {
+      const text = petQuotaLines([{ ...quota, capturedAt: invalid, primary: { ...quota.primary!, resetAt: invalid } }])[0]!
+      expect(text).not.toContain("快照时间：")
+      expect(text).not.toContain("重置 ")
+    }
+  })
+
+  it("reports credit flags and finite values independently without inventing missing values", () => {
+    const base: ProviderQuota = { providerID: "p", planType: "plan", capturedAt: 0 }
+    expect(petQuotaLines([base])[0]).not.toContain("Credits：")
+    expect(petQuotaLines([{ ...base, credits: { has: false, unlimited: true, balance: 0 } }])[0])
+      .toContain("Credits：无 · 无限 · 数值 0")
+    for (const balance of ["NaN", "Infinity", "-Infinity", Infinity, NaN] as const)
+      expect(petQuotaLines([{ ...base, credits: { has: true, unlimited: false, balance } }])[0])
+        .toContain("Credits：有 · 非无限 · 数值 未知")
+    const missing = {} as NonNullable<ProviderQuota["credits"]>
+    expect(petQuotaLines([{ ...base, credits: missing }])[0])
+      .toContain("Credits：有无未知 · 是否无限未知 · 数值 未知")
+  })
+
+  it("keeps quota independently available during questions and permissions", () => {
+    expect(petQuotaAvailable("permission")).toBe(true)
+    expect(petQuotaAvailable("waiting")).toBe(true)
+    expect(petQuotaAvailable("coding")).toBe(true)
+    expect(petQuotaAvailable("idle")).toBe(true)
+  })
+
   it("maps touch points to the visual head and belly hitboxes only", () => {
     expect(petTouchAt(0.43, 0.25)).toBe("head")
     expect(petTouchAt(0.43, 0.53)).toBe("belly")
