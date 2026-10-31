@@ -1088,6 +1088,20 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileStringAtomic(file, serialized).pipe(Effect.orDie)
         next = merged
       } else {
+        // 261031 Red MCP 条目的 tools 按「整条替换」处理：不写 tools 表示开放全部，
+        // 但 patchJsonc 是深合并，不带这个键会保留旧白名单——「全部开放」就表达不出来，
+        // GUI 把白名单清空保存也会被读回旧规则。只清 tools，表单没展示的字段
+        // （environment、disabledTools、headers…）原样保留，避免保存一次就删掉手写配置。
+        if (isRecord(patch.mcp)) {
+          const current = ConfigParse.jsonc(before, file)
+          const prior = isRecord(current) && isRecord(current.mcp) ? current.mcp : undefined
+          if (prior) {
+            for (const [name, value] of Object.entries(patch.mcp)) {
+              if (!isRecord(value) || !isRecord(prior[name])) continue
+              if (!("tools" in value) && "tools" in prior[name]) (value as Record<string, unknown>).tools = undefined
+            }
+          }
+        }
         const updated = patchJsonc(before, patch)
         next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
         changed = updated !== before

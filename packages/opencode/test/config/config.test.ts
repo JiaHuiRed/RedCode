@@ -459,6 +459,31 @@ it.effect("writes permission rules and drops a tool set back to inherit", () =>
 )
 
 
+// 261031 Red MCP 面板的白名单三态：不写 tools = 开放全部，但 patchJsonc 是深合并，
+// 不显式清掉就会保留旧白名单（GUI 清空保存后又被读回旧规则）；tools: [] 是「屏蔽全部」，
+// 必须原样落盘，不能被当成「没写」删掉。
+it.effect("mcp entry without tools clears the previous allowlist", () =>
+  withGlobalConfig(
+    {
+      config: { mcp: { probe: { type: "local", command: ["echo"], tools: ["a", "b"] } } },
+      name: "redcode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        const file = path.join(dir, "redcode.jsonc")
+
+        yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"] } } })
+        const cleared = yield* AppFileSystem.use.readFileString(file)
+        expect(cleared).not.toContain('"tools"')
+        expect(cleared).toContain('"probe"')
+
+        yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"], tools: [] } } })
+        const blocked = yield* AppFileSystem.use.readFileString(file)
+        expect(blocked).toContain('"tools"')
+      }),
+  ),
+)
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

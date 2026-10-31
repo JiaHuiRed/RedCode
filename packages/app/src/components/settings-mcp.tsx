@@ -29,10 +29,15 @@ type McpEntry = {
 const parseCommand = (value: string): string[] => {
   const text = value.trim()
   if (!text) return []
-  // 带空格的可执行路径只能靠 JSON 数组表达，否则按空白切
+  // 带空格的可执行路径只能靠 JSON 数组表达，否则按空白切。解析失败返回空数组，
+  // 由调用方按「输入非空但解析不出」判为无效，别静默保存成一条断掉的命令。
   if (text.startsWith("[")) {
-    const parsed: unknown = JSON.parse(text)
-    return Array.isArray(parsed) ? parsed.map(String) : []
+    try {
+      const parsed: unknown = JSON.parse(text)
+      return Array.isArray(parsed) ? parsed.map(String) : []
+    } catch {
+      return []
+    }
   }
   return text.split(/\s+/).filter(Boolean)
 }
@@ -62,25 +67,48 @@ const McpForm: Component<{ name?: string; existing?: McpEntry; onSaved: () => vo
 
   const [name, setName] = createSignal(props.name ?? "")
   const [type, setType] = createSignal<"local" | "remote">(props.existing?.type ?? "local")
-  const [command, setCommand] = createSignal((props.existing?.command ?? []).join(" "))
+  // 261031 Red 编辑态按 JSON 数组回显：command.join(" ") 会把带空格的参数
+  // （如 C:\My Tools\server.py）拆成两个 token，保存一次就得到一条坏掉的启动命令。
+  const [command, setCommand] = createSignal(
+    props.existing?.command?.length ? JSON.stringify(props.existing.command) : "",
+  )
   const [url, setUrl] = createSignal(props.existing?.url ?? "")
   const [cwd, setCwd] = createSignal(props.existing?.cwd ?? "")
   const [timeout, setTimeoutValue] = createSignal(props.existing?.timeout ? String(props.existing.timeout) : "")
   const [tools, setTools] = createSignal((props.existing?.tools ?? []).join(", "))
+  // 261031 Red 白名单三态：不写 tools = 开放全部，[] = 屏蔽全部，非空数组 = 指定清单。
+  // 空输入框不能同时代表「全部」和「无」，否则清空白名单会静默保留旧规则。
+  const [toolsMode, setToolsMode] = createSignal<"all" | "list" | "none">(
+    props.existing?.tools === undefined ? "all" : props.existing.tools.length === 0 ? "none" : "list",
+  )
   const [enabled, setEnabled] = createSignal(props.existing?.enabled ?? true)
   const [saving, setSaving] = createSignal(false)
 
   const save = async () => {
     const id = name().trim()
     if (!id || saving()) return
+    const commandList = parseCommand(command())
+    if (type() === "local" && command().trim() && commandList.length === 0) {
+      showToast({ title: language.t("settings.mcp.toast.commandInvalid") })
+      return
+    }
+    if (toolsMode() === "list" && parseList(tools()).length === 0) {
+      showToast({ title: language.t("settings.mcp.toast.toolsRequired") })
+      return
+    }
     const shared = {
       enabled: enabled(),
       ...(timeout().trim() ? { timeout: Number(timeout()) } : {}),
-      ...(parseList(tools()).length ? { tools: parseList(tools()) } : {}),
+      // 「全部开放」不写 tools：服务端对该键做整条替换，旧白名单会被清掉
+      ...(toolsMode() === "list"
+        ? { tools: parseList(tools()) }
+        : toolsMode() === "none"
+          ? { tools: [] as string[] }
+          : {}),
     }
     const config: McpEntry =
       type() === "local"
-        ? { type: "local", command: parseCommand(command()), ...(cwd().trim() ? { cwd: cwd().trim() } : {}), ...shared }
+        ? { type: "local", command: commandList, ...(cwd().trim() ? { cwd: cwd().trim() } : {}), ...shared }
         : { type: "remote", url: url().trim(), ...shared }
     setSaving(true)
     try {
@@ -167,14 +195,35 @@ const McpForm: Component<{ name?: string; existing?: McpEntry; onSaved: () => vo
           spellcheck={false}
           autocomplete="off"
         />
-        <TextField
-          label={language.t("settings.mcp.form.tools")}
-          value={tools()}
-          onChange={setTools}
-          placeholder={language.t("settings.mcp.form.tools.placeholder")}
-          spellcheck={false}
-          autocomplete="off"
-        />
+        <div class="flex flex-col gap-1.5">
+          <span class="text-12-medium text-text-strong">{language.t("settings.mcp.form.tools")}</span>
+          <Select
+            options={[
+              { value: "all", label: language.t("settings.mcp.tools.mode.all") },
+              { value: "list", label: language.t("settings.mcp.tools.mode.list") },
+              { value: "none", label: language.t("settings.mcp.tools.mode.none") },
+            ]}
+            current={{ value: toolsMode(), label: language.t(`settings.mcp.tools.mode.${toolsMode()}`) }}
+            value={(option) => option.value}
+            label={(option) => option.label}
+            onSelect={(option) => {
+              if (option) setToolsMode(option.value as "all" | "list" | "none")
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
+        </div>
+        <Show when={toolsMode() === "list"}>
+          <TextField
+            label={language.t("settings.mcp.form.tools.names")}
+            value={tools()}
+            onChange={setTools}
+            placeholder={language.t("settings.mcp.form.tools.placeholder")}
+            spellcheck={false}
+            autocomplete="off"
+          />
+        </Show>
         <div class="flex items-center justify-between">
           <span class="text-12-medium text-text-strong">{language.t("settings.mcp.form.enabled")}</span>
           <Switch checked={enabled()} onChange={setEnabled} />

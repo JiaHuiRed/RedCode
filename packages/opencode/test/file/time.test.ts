@@ -86,3 +86,13 @@ test("磁盘记录损坏按未读处理（fail-safe）", async () => {
   FileTime.reload()
   await expect(Effect.runPromise(FileTime.assert("ses_corrupt", file))).rejects.toThrow(/must read file/i)
 })
+
+// 261031 Red 写删竞态：会话在写任务排队后被回收，晚到的写不能把刚删掉的文件重建出来，
+// 否则下次续接会绕过预期的重读
+test("被回收的会话不会被排队的写重新创建", async () => {
+  await Effect.runPromise(FileTime.record("ses_victim", file))
+  // 不 flush：victim 的写还在队列里；塞满会话数把最冷的 victim 挤掉
+  for (let i = 0; i < 40; i++) await Effect.runPromise(FileTime.record(`ses_fill_${i}`, file))
+  await FileTime.flush()
+  await expect(fs.stat(path.join(stateDir, "ses_victim.json"))).rejects.toThrow()
+})

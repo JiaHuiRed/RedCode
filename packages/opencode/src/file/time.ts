@@ -43,6 +43,11 @@ const loaded = new Set<string>()
 // 写盘串成一条链：record 只把最新快照排进队列，保持先后顺序
 let writeChain: Promise<void> = Promise.resolve()
 
+// 261031 Red 写删竞态：会话在写任务排队后被 evictor 回收时，晚到的写会把刚删掉的文件
+// 重新创建出来，下次续接便绕过预期的重读。drop 先把 sessionID 记进来，排队任务执行时
+// 据此丢弃已淘汰的写；会话若又被 record（同一 ID 复活）则清掉这个标记。
+const dropped = new Set<string>()
+
 // 兜底清理：evictor 只在会话被触碰时回收，进程重启后没人碰的旧会话文件会留一辈子。
 // 每个进程只扫一次目录，删掉超过 7 天没更新的记录——冷到一周的会话重启后本来也该重读。
 const PRUNE_AGE_MS = 7 * 24 * 60 * 60 * 1000
@@ -67,18 +72,22 @@ function pruneOnce() {
 function persist(sessionID: string) {
   const bucket = state.get(sessionID)
   const payload = JSON.stringify({ version: VERSION, sessionID, files: bucket ? Object.fromEntries(bucket) : {} })
-  writeChain = writeChain.then(() =>
-    fsp
+  writeChain = writeChain.then(() => {
+    if (dropped.has(sessionID)) return
+    return fsp
       .mkdir(dir(), { recursive: true })
       .then(() => fsp.writeFile(file(sessionID), payload))
       // 写失败不影响守卫主路径：最坏重启后要求重读，即本特性部署前的行为
-      .catch(() => {}),
-  )
+      .catch(() => {})
+  })
 }
 
 function hydrate(sessionID: string) {
   if (loaded.has(sessionID)) return
   loaded.add(sessionID)
+  // 已回收的会话不能从磁盘重新加载：删除排在写队列里，此刻文件可能还在。
+  // 放行等于让回收失效（assert 会认为「读过」），方向必须是要求重读。
+  if (dropped.has(sessionID)) return
   let raw: string
   try {
     raw = fs.readFileSync(file(sessionID), "utf-8")
@@ -111,8 +120,9 @@ const evictor = sessionEvictor({
   drop: (sessionID) => {
     const had = state.delete(sessionID)
     loaded.delete(sessionID)
-    // 冷会话的磁盘记录一并清掉，否则 data/file-time 会随会话数无限增长
-    void fsp.rm(file(sessionID), { force: true }).catch(() => {})
+    dropped.add(sessionID)
+    // 删除排进同一条写队列：保证排在已入队的写之后，后续写由 persist 里的 dropped 检查拦下
+    writeChain = writeChain.then(() => fsp.rm(file(sessionID), { force: true }).catch(() => {}))
     return had ? 1 : 0
   },
 })
@@ -136,6 +146,7 @@ export namespace FileTime {
     if (value === undefined) return
     // 先加载再写：否则新建的空表会覆盖磁盘上同会话其它文件的记录
     hydrate(sessionID)
+    dropped.delete(sessionID)
     touch(sessionID)
     const bucket = state.get(sessionID) ?? new Map<string, number>()
     bucket.set(key(filepath), value)
@@ -183,6 +194,7 @@ export namespace FileTime {
     state.clear()
     loaded.clear()
     evictor.clear()
+    dropped.clear()
   }
 
   /** 测试钩子：清空进程内记录，避免用例之间互相污染（与 reload 同实现，磁盘由测试目录清理） */
