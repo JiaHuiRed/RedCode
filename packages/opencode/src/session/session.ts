@@ -729,7 +729,7 @@ export const layer: Layer.Layer<
           }),
         )
       }
-      if (input?.scope !== "project" && input?.directory) {
+      if (input?.scope !== "project" && input?.directory && input.path === undefined) {
         return Array.from(
           listGlobal({
             directory: input.directory,
@@ -1258,6 +1258,12 @@ const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function*
   )
 })
 
+// 261031 Red Windows 客户端可能混用两种分隔符，保持索引可用并匹配历史记录。
+function directoryMatch(directory: string) {
+  if (process.platform !== "win32") return eq(SessionTable.directory, directory)
+  return inArray(SessionTable.directory, [directory.replaceAll("\\", "/"), directory.replaceAll("/", "\\")])
+}
+
 function* listByProject(
   input: ListInput & {
     projectID: ProjectID
@@ -1275,13 +1281,13 @@ function* listByProject(
 
       conditions.push(
         input.directory
-          ? or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory))!)!
+          ? or(...conds, and(isNull(SessionTable.path), directoryMatch(input.directory))!)!
           : or(...conds)!,
       )
     }
   } else if (input.scope !== "project" && !input.experimentalWorkspaces) {
     if (input.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
+      conditions.push(directoryMatch(input.directory))
     }
   }
   if (input.roots) {
@@ -1322,7 +1328,7 @@ export function* listGlobal(input?: {
   const conditions: SQL[] = []
 
   if (input?.directory) {
-    conditions.push(eq(SessionTable.directory, input.directory))
+    conditions.push(directoryMatch(input.directory))
   }
   if (input?.roots) {
     conditions.push(isNull(SessionTable.parent_id))

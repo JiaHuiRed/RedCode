@@ -37,6 +37,26 @@ afterEach(async () => {
 
 describe("session.list", () => {
   it.instance(
+    "matches Windows directory separators when listing sessions",
+    () =>
+      Effect.gen(function* () {
+        if (process.platform !== "win32") return
+        const test = yield* TestInstance
+        const session = yield* withSession({ title: "separator-check" })
+        const forward = test.directory.replaceAll("\\", "/")
+        expect(forward).not.toBe(test.directory)
+        const ids = (yield* SessionNs.use.list({ directory: forward })).map((item) => item.id)
+        expect(ids).toContain(session.id)
+        yield* Effect.sync(() =>
+          Database.use((db) => db.update(SessionTable).set({ directory: forward }).where(eq(SessionTable.id, session.id)).run()),
+        )
+        const native = (yield* SessionNs.use.list({ directory: test.directory })).map((item) => item.id)
+        expect(native).toContain(session.id)
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "does not filter by directory when directory is omitted",
     () =>
       Effect.gen(function* () {
