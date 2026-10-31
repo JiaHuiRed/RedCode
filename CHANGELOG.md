@@ -8,6 +8,13 @@
 
 ---
 
+### [Unreleased]
+
+- **赤随当前会话动态显示状态**：进入会话时从目录快照恢复运行中、待授权、等回复等真实状态，之后由实时事件驱动；固定常驻的「额度」按钮改为当前状态徽标，额度查看移到悬停入口。页面打开前已在运行的会话也能正确恢复；快照与事件乱序由 bootstrap journal 仲裁，不再出现复活旧权限或状态倒退。范围与数据口径见 [桌宠表现层决策](docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md)。
+- **修复会话列表目录与路径筛选**：Windows 查询兼容正斜杠和反斜杠两种已有记录；同时恢复传入 `path` 时的项目内路径筛选，不修改数据库中的路径。
+- **避免 MCP 慢启动时重复拉起进程**：首次连接与后续连接共用创建登记；断开后立即重连会等旧连接清理完成，避免重复进程和状态错乱。复现与边界见 [实例与孤儿进程决策](docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md)。
+- **赤的事件详情与订阅额度**：桌宠气泡显示当前工具、权限类型和问题短标题；额度入口复用已有订阅快照，展示各窗口用量、重置时间及 Credits，不推断当前账号或币种。权限和提问提醒优先于额度面板；修复初次加载时图片尚未布局导致赤落在视口左上角。范围与数据口径见 [桌宠表现层决策](docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md)。
+
 ### [0.13.4] - 2026-10-29
 
 - **修复 prompt-pin 恢复路径必崩与两处健壮性缺陷**（`packages/opencode/src/session/prompt-pin.ts`、`session/prompt.ts`）：落地前外部审计三项全部证实，其中 P1 比审计描述更严重——save 直接 `JSON.stringify` AI SDK Schema 对象，Symbol 标记被丢只剩 `{ jsonSchema: ... }` 残缺对象，恢复端 overlay 进 `prepareTools` 时 ai 包 `asSchema()` 分派把它当函数调用，ai-sdk 主路径（`llm.ts` streamText）续接首轮必抛 TypeError，比不装 pin（全价重建但能跑）更糟；native 路径 `nativeSchema` 是 duck-typing 只读 `.jsonSchema` 属性恰好不崩，真机验证只碰 native provider 会假绿。修法：落盘改提取纯 JSON Schema 数据、恢复端 `jsonSchema()` 重建成 Schema 对象（与 `tools.ts` 跨边界转换同构），`VERSION` 1→2 旧格式整体弃用回退。P2 `load()` 此前只校验 version/sessionID，`tools: null` 的合法 JSON 流到消费端 `Object.entries` 炸掉冷启动轮，补最小结构校验（tools 非数组对象、每条定义有 description 与 inputSchema），非法整体回退。P3 prune 判定在异步任务运行时才读全局计数，集中排队恰逢终值为 200 倍数时连环触发目录扫描，判定入队时定格布尔值。原「逐字节一致」测试喂普通对象（shadow 数据）没抓到 P1；新增真实 Schema 回环（重建后走 `prepareTools` 同款 `asSchema` 路径内容一致）、合法 JSON 非法结构 4 形态、旧版本格式弃用 3 条测试。模型可见四问：修复使恢复路径从必崩变为可用，未重启正常路径 wire 字节零变化；固定前缀零增减；KV cache 仅影响续接重建（崩溃 → 恢复后与 pin 前缀逐字节一致命中）；无新增注入项，上限沿用工具描述 32KB 预算与 mcp-guide 登记。验证：prompt-pin 10/10（7 存量 + 3 新增）、prompt-caches + prompt 109 pass、typecheck exit 0。
