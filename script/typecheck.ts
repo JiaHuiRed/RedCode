@@ -7,11 +7,18 @@
 // 策略：先跑 tsgo（快）；只有在**识别为崩溃**时才回退到 node_modules 里的 TypeScript 5.x
 // 重跑一遍，并以后者的结论为准。真正的类型错误不触发回退，直接原样透出——回退只用来
 // 兜"编译器自己挂了"，不用来掩盖代码问题。
+//
+// 261031 Red 小内存机器跳过 tsgo：16GB 机器上 tsgo 100% OOM（多次实测），每次 typecheck
+// 都要先等 tsgo 跑到崩溃再回退，纯白等。按**总**物理内存门控而不是可用内存——总内存是
+// 机器属性不会波动，行为确定；可用内存会导致同一次改动有时试 tsgo 有时不试。32GB 以下
+// 直接用 TS5，32GB 及以上保留 tsgo 快路径（OOM 仍有回退兜底）。
 import { spawnSync } from "child_process"
 import { existsSync, readdirSync } from "fs"
+import os from "os"
 import path from "path"
 
 const CRASH = /panic\(|runtime\.goexit|MemoryExhaustion|out of memory|fatal error: /i
+const TSGO_MIN_TOTAL_MEM = 32 * 1024 ** 3
 
 function repoRoot(start: string) {
   let dir = start
@@ -27,19 +34,26 @@ const root = repoRoot(process.cwd())
 const exe = process.platform === "win32" ? ".exe" : ""
 const args = ["--noEmit", "--pretty", "false", ...process.argv.slice(2)]
 
+const skipPrimary = os.totalmem() < TSGO_MIN_TOTAL_MEM
+if (skipPrimary) {
+  console.warn(
+    `[typecheck] 物理内存 ${(os.totalmem() / 1024 ** 3).toFixed(1)}GB < 32GB，tsgo 已知必 OOM（261031 实测），直接用 TypeScript 5.x`,
+  )
+}
+
 const primaryBin = root ? path.join(root, "node_modules", ".bin", `tsc${exe}`) : `tsc${exe}`
-const primary = spawnSync(primaryBin, args, { encoding: "utf8", shell: false })
-const primaryOut = `${primary.stdout ?? ""}${primary.stderr ?? ""}`
+const primary = skipPrimary ? undefined : spawnSync(primaryBin, args, { encoding: "utf8", shell: false })
+const primaryOut = primary ? `${primary.stdout ?? ""}${primary.stderr ?? ""}` : ""
 
-if (primary.status === 0) process.exit(0)
+if (primary?.status === 0) process.exit(0)
 
-if (!CRASH.test(primaryOut) && primary.error === undefined) {
+if (primary && !CRASH.test(primaryOut) && primary.error === undefined) {
   // 真类型错误：原样输出，别回退
   process.stdout.write(primaryOut)
   process.exit(primary.status ?? 1)
 }
 
-// 崩溃了 —— 找一份 5.x 重跑
+// 崩溃了（或按内存跳过了 tsgo）—— 找一份 5.x 重跑
 const fallback = (() => {
   if (!root) return undefined
   const dir = path.join(root, "node_modules", ".bun")
@@ -56,11 +70,13 @@ const fallback = (() => {
 
 if (!fallback) {
   process.stderr.write(`tsgo 崩溃且找不到可用的 TypeScript 5.x 兜底：\n${primaryOut}`)
-  process.exit(primary.status ?? 2)
+  process.exit(primary?.status ?? 2)
 }
 
 // 用 node 跑，不用 process.execPath —— 在 bun 下那是 bun.exe，跑 tsc 的 CLI 会异常退出
-console.warn(`[typecheck] tsgo 崩溃，回退到 ${path.relative(root!, fallback)} 重跑`)
+if (!skipPrimary) {
+  console.warn(`[typecheck] tsgo 崩溃，回退到 ${path.relative(root!, fallback)} 重跑`)
+}
 const second = spawnSync("node", [fallback, ...args], { encoding: "utf8", shell: false })
 process.stdout.write(`${second.stdout ?? ""}`)
 process.stderr.write(`${second.stderr ?? ""}`)
