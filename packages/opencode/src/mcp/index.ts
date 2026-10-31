@@ -33,7 +33,7 @@ import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
 import os from "os"
-import { Cause, Effect, Exit, Fiber, Layer, Option, Context, Schema, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
@@ -591,7 +591,10 @@ interface State {
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
   instructions: Record<string, string>
-  creating: Set<string>
+  creating: Map<string, Deferred.Deferred<void>>
+  cancelled: Set<string>
+  requests: Map<string, object>
+  disposed: boolean
 }
 
 export interface Interface {
@@ -999,7 +1002,10 @@ export const layer = Layer.effect(
           clients: {},
           defs: {},
           instructions: {},
-          creating: new Set(),
+          creating: new Map(),
+          cancelled: new Set(),
+          requests: new Map(),
+          disposed: false,
         }
 
         const connectAll = Effect.forEach(
@@ -1016,15 +1022,8 @@ export const layer = Layer.effect(
                 return
               }
 
-              // 260610 Red 上游 #31595：create 已 failure-safe 永不 fail，去掉吞错的 Effect.catch
-              const result = yield* create(key, mcp)
-              s.status[key] = result.status
-              if (result.mcpClient) {
-                s.clients[key] = result.mcpClient
-                s.defs[key] = result.defs!
-                if (result.instructions) s.instructions[key] = result.instructions
-                watch(s, key, result.mcpClient, bridge, mcp.timeout)
-              }
+              // 261031 Red 首次连接与重连共用所有权；见 docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md
+              yield* createAndStoreInState(s, key, mcp)
             }),
           { concurrency: "unbounded" },
         )
@@ -1066,6 +1065,8 @@ export const layer = Layer.effect(
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
+            s.disposed = true
+            yield* Fiber.interrupt(connecting)
             yield* Effect.forEach(
               Object.values(s.clients),
               (client) =>
@@ -1220,17 +1221,29 @@ export const layer = Layer.effect(
       return s.clients
     })
 
-    const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCP.Info) {
-      const s = yield* InstanceState.get(state)
+    const createAndStoreInState = Effect.fn("MCP.createAndStoreInState")(function* (s: State, name: string, mcp: ConfigMCP.Info) {
       // 260620 Red prevent concurrent creation — without this guard, rapid reconcile/reconnect
       // calls spawn multiple processes for the same server before the first finishes connecting.
       if (s.creating.has(name)) {
         log.debug("createAndStore skipped — already creating", { name })
         return s.status[name] ?? { status: "failed" as const, error: "creation in progress" }
       }
-      s.creating.add(name)
-      try {
+      const pending = Deferred.makeUnsafe<void>()
+      s.creating.set(name, pending)
+      s.cancelled.delete(name)
+      return yield* Effect.gen(function* () {
         const result = yield* create(name, mcp)
+        if (s.cancelled.has(name)) {
+          const client = result.mcpClient
+          if (client) {
+            const transport = client.transport
+            if (transport instanceof StdioClientTransport || transport instanceof WindowsJobStdioClientTransport) {
+              if (transport.pid) yield* killProcessTree(transport.pid)
+            }
+            yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+          }
+          return s.status[name]
+        }
         s.status[name] = result.status
         if (!result.mcpClient) {
           yield* closeClient(s, name)
@@ -1262,10 +1275,21 @@ export const layer = Layer.effect(
             }
           }
         }
-        return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
-      } finally {
+        return yield* Effect.acquireUseRelease(
+          Effect.succeed(result.mcpClient),
+          (client) => storeClient(s, name, client, result.defs!, mcp.timeout),
+          (client, exit) => Exit.isFailure(exit) ? Effect.tryPromise(() => client.close()).pipe(Effect.ignore) : Effect.void,
+        )
+      }).pipe(Effect.ensuring(Effect.gen(function* () {
         s.creating.delete(name)
-      }
+        s.cancelled.delete(name)
+        yield* Deferred.succeed(pending, undefined)
+      })))
+    })
+
+    const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCP.Info) {
+      const s = yield* InstanceState.get(state)
+      return yield* createAndStoreInState(s, name, mcp)
     })
 
     // 260603 Red P0+P1: 自动重连（使用 EffectBridge 不依赖 AppRuntime）
@@ -1289,11 +1313,19 @@ export const layer = Layer.effect(
         log.error("MCP config not found or invalid", { name })
         return
       }
-      yield* createAndStore(name, { ...mcp, enabled: true })
+      const s = yield* InstanceState.get(state)
+      const request = {}
+      s.requests.set(name, request)
+      const pending = s.creating.get(name)
+      if (pending && s.cancelled.has(name)) yield* Deferred.await(pending)
+      if (s.disposed || s.requests.get(name) !== request) return
+      yield* createAndStoreInState(s, name, { ...mcp, enabled: true })
     })
 
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
       const s = yield* InstanceState.get(state)
+      s.requests.delete(name)
+      if (s.creating.has(name)) s.cancelled.add(name)
       yield* closeClient(s, name)
       delete s.clients[name]
       s.status[name] = { status: "disabled" }

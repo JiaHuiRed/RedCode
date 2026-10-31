@@ -5,6 +5,8 @@ import path from "node:path"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { Global } from "@redcode-ai/core/global"
 import { pollWithTimeout, testEffect } from "../lib/effect"
+import { provideTmpdirInstance } from "../fixture/fixture"
+import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 
 // --- Mock infrastructure ---
 
@@ -34,6 +36,7 @@ let connectDelayMs = 0
 let connectError = "Mock transport cannot connect"
 // Tracks how many Client instances were created (detects leaks)
 let clientCreateCount = 0
+let clientEvents: string[] = []
 // Tracks how many times transport.close() is called across all mock transports
 let transportCloseCount = 0
 
@@ -65,7 +68,7 @@ function getOrCreateClientState(name?: string): MockClientState {
 // Mock transport that succeeds or fails based on connectShouldFail / connectShouldHang
 class MockStdioTransport {
   stderr: null = null
-  pid = 12345
+  pid = null
   // oxlint-disable-next-line no-useless-constructor
   constructor(_opts: any) {}
   async start() {
@@ -136,6 +139,7 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
 
     constructor(_opts: any) {
       clientCreateCount++
+      clientEvents.push("create")
     }
 
     async connect(transport: { start: () => Promise<void> }) {
@@ -193,6 +197,7 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
     }
 
     async close() {
+      clientEvents.push("close")
       if (this._state) this._state.closed = true
     }
 
@@ -210,6 +215,7 @@ beforeEach(() => {
   connectDelayMs = 0
   connectError = "Mock transport cannot connect"
   clientCreateCount = 0
+  clientEvents = []
   transportCloseCount = 0
 })
 
@@ -218,6 +224,110 @@ const { MCP } = await import("../../src/mcp/index")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
 
 const it = testEffect(MCP.defaultLayer)
+
+it.instance(
+  "does not create a second client while initial connection is pending",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        connectDelayMs = 3_000
+        yield* mcp.status()
+        expect(clientCreateCount).toBe(1)
+        connectDelayMs = 0
+        yield* mcp.connect("pending-server")
+        expect(clientCreateCount).toBe(1)
+        yield* pollWithTimeout(
+          mcp.status().pipe(Effect.map((status) => status["pending-server"]?.status === "connected" ? true : undefined)),
+          "initial connection did not finish",
+        )
+        yield* mcp.connect("pending-server")
+        expect(clientCreateCount).toBe(2)
+        expect((yield* mcp.status())["pending-server"]?.status).toBe("connected")
+        expect((yield* mcp.tools())["pending-server_test_tool"]).toBeDefined()
+      }),
+    ),
+  { config: { mcp: { "pending-server": { type: "local", command: ["echo", "test"], enabled: true } } } },
+)
+
+it.instance(
+  "failed initial connection releases ownership for retry",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        connectDelayMs = 2000
+        connectShouldFail = true
+        yield* mcp.status()
+        yield* pollWithTimeout(
+          mcp.status().pipe(Effect.map((status) => status["retry-pending"]?.status === "failed" ? true : undefined)),
+          "initial connection did not fail",
+        )
+        expect(transportCloseCount).toBe(1)
+        connectShouldFail = false
+        connectDelayMs = 0
+        yield* mcp.connect("retry-pending")
+        expect(clientCreateCount).toBe(2)
+        expect((yield* mcp.status())["retry-pending"]?.status).toBe("connected")
+      }),
+    ),
+  { config: { mcp: { "retry-pending": { type: "local", command: ["echo", "test"] } } } },
+)
+
+it.instance(
+  "disconnect during initial connection closes its late client",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        connectDelayMs = 2000
+        yield* mcp.status()
+        yield* mcp.disconnect("closing-pending")
+        expect((yield* mcp.status())["closing-pending"]?.status).toBe("disabled")
+        yield* pollWithTimeout(
+          Effect.sync(() => getOrCreateClientState().closed ? true : undefined),
+          "late client was not closed",
+        )
+        expect((yield* mcp.status())["closing-pending"]?.status).toBe("disabled")
+        expect((yield* mcp.clients())["closing-pending"]).toBeUndefined()
+        connectDelayMs = 0
+        yield* mcp.connect("closing-pending")
+        expect(clientCreateCount).toBe(2)
+        expect((yield* mcp.status())["closing-pending"]?.status).toBe("connected")
+      }),
+    ),
+  { config: { mcp: { "closing-pending": { type: "local", command: ["echo", "test"] } } } },
+)
+
+it.instance(
+  "connect immediately after disconnect during startup honors the latest request",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        connectDelayMs = 2000
+        yield* mcp.status()
+        yield* mcp.disconnect("reconnect-pending")
+        connectDelayMs = 0
+        yield* mcp.connect("reconnect-pending")
+        expect(clientCreateCount).toBe(2)
+        expect(clientEvents).toEqual(["create", "close", "create"])
+        expect((yield* mcp.status())["reconnect-pending"]?.status).toBe("connected")
+        expect((yield* mcp.tools())["reconnect-pending_test_tool"]).toBeDefined()
+      }),
+    ),
+  { config: { mcp: { "reconnect-pending": { type: "local", command: ["echo", "test"] } } } },
+)
+
+it.live("disposing an instance interrupts its pending initial transport", () =>
+  Effect.gen(function* () {
+    connectShouldHang = true
+    yield* Effect.scoped(
+      provideTmpdirInstance(
+        () => MCP.Service.use((mcp) => mcp.status().pipe(Effect.asVoid)),
+        { config: { mcp: { "dispose-pending": { type: "local", command: ["echo", "test"] } } } },
+      ),
+    ).pipe(Effect.provide(CrossSpawnSpawner.defaultLayer))
+    expect(clientCreateCount).toBe(1)
+    expect(transportCloseCount).toBe(1)
+  }),
+)
 
 function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server: string) {
   if ("status" in status) return status.status
