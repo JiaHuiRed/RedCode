@@ -30,6 +30,7 @@ export class UnsupportedOAuthError extends Schema.Error<UnsupportedOAuthError>("
 
 export const McpPaths = {
   status: "/mcp",
+  item: "/mcp/:name",
   auth: "/mcp/:name/auth",
   authCallback: "/mcp/:name/auth/callback",
   authAuthenticate: "/mcp/:name/auth/authenticate",
@@ -131,6 +132,18 @@ export const McpApi = HttpApi.make("mcp")
           OpenApi.annotations({
             identifier: "mcp.disconnect",
             description: "Disconnect an MCP server.",
+          }),
+        ),
+        HttpApiEndpoint.delete("remove", McpPaths.item, {
+          params: { name: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "MCP server removed from config"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "mcp.remove",
+            summary: "Remove MCP server",
+            description:
+              "Delete an MCP server definition from the global config files (including the local override layer) and disconnect it.",
           }),
         ),
       )

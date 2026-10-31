@@ -6497,6 +6497,36 @@ export type McpDisconnectResponses = {
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
+export type McpRemoveData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/mcp/{name}"
+}
+
+export type McpRemoveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type McpRemoveError = McpRemoveErrors[keyof McpRemoveErrors]
+
+export type McpRemoveResponses = {
+  /**
+   * MCP server removed from config
+   */
+  200: boolean
+}
+
+export type McpRemoveResponse = McpRemoveResponses[keyof McpRemoveResponses]
+
 export type ProjectListData = {
   body?: never
   path?: never

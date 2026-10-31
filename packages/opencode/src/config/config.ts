@@ -458,6 +458,7 @@ export interface Interface {
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
   readonly update: (config: Info) => Effect.Effect<void>
   readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
+  readonly removeGlobalMCP: (name: string) => Effect.Effect<{ files: string[] }>
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
@@ -496,16 +497,42 @@ function writable(info: Info) {
 
 function writableGlobal(info: Info) {
   const next = writable(info)
+  // 261031 Red 不再用 early return：以前改了 shell 就整段返回，同一个 patch 里的
+  // agent / permission 删除标记会被跳过。
+  const patched: Info = { ...next }
   // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
-  if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
-  const agent = next.agent
-  if (!agent) return next
-  const patched: Record<string, ConfigAgent.Info | undefined> = {}
-  for (const [name, value] of Object.entries(agent)) patched[name] = writableAgent(value)
-  // agent 段的 index signature 值类型不含 undefined，但 patchJsonc 正是靠 undefined 删键；
-  // REST 请求体传不了 undefined，这是落盘前唯一的删法，所以这里断言。
-  return { ...next, agent: patched as Info["agent"] }
+  if ("shell" in patched && patched.shell === "") patched.shell = undefined
+  if (patched.agent) {
+    const agent: Record<string, ConfigAgent.Info | undefined> = {}
+    for (const [name, value] of Object.entries(patched.agent)) agent[name] = writableAgent(value)
+    // agent 段的 index signature 值类型不含 undefined，但 patchJsonc 正是靠 undefined 删键；
+    // REST 请求体传不了 undefined，这是落盘前唯一的删法，所以这里断言。
+    patched.agent = agent as Info["agent"]
+  }
+  if (patched.permission) patched.permission = writablePermission(patched.permission)
+  return patched
 }
+
+// 261031 Red 权限面板用空对象表达「回到继承」：Rule 允许空对象（语义等同没有规则），
+// 而 REST 请求体传不了 undefined，patchJsonc 又正是靠 undefined 删键。这里把空对象翻成
+// undefined，与 writableAgent 的空壳判据同构。字符串简写（permission: "ask"）原样透传。
+function writablePermission(value: Info["permission"]) {
+  if (!isRecord(value)) return value
+  const patched: Record<string, unknown> = {}
+  let blank = false
+  for (const [tool, rule] of Object.entries(value)) {
+    if (isRecord(rule) && Object.keys(rule).length === 0) {
+      patched[tool] = undefined
+      blank = true
+      continue
+    }
+    patched[tool] = rule
+  }
+  // 整表被删空时连 permission 键一起去掉，避免留下 `"permission": {}` 空壳
+  if (blank && Object.values(patched).every((rule) => rule === undefined)) return undefined
+  return blank ? (patched as Info["permission"]) : value
+}
+
 
 // 260829 Red GUI「智能体」面板用空串 / "default" 表达「回到默认」——HTTP 请求体会把 undefined
 // 丢掉，删键只能由服务端在落盘前翻译。model 的空串与「未配置」同义，prompt.ts 丢弃不在模型
@@ -1071,12 +1098,40 @@ export const layer = Layer.effect(
       return { info: next, changed }
     })
 
+    // 261031 Red GUI 的 MCP 面板要能真正删掉服务器，而 updateGlobal 做不到两件事：
+    // ① patchJsonc 删键靠 undefined，REST 请求体传不了 undefined；
+    // ② MCP 常写在本地覆盖层（redcode.local.jsonc）而不是同步层，只改主文件等于没删。
+    // 这里逐个候选文件确认「确实定义了该键」才改写，避免给没有 mcp 段的文件凭空插入。
+    const removeGlobalMCP = Effect.fn("Config.removeGlobalMCP")(function* (name: string) {
+      const files: string[] = []
+      for (const file of [
+        "redcode.jsonc",
+        "redcode.json",
+        "config.json",
+        "redcode.local.jsonc",
+        "redcode.local.json",
+      ].map((file) => path.join(Global.Path.config, file))) {
+        if (!existsSync(file)) continue
+        const before = yield* readConfigFile(file)
+        if (!before) continue
+        const parsed = ConfigParse.jsonc(before, file)
+        if (!isRecord(parsed) || !isRecord(parsed.mcp) || !(name in parsed.mcp)) continue
+        const updated = patchJsonc(before, { mcp: { [name]: undefined } })
+        if (updated === before) continue
+        yield* fs.writeFileStringAtomic(file, updated).pipe(Effect.orDie)
+        files.push(file)
+      }
+      if (files.length > 0) yield* invalidate()
+      return { files }
+    })
+
     return Service.of({
       get,
       getGlobal,
       getConsoleState,
       update,
       updateGlobal,
+      removeGlobalMCP,
       invalidate,
       directories,
       waitForDependencies,

@@ -432,6 +432,33 @@ it.effect("updates global agent config and omits keys set back to their default"
   ),
 )
 
+// 261031 Red 权限面板：把某个工具改回「继承」时前端传空对象（REST 请求体传不了 undefined），
+// 由 updateGlobal 在落盘前翻成删键；同一次 patch 里其它规则必须保留。
+it.effect("writes permission rules and drops a tool set back to inherit", () =>
+  withGlobalConfig(
+    {
+      config: { permission: { bash: "ask", edit: "allow" } },
+      name: "redcode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ permission: { bash: "allow", edit: {} } })
+
+        const file = path.join(dir, "redcode.jsonc")
+        const written = yield* AppFileSystem.use.readFileString(file)
+        const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(written, file), file)
+        expect(parsed.permission).toMatchObject({ bash: "allow" })
+        expect(written).not.toContain('"edit"')
+
+        // 整表删空时连 permission 键一起去掉，别在文件里留 `"permission": {}` 空壳
+        yield* Config.use.updateGlobal({ permission: { bash: {} } })
+        const emptied = yield* AppFileSystem.use.readFileString(file)
+        expect(emptied).not.toContain('"permission"')
+      }),
+  ),
+)
+
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

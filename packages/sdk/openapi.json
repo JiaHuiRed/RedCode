@@ -3470,6 +3470,69 @@
         ]
       }
     },
+    "/mcp/{name}": {
+      "delete": {
+        "tags": ["mcp"],
+        "operationId": "mcp.remove",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MCP server removed from config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "MCP server removed from config"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete an MCP server definition from the global config files (including the local override layer) and disconnect it.",
+        "summary": "Remove MCP server",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.mcp.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/project": {
       "get": {
         "tags": ["project"],

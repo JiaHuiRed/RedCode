@@ -728,7 +728,11 @@ export function createServerSyncContext() {
     // 需要「未连接的厂商」的界面（连接对话框、popular 列表、设置页）在挂载时调一次。
     // 空闲预取通常已经跑过了，这句是覆盖「刚启动就点开连接对话框」那个窗口。
     wantProviderCatalog,
-    // bootstrap,
+    // 261031 Red MCP 面板的删除走独立端点（mcp.remove），不经过 updateConfig，
+    // 拿不到 onSuccess 里的重拉；这里暴露同一个入口，否则删掉的服务器会留在列表里。
+    refreshGlobal: () => {
+      void bootstrap.refetch()
+    },
     updateConfig: updateConfigMutation.mutateAsync,
     project: projectApi,
     todo: {

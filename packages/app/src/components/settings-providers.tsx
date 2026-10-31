@@ -86,9 +86,21 @@ export const SettingsProviders: Component = () => {
     return true
   }
 
+  // 261031 Red 判据修正：旧实现只把 npm=@ai-sdk/openai-compatible 且有 models 的自定义块
+  // 当「可停用」，其余配置声明的供应商（anthropic 型自定义、只声明 whitelist 的目录厂商）
+  // 只删 auth 凭据——它们的 key 在 config.options.apiKey 里，auth.remove 是幂等空操作，
+  // 于是 toast 报成功、供应商照旧留在列表。配置声明过的一律按停用处理。
+  const isConfigDeclared = (providerID: string) => !!globalSync.data.config.provider?.[providerID]
+
   const disableProvider = async (providerID: string, name: string) => {
+    // 261031 Red disabled_providers 在服务端是整体替换的数组键：store 里的快照可能是
+    // 项目级合并结果或尚未就绪，拿它当基线写回去会抹掉已有的停用项，先读服务端最新值。
+    const current = await globalSDK.client.global.config
+      .get()
+      .then((x) => x.data?.disabled_providers ?? [])
+      .catch(() => globalSync.data.config.disabled_providers ?? [])
     const before = globalSync.data.config.disabled_providers ?? []
-    const next = before.includes(providerID) ? before : [...before, providerID]
+    const next = current.includes(providerID) ? current : [...current, providerID]
     globalSync.set("config", "disabled_providers", next)
 
     await globalSync
@@ -109,26 +121,19 @@ export const SettingsProviders: Component = () => {
   }
 
   const disconnect = async (providerID: string, name: string) => {
-    if (isConfigCustom(providerID)) {
-      await globalSDK.client.auth.remove({ providerID }).catch(() => undefined)
-      await disableProvider(providerID, name)
-      return
-    }
-    await globalSDK.client.auth
-      .remove({ providerID })
-      .then(async () => {
-        await globalSDK.client.global.dispose()
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
-          description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
-        })
-      })
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      })
+    // 261031 Red auth.remove 对没有凭据的供应商同样返回成功（幂等），所以它不再是
+    // 「是否真的断开」的判据：配置声明过的必须写 disabled_providers 才会从列表消失；
+    // 纯凭据型（auth.json / 环境变量以外）删完还要 dispose 让实例重建才会刷新。
+    await globalSDK.client.auth.remove({ providerID }).catch(() => undefined)
+    if (isConfigDeclared(providerID)) return disableProvider(providerID, name)
+
+    await globalSDK.client.global.dispose().catch(() => undefined)
+    showToast({
+      variant: "success",
+      icon: "circle-check",
+      title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
+      description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
+    })
   }
 
   return (

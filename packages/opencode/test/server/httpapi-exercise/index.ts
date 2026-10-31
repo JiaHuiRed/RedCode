@@ -407,6 +407,14 @@ const scenarios: Scenario[] = [
     .json(200, (body) => {
       check(body === true, "missing MCP disconnect should remain a no-op success")
     }),
+  // 261031 Red 新增的删除端点：配置里没有该服务器时不做任何改写，返回 false
+  http.protected
+    .delete("/mcp/{name}", "mcp.remove")
+    .mutating()
+    .at((ctx) => ({ path: route("/mcp/{name}", { name: "httpapi-missing" }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      check(body === false, "removing a missing MCP server should report false")
+    }),
   http.protected.get("/pty/shells", "pty.shells").json(200, array),
   http.protected.get("/pty", "pty.list").json(200, array),
   http.protected

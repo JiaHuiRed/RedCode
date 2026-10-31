@@ -9,6 +9,8 @@ import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAgents } from "./settings-agents"
+import { SettingsPermissions } from "./settings-permissions"
+import { SettingsMcp } from "./settings-mcp"
 import { SettingsPersonalization } from "./settings-personalization"
 import { SettingsDiagnostics } from "./settings-diagnostics"
 
@@ -56,6 +58,14 @@ export const DialogSettings: Component = () => {
                       <Icon name="task" />
                       {language.t("settings.agents.title")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="permissions">
+                      <Icon name="checklist" />
+                      {language.t("settings.permissions.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="mcp">
+                      <Icon name="link" />
+                      {language.t("settings.mcp.title")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
 
@@ -93,6 +103,12 @@ export const DialogSettings: Component = () => {
         </Tabs.Content>
         <Tabs.Content value="agents" class="no-scrollbar">
           <SettingsAgents />
+        </Tabs.Content>
+        <Tabs.Content value="permissions" class="no-scrollbar">
+          <SettingsPermissions />
+        </Tabs.Content>
+        <Tabs.Content value="mcp" class="no-scrollbar">
+          <SettingsMcp />
         </Tabs.Content>
         <Tabs.Content value="diagnostics" class="no-scrollbar">
           <SettingsDiagnostics />
