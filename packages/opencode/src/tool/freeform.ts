@@ -57,7 +57,7 @@ export const SPECS: Record<string, Spec> = {
   apply_patch: {
     grammar: APPLY_PATCH_GRAMMAR,
     note: "This is a FREEFORM tool: emit the patch text directly, do not wrap it in JSON.",
-    toArgs: (input) => ({ patchText: input }),
+    toArgs: (text) => ({ input: text }),
   },
 }
 

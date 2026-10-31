@@ -58,7 +58,7 @@ type ToolCtx = typeof baseCtx & {
   ask: (input: AskInput) => Effect.Effect<void>
 }
 
-const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { patchText: string }, ctx: ToolCtx) {
+const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { input: string }, ctx: ToolCtx) {
   const info = yield* ApplyPatchTool
   const tool = yield* info.init()
   return yield* tool.execute(params, ctx)
@@ -78,7 +78,8 @@ const makeCtx = () => {
 }
 
 const readText = (filepath: string) => Effect.promise(() => fs.readFile(filepath, "utf-8"))
-// 260811 cc: apply_patch 现在有"写前已读"守卫（FileTime），测试铺的文件视同已读
+// 260811 cc: delete 与「add 覆盖已有文件」仍有"写前已读"守卫（FileTime），测试铺的文件
+// 视同已读；261031 Red 起 update 分支不再校验 FileTime（hunk 上下文匹配即足够）
 const writeText = (filepath: string, content: string) =>
   Effect.promise(() => fs.writeFile(filepath, content, "utf-8")).pipe(
     Effect.andThen(FileTime.record(baseCtx.sessionID, filepath)),
@@ -95,24 +96,24 @@ const expectFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, message?: string
 const expectReadFailure = (filepath: string) => expectFailure(readText(filepath))
 
 describe("tool.apply_patch freeform", () => {
-  it.live("requires patchText", () =>
+  it.live("requires input", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "" }, ctx), "patchText is required")
+      yield* expectFailure(execute({ input: "" }, ctx), "input is required")
     }),
   )
 
   it.live("rejects invalid patch format", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "invalid patch" }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ input: "invalid patch" }, ctx), "apply_patch verification failed")
     }),
   )
 
   it.live("rejects empty patch", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "*** Begin Patch\n*** End Patch" }, ctx), "patch rejected: empty patch")
+      yield* expectFailure(execute({ input: "*** Begin Patch\n*** End Patch" }, ctx), "patch rejected: empty patch")
     }),
   )
 
@@ -130,7 +131,7 @@ describe("tool.apply_patch freeform", () => {
         const patchText =
           "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n*** Delete File: delete.txt\n*** Update File: modify.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-        const result = yield* execute({ patchText }, ctx)
+        const result = yield* execute({ input: patchText }, ctx)
 
         expect(result.title).toContain("Success. Updated the following files")
         expect(result.output).toContain("Success. Updated the following files")
@@ -181,7 +182,7 @@ describe("tool.apply_patch freeform", () => {
         const patchText =
           "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch"
 
-        yield* execute({ patchText }, ctx)
+        yield* execute({ input: patchText }, ctx)
 
         expect(calls.length).toBe(1)
         const permissionCall = calls[0]
@@ -207,27 +208,43 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: multi.txt\n@@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       expect(yield* readText(target)).toBe("line1\nchanged2\nline3\nchanged4\n")
     }),
   )
 
-  // 260811 cc audit R2 补遗：写前已读守卫（FileTime）铺到 apply_patch
-  it.instance("rejects patch touching an unread file and writes nothing (all-or-nothing)", () =>
+  // 261031 Red 对齐官方 harness：update 不再要求「本会话先读过」，hunk 上下文匹配即足够
+  it.instance("updates a file the session never read", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const { ctx } = makeCtx()
+      const unread = path.join(test.directory, "unread.txt")
+      // 绕过 writeText（它会记录已读），模拟由外部命令落盘的文件
+      yield* Effect.promise(() => fs.writeFile(unread, "external\n", "utf-8"))
+
+      const patchText = "*** Begin Patch\n*** Update File: unread.txt\n@@\n-external\n+patched\n@@\n*** End Patch"
+      const result = yield* execute({ input: patchText }, ctx)
+
+      expect(result.output).toContain("M unread.txt")
+      expect(yield* readText(unread)).toBe("patched\n")
+    }),
+  )
+
+  // delete 整文件移除没有上下文可校验，写前已读守卫保留；任一文件被拒则整批不落盘
+  it.instance("rejects deleting an unread file and writes nothing (all-or-nothing)", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const { ctx } = makeCtx()
       const read = path.join(test.directory, "read.txt")
       const unread = path.join(test.directory, "unread.txt")
       yield* writeText(read, "ok\n")
-      // 绕过 writeText（它会记录已读），模拟外部落盘的文件
       yield* Effect.promise(() => fs.writeFile(unread, "external\n", "utf-8"))
 
       const patchText =
-        "*** Begin Patch\n*** Update File: read.txt\n@@\n-ok\n+changed\n@@\n*** Update File: unread.txt\n@@\n-external\n+stomped\n@@\n*** End Patch"
+        "*** Begin Patch\n*** Update File: read.txt\n@@\n-ok\n+changed\n@@\n*** Delete File: unread.txt\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "must read file")
+      yield* expectFailure(execute({ input: patchText }, ctx), "must read file")
 
       // 校验阶段整体拦截：连已读的那个文件也不该被写
       expect(yield* readText(read)).toBe("ok\n")
@@ -246,7 +263,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: example.cs\n@@\n class Test {}\n+class Next {}\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       expect(calls.length).toBe(1)
       const shown = calls[0].metadata.files[0]?.patch ?? ""
@@ -269,7 +286,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: insert_only.txt\n@@\n alpha\n+beta\n omega\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       expect(yield* readText(target)).toBe("alpha\nbeta\nomega\n")
     }),
@@ -285,7 +302,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: no_newline.txt\n@@\n-no newline at end\n+first line\n+second line\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       const contents = yield* readText(target)
       expect(contents.endsWith("\n")).toBe(true)
@@ -304,7 +321,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       const moved = path.join(test.directory, "renamed", "dir", "name.txt")
       yield* expectReadFailure(original)
@@ -326,7 +343,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-from\n+new\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
 
       yield* expectReadFailure(original)
       expect(yield* readText(destination)).toBe("new\n")
@@ -342,7 +359,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Add File: duplicate.txt\n+new content\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(target)).toBe("new content\n")
     }),
   )
@@ -353,7 +370,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText = "*** Begin Patch\n*** Update File: missing.txt\n@@\n-nope\n+better\n*** End Patch"
 
       yield* expectFailure(
-        execute({ patchText }, ctx),
+        execute({ input: patchText }, ctx),
         "apply_patch verification failed: Failed to read file to update",
       )
     }),
@@ -364,7 +381,7 @@ describe("tool.apply_patch freeform", () => {
       const { ctx } = makeCtx()
       const patchText = "*** Begin Patch\n*** Delete File: missing.txt\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ input: patchText }, ctx))
     }),
   )
 
@@ -377,7 +394,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Delete File: dir\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ input: patchText }, ctx))
     }),
   )
 
@@ -386,7 +403,7 @@ describe("tool.apply_patch freeform", () => {
       const { ctx } = makeCtx()
       const patchText = "*** Begin Patch\n*** Frobnicate File: foo\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ input: patchText }, ctx), "apply_patch verification failed")
     }),
   )
 
@@ -399,7 +416,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: modify.txt\n@@\n-missing\n+changed\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ input: patchText }, ctx), "apply_patch verification failed")
       expect(yield* readText(target)).toBe("line1\nline2\n")
     }),
   )
@@ -411,7 +428,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Add File: created.txt\n+hello\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ input: patchText }, ctx))
       yield* expectReadFailure(path.join(test.directory, "created.txt"))
     }),
   )
@@ -425,7 +442,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: tail.txt\n@@\n-last\n+end\n*** End of File\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(target)).toBe("alpha\nend\n")
     }),
   )
@@ -439,7 +456,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: two_chunks.txt\n@@\n-b\n+B\n\n-d\n+D\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ input: patchText }, ctx))
       expect(yield* readText(target)).toBe("a\nb\nc\nd\n")
     }),
   )
@@ -453,7 +470,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: multi_ctx.txt\n@@ fn b\n-x=10\n+x=11\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(target)).toBe("fn a\nx=10\ny=2\nfn b\nx=11\ny=20\n")
     }),
   )
@@ -470,7 +487,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: eof_anchor.txt\n@@\n-marker\n-end\n+marker-changed\n+end\n*** End of File\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       // First marker unchanged, second marker changed
       expect(yield* readText(target)).toBe("start\nmarker\nmiddle\nmarker-changed\nend\n")
     }),
@@ -487,7 +504,7 @@ describe("tool.apply_patch freeform", () => {
 *** End Patch
 EOF`
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(path.join(test.directory, "heredoc_test.txt"))).toBe("heredoc content\n")
     }),
   )
@@ -503,7 +520,7 @@ EOF`
 *** End Patch
 EOF`
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(path.join(test.directory, "heredoc_no_cat.txt"))).toBe("no cat prefix\n")
     }),
   )
@@ -519,7 +536,7 @@ EOF`
       // Patch doesn't have trailing spaces - should still match via rstrip pass
       const patchText = "*** Begin Patch\n*** Update File: trailing_ws.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(target)).toBe("line1  \nchanged\nline3   \n")
     }),
   )
@@ -535,7 +552,7 @@ EOF`
       // Patch without leading spaces - should match via trim pass
       const patchText = "*** Begin Patch\n*** Update File: leading_ws.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       expect(yield* readText(target)).toBe("  line1\nchanged\n  line3\n")
     }),
   )
@@ -556,7 +573,7 @@ EOF`
       const patchText =
         '*** Begin Patch\n*** Update File: unicode.txt\n@@\n-He said "hello"\n+He said "hi"\n*** End Patch'
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ input: patchText }, ctx)
       // Result has ASCII quotes because that's what the patch specifies
       expect(yield* readText(target)).toBe(`He said "hi"\nsome${emDash}dash\nend\n`)
     }),

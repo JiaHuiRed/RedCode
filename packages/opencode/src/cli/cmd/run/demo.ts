@@ -629,7 +629,7 @@ function emitEdit(state: State): void {
 function emitPatch(state: State): void {
   const file = path.join(process.cwd(), "src", "demo-format.ts")
   const ref = make(state, "apply_patch", {
-    patchText: "*** Begin Patch\n*** End Patch",
+    input: "*** Begin Patch\n*** End Patch",
   })
   doneTool(state, ref, {
     title: "apply_patch",

@@ -88,11 +88,11 @@ describe("Freeform.normalizeInput", () => {
   const patch = "*** Begin Patch\n*** Update File: a.ts\n@@\n-old\n+new\n*** End Patch\n"
 
   test("裸字符串还原成执行器认识的对象入参", () => {
-    expect(Freeform.normalizeInput("apply_patch", patch)).toEqual({ patchText: patch })
+    expect(Freeform.normalizeInput("apply_patch", patch)).toEqual({ input: patch })
   })
 
   test("已经是对象的入参不碰（走原路径）", () => {
-    expect(Freeform.normalizeInput("apply_patch", { patchText: patch })).toBeUndefined()
+    expect(Freeform.normalizeInput("apply_patch", { input: patch })).toBeUndefined()
   })
 
   test("没有 freeform 形态的工具不碰", () => {
@@ -101,8 +101,8 @@ describe("Freeform.normalizeInput", () => {
 
   // 这条钉住 processor.toolInput 的兜底分支：normalizeInput 认领不了的，
   // 才允许掉进 { value } —— 认领得了的必须还原成对象，否则 apply_patch 的
-  // diff 视图拿不到 patchText，整个渲染不出来。
+  // diff 视图拿不到补丁文本，整个渲染不出来。
   test("空补丁字符串仍然认领（不掉进 { value } 兜底）", () => {
-    expect(Freeform.normalizeInput("apply_patch", "")).toEqual({ patchText: "" })
+    expect(Freeform.normalizeInput("apply_patch", "")).toEqual({ input: "" })
   })
 })

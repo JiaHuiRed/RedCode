@@ -4,13 +4,13 @@ exports[`tool parameters JSON Schema (wire shape) apply_patch 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
-    "patchText": {
+    "input": {
       "description": "The full patch text that describes all changes to be made",
       "type": "string",
     },
   },
   "required": [
-    "patchText",
+    "input",
   ],
   "type": "object",
 }

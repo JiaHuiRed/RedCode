@@ -288,7 +288,7 @@ function virtualProject(scenario: EvalCase) {
         // Parse with the production parser; apply only to the private in-memory map.
         const parsed = Effect.runSync(
           Effect.try({
-            try: () => Patch.parsePatch(String(input.patchText ?? "")),
+            try: () => Patch.parsePatch(String(input.input ?? "")),
             catch: () => new Error("Invalid virtual patch"),
           }).pipe(Effect.option),
         )
@@ -360,8 +360,8 @@ function virtualProject(scenario: EvalCase) {
     ),
     glob: definition("Find virtual filenames.", { pattern: string }, ["pattern"]),
     grep: definition("Search virtual project contents.", { pattern: string }, ["pattern"]),
-    apply_patch: definition("Apply an apply_patch-format patch to virtual files only.", { patchText: string }, [
-      "patchText",
+    apply_patch: definition("Apply an apply_patch-format patch to virtual files only.", { input: string }, [
+      "input",
     ]),
     bash: {
       description:

@@ -1,14 +1,10 @@
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import * as path from "path"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import * as Log from "@redcode-ai/core/util/log"
 import * as Bom from "../util/bom"
 
 const log = Log.create({ service: "patch" })
-
-export const PatchSchema = Schema.Struct({
-  patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
-})
 
 // Core types matching the Rust implementation
 export interface ApplyPatchArgs {

@@ -17,7 +17,9 @@ import * as Bom from "@/util/bom"
 import { FileTime } from "@/file/time"
 
 export const Parameters = Schema.Struct({
-  patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
+  // 261031 Red 字段名对齐 Codex（原来是 patchText）——DeepSeek 官方 harness 用 2,226 次
+  // DS-Bench/DeepSWE rollout 测出 14% 的调用直接发 {"input": ...}，模型先验比工具命名顽固。
+  input: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
 })
 
 export const ApplyPatchTool = Tool.define(
@@ -32,21 +34,21 @@ export const ApplyPatchTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      if (!params.patchText) {
-        return yield* Effect.fail(new Error("patchText is required"))
+      if (!params.input) {
+        return yield* Effect.fail(new Error("input is required"))
       }
 
       // Parse the patch to get hunks
       let hunks: Patch.Hunk[]
       try {
-        const parseResult = Patch.parsePatch(params.patchText)
+        const parseResult = Patch.parsePatch(params.input)
         hunks = parseResult.hunks
       } catch (error) {
         return yield* Effect.fail(new Error(`apply_patch verification failed: ${error}`))
       }
 
       if (hunks.length === 0) {
-        const normalized = params.patchText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+        const normalized = params.input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
         if (normalized === "*** Begin Patch\n*** End Patch") {
           return yield* Effect.fail(new Error("patch rejected: empty patch"))
         }
@@ -118,7 +120,11 @@ export const ApplyPatchTool = Tool.define(
               )
             }
 
-            yield* FileTime.assert(ctx.sessionID, filePath)
+            // 261031 Red update 不再要求「本会话先读过」：hunk 上下文匹配在文件不一致时
+            // 本来就会拒绝，额外一道 read-first/stale 断言只是把可行补丁变成一次往返。
+            // 依据 DeepSeek 官方 harness 的 2,226 次 DS-Bench/DeepSWE rollout：policy 开启
+            // 时这类拒绝占 apply_patch 失败的 29–41%。delete 分支保留断言——整文件移除
+            // 没有上下文可校验，删错版本不可逆。
             const source = yield* Bom.readFile(afs, filePath)
             // 260730 Karina 非 UTF-8 的原文不写回：下面只会写 UTF-8，写了就等于悄悄转编码
             const changed = Bom.detectEncodingChange(source.encoding)
