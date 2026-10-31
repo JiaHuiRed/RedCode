@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, expect, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -12,14 +12,25 @@ import { FileTime } from "../../src/file/time"
 const dir = path.join(os.tmpdir(), "redcode-filetime-test")
 const file = path.join(dir, "target.txt")
 
+// 261031 Red 落盘记录指向临时目录，别写真实 data/file-time
+const stateDir = path.join(dir, "state")
+const previousStateDir = process.env["REDCODE_FILE_TIME_DIR"]
+
+beforeAll(() => {
+  process.env["REDCODE_FILE_TIME_DIR"] = stateDir
+})
+
 beforeEach(async () => {
   FileTime.reset()
+  await fs.rm(stateDir, { recursive: true, force: true })
   await fs.mkdir(dir, { recursive: true })
   await fs.writeFile(file, "hello")
 })
 
 afterAll(async () => {
   FileTime.reset()
+  if (previousStateDir === undefined) delete process.env["REDCODE_FILE_TIME_DIR"]
+  else process.env["REDCODE_FILE_TIME_DIR"] = previousStateDir
   await fs.rm(dir, { recursive: true, force: true })
 })
 
@@ -50,4 +61,28 @@ test("守卫语义不受回收影响", async () => {
   await new Promise((r) => setTimeout(r, 10))
   await fs.writeFile(file, "changed externally")
   await expect(Effect.runPromise(FileTime.assert("ses_read", file))).rejects.toThrow(/modified externally/i)
+})
+
+// 261031 Red 记录落盘：重启后同一会话仍记得读过哪些文件（ZCode ZCT-202606-B2299F52 同款问题）
+test("重启后续接仍记得读过的文件", async () => {
+  await Effect.runPromise(FileTime.record("ses_persist", file))
+  await FileTime.flush()
+  FileTime.reload() // 模拟进程重启：内存清空、磁盘保留
+  await Effect.runPromise(FileTime.assert("ses_persist", file))
+})
+
+test("重启后外部改动仍被拦", async () => {
+  await Effect.runPromise(FileTime.record("ses_persist_external", file))
+  await FileTime.flush()
+  FileTime.reload()
+  await new Promise((r) => setTimeout(r, 10))
+  await fs.writeFile(file, "changed after restart")
+  await expect(Effect.runPromise(FileTime.assert("ses_persist_external", file))).rejects.toThrow(/modified externally/i)
+})
+
+test("磁盘记录损坏按未读处理（fail-safe）", async () => {
+  await fs.mkdir(stateDir, { recursive: true })
+  await fs.writeFile(path.join(stateDir, "ses_corrupt.json"), "{not json", "utf-8")
+  FileTime.reload()
+  await expect(Effect.runPromise(FileTime.assert("ses_corrupt", file))).rejects.toThrow(/must read file/i)
 })
