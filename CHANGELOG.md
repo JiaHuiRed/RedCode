@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.14.0] - 2026-10-31
 - **忙碌引导改为待消费形态并新增打断发送**（`packages/opencode/src/session/`、`packages/app/src/components/prompt-input*`、`pages/session.tsx`、TUI `prompt/index.tsx`）：忙碌时的引导（steer）现在落 `pending_steer` 待消费形态——已进消息流（用户随时可编辑/撤回），但未领取前对模型隐藏（组装、`MessageV2.latest` 与 reminder 收集三处排除，防 promote 后落库的窗口竞态）；loop 每步组装前 `promotePendingSteer` 领取转 steer，与编辑/撤回在 queueLock 串行，领取后编辑明确 409 不悄悄改历史。busy 判定以服务端 Runner 为准（`isBusy` 查询），不信客户端快照。新增 `interruptPrompt` 服务端入口（`POST /session/:id/interrupt_prompt`）：单请求串行「取消当前 Runner → 提交新消息 → 开新轮」，客户端不再自己串 abort + prompt 两个请求；不碰 Git 快照、不回滚工作区文件，旧工具中断由 cancelTree 异步收尾。GUI 忙碌且输入非空时主按钮旁出现「打断并发送」按钮（与引导发送并存，纯停止仍是忙碌+空输入的 stop 形态），TUI 忙碌默认从 queue 对齐为 steer、`/pending` 同时管理 queued 与 pending_steer。GUI 待消费 dock 同时接受 queued 与 pending_steer 两形态（编辑/撤回/立即送达三键共用）。模型可见四问见 [引导与打断决策](docs/notes/implemented/feature/2026-10-31-steer-pending-interrupt.md)。
 - **修复引导待消费形态的三处衔接缺陷**（`packages/opencode/src/session/prompt.ts`、TUI `routes/session/index.tsx`、`packages/app/src/components/prompt-input.tsx`）：第三方审计四项复核后三项属实。① 提交方重跑判据只认 `steer`，`pending_steer` 被判成已送达——引导恰在旧轮最后一次领取之后落库时会滞留到下一次显式执行（判据抽成 `retryableDelivery` 并配可判别单测：旧逻辑下测试必红）。② TUI 的 `activeMessageID` 只排除 `queued`，未领取引导被误认作活跃轮首，待发送徽标也被跳过；抽 `isPendingDelivery` 统一 queued/pending_steer 三处判断。③ GUI 打断按钮此前在 Shell 模式与自定义斜杠命令下也显示，而这两条分支走 `session.shell`/`session.command` 不会取消当前轮，按钮承诺落空——显示条件与真实请求路由同判据。审计的 TUI 打断入口一项复核后不改：TUI 的 Escape 连按两次打断不清空输入，`Escape×2 → Enter` 已是等价两步路径，而 Ctrl+Enter/Alt+Enter 在终端支持不一致（Windows Terminal 的 Alt+Enter 被全屏占用），新增不可靠键位得不偿失；取舍记录在决策 note。
 - **Shell 运行中显示命令文本**（`packages/ui/src/components/message-part.tsx`）：bash 工具卡片运行期间在标题旁以副标题显示命令原文（沿用 subtitle 单行截断样式），长命令不再黑箱等待；完成后仍切回描述文本的动画形态。展示层改动，不影响工具输出与模型可见内容。
@@ -16,6 +16,7 @@
 - **修复会话列表目录与路径筛选**：Windows 查询兼容正斜杠和反斜杠两种已有记录；同时恢复传入 `path` 时的项目内路径筛选，不修改数据库中的路径。
 - **避免 MCP 慢启动时重复拉起进程**：首次连接与后续连接共用创建登记；断开后立即重连会等旧连接清理完成，避免重复进程和状态错乱。复现与边界见 [实例与孤儿进程决策](docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md)。
 - **赤的事件详情与订阅额度**：桌宠气泡显示当前工具、权限类型和问题短标题；额度入口复用已有订阅快照，展示各窗口用量、重置时间及 Credits，不推断当前账号或币种。权限和提问提醒优先于额度面板；修复初次加载时图片尚未布局导致赤落在视口左上角。范围与数据口径见 [桌宠表现层决策](docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md)。
+- **小内存机器 typecheck 跳过 tsgo 直接用 TS5**（`script/typecheck.ts`）：`tsgo` 在本机 16GB 内存下必 OOM，包装器回退 TS5 虽然最终能跑，但要先白等一次崩溃（实测约 4 分钟）。新增 `TSGO_MIN_TOTAL_MEM = 32GB` 门控，按**物理内存总量**（机器属性、稳定）判定，不满足直接走 TypeScript 5.x，省掉必失败的等待。保留真实类型错误原样返回的既有逻辑，不靠吞错制造 exit 0；32GB 是保守门槛而非已证明阈值，属性能策略。验证：opencode 实测输出「物理内存 15.9GB < 32GB」且 exit 0。
 
 ### [0.13.4] - 2026-10-29
 
