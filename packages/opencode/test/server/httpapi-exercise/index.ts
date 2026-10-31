@@ -1385,6 +1385,33 @@ const scenarios: Scenario[] = [
         yield* ctx.llmWait(1)
       }),
     ),
+  // 261031 Red 打断发送：空闲会话上 cancel 为 no-op，直接提交新消息开新轮；busy 打断的
+  // 深度行为由 test/session/prompt.test.ts 的 interruptPrompt 用例覆盖。
+  http.protected
+    .post("/session/{sessionID}/interrupt_prompt", "session.interrupt_prompt")
+    .preserveDatabase()
+    .withLlm()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Interrupt prompt session" })
+        yield* ctx.llmText("interrupt answer")
+        return session
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/interrupt_prompt", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: {
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        parts: [{ type: "text", text: "interrupted replacement" }],
+      },
+    }))
+    .status(204, (ctx) =>
+      Effect.gen(function* () {
+        yield* ctx.llmWait(1)
+      }),
+    ),
   http.protected
     .post("/session/{sessionID}/command", "session.command")
     .preserveDatabase()
@@ -1645,6 +1672,7 @@ const llmScenarios = new Set([
   "session.init",
   "session.prompt",
   "session.prompt_async",
+  "session.interrupt_prompt",
   "session.command",
   "session.summarize",
 ])

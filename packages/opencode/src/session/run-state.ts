@@ -8,6 +8,7 @@ import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
 
 export interface Interface {
+  readonly isBusy: (sessionID: SessionID) => Effect.Effect<boolean>
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly ensureRunning: (
@@ -71,6 +72,12 @@ export const layer = Layer.effect(
       return frame
     })
 
+    // 261031 Red busy 判定查询：提交方用它决定忙碌引导是否落 pending_steer（待消费形态）。
+    const isBusy = Effect.fn("SessionRunState.isBusy")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(state)
+      return data.runners.get(sessionID)?.runner.busy ?? false
+    })
+
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
@@ -119,7 +126,7 @@ export const layer = Layer.effect(
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, markStopped, startShell })
+    return Service.of({ isBusy, assertNotBusy, cancel, ensureRunning, markStopped, startShell })
   }),
 )
 

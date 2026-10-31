@@ -588,6 +588,8 @@ export interface Interface {
     sessionID: SessionID
     messageID: MessageID
   }) => Effect.Effect<void, QueuedMessageConflict | NotFoundError>
+ // 261031 Red 引导领取：loop 组装前把全部 pending_steer 转 steer（与编辑互斥走 queueLock）。
+ readonly promotePendingSteer: (sessionID: SessionID) => Effect.Effect<MessageID | undefined>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
   readonly getPart: (input: {
@@ -796,17 +798,22 @@ export const layer: Layer.Layer<
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
-    const queuedMessage = Effect.fn("Session.queuedMessage")(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-    }) {
-      if (queuedReservations.get(input.sessionID) === input.messageID)
-        return yield* new QueuedMessageConflict({ messageID: input.messageID })
-      const message = yield* MessageV2.get(input)
-      if (message.info.role !== "user" || message.info.delivery !== "queued")
-        return yield* new QueuedMessageConflict({ messageID: input.messageID })
-      return message
-    })
+   // 261031 Red 待消费消息 = queued（排队）或 pending_steer（忙碌引导）——两者都允许
+   // 编辑/撤回/送达；steer 及之后的状态不可改，编辑明确冲突不悄悄改历史。
+   const queuedMessage = Effect.fn("Session.queuedMessage")(function* (input: {
+     sessionID: SessionID
+     messageID: MessageID
+   }) {
+     if (queuedReservations.get(input.sessionID) === input.messageID)
+       return yield* new QueuedMessageConflict({ messageID: input.messageID })
+     const message = yield* MessageV2.get(input)
+     if (
+       message.info.role !== "user" ||
+       (message.info.delivery !== "queued" && message.info.delivery !== "pending_steer")
+     )
+       return yield* new QueuedMessageConflict({ messageID: input.messageID })
+     return message
+   })
 
     // 261007 Red 领取只占用内存 reservation；只有收到真实模型响应后才写 delivered，
     // 进程中断会让持久 queued 状态留给下一次显式 loop。
@@ -909,6 +916,40 @@ export const layer: Layer.Layer<
         )
       },
     )
+
+   // 261031 Red 引导领取：下一个模型请求组装前把该会话全部 pending_steer 转 steer。
+   // 与编辑/撤回共用 queueLock 串行——领取后普通编辑明确冲突（steer 不可改），
+   // 编辑先落盘则领取转发的是编辑后的文本。返回最后一条领取的消息 ID（无则 undefined）。
+   const promotePendingSteer: Interface["promotePendingSteer"] = Effect.fn("Session.promotePendingSteer")(
+     function* (sessionID) {
+       return yield* queueLock(sessionID).withPermits(1)(
+         Effect.gen(function* () {
+           const rows = Database.use((db) =>
+             db
+               .select()
+               .from(MessageTable)
+               .where(
+                 and(
+                   eq(MessageTable.session_id, sessionID),
+                   sql`json_extract(${MessageTable.data}, '$.delivery') = 'pending_steer'`,
+                 ),
+               )
+               .orderBy(MessageTable.time_created, MessageTable.id)
+               .all(),
+           )
+           let last: MessageID | undefined
+           for (const row of rows) {
+             const message = row.data as MessageV2.User
+             const messageID = MessageID.make(row.id)
+             yield* updateMessage({ ...message, id: messageID, sessionID, delivery: "steer" })
+             last = messageID
+           }
+           if (last) log.info("steer.promoted", { sessionID, count: rows.length, messageID: last })
+           return last
+         }),
+       )
+     },
+   )
 
     const updatePart = <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
@@ -1220,7 +1261,8 @@ export const layer: Layer.Layer<
       releaseQueuedMessage,
       deliverQueuedMessage,
       editQueuedMessage,
-      cancelQueuedMessage,
+     cancelQueuedMessage,
+     promotePendingSteer,
       removeMessage,
       removePart,
       updatePart,

@@ -1407,9 +1407,14 @@ export default function Page() {
   const queuedFollowups = createMemo(() => {
     const id = params.id
     if (!id) return emptyFollowups
-    return followup.items[id] ?? emptyFollowups
-  })
-  const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"))
+   return followup.items[id] ?? emptyFollowups
+ })
+ // 261031 Red pending_steer = 忙碌引导的待消费形态，与 queued 一起进待消费 dock
+ // （编辑/撤回/立即送达三键共用，服务端 API 已同时接受两种形态）。
+ const pendingSteerMessages = createMemo(() =>
+   userMessages().filter((message) => message.delivery === "pending_steer"),
+ )
+ const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"))
 
   const editingFollowup = createMemo(() => {
     const id = params.id
@@ -1478,10 +1483,11 @@ export default function Page() {
     return `[${language.t("common.attachment")}]`
   }
 
-  const followupDock = createMemo<FollowupDockItem[]>(() => [
-    ...queuedMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
-    ...queuedFollowups().map((item) => ({ id: item.id, text: followupText(item), source: "legacy" as const })),
-  ])
+ const followupDock = createMemo<FollowupDockItem[]>(() => [
+   ...pendingSteerMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
+   ...queuedMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
+   ...queuedFollowups().map((item) => ({ id: item.id, text: followupText(item), source: "legacy" as const })),
+ ])
 
   const runQueuedAction = async (id: string, action: () => Promise<unknown>) => {
     if (queuedAction()) return false

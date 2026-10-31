@@ -205,11 +205,14 @@ export function Session() {
     )
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
-  const queuedMessages = createMemo(() =>
-    messages().filter(
-      (message): message is UserMessageInfo => message.role === "user" && message.delivery === "queued",
-    ),
-  )
+// 261031 Red pending_steer（忙碌引导的待消费形态）与 queued 一起进待发送列表，
+// /pending 的送达/编辑/撤销对两种形态都可用（服务端 API 已兼容）。
+const queuedMessages = createMemo(() =>
+ messages().filter(
+   (message): message is UserMessageInfo =>
+     message.role === "user" && (message.delivery === "queued" || message.delivery === "pending_steer"),
+ ),
+)
 
   // 260708 Red TUI 消息级 windowing — 只渲染最近 N 条，屏外不进 yoga 树
   const MSG_WINDOW_DEFAULT = 50
@@ -1571,16 +1574,6 @@ export function Session() {
                       disabled={disabled()}
                       onSubmit={() => {
                         toBottom()
-                      }}
-                      onQueue={(messageID, text) => {
-                        toast.show({
-                          message: "消息已排队；可用 /pending 送达、编辑或撤销。",
-                          variant: "info",
-                          duration: 5000,
-                        })
-                        // 260927 Red 不覆盖工具权限弹窗；队列操作之后仍可从 /pending 打开。
-                        if (dialog.stack.length === 0)
-                          dialog.replace(() => pendingActions(route.sessionID, messageID, text))
                       }}
                       sessionID={route.sessionID}
                       right={

@@ -46,6 +46,9 @@ type FollowupSendInput = {
   draft: FollowupDraft
   messageID?: string
   delivery?: "queue" | "steer"
+  // 261031 Red 打断发送：intent="interrupt" 时走 interruptPrompt（服务端取消当前轮后
+  // 以本消息开新轮），delivery 不传——打断是新轮输入，不是插话。
+  intent?: "send" | "interrupt"
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
 }
@@ -168,18 +171,20 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    await input.client.session.promptAsync(
-      {
-        sessionID: input.draft.sessionID,
-        agent: input.draft.agent,
-        model: input.draft.model,
-        messageID,
-        parts: requestParts,
-        variant: input.draft.variant,
-        delivery: input.delivery,
-      },
-      { throwOnError: true },
-    )
+    // 261031 Red 打断发送：单请求完成「取消当前轮 → 新消息开新轮」；引导/普通发送照走
+    // promptAsync（服务端忙碌时自动落 pending_steer 待消费形态，可编辑/撤回后再领取）。
+    const payload = {
+      sessionID: input.draft.sessionID,
+      agent: input.draft.agent,
+      model: input.draft.model,
+      messageID,
+      parts: requestParts,
+      variant: input.draft.variant,
+      delivery: input.intent === "interrupt" ? undefined : input.delivery,
+    }
+    await (input.intent === "interrupt"
+      ? input.client.session.interruptPrompt(payload, { throwOnError: true })
+      : input.client.session.promptAsync(payload, { throwOnError: true }))
     return true
   } catch (err) {
     batch(() => {
@@ -321,7 +326,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   // 260909 Red 新会话创建窗口的防重入标志
   let creatingSession = false
 
-  const handleSubmit = async (event: Event) => {
+  // 261031 Red 打断发送与普通发送共用整条提交流水线（草稿收集/历史/防重入/乐观消息），
+  // 只在 API 调用处按 intent 分流；interruptSend 由忙碌时的打断按钮触发。
+  const runSubmit = async (event: Event, intent: "send" | "interrupt") => {
     clearSendError()
     event.preventDefault()
 
@@ -547,7 +554,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // 260927 Red 忙时每条消息单独决定排队或插队，始终先落服务端，不再本地 hold 新消息。
     // 261027 Red 兜底默认从 queue 改 steer：与服务端 busy_enter 默认对齐（GUI 默认已同步改）。
     const delivery =
-      !isNewSession && mode === "normal" && input.shouldQueue?.() ? (input.delivery?.() ?? "steer") : undefined
+      intent !== "interrupt" && !isNewSession && mode === "normal" && input.shouldQueue?.()
+        ? (input.delivery?.() ?? "steer")
+        : undefined
 
     input.onSubmit?.()
 
@@ -679,6 +688,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       draft,
       messageID,
       delivery,
+      intent,
       optimisticBusy: delivery !== "queue" && sessionDirectory === projectDirectory,
       before: waitForWorktree,
     })
@@ -701,8 +711,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
   }
 
+  const handleSubmit = (event: Event) => runSubmit(event, "send")
+  // 261031 Red 忙碌时打断发送：立即停止当前执行并以当前输入开新一轮（服务端单请求串行）。
+  const interruptSend = () => runSubmit(new Event("submit"), "interrupt")
+
   return {
     abort,
+    interruptSend,
     handleSubmit,
     sendError,
     clearSendError,

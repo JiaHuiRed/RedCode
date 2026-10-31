@@ -434,8 +434,31 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         ),
         Effect.forkIn(scope, { startImmediately: true }),
       )
-      return HttpApiSchema.NoContent.make()
-    })
+     return HttpApiSchema.NoContent.make()
+   })
+
+   // 261031 Red 打断发送：服务端单请求串行「取消 → 提交 → 起新轮」，客户端不参与顺序控制。
+   const interruptPrompt = Effect.fn("SessionHttpApi.interruptPrompt")(function* (ctx: {
+     params: { sessionID: SessionID }
+     payload: typeof PromptPayload.Type
+   }) {
+     yield* requireSession(ctx.params.sessionID)
+     yield* promptSvc.interruptPrompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+       Effect.catchCause((cause) =>
+         Effect.gen(function* () {
+           yield* Effect.logError("interrupt_prompt failed").pipe(
+             Effect.annotateLogs({ sessionID: ctx.params.sessionID, cause: Cause.pretty(cause) }),
+           )
+           yield* bus.publish(Session.Event.Error, {
+             sessionID: ctx.params.sessionID,
+             error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
+           })
+         }),
+       ),
+       Effect.forkIn(scope, { startImmediately: true }),
+     )
+     return HttpApiSchema.NoContent.make()
+   })
 
     const command = Effect.fn("SessionHttpApi.command")(function* (ctx: {
       params: { sessionID: SessionID }
@@ -632,7 +655,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("unshare", unshare)
       .handle("summarize", summarize)
       .handle("prompt", prompt)
-      .handle("promptAsync", promptAsync)
+     .handle("promptAsync", promptAsync)
+     .handle("interruptPrompt", interruptPrompt)
       .handle("command", command)
       .handle("shell", shell)
       .handle("revert", revert)

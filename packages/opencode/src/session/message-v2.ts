@@ -384,7 +384,9 @@ export const User = Schema.Struct({
   time: Schema.Struct({
     created: NonNegativeInt,
   }),
-  delivery: Schema.optional(Schema.Literals(["queued", "steer", "delivered"])),
+ // 261031 Red pending_steer = 忙碌时引导的待消费形态：已落库（用户可编辑/撤回），但尚未被
+ // 领取——组装与 reminder 收集都必须排除它，领取（promote→steer）后模型才可见。
+ delivery: Schema.optional(Schema.Literals(["queued", "pending_steer", "steer", "delivered"])),
   format: Schema.optional(Format),
   summary: Schema.optional(
     Schema.Struct({

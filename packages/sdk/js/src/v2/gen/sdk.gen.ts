@@ -197,6 +197,8 @@ import type {
   SessionGoalResponses,
   SessionInitErrors,
   SessionInitResponses,
+  SessionInterruptPromptErrors,
+  SessionInterruptPromptResponses,
   SessionListErrors,
   SessionListResponses,
   SessionMessageErrors,
@@ -4142,6 +4144,72 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionPromptAsyncResponses, SessionPromptAsyncErrors, ThrowOnError>({
       url: "/session/{sessionID}/prompt_async",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Interrupt and send message
+   *
+   * Cancel the active run and immediately start a new turn with this message in a single request. Does not revert workspace files or snapshots.
+   */
+  public interruptPrompt<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      messageID?: string
+      model?: {
+        providerID: string
+        modelID: string
+      }
+      agent?: string
+      noReply?: boolean
+      delivery?: "queue" | "steer"
+      tools?: {
+        [key: string]: boolean
+      }
+      format?: OutputFormat
+      system?: string
+      variant?: string
+      parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "messageID" },
+            { in: "body", key: "model" },
+            { in: "body", key: "agent" },
+            { in: "body", key: "noReply" },
+            { in: "body", key: "delivery" },
+            { in: "body", key: "tools" },
+            { in: "body", key: "format" },
+            { in: "body", key: "system" },
+            { in: "body", key: "variant" },
+            { in: "body", key: "parts" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionInterruptPromptResponses,
+      SessionInterruptPromptErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/interrupt_prompt",
       ...options,
       ...params,
       headers: {

@@ -1581,6 +1581,152 @@ it.instance("queued messages can be canceled before claim and promoted for the n
   }),
 )
 
+  it.instance("pending steer stays editable and cancellable until promotion, then edits conflict", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pending steer lifecycle" })
+      const one = yield* user(chat.id, "normal")
+      const steer = yield* sessions.updateMessage({
+        ...one,
+        id: MessageID.ascending(),
+        delivery: "pending_steer" as const,
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: steer.id,
+        type: "text",
+        text: "steer pending",
+      })
+
+      // 待消费形态：可编辑
+      const edited = yield* sessions.editQueuedMessage({
+        sessionID: chat.id,
+        messageID: steer.id,
+        text: "edited before promote",
+      })
+      expect(edited.info.id).toBe(steer.id)
+
+      // 领取：全部 pending_steer 转 steer，返回最后一条
+      const second = yield* sessions.updateMessage({
+        ...one,
+        id: MessageID.ascending(),
+        delivery: "pending_steer" as const,
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: second.id,
+        type: "text",
+        text: "second steer",
+      })
+      const promoted = yield* sessions.promotePendingSteer(chat.id)
+      expect(promoted).toBe(second.id)
+      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steer.id }))).toBe("steer")
+      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: second.id }))).toBe("steer")
+
+      // 已领取：编辑明确冲突，不悄悄改历史
+      const conflict = yield* sessions
+        .editQueuedMessage({ sessionID: chat.id, messageID: steer.id, text: "late" })
+        .pipe(Effect.flip)
+      expect(conflict).toBeInstanceOf(Session.QueuedMessageConflict)
+
+      // 无待消费时领取是无害空操作
+      expect(yield* sessions.promotePendingSteer(chat.id)).toBeUndefined()
+    }),
+  )
+
+  it.instance("busy steer lands as pending_steer and reaches the model only after promotion", () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Busy steer pending" })
+      const file = path.join(dir, "busy-steer.txt")
+      yield* writeText(file, "evidence")
+      const held = defer<void>()
+      yield* llm.push(reply().wait(held.promise).tool("read", { filePath: file }).item())
+      yield* llm.text("final answer after steer")
+
+      const run = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          parts: [{ type: "text", text: "start reading" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      // runner busy：引导落 pending_steer（可编辑的待消费形态）
+      const steerID = MessageID.ascending()
+      yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: steerID,
+          agent: "build",
+          delivery: "steer",
+          parts: [{ type: "text", text: "steer mid-turn" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+          return Option.isSome(message) && message.value.info.role === "user" && message.value.info.delivery === "pending_steer"
+            ? (true as const)
+            : undefined
+        }),
+        "steer never landed as pending_steer",
+      )
+
+      // 未领取：挂起中的请求看不到引导
+      const hidden = yield* llm.hits
+      expect(JSON.stringify(hidden[0].body)).not.toContain("steer mid-turn")
+
+      held.resolve()
+      yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
+      // 旧轮退出后提交方重跑 loop，首步 promote 把引导转 steer 注入
+      const hits = yield* llm.hits
+      expect(JSON.stringify(hits.at(-1)!.body)).toContain("steer mid-turn")
+      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+    }),
+  )
+
+  it.instance("interruptPrompt cancels the running turn and executes the new message once", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Interrupt prompt" })
+      const held = defer<void>()
+      yield* llm.push(reply().wait(held.promise).text("stale answer").stop().item())
+      yield* llm.text("fresh answer")
+
+      yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          parts: [{ type: "text", text: "old task" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      yield* prompt.interruptPrompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "new task" }],
+      })
+      // interruptPrompt 返回时旧 Runner 已取消、新轮已提交并启动。旧响应被丢弃（held 不
+      // resolve 也不影响新轮），新指令恰好执行一次。
+      yield* awaitWithTimeout(llm.wait(2), "interrupted turn never ran the new message", "5 seconds")
+      const hits = yield* llm.hits
+      expect(hits).toHaveLength(2)
+      expect(JSON.stringify(hits[1].body)).toContain("new task")
+      const stale = yield* sessions.findMessage(chat.id, (item) => item.info.role === "assistant")
+      expect(Option.isSome(stale)).toBe(true)
+    }),
+  )
+
+
 it.instance("marks explicitly steered messages delivered after the provider response", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
@@ -1729,12 +1875,13 @@ for (const isolated of [false, true]) {
           const messageID = receipt.metadata.message_id
           if (!messageID) return yield* Effect.die("Missing steering receipt")
           const persisted = yield* MessageV2.get({ sessionID: child.id, messageID })
-          expect(persisted.info).toMatchObject({
-            role: "user",
-            agent: originalUser.agent,
-            model: originalUser.model,
-            delivery: "steer",
-          })
+         // 261031 Red 忙碌引导落 pending_steer（待消费形态，可撤回），promote 后转 steer。
+         expect(persisted.info).toMatchObject({
+           role: "user",
+           agent: originalUser.agent,
+           model: originalUser.model,
+           delivery: "pending_steer",
+         })
           expect(persisted.parts).toHaveLength(1)
           if (cancelled) {
             yield* jobs.cancel(child.id)

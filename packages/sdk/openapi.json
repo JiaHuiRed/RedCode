@@ -7826,6 +7826,154 @@
         ]
       }
     },
+    "/session/{sessionID}/interrupt_prompt": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "session.interrupt_prompt",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Interrupt accepted"
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Cancel the active run and immediately start a new turn with this message in a single request. Does not revert workspace files or snapshots.",
+        "summary": "Interrupt and send message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg"
+                  },
+                  "model": {
+                    "type": "object",
+                    "properties": {
+                      "providerID": {
+                        "type": "string"
+                      },
+                      "modelID": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["providerID", "modelID"],
+                    "additionalProperties": false
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "noReply": {
+                    "type": "boolean"
+                  },
+                  "delivery": {
+                    "type": "string",
+                    "enum": ["queue", "steer"]
+                  },
+                  "tools": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "boolean"
+                    },
+                    "description": "@deprecated tools and permissions have been merged, you can set permissions on the session itself now"
+                  },
+                  "format": {
+                    "$ref": "#/components/schemas/OutputFormat"
+                  },
+                  "system": {
+                    "type": "string"
+                  },
+                  "variant": {
+                    "type": "string"
+                  },
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/TextPartInput"
+                        },
+                        {
+                          "$ref": "#/components/schemas/FilePartInput"
+                        },
+                        {
+                          "$ref": "#/components/schemas/AgentPartInput"
+                        },
+                        {
+                          "$ref": "#/components/schemas/SubtaskPartInput"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": ["parts"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.interrupt_prompt({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/command": {
       "post": {
         "tags": ["session"],
@@ -13771,7 +13919,7 @@
           },
           "delivery": {
             "type": "string",
-            "enum": ["queued", "steer", "delivered"]
+            "enum": ["queued", "pending_steer", "steer", "delivered"]
           },
           "format": {
             "$ref": "#/components/schemas/OutputFormat"

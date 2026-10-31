@@ -1287,13 +1287,15 @@ export function Prompt(props: PromptProps) {
     }
     if (!sessionID) return false
 
-    const delivery =
-      props.sessionID &&
-      submission.payload.mode === "normal" &&
-      !isCommand &&
-      (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
-        ? "queue"
-        : undefined
+   // 261031 Red 忙碌默认引导（steer）：与服务端 busy_enter 默认及 GUI 对齐。服务端忙碌时
+   // 自动落 pending_steer 待消费形态（可 /pending 编辑/撤销），不再默认排队到轮末。
+   const delivery =
+     props.sessionID &&
+     submission.payload.mode === "normal" &&
+     !isCommand &&
+     (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
+       ? "steer"
+       : undefined
 
     if (submission.payload.mode === "shell") {
       const result = await sdk.client.session.shell({
@@ -1340,9 +1342,6 @@ export function Prompt(props: PromptProps) {
       }
     }
 
-    if (delivery === "queue") {
-      props.onQueue?.(submission.payload.messageID, submission.payload.inputText)
-    }
 
     history.append(submission.payload.history)
     const clearPrompt = () => {

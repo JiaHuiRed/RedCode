@@ -152,6 +152,7 @@ export const SessionPaths = {
   summarize: `${root}/:sessionID/summarize`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
+  interruptPrompt: `${root}/:sessionID/interrupt_prompt`,
   command: `${root}/:sessionID/command`,
   shell: `${root}/:sessionID/shell`,
   revert: `${root}/:sessionID/revert`,
@@ -487,6 +488,20 @@ export const SessionApi = HttpApi.make("session")
             summary: "Send async message",
             description:
               "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+          }),
+        ),
+        HttpApiEndpoint.post("interruptPrompt", SessionPaths.interruptPrompt, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: PromptPayload,
+          success: described(HttpApiSchema.NoContent, "Interrupt accepted"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.interrupt_prompt",
+            summary: "Interrupt and send message",
+            description:
+              "Cancel the active run and immediately start a new turn with this message in a single request. Does not revert workspace files or snapshots.",
           }),
         ),
         HttpApiEndpoint.post("command", SessionPaths.command, {

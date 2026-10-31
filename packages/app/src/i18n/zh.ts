@@ -335,6 +335,7 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "发送",
   "prompt.action.stop": "停止",
+  "prompt.action.interruptSend": "打断并发送",
   "prompt.compact.run": "精简",
   "prompt.compact.confirm": "当前上下文 {{window}} / {{limit}}，确认立即精简会话？",
   "prompt.compact.clickHint": "点击精简会话",

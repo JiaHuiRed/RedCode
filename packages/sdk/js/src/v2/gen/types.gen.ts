@@ -557,7 +557,7 @@ export type UserMessage = {
   time: {
     created: number
   }
-  delivery?: "queued" | "steer" | "delivered"
+  delivery?: "queued" | "pending_steer" | "steer" | "delivered"
   format?: OutputFormat
   summary?: {
     title?: string
@@ -8246,6 +8246,59 @@ export type SessionPromptAsyncResponses = {
 }
 
 export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
+
+export type SessionInterruptPromptData = {
+  body?: {
+    messageID?: string
+    model?: {
+      providerID: string
+      modelID: string
+    }
+    agent?: string
+    noReply?: boolean
+    delivery?: "queue" | "steer"
+    /**
+     * @deprecated tools and permissions have been merged, you can set permissions on the session itself now
+     */
+    tools?: {
+      [key: string]: boolean
+    }
+    format?: OutputFormat
+    system?: string
+    variant?: string
+    parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/interrupt_prompt"
+}
+
+export type SessionInterruptPromptErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionInterruptPromptError = SessionInterruptPromptErrors[keyof SessionInterruptPromptErrors]
+
+export type SessionInterruptPromptResponses = {
+  /**
+   * Interrupt accepted
+   */
+  204: void
+}
+
+export type SessionInterruptPromptResponse = SessionInterruptPromptResponses[keyof SessionInterruptPromptResponses]
 
 export type SessionCommandData = {
   body?: {

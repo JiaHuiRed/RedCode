@@ -286,6 +286,7 @@ export const dict = {
   "prompt.attachment.remove": "添付ファイルを削除",
   "prompt.action.send": "送信",
   "prompt.action.stop": "停止",
+  "prompt.action.interruptSend": "中断して送信",
   "prompt.compact.run": "圧縮",
   "prompt.compact.confirm": "現在のコンテキスト {{window}} / {{limit}}。今すぐセッションを圧縮しますか？",
   "prompt.compact.clickHint": "クリックでセッションを圧縮",

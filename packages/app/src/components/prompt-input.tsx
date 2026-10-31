@@ -1148,7 +1148,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return permission.isAutoAccepting(id, sdk.directory)
   })
 
-  const { abort, handleSubmit, sendError, clearSendError } = createPromptSubmit({
+ // 261031 Red interruptSend = 忙碌时打断发送入口（见下方打断按钮）。
+ const { abort, handleSubmit, interruptSend, sendError, clearSendError } = createPromptSubmit({
     info,
     imageAttachments,
     commentCount,
@@ -1766,6 +1767,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               {language.t(store.delivery === "queue" ? "prompt.delivery.queue" : "prompt.delivery.steer")}
             </Button>
           </Show>
+         {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
+             纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
+         <Show when={working() && !blank()}>
+           <Tooltip placement="top" value={language.t("prompt.action.interruptSend")}>
+             <IconButton
+               data-action="prompt-interrupt-send"
+               type="button"
+               icon="enter"
+               variant="ghost"
+               class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted hover:bg-surface-raised hover:text-v2-icon-icon-base"
+               aria-label={language.t("prompt.action.interruptSend")}
+               onClick={() => interruptSend()}
+             />
+           </Tooltip>
+         </Show>
           <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
             <IconButton
               data-action="prompt-submit"

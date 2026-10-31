@@ -319,6 +319,7 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.action.interruptSend": "Interrupt and send",
   "prompt.compact.run": "Compact",
   "prompt.compact.confirm": "Context window {{window}} / {{limit}}. Compact this session now?",
   "prompt.compact.clickHint": "Click to compact session",
