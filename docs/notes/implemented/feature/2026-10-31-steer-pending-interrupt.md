@@ -27,6 +27,21 @@
 - httpapi coverage：`session.interrupt_prompt` 场景与 `llmScenarios` 登记已加（套件级三连验证因耗时被跳过，场景与 prompt 端点同构）。
 - 真机验收（webqa + 真实 GLM 会话，五条全过）：① 忙碌引导落 pending_steer → promote → delivered，模型回复响应引导内容（「数完告诉我总数」→ 给出 325/7260 两个总和）；② dock 编辑保存后模型消费**编辑后文本**（「数到 1000 就停」编辑为「数到 500 就停」→ 模型数到 500 停下并验算总和 125250）；③ 已领取消息编辑 API 返回 409；④ 打断发送：旧轮 assistant finish=None（真中断）、新消息普通 delivery、新轮请求恰一次；⑤ UI 无新轮次入口（message-part 不感知 delivery，回滚按钮不入发送链路）。
 
+## 审计修复（261031，第三方审计复核）
+
+审计提出的四项问题逐条复核：三项属实并已修，一项复核后按取舍不改。
+
+1. **AUD-01（P1，属实）**：提交方重跑判据只认 `steer`，`pending_steer` 被判成已送达。滞留窗口是引导在旧轮最后一次 `promotePendingSteer` 之后、fiber 结束之前落库——此时 Runner 的 `ensureRunning` 已丢弃并发 loop，提交方又提前 return，没有第二步来领取。修复：判据抽成 `retryableDelivery`，`pending_steer` 与 `steer` 同等重试。
+   该窗口无法在测试里稳定注入（正常时序下旧轮会在下一轮开头自己 promote 消费引导，端到端测试在未修复代码上也通过），因此回归测试改为直接锁判据本体——把函数导出后用 7 组形态断言，**已验证旧逻辑下该测试必红**，符合「测试要能抓住真实失败模式」的要求。
+
+2. **AUD-02（P2，属实）**：TUI 的 `activeMessageID` 只排除 `queued`，未领取引导被误认作当前活跃轮首；`steerStateByID` 也随之 `continue` 跳过它的待发送徽标，落到时间戳兜底分支。修复：抽 `isPendingDelivery(delivery)`（queued 或 pending_steer），`activeMessageID`、`steerStateByID`、`/pending` 列表三处共用同一判断。
+
+3. **AUD-04（P2，属实）**：GUI 打断按钮此前只看 `working() && !blank()`，但 `runSubmit` 里 Shell 模式走 `session.shell`、自定义斜杠命令走 `session.command`，两条分支都不看 `intent`，不会取消当前轮——按钮承诺落空。修复：新增 `canInterruptSend`，要求 `mode === "normal"` 且当前文本不是已注册的自定义斜杠命令，与真实请求路由同判据。普通斜杠文本（未被注册为命令）仍可打断发送。
+
+4. **AUD-03（P2，属实但不照改）**：TUI 确实没有 `interruptPrompt` 入口。复核后判断不宜新增物理键位：TUI 的打断是 Escape 连按两次（5 秒窗口，`session_interrupt` 默认 escape），且**不清空输入**——`Escape×2 → Enter` 已是语义等价的两步路径；而终端对 Ctrl+Enter / Alt+Enter 的支持不一致（Windows Terminal 把 Alt+Enter 占用为全屏切换），新增不可靠键位会让「按了没反应」取代「少一步」。保留两步等效，取舍记录于此；若后续要补一次操作入口，应走可测试的服务端命令而非物理键位。
+
+验证：opencode typecheck exit 0、app typecheck exit 0、`test/session/prompt.test.ts` 115 条 102 pass / 13 skip / 0 fail（新增 2 条：判据单测 + 轮末引导端到端）、GUI submit 13 pass。
+
 ## 边界
 
 - `interruptPrompt` 的 handler 为 fork 后台执行（返回 204），客户端通过 status 事件观察「正在中断 → busy」；深度的「旧工具进程退出前新轮已启动」窗口与既有 cancel 语义一致（cancelTree 异步收尾），未加强等待。

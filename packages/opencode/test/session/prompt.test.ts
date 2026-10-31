@@ -1581,6 +1581,23 @@ it.instance("queued messages can be canceled before claim and promoted for the n
   }),
 )
 
+  // 261031 Red 审计 AUD-01：提交方重跑判据本体。滞留窗口（引导恰在旧轮最后一次
+  // promote 之后落库）无法在测试里稳定注入——正常时序下旧轮自己会在下一轮开头
+  // promote 消费引导——所以这里直接锁判据：pending_steer 必须与 steer 同等重试。
+  it.effect("retryableDelivery treats pending_steer as undelivered", () =>
+    Effect.sync(() => {
+      // 引导（steer）形态
+      expect(SessionPrompt.retryableDelivery("steer", "pending_steer")).toBe(true)
+      expect(SessionPrompt.retryableDelivery("steer", "steer")).toBe(true)
+      expect(SessionPrompt.retryableDelivery("steer", "delivered")).toBe(false)
+      expect(SessionPrompt.retryableDelivery("steer", "queued")).toBe(false)
+      // 排队（queue）形态不受影响
+      expect(SessionPrompt.retryableDelivery("queue", "queued")).toBe(true)
+      expect(SessionPrompt.retryableDelivery("queue", "pending_steer")).toBe(false)
+      expect(SessionPrompt.retryableDelivery("queue", "steer")).toBe(false)
+    }),
+  )
+
   it.instance("pending steer stays editable and cancellable until promotion, then edits conflict", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -1687,6 +1704,60 @@ it.instance("queued messages can be canceled before claim and promoted for the n
       // 旧轮退出后提交方重跑 loop，首步 promote 把引导转 steer 注入
       const hits = yield* llm.hits
       expect(JSON.stringify(hits.at(-1)!.body)).toContain("steer mid-turn")
+      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+    }),
+  )
+
+  // 261031 Red 审计 AUD-01 回归：引导恰逢旧轮最后一步（纯文本无工具）完成时，
+  // Runner 内不再有 step 领取，必须由提交方重跑 loop 消费，且恰好消费一次。
+  it.instance("steer pending at turn end is consumed by submitter retry exactly once", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Steer pending at turn end" })
+      const held = defer<void>()
+      // 第一响应：纯文本 stop，无工具调用——旧 loop 第一步即退出，无后续 step 领取
+      yield* llm.push(reply().wait(held.promise).text("first answer").stop().item())
+      yield* llm.text("answer after retry")
+
+      const run = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          parts: [{ type: "text", text: "start" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const steerID = MessageID.ascending()
+      const steerFiber = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: steerID,
+          agent: "build",
+          delivery: "steer",
+          parts: [{ type: "text", text: "steer at the very end" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+         return Option.isSome(message) && message.value.info.role === "user" && message.value.info.delivery === "pending_steer"
+           ? (true as const)
+           : undefined
+        }),
+        "steer never landed as pending_steer",
+      )
+
+      held.resolve()
+      yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
+      yield* Fiber.join(steerFiber).pipe(Effect.timeout("10 seconds"))
+      // 修复点：旧轮退出后提交方重跑 loop 消费引导——恰好 2 次请求，引导只进一次
+      const hits = yield* llm.hits
+      expect(hits.length).toBe(2)
+      expect(JSON.stringify(hits[0].body)).not.toContain("steer at the very end")
+      expect(JSON.stringify(hits[1].body)).toContain("steer at the very end")
       expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
     }),
   )

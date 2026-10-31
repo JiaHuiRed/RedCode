@@ -1306,12 +1306,10 @@ export const layer = Layer.effect(
       const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID: message.info.id }).pipe(
         Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
       )
-      if (
-        !current ||
-        current.info.role !== "user" ||
-        (input.delivery === "queue" ? current.info.delivery !== "queued" : current.info.delivery !== "steer")
-      )
-        return result
+      // 261031 Red pending_steer 是 steer 的待领取形态：仍算未送达，旧轮收尾后由提交方
+      // 重跑 loop 领取消费，否则恰逢最后一步完成时引导会永久滞留（审计 AUD-01）。
+      if (!current || current.info.role !== "user") return result
+      if (!retryableDelivery(input.delivery, current.info.delivery)) return result
       return yield* loop({ sessionID: input.sessionID }, onCancelled)
     })
 
@@ -1406,7 +1404,7 @@ export const layer = Layer.effect(
        // 261031 Red 引导领取：每步组装前把全部 pending_steer 转 steer。领取前它们被下方
        // queued 同款过滤排除在模型视野之外；转后 reminder 收集（delivery==="steer"、晚于
        // 轮起点、去重）与组装自然包含。与编辑/撤回在 queueLock 上串行。
-       yield* sessions.promotePendingSteer(sessionID)
+      yield* sessions.promotePendingSteer(sessionID)
        const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
         const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
         const oldPin = _caches.msgPin.get(sessionID)
@@ -2793,5 +2791,16 @@ const bashRegex = /!`([^`]+)`/g
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
+
+
+// 261031 Red 提交方重跑判据：消息仍处在本轮未读取的待消费形态时，旧 Runner 退出后
+// 必须重跑 loop 领取。pending_steer 是 steer 的待领取形态，必须与 steer 同等重试
+// （审计 AUD-01：只认 steer 会让恰逢最后一步的引导滞留到下一次显式执行）。
+export function retryableDelivery(
+  input: "queue" | "steer",
+  current: MessageV2.User["delivery"],
+) {
+  return input === "queue" ? current === "queued" : current === "pending_steer" || current === "steer"
+}
 
 export * as SessionPrompt from "./prompt"

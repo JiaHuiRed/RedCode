@@ -326,6 +326,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
   const stopping = createMemo(() => working() && blank())
+  // 261031 Red 打断发送与真实请求路由同判据（审计 AUD-04）：Shell 模式与自定义斜杠
+  // 命令在 submit.ts 里走 session.shell / session.command 分支，不会取消当前轮，
+  // 因此不提供打断入口，避免按钮承诺与实际请求脱节。
+  const canInterruptSend = createMemo(() => {
+    if (!working() || blank() || store.mode !== "normal") return false
+    const text = prompt
+      .current()
+      .map((part) => ("content" in part ? part.content : ""))
+      .join("")
+      .trim()
+    if (!text.startsWith("/")) return true
+    const name = text.split(" ")[0].slice(1)
+    return !sync.data.command.some((item) => item.name === name)
+  })
   const tip = () => {
     if (stopping()) {
       return (
@@ -1769,7 +1783,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           </Show>
          {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
              纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
-         <Show when={working() && !blank()}>
+         <Show when={canInterruptSend()}>
            <Tooltip placement="top" value={language.t("prompt.action.interruptSend")}>
              <IconButton
                data-action="prompt-interrupt-send"

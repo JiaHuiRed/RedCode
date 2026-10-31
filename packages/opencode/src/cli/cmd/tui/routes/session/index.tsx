@@ -205,14 +205,11 @@ export function Session() {
     )
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
-// 261031 Red pending_steer（忙碌引导的待消费形态）与 queued 一起进待发送列表，
-// /pending 的送达/编辑/撤销对两种形态都可用（服务端 API 已兼容）。
-const queuedMessages = createMemo(() =>
- messages().filter(
-   (message): message is UserMessageInfo =>
-     message.role === "user" && (message.delivery === "queued" || message.delivery === "pending_steer"),
- ),
-)
+  // 261031 Red pending_steer（忙碌引导的待消费形态）与 queued 一起进待发送列表，
+  // /pending 的送达/编辑/撤销对两种形态都可用（服务端 API 已兼容）。
+  const queuedMessages = createMemo(() =>
+    messages().filter((message): message is UserMessageInfo => message.role === "user" && isPendingDelivery(message.delivery)),
+  )
 
   // 260708 Red TUI 消息级 windowing — 只渲染最近 N 条，屏外不进 yoga 树
   const MSG_WINDOW_DEFAULT = 50
@@ -277,7 +274,7 @@ const queuedMessages = createMemo(() =>
       const msgs = messages()
       for (let i = msgs.length - 1; i >= 0; i--) {
         const message = msgs[i]
-        if (message.role === "user" && message.delivery !== "queued") return message.id
+        if (message.role === "user" && !isPendingDelivery(message.delivery)) return message.id
       }
     }
     return undefined
@@ -299,7 +296,7 @@ const queuedMessages = createMemo(() =>
       if ((assistantByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)
       if (busy && activeID === message.id) continue
-      if (message.delivery === "queued") {
+      if (isPendingDelivery(message.delivery)) {
         result.set(message.id, "queued")
         continue
       }
@@ -3038,6 +3035,12 @@ function Diagnostics(props: { diagnostics?: Record<string, Record<string, any>[]
       </box>
     </Show>
   )
+}
+
+// 261031 Red 待消费形态判定：queued 与 pending_steer 都还没被模型读取，
+// 活跃轮首、待发送徽标、/pending 列表必须用同一判断，避免新增形态时各改各的（审计 AUD-02）。
+function isPendingDelivery(delivery: UserMessageInfo["delivery"] | undefined) {
+  return delivery === "queued" || delivery === "pending_steer"
 }
 
 function input(input: Record<string, any>, omit?: string[]): string {
