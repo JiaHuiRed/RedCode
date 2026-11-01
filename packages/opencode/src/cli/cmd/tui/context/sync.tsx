@@ -464,6 +464,20 @@ export const {
           if (!parts) break
           const result = Binary.search(parts, event.properties.partID, (p) => p.id)
           if (!result.found) break
+          // 261101 Red tool part 的 raw 流式增量（写长文档渐进预览）要路由进 state.raw——
+          // raw 挂在 state 上，走下面的顶层字段追只会造出无主属性
+          if (event.properties.field === "raw") {
+            setStore(
+              "part",
+              event.properties.messageID,
+              produce((draft) => {
+                const part = draft[result.index]
+                if (part.type !== "tool" || part.state.status !== "pending") return
+                part.state.raw += event.properties.delta
+              }),
+            )
+            break
+          }
           setStore(
             "part",
             event.properties.messageID,
@@ -495,6 +509,14 @@ export const {
         case "lsp.updated": {
           const workspace = project.workspace.current()
           void sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", x.data ?? []))
+          break
+        }
+
+        case "mcp.tools.changed": {
+          // 261101 Red 后台连接完成/重连后刷新 MCP 状态：启动宽限外的慢启动 server
+          // 连上时界面自动翻成 connected，不再停在场「connecting」等用户手动重试
+          const workspace = project.workspace.current()
+          void sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {})))
           break
         }
 

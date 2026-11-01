@@ -444,6 +444,107 @@ it.live("session.processor effect tests capture llm input cleanly", () =>
   ),
 )
 
+// 261101 Red 写长文档渐进预览的引擎侧：tool-input-delta 不再整段丢弃，而是按节流推
+// PartDelta(field:"raw")，tool-input-end 兜底 flush 尾段——TUI 的流式预览靠这个数据源。
+it.live("session.processor streams pending tool args as throttled raw deltas", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+
+        const rawDeltas: string[] = []
+        const deltaEvents = yield* bus.subscribe(MessageV2.Event.PartDelta)
+        yield* Stream.runForEach(deltaEvents, (event) =>
+          Effect.sync(() => {
+            if (event.properties.field === "raw") rawDeltas.push(event.properties.delta)
+          }),
+        ).pipe(Effect.forkScoped)
+
+        // 两段 args 分片（都在 400ms 节流窗口内到达）：第一段立即推，第二段靠 end 兜底 flush
+        const toolInput = { filePath: "docs/a.md", content: "# Title\n\nbody" }
+        const args = JSON.stringify(toolInput)
+        const half = Math.floor(args.length / 2)
+        yield* llm.push(
+          raw({
+            head: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        { index: 0, id: "call_1", type: "function", function: { name: "lookup", arguments: "" } },
+                      ],
+                    },
+                  },
+                ],
+              },
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(0, half) } }] } }],
+              },
+            ],
+            tail: [
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: args.slice(half) } }] } }],
+              },
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: {}, finish_reason: "tool_calls" }],
+              },
+            ],
+          }),
+        )
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "write a doc")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "write a doc" }],
+          tools: {
+            lookup: tool({
+              description: "Look up information",
+              inputSchema: z.object({ filePath: z.string(), content: z.string() }),
+              execute: async () => ({ title: "lookup", output: "ok", metadata: {} }),
+            }),
+          },
+        })
+
+        expect(value).toBe("continue")
+        // 分片按序推给客户端，拼接等于完整 args JSON（不丢不重不乱序）
+        expect(rawDeltas.length).toBeGreaterThanOrEqual(1)
+        expect(rawDeltas.length).toBeLessThanOrEqual(3)
+        expect(rawDeltas.join("")).toBe(args)
+        const part = MessageV2.parts(msg.id).find((part) => part.type === "tool")
+        expect(part?.state.status).toBe("completed")
+        if (part?.state.status === "completed") expect(part.state.input).toEqual(toolInput)
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
 it.live("session.processor effect tests preserve text start time", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

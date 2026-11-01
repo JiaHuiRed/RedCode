@@ -104,10 +104,20 @@ type ToolCall = {
   // 261021 Red 该 callID 的 part 已经终结（completed/error）后又被复用（中断后迟到的同一事件）：
   // 后续事件只能读、不能再改状态，否则 part 会被推回 running 且永远等不到新的 result。
   sealed?: boolean
+  // 261101 Red tool-input-delta 增量缓冲：写长文档时模型流式生成 args 要几十秒到几分钟，
+  // 此前 delta 全被丢弃，TUI 只能等 tool-call 一次性拿到完整 input——中间毫无反馈，看起来像卡死。
+  // raw 按节流间隔推给客户端做渐进预览（纯 bus 推送不落库，完成时 state 切 running 自然丢弃 raw）。
+  rawBuffer?: string
+  rawFlushedAt?: number
 }
 
 // 261028 Red 同一 text part 内连续闭合的引用标记达到该数即判复述循环（对齐 NgramDetector 的 3 次阈值）。
 const REFERENCE_LOOP_LIMIT = 3
+
+// 261101 Red tool-input-delta 的推送节流：≥400ms 或缓冲 ≥2048 字符才推一条 PartDelta，
+// 避免每 token 一条事件（90 tok/s）把 bus/SSE 和前端 store 打爆；tool-input-end 兜底 flush 尾段。
+const TOOL_INPUT_PUSH_INTERVAL = 400
+const TOOL_INPUT_PUSH_CHARS = 2048
 
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
@@ -659,13 +669,49 @@ export const layer = Layer.effect(
             yield* ensureToolCall(value)
             return
 
-          case "tool-input-delta":
-            // AI SDK emits a final `tool-call` with the parsed `input`; accumulating
-            // delta fragments into `state.raw` is redundant work for no current consumer.
+          case "tool-input-delta": {
+            // 261101 Red delta 现在有消费者了：写长文档的 args 流式生成可达几十秒以上，
+            // 按节流间隔把 pending part 的 raw 推给客户端做渐进预览（此前全量丢弃，
+            // TUI 全程只有一行 "Preparing..."，和卡死分不开）。纯 bus 推送不落库，
+            // 完成时 state 切 running 不带 raw，自然清场。
+            const call = ctx.toolcalls[value.id]
+            if (!call) return
+            const text = value.text ?? ""
+            if (!text) return
+            call.rawBuffer = (call.rawBuffer ?? "") + text
+            const now = Date.now()
+            if (
+              call.rawFlushedAt !== undefined &&
+              now - call.rawFlushedAt < TOOL_INPUT_PUSH_INTERVAL &&
+              call.rawBuffer.length < TOOL_INPUT_PUSH_CHARS
+            )
+              return
+            call.rawFlushedAt = now
+            yield* session.updatePartDelta({
+              sessionID: call.sessionID,
+              messageID: call.messageID,
+              partID: call.partID,
+              field: "raw",
+              delta: call.rawBuffer,
+            })
+            call.rawBuffer = ""
             return
+          }
 
           case "tool-input-end": {
             const toolCall = yield* ensureToolCall(value)
+            // 261101 Red 收尾 flush：节流窗口里攒的尾段推出去，客户端预览不缺结尾
+            const tail = toolCall.call.rawBuffer
+            if (tail) {
+              yield* session.updatePartDelta({
+                sessionID: toolCall.call.sessionID,
+                messageID: toolCall.call.messageID,
+                partID: toolCall.call.partID,
+                field: "raw",
+                delta: tail,
+              })
+              toolCall.call.rawBuffer = ""
+            }
             ctx.toolcalls[value.id] = { ...toolCall.call, inputEnded: true }
             return
           }

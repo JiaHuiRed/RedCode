@@ -90,6 +90,8 @@ import { useTuiConfig } from "../../context/tui-config"
 import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+// 261101 Red 写长文档渐进预览：从未完成的 args JSON 里容错抽取已流式到达的字段
+import { extractPartialJsonString } from "../../util/partial-json-string"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
@@ -2632,6 +2634,24 @@ function Write(props: ToolProps<typeof WriteTool>) {
   })
   const ft = createMemo(() => filetype(props.input.filePath!))
 
+  // 261101 Red args 流式预览：引擎把 delta 节流累进 pending state.raw，这里实时抽取
+  // content 的已到达部分，长文档生成期间给「正在写 + 行数 + 尾部预览」的活反馈，
+  // 完成后仍走下面的全量渲染视图。
+  const PREVIEW_TAIL_LINES = 8
+  const streaming = createMemo(() => {
+    if (props.part.state.status !== "pending") return undefined
+    const raw = props.part.state.raw
+    if (!raw) return undefined
+    const parsed = extractPartialJsonString(raw, "content")
+    if (!parsed || !parsed.value) return undefined
+    const lines = parsed.value.split("\n")
+    return { lineCount: lines.length, tail: lines.slice(-PREVIEW_TAIL_LINES).join("\n"), complete: parsed.complete }
+  })
+  const streamingPath = createMemo(() => {
+    if (props.part.state.status !== "pending") return undefined
+    return extractPartialJsonString(props.part.state.raw, "filePath")?.value
+  })
+
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
@@ -2653,6 +2673,21 @@ function Write(props: ToolProps<typeof WriteTool>) {
           </Show>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={props.input.filePath ?? ""} />
         </BlockTool>
+      </Match>
+      <Match when={streaming()}>
+        {(s) => (
+          <BlockTool
+            title={`Writing ${streamingPath() ?? "…"} · ${s().lineCount} lines`}
+            icon="✎"
+            part={props.part}
+            spinner={true}
+          >
+            <text fg={theme.textMuted}>
+              {s().tail}
+              {s().complete ? "" : " …"}
+            </text>
+          </BlockTool>
+        )}
       </Match>
       <Match when={true}>
         <InlineTool icon="✎" pending="Preparing write..." complete={props.input.filePath} part={props.part}>

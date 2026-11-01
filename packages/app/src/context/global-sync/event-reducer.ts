@@ -450,6 +450,20 @@ export function applyDirectoryEvent(input: {
       if (!parts) break
       const result = Binary.search(parts, props.partID, (p) => p.id)
       if (!result.found) break
+      // 261101 Red tool part 的 raw 流式增量（写长文档渐进预览）路由进 state.raw——
+      // raw 挂在 state 上，走下面的顶层字段追只会造出无主属性
+      if (props.field === "raw") {
+        input.setStore(
+          "part",
+          props.messageID,
+          produce((draft) => {
+            const part = draft[result.index]
+            if (part.type !== "tool" || part.state.status !== "pending") return
+            part.state.raw += props.delta
+          }),
+        )
+        break
+      }
       // 260801 Red 每 delta 单次写入：TUI 对照（sync.tsx:327-343）只更新 part[field]，
       //   readPartText(accum, part) 在 accum 缺失时 fallback part.text，双写冗余且 O(n²)
       input.setStore(
