@@ -621,6 +621,12 @@ export function createServerSyncContext() {
     if (!existing) return
     children.mark(key)
     const [store, setStore] = existing
+    // 261101 Red MCP 后台连接完成/失败时引擎会广播 tools.changed，这里刷新对应目录的
+    // mcp 状态查询——慢启动 server 连上后界面自动从 connecting 翻成 connected，
+    // 不再停在旧状态等人手动开关或重进页面
+    if (event.type === "mcp.tools.changed") {
+      void queryClient.invalidateQueries({ queryKey: [key, "mcp"] })
+    }
     applyDirectoryEvent({
       event,
       directory,

@@ -16,6 +16,7 @@ const statusLabels = {
   needs_auth: "mcp.status.needs_auth",
   needs_client_registration: "mcp.status.needs_client_registration",
   disabled: "mcp.status.disabled",
+  connecting: "mcp.status.connecting",
 } as const
 
 export const DialogSelectMcp: Component = () => {

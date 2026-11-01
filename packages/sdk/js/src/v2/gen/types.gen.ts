@@ -1081,6 +1081,10 @@ export type McpStatusFailed = {
   error: string
 }
 
+export type McpStatusConnecting = {
+  status: "connecting"
+}
+
 export type McpStatusDisabled = {
   status: "disabled"
 }
@@ -1090,7 +1094,12 @@ export type McpStatusConnected = {
 }
 
 export type McpStatus =
-  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
+  | McpStatusConnected
+  | McpStatusDisabled
+  | McpStatusConnecting
+  | McpStatusFailed
+  | McpStatusNeedsAuth
+  | McpStatusNeedsClientRegistration
 
 export type McpRemoteConfig = {
   /**

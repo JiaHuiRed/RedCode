@@ -143,6 +143,10 @@ export const McpListCommand = effectCmd({
       } else if (status.status === "disabled") {
         statusIcon = "○"
         statusText = "disabled"
+      } else if (status.status === "connecting") {
+        // 261101 Red 后台连接进行中；不加分支会掉进下面的 failed else 误报成 ✗ failed
+        statusIcon = "…"
+        statusText = "connecting"
       } else if (status.status === "needs_auth") {
         statusIcon = "⚠"
         statusText = "needs authentication"

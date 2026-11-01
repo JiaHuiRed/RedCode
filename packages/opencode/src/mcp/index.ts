@@ -239,6 +239,12 @@ const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).a
 const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).annotate({
   identifier: "MCPStatusDisabled",
 })
+// 261101 Red 连接中：enabled 但首次连接还没落地（启动后台连接进行中）。此前这个窗口期
+// 一律回落 disabled，慢启动 server（jcodemunch/fff/markitdown 常见 5–20s）在启动后十几秒里
+// 界面显示「Disabled」，诱导用户反复扳开关——明明正在连，看起来却像没连上。
+const StatusConnecting = Schema.Struct({ status: Schema.Literal("connecting") }).annotate({
+  identifier: "MCPStatusConnecting",
+})
 const StatusFailed = Schema.Struct({ status: Schema.Literal("failed"), error: Schema.String }).annotate({
   identifier: "MCPStatusFailed",
 })
@@ -253,6 +259,7 @@ const StatusNeedsClientRegistration = Schema.Struct({
 export const Status = Schema.Union([
   StatusConnected,
   StatusDisabled,
+  StatusConnecting,
   StatusFailed,
   StatusNeedsAuth,
   StatusNeedsClientRegistration,
@@ -1210,7 +1217,13 @@ export const layer = Layer.effect(
 
       for (const [key, mcp] of Object.entries(config)) {
         if (!isMcpConfigured(mcp)) continue
-        result[key] = s.status[key] ?? { status: "disabled" }
+        const current = s.status[key]
+        if (current) {
+          result[key] = current
+          continue
+        }
+        // 261101 Red enabled 但还没落状态 = 后台连接进行中，如实报 connecting（原先是 disabled 兜底）
+        result[key] = mcp.enabled === false ? { status: "disabled" } : { status: "connecting" }
       }
 
       return result
@@ -1283,6 +1296,9 @@ export const layer = Layer.effect(
       }).pipe(Effect.ensuring(Effect.gen(function* () {
         s.creating.delete(name)
         s.cancelled.delete(name)
+        // 261101 Red 首次连接无论成败都有结果了：广播一条变更让前端刷新状态，
+        // 界面自动从 connecting 翻成 connected/failed，不再停在旧状态等人手动重试
+        yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
         yield* Deferred.succeed(pending, undefined)
       })))
     })

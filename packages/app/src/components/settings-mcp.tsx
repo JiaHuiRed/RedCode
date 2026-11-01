@@ -54,6 +54,7 @@ const statusLabels = {
   needs_auth: "mcp.status.needs_auth",
   needs_client_registration: "mcp.status.needs_client_registration",
   disabled: "mcp.status.disabled",
+  connecting: "mcp.status.connecting",
 } as const
 
 // config.mcp 允许 legacy 形态 `{ enabled: false }` —— 它只是对本机覆盖层的开关，

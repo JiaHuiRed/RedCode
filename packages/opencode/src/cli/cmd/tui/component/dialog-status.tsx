@@ -64,6 +64,7 @@ export function DialogStatus() {
                         connected: theme.success,
                         failed: theme.error,
                         disabled: theme.textMuted,
+                        connecting: theme.textMuted,
                         needs_auth: theme.warning,
                         needs_client_registration: theme.error,
                       } as Record<string, typeof theme.success>
@@ -79,6 +80,7 @@ export function DialogStatus() {
                       <Match when={item.status === "connected"}>已连接</Match>
                       <Match when={item.status === "failed" && item}>{(val) => val().error}</Match>
                       <Match when={item.status === "disabled"}>已在配置中禁用</Match>
+                      <Match when={item.status === "connecting"}>连接中…</Match>
                       <Match when={(item.status as string) === "needs_auth"}>
                         需要认证（运行: redcode mcp auth {key}）
                       </Match>

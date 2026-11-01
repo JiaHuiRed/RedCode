@@ -7,13 +7,17 @@ import { useTheme } from "../context/theme"
 import { TextAttributes } from "@opentui/core"
 import { useSDK } from "@tui/context/sdk"
 
-function Status(props: { enabled: boolean; loading: boolean }) {
+function Status(props: { enabled: boolean; loading: boolean; connecting: boolean }) {
   const { theme } = useTheme()
   if (props.loading) {
     return <span style={{ fg: theme.textMuted }}>⋯ Loading</span>
   }
   if (props.enabled) {
     return <span style={{ fg: theme.success, attributes: TextAttributes.BOLD }}>✓ Enabled</span>
+  }
+  // 261101 Red 连接中如实显示，不再落回 Disabled 误导用户去扳开关
+  if (props.connecting) {
+    return <span style={{ fg: theme.textMuted }}>⋯ Connecting</span>
   }
   return <span style={{ fg: theme.textMuted }}>○ Disabled</span>
 }
@@ -38,7 +42,13 @@ export function DialogMcp() {
         value: name,
         title: name,
         description: status.status === "failed" ? "failed" : status.status,
-        footer: <Status enabled={local.mcp.isEnabled(name)} loading={loadingMcp === name} />,
+        footer: (
+          <Status
+            enabled={local.mcp.isEnabled(name)}
+            loading={loadingMcp === name}
+            connecting={status.status === "connecting"}
+          />
+        ),
         category: undefined,
       })),
     )

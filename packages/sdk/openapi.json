@@ -15530,6 +15530,17 @@
         "required": ["status", "error"],
         "additionalProperties": false
       },
+      "MCPStatusConnecting": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["connecting"]
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
       "MCPStatusDisabled": {
         "type": "object",
         "properties": {
@@ -15559,6 +15570,9 @@
           },
           {
             "$ref": "#/components/schemas/MCPStatusDisabled"
+          },
+          {
+            "$ref": "#/components/schemas/MCPStatusConnecting"
           },
           {
             "$ref": "#/components/schemas/MCPStatusFailed"
