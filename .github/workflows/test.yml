@@ -137,7 +137,7 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/opencode/.artifacts/unit-heavy/junit.xml
+          report_paths: packages/opencode/.artifacts/unit-heavy/*.xml
           check_name: "unit heavy results (windows)"
           detailed_summary: true
           include_time_in_summary: true
@@ -151,7 +151,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/opencode/.artifacts/unit-heavy/junit.xml
+          path: packages/opencode/.artifacts/unit-heavy/*.xml
 
   # 261017 Red HttpApi 与 OpenAPI 两条门禁从 unit job 拆出来。原先它们排在 unit
   # 之后，存量单测失败会让这两步根本不执行——结果被前面的失败遮住，看起来像
