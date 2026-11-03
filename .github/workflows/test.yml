@@ -21,92 +21,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  unit:
-    name: unit (${{ matrix.settings.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          # 260728 Karina 本 fork 只面向 Windows 10/11，Linux 半边砍掉（原来是
-          # linux + windows 双跑）。上游 opencode 是跨平台项目，这个 matrix 是从
-          # 那儿继承的，对本仓来说一半的 job 是纯噪音。
-          - name: windows
-            host: windows-latest
-    runs-on: ${{ matrix.settings.host }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "24"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      # 260824 cc 裸控制字节闸门：全仓字节扫描，放在测试前面，坏了立刻知道。
-      # pre-push 上已经有同一条（.husky/pre-push），但 --no-verify 绕得过去，而这类
-      # 字节没有任何运行时征兆——代码照跑、测试照过，只有 grep 悄悄看不见那个文件
-      # （见 7dec94a7：一个权限审批模块因此对全仓搜索隐身）。
-      - name: Run control-byte gate
-        run: bun run check:control-bytes
-
-      - name: Configure git identity
-        run: |
-          git config --global user.email "bot@opencode.ai"
-          git config --global user.name "opencode"
-
-      - name: Cache Turbo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: node_modules/.cache/turbo
-          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
-            turbo-${{ runner.os }}-
-
-      - name: Run unit tests
-        # 261017 Red 串行跑各包的 test:ci。此前 turbo 默认并行，opencode 的 1100+ 个
-        # 测试（真实服务器、子进程、文件 IO）与 app/ui/core 等包在 4 核 runner 上争抢
-        # CPU，最重的 prompt/processor 文件整批撞满 30s 超时（一次 run 里 86 个失败、
-        # unit job 跑了 64 分钟）。本地独占 CPU 时同样两个文件全部通过，bun 1.3.14 与
-        # CI 的 1.4.2 皆然；filewatcher 开关也已排除。
-        # 261103 Red 加 --continue=always：ui 一个测试失败曾让 turbo 在 opencode 之前
-        # 停住，主套件 4500+ 用例根本没跑，CI 只报 581 tests / 1 failed。
-        # 261103 Red 把 prompt/processor/llm/httpapi-sdk 拆到 unit-heavy：全局 60s 实测
-        # 2h7m（106 个 60s 超时），撤回；主套件保持 30s，heavy lane 单独 30s 串行。
-        run: bun turbo test:ci --concurrency=1 --continue=always
-        env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
-
-      - name: Publish unit reports
-        if: always()
-        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
-        with:
-          report_paths: packages/*/.artifacts/unit/junit.xml
-          check_name: "unit results (${{ matrix.settings.name }})"
-          detailed_summary: true
-          include_time_in_summary: true
-          fail_on_failure: false
-
-      - name: Upload unit artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: unit-${{ matrix.settings.name }}-${{ github.run_attempt }}
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-          path: packages/*/.artifacts/unit/junit.xml
-
-  unit-heavy:
-    name: unit heavy (windows)
+  # 261103 Red 两层 CI：push 只跑 smoke（核心 provider/session/httpapi，逐文件独立进程），
+  # 全量 unit 与 httpapi gates 移到 nightly.yml。smoke 是唯一必过的回归围栏；全量套件
+  # 当前有 100+ 个 4 核 Windows 环境超时，继续挡每次 push 只会制造红点疲劳。
+  # cache 只由 typecheck workflow 保存（默认 save-cache=true）；这里、e2e、audit、nightly
+  # 都跳过保存，避免并发 job 抢同一个 cache key 白等 6 分钟。
+  smoke:
+    name: smoke (windows)
     runs-on: windows-latest
     defaults:
       run:
@@ -127,81 +48,31 @@ jobs:
         with:
           save-cache: "false"
 
-      - name: Run heavy unit tests
+      - name: Run smoke tests
         working-directory: packages/opencode
-        run: bun run test:ci:heavy
+        run: bun run test:smoke
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
 
-      - name: Publish heavy unit report
+      - name: Publish smoke report
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/opencode/.artifacts/unit-heavy/*.xml
-          check_name: "unit heavy results (windows)"
+          report_paths: packages/opencode/.artifacts/smoke/*.xml
+          check_name: "smoke results (windows)"
           detailed_summary: true
           include_time_in_summary: true
           fail_on_failure: false
 
-      - name: Upload heavy unit artifact
+      - name: Upload smoke artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unit-heavy-windows-${{ github.run_attempt }}
+          name: smoke-windows-${{ github.run_attempt }}
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/opencode/.artifacts/unit-heavy/*.xml
-
-  # 261017 Red HttpApi 与 OpenAPI 两条门禁从 unit job 拆出来。原先它们排在 unit
-  # 之后，存量单测失败会让这两步根本不执行——结果被前面的失败遮住，看起来像
-  # "未运行"而不是"通过/失败"。拆成独立 job 后三者各自出结论，unit 基线修复
-  # 期间也能看到这两条的真实状态。
-  gates:
-    name: api and openapi gates
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
-    env:
-      # 261103 Red 与 unit job 对齐：effect 模式的 session.init/session.shell 在
-      # Windows runner 上会因 filewatcher 初始化拖到 30s 超时，关掉后只跑业务路径。
-      OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "24"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          save-cache: "false"
-
-      # 260811 cc audit R13: 原条件 runner.os == 'Linux'，但 matrix 只剩 Windows——
-      # 三条 --fail-on-missing 门禁在 CI 里从未执行过（假门禁）。摘掉条件转正，
-      # 转正前本地 Windows 实跑：coverage 报出 2 条无场景路由已补齐，三模式全绿。
-      - name: Run HttpApi exerciser gates
-        working-directory: packages/opencode
-        run: bun run test:httpapi
-
-      # 260821 cc OpenAPI 生成物漂移闸门：packages/sdk/openapi.json 必须逐字节等于
-      # `redcode generate` 的当前输出。这条生成路径曾指向不存在的 packages/redcode
-      # 而静默失效，openapi.json 长期靠手改（见 script/generate.ts 注释）；260819
-      # 修好了路径，但没有任何东西阻止它再烂一次——这一步就是那个东西。
-      # 261013 Red CI 与 pre-push 双份（pre-push 原版随工具描述预算批次接入）：
-      # 本地拦截省一轮 CI 往返，CI 兜 --no-verify 与并行会话合并；双份有意，别按
-      # 旧注释把 pre-push 那条当冗余删掉。
-      - name: Run OpenAPI drift gate
-        run: bun run check:openapi-drift
-
-  # 261013 Red e2e job 拆至 .github/workflows/e2e.yml：CI 最大头（Playwright 30 分钟量级）
-  # 只有 app/desktop 变更才需要跑，workflow 级 paths 过滤让 docs/session-core 改动不再触发。
+          path: packages/opencode/.artifacts/smoke/*.xml
 
   gitleaks:
     name: secrets scan

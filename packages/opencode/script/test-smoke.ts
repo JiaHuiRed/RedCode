@@ -1,14 +1,17 @@
-// 261103 Red heavy lane：四个 session/server 重文件各自起独立 Bun 进程，避免同进程并行
-// 文件互相污染（prompt 单独 115 全过，四文件同进程会挂 native preflight）。
+// 261103 Red smoke lane：核心 provider/session/httpapi 文件各自起独立 Bun 进程。
+// 同进程并行会互相污染（prompt 单独 115 全过，四文件同进程会挂 native preflight）。
 import { mkdir, rm } from "node:fs/promises"
 
 const files = [
+  "test/provider/error.test.ts",
+  "test/session/retry.test.ts",
+  "test/session/message-v2.test.ts",
   "test/session/prompt.test.ts",
   "test/session/processor-effect.test.ts",
   "test/session/llm.test.ts",
   "test/server/httpapi-sdk.test.ts",
 ]
-const out = ".artifacts/unit-heavy"
+const out = ".artifacts/smoke"
 
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
