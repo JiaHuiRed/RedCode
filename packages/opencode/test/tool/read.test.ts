@@ -601,7 +601,7 @@ describe("tool.read truncation", () => {
       yield* put(file, pdf)
 
       const result = yield* exec(dir, { filePath: file })
-      expect(result.attachments).toBeUndefined()
+      expect(result.attachments).toHaveLength(0)
       expect(result.output).toContain("PDF not attached")
       expect(result.output).toContain("cannot be downscaled")
       expect(result.metadata.truncated).toBe(true)
@@ -635,7 +635,7 @@ describe("tool.read truncation", () => {
       yield* put(file, png)
 
       const result = yield* exec(dir, { filePath: file })
-      expect(result.attachments).toBeUndefined()
+      expect(result.attachments).toHaveLength(0)
       expect(result.output).toContain("Image not attached")
       expect(result.output).toContain("33.0 MB")
     }),
@@ -656,7 +656,7 @@ root_type Monster;`
       yield* put(path.join(dir, "schema.fbs"), fbs)
 
       const result = yield* exec(dir, { filePath: path.join(dir, "schema.fbs") })
-      expect(result.attachments).toBeUndefined()
+      expect(result.attachments).toHaveLength(0)
       expect(result.output).toContain("namespace MyGame")
       expect(result.output).toContain("table Monster")
     }),
@@ -674,7 +674,7 @@ root_type Monster;`
       for (const item of cases) {
         yield* put(path.join(dir, item[0]), item[1])
         const result = yield* exec(dir, { filePath: path.join(dir, item[0]) })
-        expect(result.attachments).toBeUndefined()
+        expect(result.attachments).toHaveLength(0)
         expect(result.output).toContain(item[1])
       }
     }),

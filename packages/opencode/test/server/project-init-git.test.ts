@@ -67,7 +67,7 @@ describe("project.initGit endpoint", () => {
       const body = yield* json(init)
       expect(init.status).toBe(200)
       expect(body).toMatchObject({
-        id: "global",
+        id: expect.stringMatching(/^path-/),
         vcs: "git",
         worktree: tmp.directory,
       })
@@ -78,7 +78,7 @@ describe("project.initGit endpoint", () => {
       const current = yield* request(tmp.directory, "/project/current")
       expect(current.status).toBe(200)
       expect(yield* json(current)).toMatchObject({
-        id: "global",
+        id: expect.stringMatching(/^path-/),
         vcs: "git",
         worktree: tmp.directory,
       })

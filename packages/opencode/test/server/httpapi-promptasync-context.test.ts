@@ -129,36 +129,40 @@ describe("HttpApi handler context inheritance", () => {
       const withoutCapture = yield* Deferred.make<Capture>()
       const withCapture = yield* Deferred.make<Capture>()
 
-      yield* HttpRouter.add(
-        "POST",
-        "/stream-probe-without",
+      yield* HttpRouter.use((router) =>
         Effect.gen(function* () {
-          return HttpServerResponse.stream(
-            Stream.fromEffect(
-              Effect.gen(function* () {
-                yield* Deferred.succeed(withoutCapture, yield* captureInstance)
-                return ""
-              }),
-            ).pipe(Stream.encodeText),
-            { contentType: "application/json" },
+          yield* router.add(
+            "POST",
+            "/stream-probe-without",
+            Effect.gen(function* () {
+              return HttpServerResponse.stream(
+                Stream.fromEffect(
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(withoutCapture, yield* captureInstance)
+                    return ""
+                  }),
+                ).pipe(Stream.encodeText),
+                { contentType: "application/json" },
+              )
+            }),
           )
-        }),
-      ).pipe(Layer.provide(instanceContextTestLayer), HttpRouter.serve, Layer.build)
 
-      yield* HttpRouter.add(
-        "POST",
-        "/stream-probe-with",
-        Effect.gen(function* () {
-          const instance = yield* InstanceRef
-          const workspaceID = yield* WorkspaceRef
-          return HttpServerResponse.stream(
-            Stream.fromEffect(
-              Effect.gen(function* () {
-                yield* Deferred.succeed(withCapture, yield* captureInstance)
-                return ""
-              }).pipe(Effect.provideService(InstanceRef, instance), Effect.provideService(WorkspaceRef, workspaceID)),
-            ).pipe(Stream.encodeText),
-            { contentType: "application/json" },
+          yield* router.add(
+            "POST",
+            "/stream-probe-with",
+            Effect.gen(function* () {
+              const instance = yield* InstanceRef
+              const workspaceID = yield* WorkspaceRef
+              return HttpServerResponse.stream(
+                Stream.fromEffect(
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(withCapture, yield* captureInstance)
+                    return ""
+                  }).pipe(Effect.provideService(InstanceRef, instance), Effect.provideService(WorkspaceRef, workspaceID)),
+                ).pipe(Stream.encodeText),
+                { contentType: "application/json" },
+              )
+            }),
           )
         }),
       ).pipe(Layer.provide(instanceContextTestLayer), HttpRouter.serve, Layer.build)

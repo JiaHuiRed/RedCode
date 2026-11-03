@@ -17,6 +17,8 @@ const log = Log.create({ service: "session.projector" })
 function foreign(err: unknown) {
   if (typeof err !== "object" || err === null) return false
   if ("code" in err && err.code === "SQLITE_CONSTRAINT_FOREIGNKEY") return true
+  // 261103 Red DrizzleQueryError 把 SQLiteError 藏在 cause 里，只查外层 code/message 会漏。
+  if ("cause" in err && foreign(err.cause)) return true
   return "message" in err && typeof err.message === "string" && err.message.includes("FOREIGN KEY constraint failed")
 }
 

@@ -1451,6 +1451,7 @@ describe("session.llm.stream", () => {
               additionalProperties: false,
               $schema: "http://json-schema.org/draft-07/schema#",
             },
+            strict: false,
           },
         ])
         expect(executed).toEqual({ args: { query: "weather" }, toolCallId: "call-injected-tool" })
@@ -1539,6 +1540,7 @@ describe("session.llm.stream", () => {
               additionalProperties: false,
               $schema: "http://json-schema.org/draft-07/schema#",
             },
+            strict: false,
           },
         ])
         expect(executed).toEqual({ args: { query: "weather" }, toolCallId: "call-native-tool" })

@@ -60,7 +60,7 @@ function ensureGlobal() {
 describe("migrateFromGlobal", () => {
   it.live("migrates global sessions on first project creation", () =>
     Effect.gen(function* () {
-      // 1. Start with git init but no commits — creates "global" project row
+      // 1. Start with git init but no commits — creates a path fallback project row
       const tmp = yield* tmpdirScoped()
       yield* Effect.promise(() => $`git init`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config user.name "Test"`.cwd(tmp).quiet())
@@ -68,9 +68,10 @@ describe("migrateFromGlobal", () => {
       yield* Effect.promise(() => $`git config commit.gpgsign false`.cwd(tmp).quiet())
       const projects = yield* Project.Service
       const { project: pre } = yield* projects.fromDirectory(tmp)
-      expect(pre.id).toBe(ProjectID.global)
+      expect(pre.id).toMatch(/^path-/)
 
       // 2. Seed a session under "global" with matching directory
+      yield* Effect.sync(() => ensureGlobal())
       const id = legacySessionID()
       yield* Effect.sync(() => seed({ id, dir: tmp, project: ProjectID.global }))
 

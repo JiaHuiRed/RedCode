@@ -83,7 +83,7 @@ describe("tool.webfetch", () => {
           Effect.gen(function* () {
             const result = yield* exec({ url: new URL("/image.svg", url).toString(), format: "html" })
             expect(result.output).toContain("<svg")
-            expect(result.attachments).toBeUndefined()
+            expect(result.attachments).toHaveLength(0)
           }),
       ),
     allowLocal,
@@ -102,7 +102,7 @@ describe("tool.webfetch", () => {
           Effect.gen(function* () {
             const result = yield* exec({ url: new URL("/file.txt", url).toString(), format: "text" })
             expect(result.output).toBe("hello from webfetch")
-            expect(result.attachments).toBeUndefined()
+            expect(result.attachments).toHaveLength(0)
           }),
       ),
     allowLocal,
@@ -124,7 +124,7 @@ describe("tool.webfetch", () => {
           Effect.gen(function* () {
             const result = yield* exec({ url: new URL("/page.html", url).toString(), format: "text" })
             expect(result.output).toBe("Hello world")
-            expect(result.attachments).toBeUndefined()
+            expect(result.attachments).toHaveLength(0)
           }),
       ),
     allowLocal,

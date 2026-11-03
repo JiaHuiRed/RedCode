@@ -109,7 +109,8 @@ describe("Project.fromDirectory", () => {
       const { project } = yield* run((svc) => svc.fromDirectory(tmp))
 
       expect(project).toBeDefined()
-      expect(project.id).toBe(ProjectID.global)
+      // 260722 起，无根提交的 git 目录走按路径计算的 fallback id，不再共用 global sentinel。
+      expect(project.id).toMatch(/^path-/)
       expect(project.vcs).toBe("git")
       expect(project.worktree).toBe(tmp)
 
@@ -162,7 +163,7 @@ describe("Project.fromDirectory git failure paths", () => {
       // rev-list fails because HEAD doesn't exist yet: this is the natural scenario.
       const { project } = yield* run((svc) => svc.fromDirectory(tmp))
       expect(project.vcs).toBe("git")
-      expect(project.id).toBe(ProjectID.global)
+      expect(project.id).toMatch(/^path-/)
       expect(project.worktree).toBe(tmp)
     }),
   )

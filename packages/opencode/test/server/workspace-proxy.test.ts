@@ -56,7 +56,8 @@ function echoWebSocket(request: HttpServerRequest.HttpServerRequest) {
       while (true) {
         const batch = yield* pull
         for (const message of batch) {
-          yield* writer.write(`echo:${String(message)}`)
+          const text = typeof message === "string" ? message : new TextDecoder().decode(message)
+          yield* writer.write(`echo:${text}`)
         }
       }
     })

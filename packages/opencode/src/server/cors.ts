@@ -1,6 +1,6 @@
 import { Context } from "effect"
 
-const redcodeOrigin = /^https:\/\/([a-z0-9-]+\.)*redcode\.ai$/
+const redcodeOrigin = /^https:\/\/([a-z0-9-]+\.)*redcode\.(dev|ai)$/
 
 export type CorsOptions = { readonly cors?: ReadonlyArray<string> }
 
