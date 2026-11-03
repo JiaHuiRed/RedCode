@@ -1705,7 +1705,7 @@ describe("session.message-v2.fromError", () => {
     const cases = [
       {
         code: "insufficient_quota",
-        message: "Quota exceeded. Check your plan and billing details.",
+        message: "（额度已耗尽，已停止自动重试；请检查套餐/余额，或切换模型。）",
       },
       {
         code: "usage_not_included",
