@@ -1,6 +1,7 @@
 import { APICallError } from "ai"
 import { STATUS_CODES } from "http"
 import { iife } from "@/util/iife"
+import { isRecord } from "@/util/record"
 import type { ProviderID } from "./schema"
 
 // Adapted from overflow detection patterns in:
@@ -58,6 +59,107 @@ const REQUEST_BODY_LIMIT_PATTERNS = [
 function isRequestBodyLimit(message: string) {
   if (OVERFLOW_PATTERNS.some((p) => p.test(message))) return false // 明说了上下文的，按上下文处理
   return REQUEST_BODY_LIMIT_PATTERNS.some((p) => p.test(message))
+}
+
+// 261103 Red 订阅额度耗尽必须终止，不能自动重试。
+//
+// GLM Coding Plan（5 小时/7 天窗口）与 ChatGPT 订阅（5 小时窗口）耗尽后都回 429，
+// 但 body 里的业务错误码明确表示「本窗口不会自己恢复」；AI SDK 对所有 429 都标
+// isRetryable=true，旧逻辑因此重试到 RETRY_MAX_ATTEMPTS（10 次 × 最长 10 分钟等待）。
+// 真机记录（2026-10-30/31 两条 gpt-6.1-terra 消息）里一条消息空转 27 分钟后才落错误，
+// 期间用户看到的是「还在请求」，实际每次都撞同一个已耗尽的窗口。这里把这类错误归成
+// non-retryable，并把重置时间写进 message，让会话立刻停下、用户能及时切模型。
+// z.ai 错误码：https://docs.z.ai/api-reference/api-code
+// 决策见 docs/notes/implemented/bug-fix/2026-11-03-subscription-usage-limit-terminal.md
+const USAGE_LIMIT_CODES = new Set([
+  "1113", // 余额不足/无资源包
+  "1308", // {number}{unit} 窗口用量上限（含 5 小时）
+  "1310", // 每周/每月上限
+  "1316", // 5 小时上限且无额外余额
+  "1317", // 7 天上限且无额外余额
+  "1318", // 5 小时上限 + 月消费上限
+  "1319", // 7 天上限 + 月消费上限
+  "1320", // 5 小时上限 + 月消费上限（企业档）
+  "1321", // 7 天上限 + 月消费上限（企业档）
+])
+
+function number(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function headerNumber(headers: Record<string, string> | undefined, name: string) {
+  const raw = headers?.[name]
+  if (raw === undefined) return undefined
+  const parsed = Number.parseFloat(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function durationText(seconds: number) {
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return "不到 1 分钟"
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3_600)
+  const minutes = Math.ceil((total % 3_600) / 60)
+  if (days > 0) return hours > 0 ? `${days} 天 ${hours} 小时` : `${days} 天`
+  if (hours > 0) return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`
+  return `${minutes} 分钟`
+}
+
+function clockText(epochSeconds: number) {
+  const date = new Date(epochSeconds * 1000)
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+}
+
+function subscriptionUsageLimit(
+  error: unknown,
+  headers: Record<string, string> | undefined,
+  fallback: string,
+  status?: number,
+): string | undefined {
+  const detail = isRecord(error) ? error : undefined
+  const code = detail && typeof detail.code === "string" ? detail.code : undefined
+  const type = detail && typeof detail.type === "string" ? detail.type : undefined
+  const raw = detail && typeof detail.message === "string" ? detail.message : fallback
+
+  if (type === "usage_limit_reached") {
+    const windowMinutes =
+      number(detail?.limit_window_minutes) ?? headerNumber(headers, "x-codex-primary-window-minutes")
+    const window =
+      windowMinutes === 300
+        ? "5 小时窗口"
+        : windowMinutes === 10080
+          ? "7 天窗口"
+          : windowMinutes
+            ? `${windowMinutes} 分钟窗口`
+            : "订阅"
+    const plan = detail && typeof detail.plan_type === "string" ? `（${detail.plan_type} 套餐）` : ""
+    const resetAt = number(detail?.resets_at) ?? headerNumber(headers, "x-codex-primary-reset-at")
+    const resetIn = number(detail?.resets_in_seconds) ?? headerNumber(headers, "x-codex-primary-reset-after-seconds")
+    const reset =
+      resetAt !== undefined
+        ? `，将于 ${clockText(resetAt)} 重置${resetIn !== undefined ? `（约 ${durationText(resetIn)} 后）` : ""}`
+        : resetIn !== undefined
+          ? `，约 ${durationText(resetIn)} 后重置`
+          : ""
+    return `ChatGPT 订阅${window}额度已用完${plan}${reset}。已停止自动重试，请切换模型或等待重置后继续。`
+  }
+
+  if (code && USAGE_LIMIT_CODES.has(code)) {
+    return `${raw}（已停止自动重试；${code === "1113" ? "请充值或切换模型。" : "请切换模型，或等待重置后继续。"}）`
+  }
+  if (type === "insufficient_quota" || code === "insufficient_quota") {
+    return `${raw}（额度已耗尽，已停止自动重试；请检查套餐/余额，或切换模型。）`
+  }
+  // 网关可能吃掉业务错误码，只留一句明说限额的文案；429 上这类措辞同样是终止信号。
+  if (
+    status === 429 &&
+    /usage limit (?:has been )?(?:reached|exceeded)|usage_limit_reached|exceeded your current quota|使用上限|额度已?(?:用尽|耗尽)/i.test(
+      raw,
+    )
+  ) {
+    return `${raw}（已停止自动重试；请切换模型，或等待重置后继续。）`
+  }
+  return undefined
 }
 
 function isOpenAiErrorRetryable(e: APICallError) {
@@ -159,6 +261,20 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
   const responseBody = JSON.stringify(body)
   if (body.type !== "error") return
 
+  const usage = subscriptionUsageLimit(
+    isRecord(body?.error) ? body.error : body,
+    undefined,
+    typeof body?.error?.message === "string" ? body.error.message : "",
+  )
+  if (usage) {
+    return {
+      type: "api_error",
+      message: usage,
+      isRetryable: false,
+      responseBody,
+    }
+  }
+
   switch (body?.error?.code) {
     case "context_length_exceeded":
       return {
@@ -224,6 +340,24 @@ export function parseAPICallError(input: { providerID: ProviderID; error: APICal
     return {
       type: "api_error",
       message: m,
+      statusCode: input.error.statusCode,
+      isRetryable: false,
+      responseHeaders: input.error.responseHeaders,
+      responseBody: input.error.responseBody,
+      metadata: input.error.url ? { url: input.error.url } : undefined,
+    }
+  }
+  // 261103 Red 订阅额度耗尽在溢出判断之前拦下：它不该触发压缩，更不该自动重试。
+  const usage = subscriptionUsageLimit(
+    isRecord(body?.error) ? body.error : body,
+    input.error.responseHeaders,
+    m,
+    input.error.statusCode,
+  )
+  if (usage) {
+    return {
+      type: "api_error",
+      message: usage,
       statusCode: input.error.statusCode,
       isRetryable: false,
       responseHeaders: input.error.responseHeaders,

@@ -83,3 +83,94 @@ describe("parseAPICallError request-body limit", () => {
     expect(parse413("Payload Too Large").type).toBe("context_overflow")
   })
 })
+
+// 261103 Red 订阅额度耗尽是终止信号，不是可重试的限流。
+describe("parseAPICallError subscription usage limits", () => {
+  const parseBody = (opts: {
+    message?: string
+    statusCode?: number
+    isRetryable?: boolean
+    responseBody?: string
+    responseHeaders?: Record<string, string>
+    providerID?: string
+  }) =>
+    parseAPICallError({
+      providerID: ProviderID.make(opts.providerID ?? "openai"),
+      error: new APICallError({
+        message: opts.message ?? "The usage limit has been reached",
+        url: "https://example.com/v1/responses",
+        requestBodyValues: {},
+        statusCode: opts.statusCode,
+        isRetryable: opts.isRetryable,
+        responseBody: opts.responseBody,
+        responseHeaders: opts.responseHeaders,
+      }),
+    })
+
+  test("codex usage_limit_reached is terminal and carries the reset window", () => {
+    const result = parseBody({
+      statusCode: 429,
+      isRetryable: true,
+      responseBody: JSON.stringify({
+        error: {
+          type: "usage_limit_reached",
+          message: "The usage limit has been reached",
+          plan_type: "plus",
+          limit_window_minutes: 300,
+          resets_at: 1793423554,
+          resets_in_seconds: 12640,
+        },
+      }),
+      responseHeaders: { "x-codex-primary-window-minutes": "300" },
+    })
+
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.isRetryable).toBe(false)
+    expect(result.message).toContain("5 小时窗口")
+    expect(result.message).toContain("重置")
+    expect(result.message).toContain("已停止自动重试")
+  })
+
+  test("zhipu coding-plan usage-limit codes are terminal", () => {
+    for (const code of ["1113", "1308", "1310", "1316", "1317", "1318", "1319", "1320", "1321"]) {
+      const result = parseBody({
+        providerID: "zhipuai-coding-plan",
+        message: "您已达到使用上限",
+        statusCode: 429,
+        isRetryable: true,
+        responseBody: JSON.stringify({ error: { code, message: "您已达到使用上限" } }),
+      })
+      expect(result.type).toBe("api_error")
+      if (result.type !== "api_error") throw new Error("expected api_error")
+      expect(result.isRetryable).toBe(false)
+      expect(result.message).toContain("已停止自动重试")
+    }
+  })
+
+  test("zhipu transient rate limit stays retryable", () => {
+    const result = parseBody({
+      providerID: "zhipuai-coding-plan",
+      message: "Rate limit reached for requests",
+      statusCode: 429,
+      isRetryable: true,
+      responseBody: JSON.stringify({ error: { code: "1302", message: "Rate limit reached for requests" } }),
+    })
+
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.isRetryable).toBe(true)
+  })
+
+  test("plain usage-limit wording on a 429 is terminal even without a code", () => {
+    const result = parseBody({
+      statusCode: 429,
+      isRetryable: true,
+      responseBody: JSON.stringify({ error: { message: "Usage limit reached for the past 5 hours" } }),
+    })
+
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.isRetryable).toBe(false)
+  })
+})

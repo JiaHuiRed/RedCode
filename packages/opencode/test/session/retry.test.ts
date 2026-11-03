@@ -500,6 +500,41 @@ describe("session.message-v2.fromError", () => {
     expect(result.data.isRetryable).toBe(true)
   })
 
+  // 261103 Red 订阅额度耗尽：旧逻辑对 429 一路自动重试（真机一条消息空转 27 分钟），
+  // 这里守住「归一化即不可重试」这条链，避免上游 parse 改动又把重试放回来。
+  test("converts exhausted ChatGPT usage limits to a non-retryable APIError", () => {
+    const error = new APICallError({
+      message: "The usage limit has been reached",
+      url: "https://chatgpt.com/backend-api/codex/responses",
+      requestBodyValues: {},
+      statusCode: 429,
+      isRetryable: true,
+      responseHeaders: {
+        "x-codex-primary-window-minutes": "300",
+        "x-codex-primary-reset-after-seconds": "12640",
+      },
+      responseBody: JSON.stringify({
+        error: {
+          type: "usage_limit_reached",
+          message: "The usage limit has been reached",
+          plan_type: "plus",
+          limit_window_minutes: 300,
+          resets_at: 1793423554,
+          resets_in_seconds: 12640,
+        },
+      }),
+    })
+    const result = MessageV2.fromError(error, { providerID: ProviderID.make("openai") })
+
+    if (!MessageV2.APIError.isInstance(result)) throw new Error("expected APIError")
+    expect(result.data.isRetryable).toBe(false)
+    expect(result.data.message).toContain("5 小时窗口")
+    expect(result.data.message).toContain("已停止自动重试")
+    // 生产路径先拿原始错误判一次，再拿归一化结果判；两边都必须拒绝重试。
+    expect(SessionRetry.retryable(error, "openai")).toBeUndefined()
+    expect(SessionRetry.retryable(result, "openai")).toBeUndefined()
+  })
+
   test("converts OpenAI server_error stream chunks to retryable APIError", () => {
     const result = MessageV2.fromError(
       {
