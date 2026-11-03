@@ -79,8 +79,8 @@ jobs:
         # CI 的 1.4.2 皆然；filewatcher 开关也已排除。
         # 261103 Red 加 --continue=always：ui 一个测试失败曾让 turbo 在 opencode 之前
         # 停住，主套件 4500+ 用例根本没跑，CI 只报 581 tests / 1 failed。
-        # 261103 Red opencode test:ci 放宽到 60s：4 核 runner 上 prompt/processor/llm
-        # 仍有 30s 超时（本地同文件全过）；只放宽 CI 脚本，本地 test 保持 30s 以保留卡死信号。
+        # 261103 Red 把 prompt/processor/llm/httpapi-sdk 拆到 unit-heavy：全局 60s 实测
+        # 2h7m（106 个 60s 超时），撤回；主套件保持 30s，heavy lane 单独 30s 串行。
         run: bun turbo test:ci --concurrency=1 --continue=always
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
@@ -104,6 +104,54 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
           path: packages/*/.artifacts/unit/junit.xml
+
+  unit-heavy:
+    name: unit heavy (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          save-cache: "false"
+
+      - name: Run heavy unit tests
+        working-directory: packages/opencode
+        run: bun run test:ci:heavy
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+
+      - name: Publish heavy unit report
+        if: always()
+        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
+        with:
+          report_paths: packages/opencode/.artifacts/unit-heavy/junit.xml
+          check_name: "unit heavy results (windows)"
+          detailed_summary: true
+          include_time_in_summary: true
+          fail_on_failure: false
+
+      - name: Upload heavy unit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-heavy-windows-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: packages/opencode/.artifacts/unit-heavy/junit.xml
 
   # 261017 Red HttpApi 与 OpenAPI 两条门禁从 unit job 拆出来。原先它们排在 unit
   # 之后，存量单测失败会让这两步根本不执行——结果被前面的失败遮住，看起来像
@@ -132,6 +180,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+        with:
+          save-cache: "false"
 
       # 260811 cc audit R13: 原条件 runner.os == 'Linux'，但 matrix 只剩 Windows——
       # 三条 --fail-on-missing 门禁在 CI 里从未执行过（假门禁）。摘掉条件转正，

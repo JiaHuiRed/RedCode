@@ -8,7 +8,8 @@
   "scripts": {
     "typecheck": "bun run ../../script/typecheck.ts",
     "test": "bun test --timeout 30000",
-    "test:ci": "mkdir -p .artifacts/unit && bun test --timeout 60000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test:ci": "mkdir -p .artifacts/unit && bun test --timeout 30000 --path-ignore-patterns=\"**/session/prompt.test.ts\" --path-ignore-patterns=\"**/session/processor-effect.test.ts\" --path-ignore-patterns=\"**/session/llm.test.ts\" --path-ignore-patterns=\"**/server/httpapi-sdk.test.ts\" --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test:ci:heavy": "mkdir -p .artifacts/unit-heavy && bun test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit-heavy/junit.xml test/session/prompt.test.ts test/session/processor-effect.test.ts test/session/llm.test.ts test/server/httpapi-sdk.test.ts",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode coverage --scenario-timeout \"60 seconds\" --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode auth --scenario-timeout \"60 seconds\" --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode effect --scenario-timeout \"60 seconds\" --fail-on-missing --fail-on-skip",
     "bench:test": "bun run script/bench-test-suite.ts",
     "bench:budget": "bun run script/bench-performance-budget.ts",
