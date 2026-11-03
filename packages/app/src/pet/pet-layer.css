@@ -209,6 +209,7 @@
 .pet-layer-quota-dismiss {
   border: 1px solid var(--pet-ink, #51202a);
   border-radius: 999px;
+  corner-shape: round;
   background: #fff7f3;
   color: #7d2c3f;
   font-size: var(--font-size-small);
@@ -224,6 +225,7 @@
   padding: 4px 10px;
   border: 1px solid #51202a;
   border-radius: 999px;
+  corner-shape: round;
   background: #fff7f3;
   color: #7d2c3f;
   font-size: var(--font-size-small);

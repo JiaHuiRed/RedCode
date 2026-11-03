@@ -609,6 +609,7 @@
 
 [data-component="button"][data-variant="ghost"][data-action="prompt-model"] {
   border-radius: 999px;
+  corner-shape: round;
   border-color: var(--glass-border);
   background-color: var(--glass-control-fill);
   box-shadow: inset 0 1px 0 var(--glass-edge);
@@ -689,6 +690,7 @@
 [data-slot="select-select-trigger"][data-action="prompt-agent"],
 [data-slot="select-select-trigger"][data-action="prompt-workspace"] {
   border-radius: 999px;
+  corner-shape: round;
   box-shadow: inset 0 1px 0 var(--glass-edge);
 }
 
