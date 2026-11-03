@@ -79,6 +79,8 @@ jobs:
         # CI 的 1.4.2 皆然；filewatcher 开关也已排除。
         # 261103 Red 加 --continue=always：ui 一个测试失败曾让 turbo 在 opencode 之前
         # 停住，主套件 4500+ 用例根本没跑，CI 只报 581 tests / 1 failed。
+        # 261103 Red opencode test:ci 放宽到 60s：4 核 runner 上 prompt/processor/llm
+        # 仍有 30s 超时（本地同文件全过）；只放宽 CI 脚本，本地 test 保持 30s 以保留卡死信号。
         run: bun turbo test:ci --concurrency=1 --continue=always
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
@@ -113,6 +115,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # 261103 Red 与 unit job 对齐：effect 模式的 session.init/session.shell 在
+      # Windows runner 上会因 filewatcher 初始化拖到 30s 超时，关掉后只跑业务路径。
+      OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
