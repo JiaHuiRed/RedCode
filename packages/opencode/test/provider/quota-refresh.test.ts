@@ -5,10 +5,12 @@ import * as proxyModule from "@/util/proxy"
 
 const pending = new Map<string, Array<(response: Response) => void>>()
 let calls = 0
+let lastURL = ""
 
 void mock.module("@/util/proxy", () => ({
   ...proxyModule,
-  fetchWithProxy: (_url: string, options: { headers?: HeadersInit }) => {
+  fetchWithProxy: (url: string, options: { headers?: HeadersInit }) => {
+    lastURL = url
     const authorization = new Headers(options.headers).get("authorization") ?? ""
     calls += 1
     return new Promise<Response>((resolve) => {
@@ -114,4 +116,21 @@ test("starts a new refresh when a credential is restored after switching away", 
 
   expect(calls).toBe(3)
   expect(ProviderQuota.get("zhipuai-coding-plan")?.planType).toBe("A2")
+})
+
+test("fetches Go usage with bearer authentication and publishes a monthly window", async () => {
+  ProviderQuota.clear()
+  pending.clear()
+  const refresh = ProviderQuota.refreshOpenCodeGo("go-key")
+  await waitForRequest("Bearer go-key")
+  expect(lastURL).toBe("https://opencode.ai/zen/go/v1/usage")
+  pending.get("Bearer go-key")?.shift()?.(Response.json({
+    usage: {
+      rolling: { status: "ok", percent: 12, resetsAt: "2026-11-04T08:00:00Z" },
+      weekly: { status: "ok", percent: 23, resetsAt: "2026-11-09T00:00:00Z" },
+      monthly: { status: "ok", percent: 34, resetsAt: "2026-12-04T03:00:00Z" },
+    },
+  }))
+  await refresh
+  expect(ProviderQuota.get("opencode-go")?.monthly?.usedPercent).toBe(34)
 })

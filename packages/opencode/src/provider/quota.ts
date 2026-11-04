@@ -32,7 +32,7 @@ const log = Log.create({ service: "provider.quota" })
 const Window = Schema.Struct({
   /** 0-100。厂商给的就是百分比，不是绝对量。 */
   usedPercent: Schema.Number,
-  /** 窗口长度（分钟）。300 = 5 小时档，10080 = 7 天档。 */
+  /** 窗口长度（分钟）。0 表示按日历计算、长度不固定的月窗口。 */
   windowMinutes: Schema.Number,
   /** 距重置还有多少秒。 */
   resetAfterSeconds: Schema.Number,
@@ -58,6 +58,7 @@ export const Info = Schema.Struct({
   activeLimit: Schema.optional(Schema.String),
   primary: Schema.optional(Window),
   secondary: Schema.optional(Window),
+  monthly: Schema.optional(Window),
   /** x-base-model-inference-limit-name，如 "gpt-reserve"。 */
   reserveName: Schema.optional(Schema.String),
   reserve: Schema.optional(Window),
@@ -134,6 +135,26 @@ export function parseCodingPlan(
     ...(primary ? { primary } : {}),
     ...(secondary ? { secondary } : {}),
   }
+}
+
+// 261104 Red Go 月窗口按订阅周期重置，不假定每个月都有相同天数。
+export function parseOpenCodeGo(body: unknown, now = Date.now()): Info | undefined {
+  const usage = object(object(body)?.usage)
+  if (!usage) return undefined
+  const parseWindow = (value: unknown, windowMinutes: number): Window | undefined => {
+    const entry = object(value)
+    if ((entry?.status !== "ok" && entry?.status !== "rate-limited") || typeof entry.percent !== "number" || typeof entry.resetsAt !== "string") return
+    const usedPercent = entry.percent
+    const resetAt = Math.floor(Date.parse(entry.resetsAt) / 1000)
+    if (!Number.isFinite(usedPercent) || usedPercent < 0 || usedPercent > 100) return
+    if (!Number.isFinite(resetAt) || resetAt <= 0) return
+    return { usedPercent, windowMinutes, resetAt, resetAfterSeconds: Math.max(0, resetAt - Math.floor(now / 1000)) }
+  }
+  const primary = parseWindow(usage.rolling, 300)
+  const secondary = parseWindow(usage.weekly, 10080)
+  const monthly = parseWindow(usage.monthly, 0)
+  if (!primary && !secondary && !monthly) return undefined
+  return { providerID: "opencode-go", capturedAt: now, planType: "OpenCode Go", primary, secondary, monthly }
 }
 
 /**
@@ -231,6 +252,14 @@ function credentialID(apiKey: string) {
  * 按需查询 Coding Plan 监控接口。失败只丢弃本次刷新，不能影响模型请求或现有 GPT 额度。
  */
 export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number], apiKey: string) {
+  return refresh(providerID, apiKey)
+}
+
+export async function refreshOpenCodeGo(apiKey: string) {
+  return refresh("opencode-go", apiKey)
+}
+
+function refresh(providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number] | "opencode-go", apiKey: string) {
   const credential = credentialID(apiKey)
   const flightKey = `${providerID}:${credential}`
   const previous = refreshState.get(providerID)
@@ -241,7 +270,7 @@ export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER
   if (previous && previous.credentialID !== credential) store.delete(key(providerID, undefined))
   refreshState.set(providerID, { credentialID: credential, generation })
 
-  const refresh = refreshCodingPlanRequest(providerID, apiKey, generation)
+  const refresh = refreshRequest(providerID, apiKey, generation)
   let request: Promise<void>
   request = refresh.finally(() => {
     if (inFlight.get(flightKey) === request) inFlight.delete(flightKey)
@@ -250,17 +279,18 @@ export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER
   return request
 }
 
-async function refreshCodingPlanRequest(
-  providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number],
+async function refreshRequest(
+  providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number] | "opencode-go",
   apiKey: string,
   generation: number,
 ) {
-  const baseURL = providerID === "zai-coding-plan" ? "https://api.z.ai" : "https://open.bigmodel.cn"
+  const go = providerID === "opencode-go"
+  const baseURL = go ? "https://opencode.ai/zen/go/v1/usage" : `${providerID === "zai-coding-plan" ? "https://api.z.ai" : "https://open.bigmodel.cn"}/api/monitor/usage/quota/limit`
 
   try {
-    const response = await fetchWithProxy(`${baseURL}/api/monitor/usage/quota/limit`, {
+    const response = await fetchWithProxy(baseURL, {
       headers: {
-        authorization: apiKey,
+        authorization: go ? `Bearer ${apiKey}` : apiKey,
         "accept-language": "zh-CN,zh",
         "content-type": "application/json",
       },
@@ -271,7 +301,8 @@ async function refreshCodingPlanRequest(
       return
     }
 
-    const quota = parseCodingPlan(providerID, await response.json())
+    const body: unknown = await response.json()
+    const quota = go ? parseOpenCodeGo(body) : parseCodingPlan(providerID, body)
     if (!quota) return
     if (refreshState.get(providerID)?.generation !== generation) return
     store.set(key(providerID, undefined), quota)

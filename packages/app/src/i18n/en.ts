@@ -416,6 +416,7 @@ export const dict = {
   "context.summary.title": "Context",
   "context.quota.title": "Plan Quota",
   "context.quota.window.primary": "Primary window",
+  "context.quota.window.monthly": "Monthly",
   "context.quota.window.secondary": "Secondary window",
   "context.quota.window.reserve": "Reserve window",
   "context.quota.resetsAt": "Resets at {{time}}",
@@ -1280,4 +1281,3 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
 }
-

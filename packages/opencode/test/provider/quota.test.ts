@@ -1,6 +1,40 @@
 import { describe, expect, test } from "bun:test"
 import * as ProviderQuota from "@/provider/quota"
 
+describe("ProviderQuota.parseOpenCodeGo", () => {
+  test("maps the three observed windows without guessing the length of a month", () => {
+    const now = Date.parse("2026-11-04T03:00:00Z")
+    const window = (percent: number, resetsAt: string) => ({ status: "ok", percent, resetsAt })
+    const quota = ProviderQuota.parseOpenCodeGo({
+      usage: {
+        rolling: window(12, "2026-11-04T08:00:00Z"),
+        weekly: window(34, "2026-11-09T00:00:00Z"),
+        monthly: window(56, "2026-12-04T03:00:00Z"),
+      },
+    }, now)
+    expect(quota?.primary).toEqual({ usedPercent: 12, windowMinutes: 300, resetAt: Date.parse("2026-11-04T08:00:00Z") / 1000, resetAfterSeconds: 18000 })
+    expect(quota?.secondary?.usedPercent).toBe(34)
+    expect(quota?.monthly?.usedPercent).toBe(56)
+    expect(quota?.monthly?.windowMinutes).toBe(0)
+  })
+
+  test("omits unlimited or invalid windows and rejects a missing usage payload", () => {
+    expect(ProviderQuota.parseOpenCodeGo({})).toBeUndefined()
+    expect(ProviderQuota.parseOpenCodeGo({ usage: {
+      rolling: { status: "ok", percent: 101, resetsAt: "2026-11-04T08:00:00Z" },
+      weekly: { status: "ok", percent: 20, resetsAt: "bad" },
+      monthly: { status: "unlimited", percent: 0, resetsAt: "2026-12-04T03:00:00Z" },
+    } })).toBeUndefined()
+  })
+
+  test("keeps a rate-limited window visible", () => {
+    const quota = ProviderQuota.parseOpenCodeGo({
+      usage: { rolling: { status: "rate-limited", percent: 100, resetsAt: "2026-11-04T08:00:00Z" } },
+    })
+    expect(quota?.primary?.usedPercent).toBe(100)
+  })
+})
+
 describe("ProviderQuota.parseCodingPlan", () => {
   test("maps the five-hour and weekly token windows", () => {
     const now = Date.parse("2026-09-19T08:00:00Z")

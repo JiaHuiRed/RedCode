@@ -360,6 +360,7 @@ export const dict = {
   "context.summary.cacheHit": "キャッシュヒット",
   "context.quota.title": "プラン残量",
   "context.quota.window.primary": "プライマリ枠",
+  "context.quota.window.monthly": "月間枠",
   "context.quota.window.secondary": "セカンダリ枠",
   "context.quota.window.reserve": "予備枠",
   "context.quota.resetsAt": "{{time}} にリセット",
@@ -1192,4 +1193,3 @@ export const dict = {
   "settings.general.row.pinchZoom.title": "ピンチズーム",
   "settings.general.row.pinchZoom.description": "トラックパッドのピンチと Ctrl+スクロールでのズームを許可",
 }
-

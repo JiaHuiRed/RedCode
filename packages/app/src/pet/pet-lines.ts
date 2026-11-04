@@ -15,6 +15,7 @@ export function petQuotaLines(quotas: ProviderQuota[]): string[] {
     const windows = [
       ["主窗口", quota.primary],
       ["次窗口", quota.secondary],
+      ["月额度", quota.monthly],
       ["备用窗口", quota.reserve],
     ] as const
     const details = windows.flatMap(([name, window]) => {
@@ -26,7 +27,7 @@ export function petQuotaLines(quotas: ProviderQuota[]): string[] {
         ? `${window.usedPercent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`
         : "未知"
       const reset = time(window.resetAt, 1_000)
-      return [`${name}（${minutes}）已用 ${used}${reset ? ` · 重置 ${reset}` : ""}`]
+      return [`${name}${name === "月额度" ? "" : `（${minutes}）`}已用 ${used}${reset ? ` · 重置 ${reset}` : ""}`]
     })
     const captured = time(quota.capturedAt, 1)
     const credits = quota.credits

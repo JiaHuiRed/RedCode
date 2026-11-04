@@ -61,6 +61,7 @@ function View(props: { api: TuiPluginApi }) {
     label: string
     window: { usedPercent?: number | string; windowMinutes?: number | string; resetAt?: number | string }
     showDuration?: boolean
+    monthly?: boolean
   }) => {
     const pct = () => Number(props.window.usedPercent ?? 0)
     const minutes = () => Number(props.window.windowMinutes ?? 0)
@@ -81,7 +82,7 @@ function View(props: { api: TuiPluginApi }) {
           <text fg={theme().textMuted}>{duration(minutes())}</text>
         </Show>
         <Show when={at() > 0}>
-          <text fg={theme().textMuted}>→ {reset(at(), minutes() >= 1440)}</text>
+          <text fg={theme().textMuted}>→ {reset(at(), props.monthly || minutes() >= 1440)}</text>
         </Show>
       </box>
     )
@@ -124,10 +125,13 @@ function View(props: { api: TuiPluginApi }) {
                 <Show when={q.secondary}>
                   <WindowRow label="Weekly" window={q.secondary!} showDuration={false} />
                 </Show>
+                <Show when={q.monthly}>
+                  <WindowRow label="Monthly" window={q.monthly!} monthly />
+                </Show>
                 <Show when={q.reserve}>
                   <WindowRow label={q.reserveName ?? "Reserve"} window={q.reserve!} />
                 </Show>
-                <Show when={!q.primary && !q.secondary && !q.reserve}>
+                <Show when={!q.primary && !q.secondary && !q.reserve && !q.monthly}>
                   <text fg={theme().textMuted}>—</text>
                 </Show>
               </box>

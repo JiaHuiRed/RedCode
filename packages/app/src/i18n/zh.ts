@@ -418,6 +418,7 @@ export const dict = {
   "context.summary.title": "上下文",
   "context.quota.title": "套餐额度",
   "context.quota.window.primary": "5小时额度",
+  "context.quota.window.monthly": "月额度",
   "context.quota.window.secondary": "周额度",
   "context.quota.window.reserve": "备用窗口",
   "context.quota.resetsAt": "重置于 {{time}}",
@@ -1252,4 +1253,3 @@ export const dict = {
   "sidebar.empty.title": "无已打开项目",
   "session.review.noUncommittedChanges": "暂无未提交变更",
 } satisfies Partial<Record<Keys, string>>
-

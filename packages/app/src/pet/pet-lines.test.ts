@@ -75,6 +75,18 @@ describe("pet-lines", () => {
     }
   })
 
+  it("shows monthly usage and its reset date without a zero-minute duration", () => {
+    const resetAt = 1_700_003_600
+    const quota = {
+      providerID: "opencode", planType: "go", capturedAt: 0,
+      monthly: { usedPercent: 75, windowMinutes: 0, resetAt, resetAfterSeconds: 1 },
+    }
+    const line = petQuotaLines([quota])[0]!
+    expect(line).toContain("月额度已用 75%")
+    expect(line).toContain(`重置 ${new Date(resetAt * 1_000).toLocaleString()}`)
+    expect(line).not.toContain("0分钟")
+  })
+
   it("reports credit flags and finite values independently without inventing missing values", () => {
     const base: ProviderQuota = { providerID: "p", planType: "plan", capturedAt: 0 }
     expect(petQuotaLines([base])[0]).not.toContain("Credits：")

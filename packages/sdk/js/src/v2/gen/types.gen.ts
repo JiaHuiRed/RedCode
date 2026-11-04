@@ -768,6 +768,12 @@ export type ProviderQuota = {
     resetAfterSeconds: number | "Infinity" | "-Infinity" | "NaN"
     resetAt: number | "Infinity" | "-Infinity" | "NaN"
   }
+  monthly?: {
+    usedPercent: number | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "Infinity" | "-Infinity" | "NaN"
+  }
   reserveName?: string
   reserve?: {
     usedPercent: number | "Infinity" | "-Infinity" | "NaN"
@@ -2083,6 +2089,10 @@ export type Config = {
        * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
        */
       idleMs?: number
+      /**
+       * Silence (ms) allowed after step-finish (usage received) before the stream is cut (default: 60000). Targets gateways that deliver the full response body but hang without closing the stream; pure-thinking silence before step-finish still uses idleMs.
+       */
+      idleAfterUsageMs?: number
       /**
        * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
        */

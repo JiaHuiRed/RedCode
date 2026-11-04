@@ -14597,6 +14597,57 @@
             "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
             "additionalProperties": false
           },
+          "monthly": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
           "reserveName": {
             "type": "string"
           },
@@ -17614,6 +17665,12 @@
                     "minimum": 1000,
                     "maximum": 1800000,
                     "description": "Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking."
+                  },
+                  "idleAfterUsageMs": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 600000,
+                    "description": "Silence (ms) allowed after step-finish (usage received) before the stream is cut (default: 60000). Targets gateways that deliver the full response body but hang without closing the stream; pure-thinking silence before step-finish still uses idleMs."
                   },
                   "maxChars": {
                     "type": "integer",

@@ -98,6 +98,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
             : (configured?.key ?? process.env.ZHIPU_API_KEY)
         if (apiKey) yield* Effect.promise(() => ProviderQuota.refreshCodingPlan(providerID, apiKey))
       }
+      const go = yield* provider.getProvider(ProviderID.make("opencode-go"))
+      const goKey = typeof go?.options.apiKey === "string" ? go.options.apiKey : go?.key
+      if (goKey) yield* Effect.promise(() => ProviderQuota.refreshOpenCodeGo(goKey))
       return ProviderQuota.list()
     })
 
