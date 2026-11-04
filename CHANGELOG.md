@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.15.0] - 2026-11-04
 
 - **修复 provider 失败后 `prompt.loop` 挂死**（`session/processor.ts`）：`idleAfterUsageMs` 短窗用 `Effect.race` 与 step-finish 信号竞速，但 Effect v4 的 `race` 只认第一个**成功**——provider 返回 4xx 时流立即失败，早失败被忽略、继续等永不到来的 finish 事件，loop 挂死（CI smoke 三个用例 30s 超时，`prompt.test.ts:1044/1266/2954`）。改用 `raceFirst`，任一分支完成即定胜负、失败照常传播；短窗语义不变。验证：prompt 102 pass / 13 skip、processor-effect 34 pass、smoke lane 全绿、typecheck exit 0。
 - **TUI Context 构成支持键盘操作**（`sidebar/context-composition.tsx`、`config/keybind.ts`）：侧栏折叠件此前只有 `onMouseDown`，纯键盘用户无法展开 Composition 及组明细。新增 `sidebar_composition_toggle`（默认 `<leader>i`）切换 Composition，键盘展开时一并显示 system/tools/messages 三组明细、再按整块收起；鼠标仍保留逐组开合。键位可经 `keybind` 配置覆盖。验证：sidebar-composition 5 pass（键盘用例摘掉实现即变红）、sidebar-context 通过、typecheck exit 0。
