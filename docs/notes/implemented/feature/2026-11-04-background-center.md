@@ -1,6 +1,6 @@
 # 后台活动中心（TUI 阶段一）
 
-状态:implemented（TUI 阶段 + GUI 只读批次；GUI 终止与持久化待做）
+状态:implemented（TUI 面板 + GUI 只读/终止 + 任务状态持久化；PTY 孤儿记录待做）
 
 ## 问题
 
@@ -31,6 +31,18 @@
 - 本批先做只读；终止在第二批补齐（`POST cancel` / `pty.remove` 行尾按钮 + 二次确认）。
 - 已知边界：宠物浮层（`z-index: 40`）在当前窗口高度下会压住输入框底栏右侧，连原有的上下文数字一起被压；这是既有布局问题，与本功能无关，需要时另修。
 
+## 持久化（261104 第二批）
+
+- 落盘位置：`<data>/background/<Bun.hash(workspace)>.json`，按工作区隔离（内存侧本来就是 InstanceState）。
+- 写：同目录 temp + `AppFileSystem.writeFileAtomic`（带 Windows EACCES/EBUSY/EPERM 重试），
+  每个目标文件一条 promise 链串行化——并发完成的任务同时写同一个文件时，交错 rename 会让旧快照盖掉新快照。
+- 内容：id/type/title/status/started_at/completed_at/error/metadata，**不含 output**；完成态最多 50 条。
+- 读：启动时 hydrate。上次退出时仍 running 的任务 fiber 已随进程消失，直接标成 error 并写明
+  「上次运行未正常结束」，避免面板出现永远在跑、取消也打不到的幽灵任务。
+- `wait` 不再按 status 提前返回：finish 的顺序是「改状态 → 落盘 → 唤醒 done」，提前返回会让
+  调用方在文件还是 running 时读到已完成。done 一律已决，已完成任务 await 它是即时返回。
+- 目录走 `Context.Reference`（同 soul 的先例），测试用 `Layer.succeed` 指到临时目录。
+
 ## 验证
 
 - httpapi：coverage / auth 各 172 pass（含 `background.list`、`background.cancel` 两条场景）。
@@ -38,3 +50,4 @@
 - `bun run typecheck` exit 0；`check:openapi-drift` 通过（SDK 与 openapi 同步重生成）。
 - GUI：`packages/app` typecheck exit 0、i18n parity 4 pass；浏览器实测「后台」按钮 → 空态 → 临时 PTY 出现后计数与列表正确，清理后恢复为空。
 - GUI 终止：浏览器实测 PTY 行点「终止」→ 二次确认 → 进程消失、`GET /pty` 归零；任务分支由 httpapi `background.cancel` 场景覆盖。
+- 持久化：`bun test ./test/background` 11 pass（新增落盘往返、hydrate 归位、无状态文件三条）；opencode 与 app typecheck exit 0。

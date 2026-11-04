@@ -21,6 +21,7 @@ type Job = {
   status: JobStatus
   startedAt: number | "Infinity" | "-Infinity" | "NaN"
   completedAt?: number | "Infinity" | "-Infinity" | "NaN"
+  error?: string
   sessionID?: string
 }
 
@@ -86,7 +87,7 @@ export function DialogBackground() {
         kind: "job",
         title: job.title ?? job.type,
         status: language.t(`dialog.background.status.${job.status}`),
-        detail: `${language.t("dialog.background.type.job")} · ${elapsed(Number(job.completedAt ?? now) - Number(job.startedAt))}`,
+        detail: `${language.t("dialog.background.type.job")} · ${elapsed(Number(job.completedAt ?? now) - Number(job.startedAt))}${job.error ? ` · ${job.error}` : ""}`,
         running: job.status === "running",
         sessionID: job.sessionID,
       }))

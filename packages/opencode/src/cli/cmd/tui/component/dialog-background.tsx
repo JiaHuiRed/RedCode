@@ -17,6 +17,7 @@ type Job = {
   status: "running" | "completed" | "error" | "cancelled"
   startedAt: Num
   completedAt?: Num
+  error?: string
 }
 
 type Terminal = {
@@ -89,7 +90,8 @@ export function DialogBackground() {
 
   function describeJob(job: Job, now: number) {
     const elapsed = Locale.duration(Number(job.completedAt ?? now) - Number(job.startedAt))
-    return `${job.type} · ${JOB_STATUS[job.status]} · ${elapsed}`
+    const base = `${job.type} · ${JOB_STATUS[job.status]} · ${elapsed}`
+    return job.error ? `${base} · ${job.error}` : base
   }
 
   const options = createMemo<DialogSelectOption<Item>[]>(() => {

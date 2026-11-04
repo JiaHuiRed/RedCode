@@ -1,9 +1,18 @@
-import { describe, expect } from "bun:test"
-import { Deferred, Effect } from "effect"
+import { afterAll, describe, expect } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { Deferred, Effect, Layer } from "effect"
 import { BackgroundJob } from "@/background/job"
+import { BackgroundStore } from "@/background/store"
 import { testEffect } from "../lib/effect"
+import { TestInstance } from "../fixture/fixture"
 
-const it = testEffect(BackgroundJob.defaultLayer)
+// 261104 Red 落盘目录指到临时目录：这些用例每次都会写状态文件，不能落到真实 data 目录。
+const store = await mkdtemp(path.join(os.tmpdir(), "redcode-bg-store-"))
+afterAll(() => rm(store, { recursive: true, force: true }))
+
+const it = testEffect(Layer.mergeAll(BackgroundJob.defaultLayer, Layer.succeed(BackgroundStore.directory, store)))
 
 describe("background.job", () => {
   it.instance("tracks started jobs through completion", () =>
@@ -122,6 +131,23 @@ describe("background.job", () => {
       if (job.metadata) job.metadata.value = "changed"
 
       expect((yield* jobs.get(job.id))?.metadata?.value).toBe("initial")
+    }),
+  )
+
+  it.instance("persists finished jobs for the next launch", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const jobs = yield* BackgroundJob.Service
+      const job = yield* jobs.start({ type: "test", title: "persisted", run: Effect.succeed("done") })
+      yield* jobs.wait({ id: job.id })
+
+      const snapshot = yield* BackgroundStore.read(store, test.directory)
+      const record = snapshot?.records.find((item) => item.id === job.id)
+
+      expect(record?.status).toBe("completed")
+      expect(record?.title).toBe("persisted")
+      // output 可能到数 MB，落盘只留定位与状态
+      expect(JSON.stringify(record)).not.toContain("done")
     }),
   )
 

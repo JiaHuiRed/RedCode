@@ -1,5 +1,6 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
+import { BackgroundStore } from "@/background/store"
 import { Cause, Clock, Context, Deferred, Effect, Fiber, Layer, Scope, SynchronizedRef } from "effect"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
@@ -25,6 +26,8 @@ type Active = {
 type State = {
   jobs: SynchronizedRef.SynchronizedRef<Map<string, Active>>
   scope: Scope.Scope
+  store: string
+  directory: string
 }
 
 type FinishResult = {
@@ -105,13 +108,31 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const state = yield* InstanceState.make<State>(
-      Effect.fn("BackgroundJob.state")(function* () {
+      Effect.fn("BackgroundJob.state")(function* (ctx) {
+        // 261104 Red 启动时把上次落盘的任务读回来：running 的按「未正常结束」归位成 error，
+        // 否则面板会显示永远在跑、取消也打不到的幽灵任务。
+        const store = yield* BackgroundStore.directory
+        const snapshot = yield* BackgroundStore.read(store, ctx.directory)
+        const restored = new Map<string, Active>()
+        for (const info of BackgroundStore.hydrate(snapshot)) {
+          const done = yield* Deferred.make<Info>()
+          yield* Deferred.succeed(done, info).pipe(Effect.ignore)
+          restored.set(info.id, { info, done })
+        }
         return {
-          jobs: yield* SynchronizedRef.make(new Map()),
+          jobs: yield* SynchronizedRef.make(restored),
           scope: yield* Scope.Scope,
+          store,
+          directory: ctx.directory,
         }
       }),
     )
+
+    const persist = Effect.fn("BackgroundJob.persist")(function* () {
+      const s = yield* InstanceState.get(state)
+      const infos = Array.from((yield* SynchronizedRef.get(s.jobs)).values()).map(snapshot)
+      yield* BackgroundStore.write(s.store, s.directory, infos)
+    })
 
     const finish = Effect.fn("BackgroundJob.finish")(function* (
       id: string,
@@ -141,6 +162,8 @@ export const layer = Layer.effect(
           return [{ info: snapshot(next), done: job.done }, prune(new Map(jobs).set(id, next), completed_at)]
         },
       )
+      // 先落盘再唤醒 waiter：测试和界面上「看到完成」时，下一次启动也该能看到这一条。
+      if (result.info) yield* persist()
       if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
       return result.info
     })
@@ -164,7 +187,7 @@ export const layer = Layer.effect(
           const id = input.id ?? Identifier.ascending("job")
           const started_at = yield* Clock.currentTimeMillis
           const done = yield* Deferred.make<Info>()
-          return yield* SynchronizedRef.modifyEffect(
+          const started = yield* SynchronizedRef.modifyEffect(
             s.jobs,
             Effect.fnUntraced(function* (jobs) {
               const existing = jobs.get(id)
@@ -195,6 +218,8 @@ export const layer = Layer.effect(
               return [snapshot(job), prune(jobs, started_at).set(id, job)] as const
             }),
           )
+          yield* persist()
+          return started
         }),
       )
     })
@@ -202,7 +227,9 @@ export const layer = Layer.effect(
     const wait: Interface["wait"] = Effect.fn("BackgroundJob.wait")(function* (input) {
       const job = (yield* SynchronizedRef.get((yield* InstanceState.get(state)).jobs)).get(input.id)
       if (!job) return { timedOut: false }
-      if (job.info.status !== "running") return { info: snapshot(job), timedOut: false }
+      // 261104 Red 不能按 status 提前返回：finish 是先改状态、后落盘、最后唤醒 done，
+      // 提前返回会让调用方在文件还是 running 时就读到「已完成」。done 一律已决，
+      // 已完成的任务 await 它是即时返回。
       if (input.timeout === undefined) return { info: yield* Deferred.await(job.done), timedOut: false }
       if (input.timeout <= 0) return { info: snapshot(job), timedOut: true }
       const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(input.timeout))
