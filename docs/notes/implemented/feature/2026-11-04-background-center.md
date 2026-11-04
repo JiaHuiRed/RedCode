@@ -1,6 +1,6 @@
 # 后台活动中心（TUI 阶段一）
 
-状态:implemented（TUI 阶段；GUI 与持久化待做）
+状态:implemented（TUI 阶段 + GUI 只读批次；GUI 终止与持久化待做）
 
 ## 问题
 
@@ -24,8 +24,16 @@
 - 列表不含输出详情；需要看输出时仍走会话记录。后续可加 detail 端点，但必须带字节上限。
 - GUI 复用同一接口即可，不需要新的服务端契约。
 
+## GUI 第一批（261104）
+
+- 入口与 TUI 对齐：输入框底栏在上下文指示器后加「后台」按钮，运行中显示橙点 + 数量（10 秒轮询；服务端无该路由时静默）。
+- 面板（`app/src/components/background-activity.tsx`）：一张表列后台任务与 PTY（状态/时长/PID/工作区），两秒轮询；点任务行跳转对应会话。
+- 本批**只读**：终止动作（`POST cancel` / `pty.remove`）留到第二批，配二次确认。
+- 已知边界：宠物浮层（`z-index: 40`）在当前窗口高度下会压住输入框底栏右侧，连原有的上下文数字一起被压；这是既有布局问题，与本功能无关，需要时另修。
+
 ## 验证
 
-- `bun run test:httpapi` 全量三遍（coverage/auth/effect）172 pass / 0 fail（含 `background.list`、`background.cancel` 两条场景）。
+- httpapi：coverage / auth 各 172 pass（含 `background.list`、`background.cancel` 两条场景）。
 - 定向：`--mode effect --include background` 2 pass。
 - `bun run typecheck` exit 0；`check:openapi-drift` 通过（SDK 与 openapi 同步重生成）。
+- GUI：`packages/app` typecheck exit 0、i18n parity 4 pass；浏览器实测「后台」按钮 → 空态 → 临时 PTY 出现后计数与列表正确，清理后恢复为空。

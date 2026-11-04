@@ -34,6 +34,7 @@ import { DockShellForm } from "@redcode-ai/ui/dock-surface"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { BackgroundActivityButton } from "@/components/background-activity"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -1767,6 +1768,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
                 开上下文面板走右侧常驻 tab。 */}
             <SessionContextUsage placement="top" />
+            <BackgroundActivityButton />
           </div>
           <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
             <Button
