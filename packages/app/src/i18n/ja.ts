@@ -314,6 +314,11 @@ export const dict = {
   "dialog.background.status.completed": "完了",
   "dialog.background.status.error": "失敗",
   "dialog.background.status.cancelled": "キャンセル",
+  "dialog.background.stop.action": "停止",
+  "dialog.background.stop.title": "バックグラウンド活動を停止",
+  "dialog.background.stop.description":
+    "「{{title}}」を直ちに停止します。ジョブは入れ子のサブタスクごと中断され、ターミナルはプロセスツリー全体を閉じます。",
+  "dialog.background.stop.confirm": "停止",
   "prompt.background.button": "バックグラウンド",
   "prompt.background.running": "バックグラウンド {{count}}",
   "dialog.lsp.empty": "ファイルタイプから自動検出されたLSP",

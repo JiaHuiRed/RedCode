@@ -1,5 +1,5 @@
 // 261104 Red GUI 版后台活动中心：与 TUI 共用 GET /background / POST cancel 契约。
-// 第一批只读：列后台任务与 PTY、点任务行跳到对应会话；终止留在第二批。
+// 点任务行跳到对应会话；运行中的条目带「终止」，确认后任务走 cancelTree、终端走 pty.remove。
 import { createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { Button } from "@redcode-ai/ui/button"
@@ -8,6 +8,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { List } from "@redcode-ai/ui/list"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { showToast } from "@redcode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 
@@ -20,6 +21,7 @@ type Job = {
   status: JobStatus
   startedAt: number | "Infinity" | "-Infinity" | "NaN"
   completedAt?: number | "Infinity" | "-Infinity" | "NaN"
+  sessionID?: string
 }
 
 type Terminal = {
@@ -86,7 +88,7 @@ export function DialogBackground() {
         status: language.t(`dialog.background.status.${job.status}`),
         detail: `${language.t("dialog.background.type.job")} · ${elapsed(Number(job.completedAt ?? now) - Number(job.startedAt))}`,
         running: job.status === "running",
-        sessionID: job.id,
+        sessionID: job.sessionID,
       }))
     const terminals = [...current.terminals]
       .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
@@ -103,6 +105,27 @@ export function DialogBackground() {
 
   const running = createMemo(() => rows().filter((row) => row.running).length)
 
+  const stop = (row: Row) => {
+    dialog.show(() => (
+      <ConfirmStop
+        row={row}
+        onDone={async () => {
+          try {
+            if (row.kind === "job") await sdk.client.background.cancel({ jobID: row.id })
+            else await sdk.client.pty.remove({ ptyID: row.id })
+          } catch (error) {
+            showToast({
+              variant: "error",
+              title: language.t("common.requestFailed"),
+              description: error instanceof Error ? error.message : String(error),
+            })
+          }
+          void refetch()
+        }}
+      />
+    ))
+  }
+
   return (
     <Dialog
       title={language.t("dialog.background.title")}
@@ -115,9 +138,9 @@ export function DialogBackground() {
         items={rows}
         filterKeys={["title", "kind", "status"]}
         onSelect={(row) => {
-          if (!row || row.kind !== "job" || !params.dir) return
+          if (!row || row.kind !== "job" || !row.sessionID || !params.dir) return
           dialog.close()
-          navigate(`/${params.dir}/session/${row.id}`)
+          navigate(`/${params.dir}/session/${row.sessionID}`)
         }}
       >
         {(row) => (
@@ -136,12 +159,57 @@ export function DialogBackground() {
               </div>
               <span class="truncate text-11-regular text-text-weaker">{row.detail}</span>
             </div>
-            <Show when={row.kind === "job"}>
-              <Icon name="chevron-right" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-            </Show>
+            <div class="flex shrink-0 items-center gap-1">
+              <Show when={row.running}>
+                <span onClick={(event) => event.stopPropagation()}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="small"
+                    class="h-6 px-1.5 text-11-medium text-v2-text-text-faint hover:text-v2-state-fg-danger"
+                    onClick={() => stop(row)}
+                  >
+                    {language.t("dialog.background.stop.action")}
+                  </Button>
+                </span>
+              </Show>
+              <Show when={row.kind === "job" && row.sessionID && params.dir}>
+                <Icon name="chevron-right" size="small" class="text-v2-icon-icon-muted" />
+              </Show>
+            </div>
           </div>
         )}
       </List>
+    </Dialog>
+  )
+}
+
+function ConfirmStop(props: { row: Row; onDone: () => Promise<void> }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  return (
+    <Dialog
+      title={language.t("dialog.background.stop.title")}
+      description={language.t("dialog.background.stop.description", { title: props.row.title })}
+      fit
+    >
+      <div class="flex flex-col gap-4 pb-3 pl-6 pr-2.5">
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            size="large"
+            onClick={() => {
+              dialog.close()
+              void props.onDone()
+            }}
+          >
+            {language.t("dialog.background.stop.confirm")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   )
 }

@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **GUI 后台活动面板支持终止**（`app/src/components/background-activity.tsx`、三语 i18n）：运行中的任务与终端行尾新增「终止」，二次确认后任务走 `cancelTree`（连同嵌套子任务）、终端走 `pty.remove`（整棵进程树）。顺带修正任务行的会话归属：此前把 job id 当成 session id，点任务行跳不到对应会话。验证：app typecheck、i18n parity 4 pass；浏览器实测造一个 PTY → 面板显示 → 点终止 → 确认 → 进程消失、列表归零。
 - **GUI 后台活动面板（第一批：只读 + 跳转）**（`app/src/components/background-activity.tsx`、`prompt-input.tsx`、三语 i18n）：输入框底栏在上下文指示器后新增「后台」按钮，有运行中任务时显示橙点与数量（10 秒轮询）；点击打开「后台活动」面板，同表列出后台任务与 PTY 终端（状态、运行时长、PID、工作区），点任务行跳到对应会话。只读，终止动作留到第二批。验证：packages/app typecheck、i18n parity 4 pass，浏览器实测（临时 PTY 出现后计数与列表正确，清理后恢复为空）。
 - **新增 TUI 后台活动面板**（`server/.../groups/background.ts`、`handlers/background.ts`、`tui/component/dialog-background.tsx`、`background-button.tsx`）：输入框模型行右侧常驻「后台」按钮（有运行中任务时显示 `● 后台 N` 并高亮，10 秒轮询），点一下即打开面板；`ctrl+x j`（或 `/background`）仍保留。面板把引擎登记的后台子任务与 PTY 终端放进同一张表，显示状态、类型、运行时长、PID 与工作区；每 2 秒刷新，运行中的条目确认后可终止（任务连同嵌套子任务走 `cancelTree`，终端走既有 `pty.remove` 的整树终止）。服务端新增 `GET /background`（不返回子代理完整输出，避免多 MB 载荷）与幂等的 `POST /background/{jobID}/cancel`。面板只展示 RedCode 登记过的活动，不扫描系统进程、不冒充进程管理器。决策见 [后台活动中心](docs/notes/implemented/feature/2026-11-04-background-center.md)。验证：`test:httpapi` coverage/auth 各 172 pass、定向 effect 2 pass，typecheck、openapi drift、TUI 渲染测试通过。
 - **输入框分层与强调色描边**（`tui/component/prompt/index.tsx`）：标题栏与圆角外框改用 `backgroundPanel`，输入区保持 `backgroundElement`，形成「外框深、输入区浅」的层次（此前整框同色，看起来比旧版更淡）；整圈边框改用 agent 色描边（与 `borderSubtle` 0.8 混合），标题栏贴输入框边框左对齐、不留空行，项目名与路径加粗。渲染帧实测 bg `20,21,28` 对 `26,27,38`、边框色向强调色偏移，窄屏/长路径不折行。

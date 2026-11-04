@@ -349,6 +349,11 @@ export const dict = {
   "dialog.background.status.completed": "Completed",
   "dialog.background.status.error": "Failed",
   "dialog.background.status.cancelled": "Cancelled",
+  "dialog.background.stop.action": "Stop",
+  "dialog.background.stop.title": "Stop background activity",
+  "dialog.background.stop.description":
+    "Stops \"{{title}}\" immediately. Jobs stop together with their nested sub-tasks; terminals close the whole process tree.",
+  "dialog.background.stop.confirm": "Stop",
   "prompt.background.button": "Background",
   "prompt.background.running": "Background {{count}}",
   "dialog.usageExceeded.dontShowAgain": "Don't show again",

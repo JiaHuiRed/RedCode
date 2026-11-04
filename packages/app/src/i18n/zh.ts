@@ -364,6 +364,11 @@ export const dict = {
   "dialog.background.status.completed": "已完成",
   "dialog.background.status.error": "失败",
   "dialog.background.status.cancelled": "已取消",
+  "dialog.background.stop.action": "终止",
+  "dialog.background.stop.title": "终止后台活动",
+  "dialog.background.stop.description":
+    "「{{title}}」会立即停止。任务连同嵌套子任务一起中断，终端会关闭整棵进程树。",
+  "dialog.background.stop.confirm": "终止",
   "prompt.background.button": "后台",
   "prompt.background.running": "后台 {{count}}",
   "dialog.usageExceeded.dontShowAgain": "不再提示",
