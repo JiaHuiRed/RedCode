@@ -417,6 +417,17 @@ const scenarios: Scenario[] = [
     }),
   http.protected.get("/pty/shells", "pty.shells").json(200, array),
   http.protected.get("/pty", "pty.list").json(200, array),
+  http.protected.get("/background", "background.list").json(200, array),
+  http.protected
+    .post("/background/{jobID}/cancel", "background.cancel")
+    .at((ctx) => ({
+      path: route("/background/{jobID}/cancel", { jobID: "missing_background_job" }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(Array.isArray(body.cancelled), "cancelling an unknown job is idempotent and returns an empty list")
+    }),
   http.protected
     .post("/pty", "pty.create")
     .mutating()

@@ -21,6 +21,12 @@ import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
 import { V2Api } from "./groups/v2"
+// 261104 Red background 组必须放在其它组之后求值：它经由 instance-context 拉到
+// project/instance-store 这条链，若在 permission/session 的初始化环之前求值，
+// session.ts 顶层的 Permission.Ruleset 会命中 TDZ（Cannot access 'Ruleset' before
+// initialization）。前面任一组的 import 会先把这个环走完。改动本段顺序时跑
+// `bun run test:httpapi` 验证，别按字母重排。
+import { BackgroundApi } from "./groups/background"
 import { Authorization } from "./middleware/authorization"
 import { SchemaErrorMiddleware } from "./middleware/schema-error"
 
@@ -51,6 +57,7 @@ export const InstanceHttpApi = HttpApi.make("redcode-instance")
   .addHttpApi(V2Api)
   .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
+  .addHttpApi(BackgroundApi)
   .middleware(SchemaErrorMiddleware)
 
 export const RedCodeHttpApi = HttpApi.make("redcode")

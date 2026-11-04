@@ -40,6 +40,7 @@ import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
 import { DialogAgent } from "@tui/component/dialog-agent"
+import { DialogBackground } from "@tui/component/dialog-background"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogConsoleOrg } from "@tui/component/dialog-console-org"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
@@ -458,6 +459,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         hidden: true,
         run: () => {
           dialog.replace(() => <CommandPaletteDialog />)
+        },
+      },
+      {
+        name: "background.list",
+        title: "后台活动",
+        category: "System",
+        slashName: "background",
+        run: () => {
+          dialog.replace(() => <DialogBackground />)
         },
       },
       {

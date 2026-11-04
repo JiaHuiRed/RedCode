@@ -1479,7 +1479,7 @@ export type NativeCompactionConfig = {
   soft_ratio?: number | "Infinity" | "-Infinity" | "NaN"
   prune_ratio?: number | "Infinity" | "-Infinity" | "NaN"
   /**
-   * Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)
+   * Maximum tokens of one compaction summary (default: 12000; maximum: 1000000)
    */
   summary_max_tokens?: number
   /**
@@ -5265,6 +5265,76 @@ export type EventSubscribeResponses = {
 }
 
 export type EventSubscribeResponse = EventSubscribeResponses[keyof EventSubscribeResponses]
+
+export type BackgroundListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background"
+}
+
+export type BackgroundListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type BackgroundListError = BackgroundListErrors[keyof BackgroundListErrors]
+
+export type BackgroundListResponses = {
+  /**
+   * List background activities
+   */
+  200: Array<{
+    id: string
+    type: string
+    title?: string
+    status: "running" | "completed" | "error" | "cancelled"
+    startedAt: number | "Infinity" | "-Infinity" | "NaN"
+    completedAt?: number | "Infinity" | "-Infinity" | "NaN"
+    error?: string
+    sessionID?: string
+    parentSessionID?: string
+  }>
+}
+
+export type BackgroundListResponse = BackgroundListResponses[keyof BackgroundListResponses]
+
+export type BackgroundCancelData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background/{jobID}/cancel"
+}
+
+export type BackgroundCancelErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type BackgroundCancelError = BackgroundCancelErrors[keyof BackgroundCancelErrors]
+
+export type BackgroundCancelResponses = {
+  /**
+   * Cancelled job ids (job and its descendants)
+   */
+  200: {
+    cancelled: Array<string>
+  }
+}
+
+export type BackgroundCancelResponse = BackgroundCancelResponses[keyof BackgroundCancelResponses]
 
 export type ConfigGetData = {
   body?: never
