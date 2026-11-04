@@ -57,7 +57,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 
 ## Progress
 ### Done
-- [completed work or "(none)"]
+- [one line per outcome: what shipped, plus its commit hash when available. No diffs, line counts, or per-file detail — git has those.]
 
 ### In Progress
 - [current work or "(none)"]
@@ -69,7 +69,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 - [decision and why, or "(none)"]
 
 ## Next Steps
-- [ordered next actions or "(none)"]
+- [ordered, concrete next actions or "(none)"]
 
 ## Critical Context
 - [important technical facts, errors, open questions, or "(none)"]
@@ -82,7 +82,9 @@ Rules:
 - Keep every section, even when empty.
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
-- Do not mention the summary process or that context was compacted.`
+- Do not mention the summary process or that context was compacted.
+- Completed work is a handoff, not a changelog: record outcomes and commit hashes only. Do not restate diffs, line counts, or per-file edits.
+- Relevant Files lists only files a successor must open to continue. Never list always-on context files (AGENTS.md, .redcode/MEMORY.md) — they are already in every request.`
 type Turn = {
   start: number
   end: number
@@ -93,17 +95,32 @@ type Turn = {
 const READ_TOOLS = new Set(["read"])
 const WRITE_TOOLS = new Set(["edit", "write", "apply_patch"])
 
+// 261104 Red 每轮固定前缀里的文件不进 Related Files：AGENTS.md 与 .redcode/MEMORY.md
+//   本来就在每次请求的 system prompt 里，摘要再列一遍是纯冗余（哥哥在真实摘要里读到
+//   MEMORY.md 的路径说明，占了整节篇幅且没有任何续接价值）。
+const ALWAYS_ON_CONTEXT = /(^|[\\/])(AGENTS\.md|\.redcode[\\/]MEMORY(?:-archive)?\.md)$/i
+
+export function isAlwaysOnContext(filePath: string) {
+  return ALWAYS_ON_CONTEXT.test(filePath)
+}
+
 export function filePathsFrom(part: MessageV2.ToolPart): string[] {
   const input = part.state.input as Record<string, unknown>
-  if (typeof input?.filePath === "string") return [input.filePath]
+  if (typeof input?.filePath === "string") return alwaysOnFiltered([input.filePath])
   if (part.tool === "apply_patch" && Array.isArray(input?.hunks)) {
-    return input.hunks.flatMap((hunk) =>
-      typeof (hunk as Record<string, unknown>)?.filePath === "string"
-        ? [(hunk as Record<string, unknown>).filePath as string]
-        : [],
+    return alwaysOnFiltered(
+      input.hunks.flatMap((hunk) =>
+        typeof (hunk as Record<string, unknown>)?.filePath === "string"
+          ? [(hunk as Record<string, unknown>).filePath as string]
+          : [],
+      ),
     )
   }
   return []
+}
+
+function alwaysOnFiltered(paths: string[]) {
+  return paths.filter((filePath) => !isAlwaysOnContext(filePath))
 }
 
 export function collectFiles(messages: MessageV2.WithParts[]) {
@@ -971,9 +988,12 @@ export const layer = Layer.effect(
         // 已读文件，也不依赖模型在 Relevant Files 里凭记忆写路径。
         const priorFiles = parseFileTags(previousSummary ?? "")
         const fresh = collectFiles(selected.head)
+        // 261104 Red 旧摘要里的标签也可能带着固定前缀文件（legacy），合并时统一过滤
         const files = {
-          read: dedupe([...priorFiles.read, ...fresh.read]),
-          modified: dedupe([...priorFiles.modified, ...fresh.modified]),
+          read: dedupe([...priorFiles.read, ...fresh.read]).filter((filePath) => !isAlwaysOnContext(filePath)),
+          modified: dedupe([...priorFiles.modified, ...fresh.modified]).filter(
+            (filePath) => !isAlwaysOnContext(filePath),
+          ),
         }
         if (files.read.length || files.modified.length) {
           const tagged = appendFileTags(summary ?? "", files)
