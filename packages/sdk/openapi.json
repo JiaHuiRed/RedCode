@@ -16593,7 +16593,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 1000000,
-            "description": "Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)"
+            "description": "Maximum tokens of one compaction summary (default: 12000; maximum: 1000000)"
           },
           "retained_max_tokens": {
             "type": "integer",

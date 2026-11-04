@@ -64,7 +64,7 @@ const Fields = Schema.Struct({
     }),
   ),
   summary_max_tokens: Schema.optional(
-    bounded(1_000_000, "Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)"),
+    bounded(1_000_000, "Maximum tokens of one compaction summary (default: 12000; maximum: 1000000)"),
   ),
   // 261012 Red 保护记录收敛出口（对齐 codex 有界重建，COMPACT_USER_MESSAGE_MAX_TOKENS 同位）：
   // 新块继承旧块保护记录时按预算携带，超限的旧记录退到账本可经 block:<id> 读回。
@@ -169,7 +169,7 @@ export function resolve(value?: Info, usableTokens?: number): Spec {
     reminderTokens: cfg.reminder_tokens ?? REMINDER_DEFAULT,
     softRatio: cfg.soft_ratio ?? 0.8,
     pruneRatio: cfg.prune_ratio ?? 0.9,
-    summaryMaxTokens: cfg.summary_max_tokens ?? 16_000,
+    summaryMaxTokens: cfg.summary_max_tokens ?? 12_000,
     summaryMaxBytes: cfg.summary_max_bytes ?? 98_304,
     retainedMaxTokens: cfg.retained_max_tokens ?? 20_000,
     activeMaxTokens: cfg.active_max_tokens ?? 80_000,

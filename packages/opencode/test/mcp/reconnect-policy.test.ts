@@ -47,4 +47,13 @@ describe("MCP reconnect policy", () => {
       }),
     ).toEqual({ type: "connect", attempt: 4 })
   })
+
+  test("onConnected preserves failures until the stable window elapses", () => {
+    const budget = McpReconnectPolicy.onConnected({ failures: 9, nextAt: 5_000 }, 10_000)
+    expect(budget).toEqual({ failures: 9, nextAt: 0, connectedAt: 10_000 })
+    // 连接 5 秒后又断：仍按第 10 次重连处理，而不是从 1 开始
+    expect(McpReconnectPolicy.decide({ budget, now: 15_000 })).toEqual({ type: "connect", attempt: 10 })
+    // 稳定满 30 秒后：预算重置
+    expect(McpReconnectPolicy.decide({ budget, now: 40_000 })).toEqual({ type: "connect", attempt: 1 })
+  })
 })

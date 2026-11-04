@@ -2483,21 +2483,21 @@ describe("compaction file tags", () => {
     expect(files.modified).toEqual(["src/c.ts", "src/d.ts", "src/e.ts"])
   })
 
- test("collectFiles drops always-on context files (AGENTS.md, .redcode/MEMORY.md)", () => {
-   const messages = [
-     mkMsg([
-       mkTool("read", { filePath: "AGENTS.md" }),
-       mkTool("read", { filePath: "C:\\Users\\x\\.redcode\\MEMORY.md" }),
-       mkTool("read", { filePath: ".redcode/MEMORY-archive.md" }),
-       mkTool("read", { filePath: "src/a.ts" }),
-       mkTool("edit", { filePath: "packages/opencode/AGENTS.md" }),
-       mkTool("edit", { filePath: "src/c.ts" }),
-     ]),
-   ]
-   const files = collectFiles(messages)
-   expect(files.read).toEqual(["src/a.ts"])
-   expect(files.modified).toEqual(["src/c.ts"])
- })
+  test("collectFiles drops only .redcode/MEMORY.md; package AGENTS.md and archive stay", () => {
+    const messages = [
+      mkMsg([
+        mkTool("read", { filePath: "AGENTS.md" }),
+        mkTool("read", { filePath: "C:\\Users\\x\\.redcode\\MEMORY.md" }),
+        mkTool("read", { filePath: ".redcode/MEMORY-archive.md" }),
+        mkTool("read", { filePath: "src/a.ts" }),
+        mkTool("edit", { filePath: "packages/opencode/AGENTS.md" }),
+        mkTool("edit", { filePath: "src/c.ts" }),
+      ]),
+    ]
+    const files = collectFiles(messages)
+    expect(files.read).toEqual(["AGENTS.md", ".redcode/MEMORY-archive.md", "src/a.ts"])
+    expect(files.modified).toEqual(["packages/opencode/AGENTS.md", "src/c.ts"])
+  })
 
   test("parseFileTags parses both tags and dedupes", () => {
     const text =

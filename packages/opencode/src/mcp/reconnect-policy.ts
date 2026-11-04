@@ -32,4 +32,10 @@ export function delayFor(failures: number): number {
   return Math.min(BASE_MS * 2 ** Math.max(0, failures - 1), MAX_DELAY_MS)
 }
 
+// 261104 Red 连接成功只记录时间，不清零失败次数：5 秒后再次断开的 flapping 若每次成功
+// 都从 0 开始，MAX_ATTEMPTS 永远触发不了。真正的重置由 decide() 在稳定期过后完成。
+export function onConnected(budget: Budget | undefined, now: number): Budget {
+  return { failures: budget?.failures ?? 0, nextAt: 0, connectedAt: now }
+}
+
 export * as McpReconnectPolicy from "./reconnect-policy"

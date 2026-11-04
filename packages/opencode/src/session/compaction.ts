@@ -95,10 +95,10 @@ type Turn = {
 const READ_TOOLS = new Set(["read"])
 const WRITE_TOOLS = new Set(["edit", "write", "apply_patch"])
 
-// 261104 Red 每轮固定前缀里的文件不进 Related Files：AGENTS.md 与 .redcode/MEMORY.md
-//   本来就在每次请求的 system prompt 里，摘要再列一遍是纯冗余（哥哥在真实摘要里读到
-//   MEMORY.md 的路径说明，占了整节篇幅且没有任何续接价值）。
-const ALWAYS_ON_CONTEXT = /(^|[\\/])(AGENTS\.md|\.redcode[\\/]MEMORY(?:-archive)?\.md)$/i
+// 261104 Red 只过滤能确认每轮注入的文件：`.redcode/MEMORY.md`。AGENTS.md 只有项目根/全局根那份
+//   进固定前缀，包级 `packages/foo/AGENTS.md` 是 read 时附带、可能与当前任务直接相关；
+//   `MEMORY-archive.md` 同样不是每轮注入。宁可留一条根级路径，也不吞掉真正有用的线索。
+const ALWAYS_ON_CONTEXT = /(^|[\\/])\.redcode[\\/]MEMORY\.md$/i
 
 export function isAlwaysOnContext(filePath: string) {
   return ALWAYS_ON_CONTEXT.test(filePath)

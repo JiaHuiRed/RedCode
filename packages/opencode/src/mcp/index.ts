@@ -1347,7 +1347,9 @@ export const layer = Layer.effect(
       log.info("auto-reconnecting MCP server", { name, attempt: decision.attempt })
       yield* createAndStore(name, { ...mcpCfg, enabled: true }).pipe(Effect.catch(() => Effect.void))
       if (s.status[name]?.status === "connected") {
-        s.reconnect.set(name, { failures: 0, nextAt: 0, connectedAt: Date.now() })
+        // 261104 Red 成功只记 connectedAt，失败计数留给 decide() 在稳定期后重置——
+        //   否则「连上 5s 又断」的 flapping 每次都从 0 开始，10 次上限失效。
+        s.reconnect.set(name, McpReconnectPolicy.onConnected(s.reconnect.get(name), Date.now()))
         return
       }
       s.reconnect.set(name, {
