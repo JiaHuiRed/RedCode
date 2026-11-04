@@ -13690,6 +13690,9 @@
                 "$ref": "#/components/schemas/ContentFilterError"
               },
               {
+                "$ref": "#/components/schemas/ToolFailureStoppedError"
+              },
+              {
                 "$ref": "#/components/schemas/APIError"
               }
             ]
@@ -13796,6 +13799,27 @@
           "cost",
           "tokens"
         ],
+        "additionalProperties": false
+      },
+      "ToolFailureStoppedError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["ToolFailureStoppedError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "ContentFilterError": {
@@ -26024,6 +26048,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ContentFilterError"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ToolFailureStoppedError"
                   },
                   {
                     "$ref": "#/components/schemas/APIError"

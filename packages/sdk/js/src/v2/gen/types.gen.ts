@@ -466,6 +466,7 @@ export type AssistantMessage = {
     | StructuredOutputError
     | ContextOverflowError
     | ContentFilterError
+    | ToolFailureStoppedError
     | ApiError
   parentID: string
   modelID: string
@@ -495,6 +496,13 @@ export type AssistantMessage = {
   finish?: string
   routedVia?: string
   contextLevel?: "ok" | "soft" | "prune" | "compact"
+}
+
+export type ToolFailureStoppedError = {
+  name: "ToolFailureStoppedError"
+  data: {
+    message: string
+  }
 }
 
 export type ContentFilterError = {
@@ -4789,6 +4797,7 @@ export type EventSessionError = {
       | StructuredOutputError
       | ContextOverflowError
       | ContentFilterError
+      | ToolFailureStoppedError
       | ApiError
   }
 }

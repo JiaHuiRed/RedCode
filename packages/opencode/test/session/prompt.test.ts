@@ -2073,6 +2073,9 @@ for (const { configuredLimit, interleave } of [undefined, 1, 3].flatMap((configu
         expect(executions).toBe(limit)
         expect((yield* jobs.get(child.id))?.status).toBe("running")
         expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+        // 261104 Red 停止原因必须落成消息 error：只写正文时 finish 停在 "tool-calls"，
+        // task_status/子代理回执会报 completed（exp 子代理实测）。
+        expect(result.info.role === "assistant" ? result.info.error?.name : undefined).toBe("ToolFailureStoppedError")
         const inputs = yield* llm.inputs
         expect(JSON.stringify(inputs[interleave ? 2 * limit - 1 : limit])).toContain("Repeated tool failure")
       }),

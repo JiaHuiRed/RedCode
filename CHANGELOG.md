@@ -13,6 +13,7 @@
 - **修复 provider 失败后 `prompt.loop` 挂死**（`session/processor.ts`）：`idleAfterUsageMs` 短窗用 `Effect.race` 与 step-finish 信号竞速，但 Effect v4 的 `race` 只认第一个**成功**——provider 返回 4xx 时流立即失败，早失败被忽略、继续等永不到来的 finish 事件，loop 挂死（CI smoke 三个用例 30s 超时，`prompt.test.ts:1044/1266/2954`）。改用 `raceFirst`，任一分支完成即定胜负、失败照常传播；短窗语义不变。验证：prompt 102 pass / 13 skip、processor-effect 34 pass、smoke lane 全绿、typecheck exit 0。
 - **TUI Context 构成支持键盘操作**（`sidebar/context-composition.tsx`、`config/keybind.ts`）：侧栏折叠件此前只有 `onMouseDown`，纯键盘用户无法展开 Composition 及组明细。新增 `sidebar_composition_toggle`（默认 `<leader>i`）切换 Composition，键盘展开时一并显示 system/tools/messages 三组明细、再按整块收起；鼠标仍保留逐组开合。键位可经 `keybind` 配置覆盖。验证：sidebar-composition 5 pass（键盘用例摘掉实现即变红）、sidebar-context 通过、typecheck exit 0。
 - **TUI Context 构成长标签按显示宽度裁剪**（`sidebar/context-composition.tsx`）：后端 label 上限 48 字符（按字符数截），侧栏内容实际 37 列，展开明细时 ASCII 标签折成 2 行、CJK 双宽折成 3 行。明细行按 `Bun.stringWidth` 裁到 26 列并补省略号，仅影响 TUI 渲染。验证：42 列渲染用例覆盖 ASCII 与 CJK，摘掉裁剪即变红。
+- **重复工具失败停止时落成消息 error，子代理回执不再误报 completed**（`session/prompt.ts`、`session/message-v2.ts`）：`ToolFailureGuard` 停止本轮时只往正文追加说明，assistant 消息的 `finish` 仍停在 `tool-calls`，`finished` 判定把它当正常完成——子代理回执与 `task_status` 都报 `state: completed`，父代理以为任务成功（实测 explore 子代理 14:18:43 已停止，父代理拿到的回执却是 `state: completed`）。现在停止时写入 `ToolFailureStoppedError` 并发布 `session.error`：task 结果、`task_status`、TUI 错误态与通知都能看到失败；loop 已 break，不会据此重试。模型可见四问：①无提示词注入变化；②固定前缀不动；③无前缀结构变化；④无新增注入项。验证：prompt 重复失败用例 7 pass（摘掉 error 赋值 6 条变红）、task_status 13 pass、typecheck exit 0、openapi drift 一致。
 
 ### [0.14.1] - 2026-11-04
 

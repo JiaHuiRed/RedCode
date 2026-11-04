@@ -89,6 +89,11 @@ export const ContextOverflowError = NamedError.create("ContextOverflowError", {
 export const ContentFilterError = NamedError.create("ContentFilterError", {
   message: Schema.String,
 })
+// 261104 Red 重复工具失败停止本轮：原先只往正文追加说明，finish 仍停在 "tool-calls"，
+// 被判成正常完成——task_status/子代理回执报 completed，父代理以为任务成功。
+export const ToolFailureStoppedError = NamedError.create("ToolFailureStoppedError", {
+  message: Schema.String,
+})
 
 export class OutputFormatText extends Schema.Class<OutputFormatText>("OutputFormatText")({
   type: Schema.Literal("text"),
@@ -440,6 +445,7 @@ const AssistantErrorSchema = Schema.Union([
   StructuredOutputError.EffectSchema,
   ContextOverflowError.EffectSchema,
   ContentFilterError.EffectSchema,
+  ToolFailureStoppedError.EffectSchema,
   APIError.EffectSchema,
 ]).annotate({ discriminator: "name" })
 type AssistantError = Schema.Schema.Type<typeof AssistantErrorSchema>
