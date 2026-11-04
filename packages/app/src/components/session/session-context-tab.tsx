@@ -50,7 +50,7 @@ function Stat(props: { label: string; value: JSX.Element; color?: string }) {
   )
 }
 
-function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
+function QuotaWindow(props: { label: string; window?: QuotaWindowData; monthly?: boolean }) {
   const language = useLanguage()
   return (
     <div class="flex flex-col gap-1">
@@ -64,7 +64,9 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
                 <div class="text-12-medium select-text" style={{ color: quotaColor(percent) }}>
                   {quotaPercent(percent, language.intl())}%
                 </div>
-                <div class="text-text-weaker">{quotaDuration(quotaNum(window().windowMinutes))}</div>
+                <Show when={!props.monthly}>
+                  <div class="text-text-weaker">{quotaDuration(quotaNum(window().windowMinutes))}</div>
+                </Show>
               </div>
             )
           }}
@@ -121,6 +123,9 @@ function QuotaDetails(props: { quotas: ProviderQuota[] }) {
             <div class="flex flex-col gap-3">
               <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
               <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
+              <Show when={quota.monthly}>
+                {(monthly) => <QuotaWindow label={language.t("context.quota.window.monthly")} window={monthly()} monthly />}
+              </Show>
               <Show when={quota.reserve}>
                 {(reserve) => (
                   <QuotaWindow

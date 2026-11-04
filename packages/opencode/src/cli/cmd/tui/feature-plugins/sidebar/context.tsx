@@ -5,6 +5,7 @@ import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, createResource, onCleanup, Show } from "solid-js"
 import { useEvent } from "@tui/context/event"
 import { useSDK } from "@tui/context/sdk"
+import { ContextComposition } from "./context-composition"
 
 const id = "internal:sidebar-context"
 
@@ -87,6 +88,10 @@ export function barColor(context: number | null | undefined): string {
   if ((context ?? 0) >= 360_000) return LEVEL_COLOR.prune
   if ((context ?? 0) >= 320_000) return LEVEL_COLOR.soft
   return LEVEL_COLOR.ok
+}
+
+export function contextLevelColor<T>(level: AssistantMessage["contextLevel"], neutral: T): string | T {
+  return level ? LEVEL_COLOR[level] : neutral
 }
 
 // 261010 Red 上下文取主会话请求；会话累计用量则始终包括摘要调用。
@@ -227,7 +232,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         percent: null,
         context: null as number | null,
         limit: null as number | null,
-        level: undefined as string | undefined,
+        level: undefined as AssistantMessage["contextLevel"],
         decodeRate: null as number | null,
         firstChunkMs: null as number | null,
         model: null as string | null,
@@ -322,7 +327,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
  })
   const created = createMemo(() => session()?.time?.created)
   const updated = createMemo(() => session()?.time?.updated)
-  const agent = createMemo(() => session()?.agent)
 
   const percentLabel = createMemo(() => {
     const p = state().percent
@@ -358,15 +362,22 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       >
         <text fg={theme()?.textMuted}>
           {"  "}
-          <span style={{ fg: barColor(state().context) }}>{compact(state().context!)}</span> / {compact(state().limit!)} ·{" "}
-          <span style={{ fg: barColor(state().context) }}>{percentLabel()}</span>
+          <span style={{ fg: contextLevelColor(state().level, theme().textMuted) }}>{compact(state().context!)}</span> / {compact(state().limit!)} ·{" "}
+          <span style={{ fg: contextLevelColor(state().level, theme().textMuted) }}>{percentLabel()}</span>
         </text>
         <text>
           {"  "}
-          <span style={{ fg: barColor(state().context) }}>{bar(state().percent ?? 0).filled}</span>
+          <span style={{ fg: contextLevelColor(state().level, theme().textMuted) }}>{bar(state().percent ?? 0).filled}</span>
           <span style={{ fg: theme()?.textMuted }}>{bar(state().percent ?? 0).rest}</span>
         </text>
       </Show>
+      <Show when={state().level}>
+        <text fg={contextLevelColor(state().level, theme().textMuted)}>
+          Engine · {state().level?.toUpperCase()}
+        </text>
+      </Show>
+      <ContextComposition api={props.api} sessionID={props.session_id} messages={msg()} compact={compact}
+        load={(sessionID) => sdk.client.session.contextInspect({ sessionID })} />
       <box height={1} />
       <text fg={theme()?.textMuted}>
         Session total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span>
@@ -412,11 +423,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
      <text fg={theme()?.textMuted}>
        <span style={{ fg: tokenColor.cost }}>{costLabel()}</span> · {`${state().messageCount} msgs`}
      </text>
-      <Show when={agent()}>
-        <text fg={theme()?.textMuted}>
-          agent <span style={{ fg: theme()?.accent }}>{agent()}</span>
-        </text>
-      </Show>
       <box height={1} />
       <Show when={created()}>
         <text fg={theme()?.textMuted}>created {formatTime(created()!)}</text>

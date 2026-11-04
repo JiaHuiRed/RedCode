@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { bar, barColor, compact, contextSource, formatMs, sessionCostBuckets, sessionUsage, subagentCost } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { bar, barColor, compact, contextLevelColor, contextSource, formatMs, sessionCostBuckets, sessionUsage, subagentCost } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { snapshotGroups, snapshotRequestKey } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context-composition"
 import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
@@ -50,6 +51,35 @@ describe("sidebar context window 显示", () => {
   test("上下文缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {
     expect(barColor(undefined)).toBe(barColor(0))
     expect(barColor(null)).toBe(barColor(0))
+  })
+
+  test("引擎档位独立决定颜色，未知档位使用中性色", () => {
+    expect(new Set(["ok", "soft", "prune", "compact"].map((level) =>
+      contextLevelColor(level as NonNullable<AssistantMessage["contextLevel"]>, "neutral"))).size).toBe(4)
+    expect(contextLevelColor(undefined, "neutral")).toBe("neutral")
+    expect(contextLevelColor("compact", "neutral")).not.toBe(contextLevelColor("ok", "neutral"))
+  })
+})
+
+describe("Context composition 快照", () => {
+  test("按已完成消息稳定刷新，不随流式更新改变", () => {
+    const base = { role: "assistant", id: "first", time: { completed: 10 }, tokens: { context: 100 } }
+    const streaming = { role: "assistant", id: "next", time: {}, tokens: { context: 200 } }
+    const messages = [base, streaming] as unknown as Message[]
+    const key = snapshotRequestKey("a", messages)
+    expect(snapshotRequestKey("a", [base] as unknown as Message[])).toBe(key)
+    expect(snapshotRequestKey("b", messages)).not.toBe(key)
+    const finished = { ...streaming, time: { completed: 20 } }
+    expect(snapshotRequestKey("a", [base, finished] as unknown as Message[])).not.toBe(key)
+  })
+
+  test("构成比例使用快照总量，零总量不伪造比例", () => {
+    const snapshot = {
+      total: 100, system: { tokens: 10, segments: [] }, tools: { tokens: 20, top: [] },
+      messages: { tokens: 70, byRole: [] },
+    } as unknown as Parameters<typeof snapshotGroups>[0]
+    expect(snapshotGroups(snapshot).map((group) => group.percent)).toEqual([10, 20, 70])
+    expect(snapshotGroups({ ...snapshot, total: 0 }).map((group) => group.percent)).toEqual([undefined, undefined, undefined])
   })
 })
 

@@ -46,12 +46,15 @@ export const quotaDuration = (minutes: number) =>
 // 与 Context tab 的额度摘要保持一致，避免两处格式漂移。
 export const quotaCompactSummary = (quota: ProviderQuota, locale: string) => {
   const windows = [quota.primary, quota.secondary].filter((window): window is QuotaWindowData => !!window)
+  const monthly = quota.monthly
+  const monthlyLabel = locale.startsWith("zh") ? "月额度" : locale.startsWith("ja") ? "月間枠" : "Monthly"
   return [
     quota.planType,
     ...windows.map(
       (window) =>
         `${quotaDuration(quotaNum(window.windowMinutes))} ${quotaPercent(quotaNum(window.usedPercent), locale)}%`,
     ),
+    ...(monthly ? [`${monthlyLabel} ${quotaPercent(quotaNum(monthly.usedPercent), locale)}%`] : []),
   ].join(" · ")
 }
 
@@ -264,7 +267,7 @@ const quotaPeakPercent = (quotas: ProviderQuota[]) =>
   Math.max(
     0,
     ...quotas.flatMap((quota) =>
-      [quota.primary, quota.secondary, quota.reserve]
+      [quota.primary, quota.secondary, quota.reserve, quota.monthly]
         .filter((window): window is QuotaWindowData => !!window)
         .map((window) => quotaNum(window.usedPercent)),
     ),
@@ -333,6 +336,7 @@ export function useCapsuleSummaryGroups(summaries: ReturnType<typeof useSessionC
       [
         { label: language.t("context.quota.window.primary"), window: quota.primary },
         { label: language.t("context.quota.window.secondary"), window: quota.secondary },
+        { label: language.t("context.quota.window.monthly"), window: quota.monthly, monthly: true },
         {
           label: quota.reserveName
             ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
@@ -340,12 +344,13 @@ export function useCapsuleSummaryGroups(summaries: ReturnType<typeof useSessionC
           window: quota.reserve,
         },
       ]
-        .filter((entry): entry is { label: string; window: QuotaWindowData } => !!entry.window)
+        .filter((entry) => !!entry.window)
         .map((entry) => {
-          const percent = quotaNum(entry.window.usedPercent)
+          const window = entry.window!
+          const percent = quotaNum(window.usedPercent)
           return {
             label: entry.label,
-            value: `${quotaPercent(percent, locale())}% · ${quotaDuration(quotaNum(entry.window.windowMinutes))}`,
+            value: `${quotaPercent(percent, locale())}%${"monthly" in entry ? "" : ` · ${quotaDuration(quotaNum(window.windowMinutes))}`}`,
             color: quotaColor(percent),
           }
         }),

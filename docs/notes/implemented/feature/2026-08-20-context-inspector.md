@@ -77,3 +77,9 @@ prompt-caches / prefix-shape 同一套），不再新增一处无界 Map。
 ## 2026-10-13 更新：空壳端点已标记 DEPRECATED
 
 本文「未做」里挂起的 `/api/session/:id/context` 去留已有动作：`server/routes/instance/httpapi/groups/v2/session.ts:137` 将该端点标记 DEPRECATED 并指向 `GET /session/{sessionID}/context-inspect`——在「读旧表重建」与「删除」之间实际选了第三条路（保留但劝退）。后续若要物理删除，应把 DEPRECATED 声明一并收口。`context-inspect` 本体与 TUI `/context` 对话框「未做」项不变。
+
+## 2026-11-04：TUI 按需查看快照
+
+TUI Context 侧栏新增默认折叠的 Composition；首次展开才读取现有 `context-inspect`，再按需展开 system 片段、工具与消息角色。显示估算总量、分组比例和快照时间；同一已完成消息键复用缓存和在途请求，切会话的迟到结果不能覆盖当前显示。404 与网络失败分别显示暂无和读取失败。
+
+快照现已支持磁盘回退，可能是旧记录。它记录的是最近组装的候选输入，发生在模型请求和 native preflight 之前，不保证该请求最终发出；接口也没有消息或请求 ID。完成消息键只是刷新启发式，不能证明快照属于该消息。分组数据是估算，不与末次窗口或会话累计强行配平。System 标签取自片段首行，展示标签本身可能包含该首行文字。
