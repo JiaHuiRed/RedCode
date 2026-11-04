@@ -116,34 +116,22 @@
     },
   },
   "provider": {
-    // OpenRouter key 仅存 auth.json；白名单 = 免费层 prompt/completion 均 0 的条目。
+    // OpenRouter key 仅存 auth.json；白名单决定哪些模型可见。
+    // 261104 Red 只留 stealth/crouton-alpha（11-03 上线的免费 stealth 模型），其余免费条目一并过滤。
     "openrouter": {
-      "whitelist": [
-        "cohere/north-mini-code:free",
-        "dots-studio/dots-3-note-preview:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "google/gemma-4-31b-it:free",
-        "google/lyria-3-clip-preview",
-        "google/lyria-3-pro-preview",
-        "inclusionai/ling-3.0-flash-fin:free",
-        "inclusionai/ling-3.0-flash-sante:free",
-        "inclusionai/ling-3.0-flash-vl:free",
-        "liquid/lfm-2.5-2.6b:free",
-        "nex-agi/nex-n2.5-mini:free",
-        "nex-agi/nex-n2.5-pro:free",
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "nvidia/nemotron-3.5-content-safety:free",
-        "nvidia/nemotron-3.5-lightning:free",
-        "openrouter/free",
-        "poolside/laguna-s-2.1:free",
-        "poolside/laguna-xs-2.1:free",
-        "stealth/union-alpha",
-        "thinkingmachines/inkling-small:free",
-        "thinkingmachines/inkling:free",
-        "z-ai/glm-5.2:free"
-      ]
+      "whitelist": ["stealth/crouton-alpha"],
+      // models.dev 未收录（11-03 上线），按 OpenRouter /models 实测元数据显式定义。
+      "models": {
+        "stealth/crouton-alpha": {
+          "name": "Crouton Alpha",
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "attachment": true,
+          "modalities": { "input": ["text", "image", "video", "audio", "pdf"], "output": ["text"] },
+          "limit": { "context": 1048576, "output": 943718 }
+        }
+      }
     },
     // models.dev 未收录，config 扩展内置（凭据在 auth.json step_plan）；1M/64k、提示缓存、
     // reasoning_effort 三档；定价 7/0.35/20 元每 1M，CNY 表在 provider.ts。
