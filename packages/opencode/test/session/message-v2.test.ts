@@ -85,6 +85,8 @@ function assistantInfo(
     sessionID,
     role: "assistant",
     time: { created: 0 },
+    // 投影测试默认已收尾；流式中间态由专门用例显式置 undefined 构造
+    finish: "stop",
     error,
     parentID,
     modelID: infoModel.modelID,
@@ -108,6 +110,14 @@ function basePart(messageID: string, id: string) {
     sessionID,
     messageID: MessageID.make(messageID.startsWith("msg") ? messageID : `msg_${messageID}`),
   }
+}
+
+// 261104 Red 未收尾形态（真实流中断只写 error/completed，没有 provider finish）：
+//   投影跳过与 latest 的 summary 判定都以 finish 缺失为准，用剥键而不是 finish: undefined，
+//   让 `"finish" in info === false` 的断言保持成立。
+function unfinishedAssistantInfo(id: string, parentID: string) {
+  const { finish: _finish, ...info } = assistantInfo(id, parentID)
+  return info
 }
 
 describe("session.message-v2 stored parts", () => {
@@ -194,6 +204,32 @@ describe("session.message-v2.toModelMessage", () => {
         ),
       ),
     ).toContain("Use compress")
+  })
+
+  test("skips in-flight assistant messages so parallel requests never carry a mutable entry", async () => {
+    // 261104 Red 流式中（无 finish 无 error）不出站：并行请求读库组装 body 时不得
+    //   携带中间态条目，否则条目收尾后下一请求前缀在该条目分叉（ses_ffe5e5 实测）。
+    const inflight = [
+      {
+        info: { ...assistantInfo("a-inflight", "u1"), finish: undefined },
+        parts: [{ ...basePart("a-inflight", "r1"), type: "reasoning", text: "half thought" }] as MessageV2.Part[],
+      },
+    ]
+    expect(await MessageV2.toModelMessages(inflight, model)).toEqual([])
+
+    // 同一条消息收尾后以完整形态进投影——前缀纯追加，不存在条目改写
+    const done = [
+      {
+        info: { ...assistantInfo("a-inflight", "u1"), finish: "stop" },
+        parts: [
+          { ...basePart("a-inflight", "r1"), type: "reasoning", text: "half thought" },
+          { ...basePart("a-inflight", "t1"), type: "text", text: "final answer" },
+        ] as MessageV2.Part[],
+      },
+    ]
+    const out = await MessageV2.toModelMessages(done, model)
+    expect(out).toHaveLength(1)
+    expect(JSON.stringify(out)).toContain("final answer")
   })
 
   test("filters out messages with no parts", async () => {
@@ -1983,7 +2019,7 @@ describe("session.message-v2.latest", () => {
     test(`a terminal ${name} summary retires only its own compaction task`, () => {
       const failed: MessageV2.WithParts = {
         info: {
-          ...assistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER),
+          ...unfinishedAssistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER),
           summary: true,
           time: { created: 4, completed: 5 },
           error: { name, data: { message: "Interrupted summary" } },
@@ -2020,7 +2056,7 @@ describe("session.message-v2.latest", () => {
   test("an unfinished summary does not discard a recoverable compaction task", () => {
     const state = MessageV2.latest([
       compactionUser,
-      { info: { ...assistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER), summary: true }, parts: [] },
+      { info: { ...unfinishedAssistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER), summary: true }, parts: [] },
     ])
     expect(state.tasks.map((part) => part.id)).toEqual(compactionUser.parts.map((part) => part.id))
   })

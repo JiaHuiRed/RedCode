@@ -948,6 +948,13 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
       const differentModel = `${model.providerID}/${model.id}` !== `${msg.info.providerID}/${msg.info.modelID}`
       const media: Array<{ mime: string; url: string; filename?: string }> = []
 
+      // 261104 Red 流式中的 assistant 不出站：并行请求（记忆召回/摘要类）会在主轮流式
+      //   中途读库组装 body，把中间态条目带上线；条目收尾后下一请求前缀在该条目分叉、
+      //   尾部缓存作废（实测 ses_ffe5e5 三次中段回退共 ≈20k token，383→8363 字符改写）。
+      //   跳过后收尾消息以完整形态首次出现，投影保持纯追加。取证与决策：
+      //   docs/notes/proposed/bug-fix/2026-10-12-gpt-6.1-sol-cache-instability.md §2026-11-04
+      if (!msg.info.finish && !msg.info.error) continue
+
       if (
         msg.info.error &&
         !(
