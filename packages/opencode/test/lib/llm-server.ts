@@ -562,6 +562,16 @@ export class Reply {
     return this
   }
 
+  // 261104 Red 网关收尾挂起形态：finish_reason 已吐（客户端会收到 step-finish/usage）
+  //   但流不关、[DONE] 永不到——现有 stop()/hang() 互清标志无法表达这个组合。
+  hangAfterFinish(finish = "stop") {
+    this.#finish = finish
+    this.#hang = true
+    this.#error = undefined
+    this.#reset = false
+    return this
+  }
+
   streamError(error: unknown = "boom") {
     this.#finish = undefined
     this.#hang = false

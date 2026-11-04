@@ -247,6 +247,9 @@ export const layer = Layer.effect(
         toolsStarted: false,
       }
       let aborted = false
+      // 261104 Red step-finish 已到的信号槽：process 每个 attempt 重建，handleEvent 收到
+      //   step-finish 时完成——race 侧据此把「响应主体完成后的流静默」切到 idleAfterUsageMs 短窗。
+      let stepFinishSeen: Deferred.Deferred<void> | undefined
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
 
       const parse = (e: unknown) =>
@@ -1220,6 +1223,11 @@ export const layer = Layer.effect(
             return
 
           case "finish":
+            // 261104 Red 响应语义完成（usage/finishReason 已入账）：完成 race 侧信号槽，
+            //   「此后的流静默」是网关不关流的收尾挂起，按 idleAfterUsageMs 短窗掐。
+            //   注意不能挂在 step-finish——openai-chat 协议的 step-finish 是 EOF 时
+            //   onHalt flush 的，挂起场景永远不来（mock 实测退化为等满 idleMs）。
+            if (stepFinishSeen) yield* Deferred.succeed(stepFinishSeen, undefined).pipe(Effect.ignore)
             if (compactionTiming) compactionTiming.streamCompletedAt = performance.now()
             if (value.routedVia) ctx.assistantMessage.routedVia = value.routedVia
             return
@@ -1362,8 +1370,15 @@ export const layer = Layer.effect(
             for (let attempt = 0; attempt < 2; attempt++) {
               ctx.referenceLoop = false
               ctx.referenceMarkers = 0
+              stepFinishSeen = yield* Deferred.make<void>()
               const stream = llm.stream(streamInput)
-              yield* stream.pipe(
+              // 261104 Red 网关收尾挂起兜底：GLM 实测吐完 usage（step-finish 已到）后不关流，
+              //   streamText 卡在 step 边界等 EOF，idleMs（300s）全程空转、在途工具被误标
+              //   aborted（ses_ffe5e5bdeb 2026-11-04 六次实测，301s 整拍）。step-finish 到达后
+              //   按 idleAfterUsageMs 短窗掐流续跑；step-finish 未到的纯思考静默不受影响，
+              //   仍由管道内 timeoutOrElse（idleMs）兜底。
+              yield* Effect.race(
+                stream.pipe(
               // 261020 Red 静默兜底（主判据）：供应商在 idleMs 内不再吐任何分片，判定这一路流
               // 已卡住。计时只覆盖「等上游下一个分片」的时间——tap 里执行工具时上游并未拉取，
               // 长工具不会被误判成静默。有思考无正文 → 提升收尾；纯静默无思考 → 只结束流，
@@ -1393,6 +1408,8 @@ export const layer = Layer.effect(
               ),
               Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped || ctx.referenceLoop),
               Stream.runDrain,
+              ),
+              Deferred.await(stepFinishSeen).pipe(Effect.flatMap(() => Effect.sleep(stall.idleAfterUsageMs))),
             )
               if (!ctx.referenceLoop) break
               // 261028 Red 能走到这里说明本 attempt 未开始过工具（trip 条件含 !toolsStarted），
@@ -1460,6 +1477,15 @@ export const layer = Layer.effect(
             Effect.ensuring(cleanup()),
           )
 
+          // 261104 Red TEMP DIAG 网关挂起取证（ses_ffe5e5bdeb 五次 301s 静默待归因）：
+          //   process 出口打点，与下一 step=loop 入口的时间差可二分「静默卡在 process
+          //   内部（流消费/收尾）」还是「loop 组装段」。定位后整块删除。
+          slog.info("step.exit", {
+            needsCompaction: ctx.needsCompaction,
+            stall: ctx.reasoningStallTripped,
+            blocked: ctx.blocked,
+            hasError: ctx.assistantMessage.error !== undefined,
+          })
           if (ctx.needsCompaction) return "compact"
           if (ctx.referenceLoop) return "stop"
           // 260818 Red reasoning stall 兜底触发：思考已提升为正文、finish 已置 stop，

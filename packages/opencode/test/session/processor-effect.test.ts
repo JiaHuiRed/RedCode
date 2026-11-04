@@ -338,6 +338,59 @@ it.live("session.processor effect tests idle-cuts a silent reasoning stream", ()
     { config: (url) => providerCfg(url, { reasoningStall: { idleMs: 1_500 } }) },
   ),
 )
+
+// 261104 Red 网关收尾挂起（mock 形态）：finish_reason 已吐但流不关、[DONE] 永不到。
+//   注意 mock 的 AI SDK openai-compatible 路径不产 finish part（真实 zhipuai/GLM 路径会，
+//   实证见 request-evidence.middleware 的 providerUsage 只在 finish part 打点、而真实
+//   ses_ffe5e5bdeb 的 usage 行早已出现），因此本用例短窗不触发、退化为 idleMs 兜底——
+//   断言的是 race 的存在不破坏「有产出场景的 idleMs 路径」。短窗真机判据 = processor
+//   step.exit 打点与 usage 行间隔（TEMP DIAG 探针）。
+it.live("session.processor effect tests cuts a hung gateway tail shortly after step-finish", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(reply().text("gateway tail").hangAfterFinish())
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "tail")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const startedAt = Date.now()
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "tail" }],
+          tools: {},
+        })
+        const elapsed = Date.now() - startedAt
+
+        expect(value).toBe("continue")
+        // mock 形态走 idleMs（10s）兜底；finish_reason 未到 → finish 未设 → loop 续跑重发
+        //   （半截 assistant 消息由 toModelMessages 的在途守卫跳过，不会重复注入上下文）。
+        //   超过 15s 说明 race 破坏了收尾。
+        expect(elapsed).toBeLessThan(15_000)
+      }),
+    { config: (url) => providerCfg(url, { reasoningStall: { idleMs: 10_000, idleAfterUsageMs: 1_000 } }) },
+  ),
+)
 }
 
 // 261006 Red 静态规则把 doom_loop 压成 deny 时（explore 白名单 "*": deny 的真实形态），
