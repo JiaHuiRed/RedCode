@@ -189,7 +189,7 @@ function ellipsize(text: string, width: number, keep: "prefix" | "suffix") {
 // 优先级项目名 > 路径尾部 > 分支：任何一段超预算都截断，整行绝不折行。
 // 极窄终端下先收起分支、再收起路径，保证「竖线 + 项目名」始终完整落在行内。
 function layoutPromptTitle(input: { width: number; name: string; path: string; branch?: string }) {
-  const inner = Math.max(3, input.width - 4) // 标题行左右 padding 各 2
+  const inner = Math.max(3, input.width - 5) // 标题行 padding 左 3 右 2
   const branchCap = Math.min(Math.floor(inner / 3), inner - 4 - Bun.stringWidth(input.name))
   const branchWidth = input.branch ? Math.min(Bun.stringWidth(input.branch), Math.max(0, branchCap)) : 0
   const showBranch = branchWidth >= 6
@@ -1677,18 +1677,17 @@ export function Prompt(props: PromptProps) {
         width="100%"
       >
         {/* 261104 Red 输入框标题栏：agent 色短竖线 + 加粗项目名 + muted 路径 + 右侧分支。
-            上下留白把标题从深色面板里抬出来；长路径已按显示宽度截断，整行不折行。 */}
+            标题与输入框同用 backgroundPanel（比输入区深一档），形成「外框深、输入区浅」的层次；
+            只占一行，不再上下留白。长路径按显示宽度截断，整行不折行。 */}
         <box
           width="100%"
           flexDirection="row"
           justifyContent="space-between"
           alignItems="center"
-          paddingLeft={2}
+          paddingLeft={3}
           paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
           flexShrink={0}
-          backgroundColor={theme.backgroundElement}
+          backgroundColor={theme.backgroundPanel}
         >
           <box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
             <text flexShrink={0} fg={fadeColor(highlight(), agentMetaAlpha())}>
@@ -1720,7 +1719,7 @@ export function Prompt(props: PromptProps) {
           border
           borderStyle="rounded"
           borderColor={inputBorder()}
-          backgroundColor={theme.backgroundElement}
+          backgroundColor={theme.backgroundPanel}
         >
           <box
             paddingLeft={2}

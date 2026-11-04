@@ -913,7 +913,6 @@ describe("session.compaction.process", () => {
           PromptCaches.request.set(chat.id, {
             sessionID: chat.id, modelKey: "test/test-model",
             agent: { name: "build", mode: "primary", permission: [], options: {}, prompt: "SENT_AGENT_PROMPT" },
-            user: first, messages: [{ role: "user", content: "Earlier task" }],
             system: [reuse ? "sent-system" : "oversized-prefix ".repeat(100000)], tools: { write },
           })
           yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })

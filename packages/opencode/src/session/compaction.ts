@@ -603,7 +603,7 @@ export const layer = Layer.effect(
         const inputBudget = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
         const snapshot = sent && inputBudget > 0 &&
           estimateModelMessages(messages, model) +
-            Token.estimate([sent.agent.prompt ?? SystemPrompt.provider(model).join("\n\n"), ...sent.system, sent.user.system ?? ""].join("\n")) +
+            Token.estimate([sent.agent.prompt ?? SystemPrompt.provider(model).join("\n\n"), ...sent.system, sent.userSystem ?? ""].join("\n")) +
             Token.estimate(JSON.stringify(sent.tools)) <= inputBudget
           ? sent
           : undefined
@@ -612,7 +612,11 @@ export const layer = Layer.effect(
         // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
         const result = yield* processor.process({
           user: snapshot
-            ? { ...userMessage, system: snapshot.user.system, tools: snapshot.user.tools }
+            ? {
+                ...userMessage,
+                ...(snapshot.userSystem ? { system: snapshot.userSystem } : {}),
+                ...(snapshot.userTools ? { tools: snapshot.userTools } : {}),
+              }
             : userMessage,
           agent: snapshot?.agent ?? compactionAgent, sessionID: input.sessionID,
           permission: snapshot?.permission,

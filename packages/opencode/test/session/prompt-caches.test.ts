@@ -9,21 +9,18 @@ import {
   touchSession,
 } from "../../src/session/prompt-caches"
 import type { RequestSnapshot } from "../../src/session/prompt-caches"
-import { MessageID, SessionID } from "../../src/session/schema"
-import { ModelID, ProviderID } from "../../src/provider/schema"
+import type { Tool } from "ai"
 
 // 260811 cc audit R4: 分代结算的边界语义——只清目标会话的 msgPin/modelMsgs，
 // system/tools 与别的会话不受牵连。
 
 function sent(sessionID: string, modelKey = "p/m"): RequestSnapshot {
   return {
-    sessionID, modelKey,
+    sessionID,
+    modelKey,
     agent: { name: "build", mode: "primary", permission: [], options: {} },
-    user: {
-      id: MessageID.ascending(), sessionID: SessionID.make(sessionID), role: "user", agent: "build",
-      time: { created: 0 }, model: { providerID: ProviderID.make("p"), modelID: ModelID.make("m") },
-    },
-    system: ["sys"], tools: {}, messages: [{ role: "user", content: "hi" }],
+    system: ["sys"],
+    tools: {},
   }
 }
 
@@ -225,26 +222,35 @@ describe("request snapshot", () => {
 })
 
 describe("sent request generation", () => {
-  test("does not borrow unsent assembly messages or mutated agent settings", () => {
-    const sessionID = "ses_pinned"
-    const input = sent(sessionID, "m")
-    recordRequest(input)
+  // 261104 回归：生产上 agent/tools 带函数与运行时内部结构，深拷贝会让每个请求
+  // 都以「The object can not be cloned」失败。锁住「只浅拷贝、活对象原样保留」。
+  test("keeps live agent and tool objects without deep cloning", () => {
+    const sessionID = "ses_live_objects"
+    const agent = { name: "build", mode: "primary", permission: [], options: {}, prompt: () => "runtime" } as unknown as RequestSnapshot["agent"]
+    const tool = { description: "run", inputSchema: {}, execute: async () => "ok" } as unknown as Tool
+    recordRequest({ ...sent(sessionID, "m"), agent, tools: { run: tool } })
+    const snapshot = requestSnapshot(sessionID, "m")
+    expect(snapshot?.agent.prompt).toBe(agent.prompt)
+    expect(snapshot?.tools.run?.execute).toBe(tool.execute)
+    expect(snapshot?.tools.run).not.toBe(tool)
+    dropSession(sessionID)
+  })
+
+  test("never borrows the next-turn assembly cache", () => {
+    const sessionID = "ses_generation"
+    recordRequest(sent(sessionID, "m"))
     PromptCaches.modelMsgs.set(sessionID, new Map([
       ["m", { sessionID, modelKey: "m", messages: [{ role: "user", content: "unsent" }] }],
     ]))
-    input.agent.prompt = "changed after send"
-    input.messages.push({ role: "user", content: "later" })
-    expect(requestSnapshot(sessionID, "m")?.messages).toEqual([{ role: "user", content: "hi" }])
-    expect(requestSnapshot(sessionID, "m")?.agent.prompt).toBeUndefined()
+    expect(requestSnapshot(sessionID, "m")).toBeDefined()
+    expect("messages" in (requestSnapshot(sessionID, "m") ?? {})).toBe(false)
     expect(requestSnapshot(sessionID, "other")).toBeUndefined()
     dropSession(sessionID)
   })
 
   test("requires the same reasoning variant", () => {
     const sessionID = "ses_variant"
-    const input = sent(sessionID, "m")
-    input.user.model.variant = "max"
-    recordRequest(input)
+    recordRequest({ ...sent(sessionID, "m"), variant: "max" })
     expect(requestSnapshot(sessionID, "m", "max")).toBeDefined()
     expect(requestSnapshot(sessionID, "m", "high")).toBeUndefined()
     expect(requestSnapshot(sessionID, "m")).toBeUndefined()

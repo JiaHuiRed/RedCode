@@ -1345,7 +1345,8 @@ it.instance("native preflight does not replace the last sent request with unsent
     })
     const sent = PromptCaches.request.get(chat.id)
     expect(sent).toBeDefined()
-    expect(JSON.stringify(sent?.messages)).toContain("FIRST_SENT_REQUEST")
+    // 261104 回归：快照只存前缀字段，绝不携带消息正文（深拷贝活对象曾让每个请求失败）。
+    expect("messages" in (sent ?? {})).toBe(false)
     yield* llm.push(reply().text("Partial summary").hang())
     const running = yield* prompt.prompt({
       sessionID: chat.id, agent: "build", model: ref,

@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai"
+import type { ModelMessage, Tool } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 import { PromptPin } from "./prompt-pin"
@@ -20,13 +20,24 @@ type SystemCache = {
 type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]>; nativeRevision?: string }
 type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
 type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }
-// 261104 Red 已收到模型响应的主请求整组快照；modelMsgs 只是下轮组装缓存，不能当作已发送。
+// 261104 Red 已收到模型响应的主请求快照；modelMsgs 只是下轮组装缓存，不能当作已发送。
+// 只存压缩消费的字段，且**不深拷贝**：agent/tools 这类活对象带函数与运行时内部结构，
+// 生产上 structuredClone 曾让每个主请求都以「The object can not be cloned」失败
+// （261104 回归，日志 service=session.processor）。浅拷贝数组/工具对象即可，
+// 调用方不得原地改写已发送的 agent。
 // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
-export type RequestSnapshot = Pick<
-  StreamInput,
-  "sessionID" | "user" | "agent" | "system" | "tools" | "messages" | "permission" | "parentSessionID"
-> & {
+export type RequestSnapshot = {
+  sessionID: string
   modelKey: string
+  variant?: string
+  /** 主请求实际使用的 agent：压缩沿用它，最终 system 的第一段才与主请求一致。 */
+  agent: StreamInput["agent"]
+  permission?: StreamInput["permission"]
+  parentSessionID?: string
+  userSystem?: StreamInput["user"]["system"]
+  userTools?: StreamInput["user"]["tools"]
+  system: string[]
+  tools: Record<string, Tool>
 }
 type PromptCacheState = {
   system: Map<string, Map<string, SystemCache>>
@@ -65,19 +76,19 @@ export const PromptCaches = (globalWithCaches.__rc_prompt_caches ??= {
 PromptCaches.seen ??= new Map<string, number>()
 PromptCaches.souls ??= new Map<string, SoulSnapshot>()
 
-// 261104 Red 压缩请求的前缀复用：只返回与该模型匹配的主请求快照。
-// 模型切换或快照已被回收时返回 undefined，调用方退回独立请求（system: []）。
+// 261104 Red 压缩请求的前缀复用：只返回与该模型、同一推理档位匹配的主请求快照。
+// 模型切换、variant 切换或快照已被回收时返回 undefined，调用方退回独立请求。
 export function requestSnapshot(sessionID: string, modelKey: string, variant?: string) {
   const snapshot = PromptCaches.request.get(sessionID)
-  if (!snapshot || snapshot.modelKey !== modelKey || snapshot.user.model.variant !== variant) return undefined
+  if (!snapshot || snapshot.modelKey !== modelKey || snapshot.variant !== variant) return undefined
   return snapshot
 }
 
 export function recordRequest(input: RequestSnapshot) {
-  const { tools, ...data } = input
   PromptCaches.request.set(input.sessionID, {
-    ...structuredClone(data),
-    tools: Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, { ...tool }])),
+    ...input,
+    system: [...input.system],
+    tools: Object.fromEntries(Object.entries(input.tools).map(([name, tool]) => [name, { ...tool }])),
   })
 }
 

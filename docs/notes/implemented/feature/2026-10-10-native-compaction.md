@@ -258,7 +258,7 @@ native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩�
 
 1. 摘要只传工具的 description/inputSchema/strict/providerOptions，不保留任何执行或输入生命周期回调；请求显式 `toolChoice: "none"`。processor 原有 summary 拒绝逻辑继续作为违规工具事件的终止边界，主请求工具不被原地修改。
 2. 撤销无条件整段消息复用。摘要始终使用实际选中的 `head`，沿用媒体剥离、每条工具输出 2000 字符截断，以及上一窗口摘要作为背景的既有路径。保留 system/tools 前缀复用，不为了消息段命中率扩大摘要范围或媒体输入。
-3. `modelMsgs` 明确只拥有下一轮的组装稳定化缓存。`request` 在 processor 的真实模型响应回调中一次性记录匹配的 user、agent 对象、system、tools、messages、permission、parentSessionID 和 modelKey；user 同时携带 variant。可序列化部分深拷贝，工具对象复制但保留主请求自己的执行函数。Preflight、准备失败、未收到响应的请求不替换旧快照；后者宁可不复用，也不冒认服务端缓存已建立。
+3. `modelMsgs` 明确只拥有下一轮的组装稳定化缓存。`request` 在 processor 的真实模型响应回调中一次性记录压缩消费的字段：agent、permission、parentSessionID、userSystem/userTools、variant、system、tools 与 modelKey。数组与工具对象浅拷贝、**活对象按引用保留**——agent/tools 带函数与运行时内部结构，深拷贝会让每个主请求都在首个响应回调抛「The object can not be cloned」（261104 同日回归，见下文）；快照不携带消息正文。Preflight、准备失败、未收到响应的请求不替换旧快照；后者宁可不复用，也不冒认服务端缓存已建立。
 4. 摘要只取同会话、同 provider/model、同 variant 的发送快照。agent 对象与 user.system 一起复用，不在压缩时重新解析可能已经改变的同名 agent；前缀加选段和摘要指令的估算输入若超出 `usable()` 预算，或窗口未知，则回退独立 compaction agent/空工具请求。估算沿用现有 Token/image-tokens 口径，不承诺供应商一定命中缓存。
 
 ### 取舍与模型可见四问
@@ -271,3 +271,11 @@ native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩�
 验证覆盖回调隔离、超预算前缀回退、双窗口及图片排除、发送与组装分代、variant 隔离、快照不受后续对象修改影响。测试使用隔离数据库及本地/脚本化模型，不调用真实供应商，不修改现场会话。
 
 最终定向验证：summary/preflight 7 pass，prompt-caches 与 TUI prompt-soul-submit 20 pass；opencode typecheck、版本一致性、`git diff --check` 通过。扩展连跑另外遇到既有 `stops quickly when aborted during retry backoff` 的 1 秒就绪超时，以及 `cancel with queued callers resolves all cleanly` 的 3 秒测试超时；未修改这些阈值，不宣称整文件回归全绿。TUI 另以真实 Prompt renderer 检查六组宽度/路径/分支字符帧，档位仍在模型行。未重编、提交或推送。
+
+### 同日回归：快照深拷贝打死所有主请求
+
+首次实现用 `structuredClone` 冻结整个快照（含 agent 与 messages）。隔离用例里这些是纯字面量对象，因此全绿；生产上 agent 是 Agent 层的活对象，`structuredClone` 抛 `DataCloneError`，而调用点在首个模型响应回调里，错误直接落成 assistant error——任何消息都只显示 `The object can not be cloned.`（`dev.log`: `service=session.processor ... stack=structuredClone@[native code] recordRequest@prompt-caches.ts`）。
+
+修法：快照只保留压缩真正消费的字段，浅拷贝数组与工具对象，活对象按引用保留并约定调用方不原地改写；不再对任意对象图做深拷贝。回归锁两条：「活对象（含函数）可安全入快照」与「快照不含 messages、不借用下一轮组装缓存」。
+
+模型可见四问：① 模型输入不变，只修前缀复用的内存表示；② 固定前缀 0 增量；③ 快照不再携带消息，压缩仍只复用 system/tools，消息段按选段重建；④ 无新增注入项。

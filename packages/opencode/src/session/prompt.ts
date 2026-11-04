@@ -2254,16 +2254,18 @@ export const layer = Layer.effect(
             },
             Effect.gen(function* () {
               // 261104 Red 真实模型响应确认发送后，原子记录同代快照；preflight/准备失败不覆盖。
+              // 只存压缩消费的字段，不深拷贝活对象（见 prompt-caches.ts recordRequest 注释）。
               recordRequest({
                 sessionID,
                 modelKey: `${stepSettings.model.providerID}/${stepSettings.model.id}`,
-                user: stepSettings.user,
+                variant: stepSettings.user.model.variant,
                 agent,
                 permission: stepSettings.session.permission,
                 parentSessionID: stepSettings.session.parentID,
+                userSystem: stepSettings.user.system,
+                userTools: stepSettings.user.tools,
                 system,
                 tools: sortedTools,
-                messages: outgoing,
               })
               if (ownedQueuedMessageID) {
                 const messageID = ownedQueuedMessageID

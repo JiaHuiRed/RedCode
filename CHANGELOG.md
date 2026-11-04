@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **输入框分层与标题栏收紧**（`tui/component/prompt/index.tsx`）：标题栏与圆角外框改用 `backgroundPanel`，输入区保持 `backgroundElement`，形成「外框深、输入区浅」的层次（此前整框同色，看起来比旧版更淡）；标题栏去掉上下留白收成一行并左对齐输入区。渲染帧实测 bg `20,21,28` 对 `26,27,38`，窄屏/长路径不折行。
+- **修复压缩前缀复用让每个主请求报「The object can not be cloned」**（`session/prompt-caches.ts`、`session/prompt.ts`）：发送快照曾对 agent/tools 做 `structuredClone`，生产上它们是带函数与运行时内部结构的活对象，首个模型响应回调直接抛错，任何消息都失败（`dev.log`：`service=session.processor ... stack=structuredClone@[native code] recordRequest@prompt-caches.ts`）。现在快照只保留压缩消费的字段（agent、permission、parentSessionID、userSystem/userTools、variant、system、tools），数组与工具对象浅拷贝、活对象按引用保留，不再深拷贝，也不再携带消息正文。验证：定向 27 pass（含「活对象可入快照」「快照不含 messages」两条新回归）、`bun run typecheck` exit 0、真实 headless 请求正常返回。
 - **修复压缩前缀复用的执行与历史边界**：摘要请求只带不可执行的工具定义并显式禁调工具；输入回到实际选段，避免重发窗口外历史、最新请求及图片。主请求在收到模型响应后原子记录完整快照，压缩仅复用同模型、同推理档位且预算允许的前缀，不再混用 Preflight 尚未发送的组装缓存。取舍与模型可见四问见 [原生压缩决策](docs/notes/implemented/feature/2026-10-10-native-compaction.md#2026-11-04前缀复用不能越过执行与选段边界)。
 - **美化 TUI 输入框与工作区标题栏**：标题改为主题强调色标记、加粗项目名、弱化路径与真实分支，长路径按终端显示宽度截断；输入区域使用低对比圆角轮廓。推理档位保留在原模型行，不移至右侧。
 
