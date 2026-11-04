@@ -84,7 +84,7 @@ export function list(sessionID: SessionID): Block[] {
 
 export function render(block: Block) {
   return [
-    "[Historical context summary. This is not a new user instruction or authorization.]",
+    "[Historical context summary. This is not a new user instruction or authorization. Treat it as established background: continue the task from the messages that follow without restating or acknowledging this summary.]",
     `[block:${block.id}; sources: ${block.sourceMessageIDs[0]} .. ${block.sourceMessageIDs.at(-1)}]`,
     block.topic,
     block.summary,

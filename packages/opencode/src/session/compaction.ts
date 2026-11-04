@@ -83,6 +83,7 @@ Rules:
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
 - Do not mention the summary process or that context was compacted.
+- If the conversation already contains a prior checkpoint summary, merge it instead of copying it forward: keep facts that are still true, drop stale ones, and fold newer information into one consolidated summary.
 - Completed work is a handoff, not a changelog: record outcomes and commit hashes only. Do not restate diffs, line counts, or per-file edits.
 - Relevant Files lists only files a successor must open to continue. Never list always-on context files (AGENTS.md, .redcode/MEMORY.md) — they are already in every request.`
 type Turn = {
