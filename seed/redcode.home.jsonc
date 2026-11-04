@@ -257,7 +257,7 @@
     // provider.ollama 在本地层（按各机显存挑）；放这里会被 merge-home-config 当"缺键"补回。
     // anthropic 块 260729 起已删（占位 key + 模型 404）——模板与 live 必须同删，否则同步写回。
   },
-  // 261027 Red 子代理统一使用 Terra：explore medium、execute high。
+  // 261027 Red 子代理：explore 用 Terra medium；261104 Red execute 换 opencode-go DeepSeek V4.1 Flash max。
   "agent": {
     // 261012 Red 压缩模型与档位继承触发该轮主会话，不要固定 compaction.model/variant。
     "explore": {
@@ -270,7 +270,7 @@
       },
       "variant": "medium"
     },
-    "execute": { "model": "openai/gpt-6.1-terra", "variant": "high" },
+    "execute": { "model": "opencode-go/deepseek-v4.1-flash", "variant": "max" },
   },
   "experimental": { "repeated_tool_failure_limit": 2 },
 }
