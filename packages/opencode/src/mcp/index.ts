@@ -40,6 +40,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { createStdioClientTransport, WindowsJobStdioClientTransport } from "./stdio"
 import { McpRetry } from "./retry"
+import { McpReconnectPolicy } from "./reconnect-policy"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
@@ -602,6 +603,8 @@ interface State {
   cancelled: Set<string>
   requests: Map<string, object>
   disposed: boolean
+  // 261104 Red 重连退避预算（按服务器）：见 mcp/reconnect-policy.ts
+  reconnect: Map<string, McpReconnectPolicy.Budget>
 }
 
 export interface Interface {
@@ -1013,6 +1016,7 @@ export const layer = Layer.effect(
           cancelled: new Set(),
           requests: new Map(),
           disposed: false,
+          reconnect: new Map(),
         }
 
         const connectAll = Effect.forEach(
@@ -1245,7 +1249,19 @@ export const layer = Layer.effect(
       s.creating.set(name, pending)
       s.cancelled.delete(name)
       return yield* Effect.gen(function* () {
-        const result = yield* create(name, mcp)
+        // 261104 Red 启动总预算：connect 与初始工具同步各自 30s 单步超时，组合最坏可拖到 60s+。
+        //   与 dsh mcp-client 一致整段收口，超时收敛成 failed（不留在 connecting），
+        //   配置错误的 server 不会再无限占着创建锁。预算是单步超时的两倍，配置放大时同比放大。
+        const budgetMs = (mcp.timeout ?? DEFAULT_TIMEOUT) * 2
+        const result = yield* create(name, mcp).pipe(
+          Effect.timeoutOrElse({
+            duration: `${budgetMs} millis`,
+            orElse: () =>
+              Effect.succeed<CreateResult>({
+                status: { status: "failed", error: `MCP startup exceeded its budget (${budgetMs}ms)` },
+              }),
+          }),
+        )
         if (s.cancelled.has(name)) {
           const client = result.mcpClient
           if (client) {
@@ -1309,17 +1325,44 @@ export const layer = Layer.effect(
     })
 
     // 260603 Red P0+P1: 自动重连（使用 EffectBridge 不依赖 AppRuntime）
+    // 261104 Red 重连退避：配置错的 server 原先每次工具调用都重连、无上限；
+    //   策略见 mcp/reconnect-policy.ts（500ms 指数到 30s、10 次封顶、稳定 30s 重置）。
     const reconnectServer = Effect.fn("MCP.reconnectServer")(function* (name: string) {
       const cfg = yield* cfgSvc.get()
       const mcpCfg = cfg.mcp?.[name]
       if (!mcpCfg || !isMcpConfigured(mcpCfg) || mcpCfg.enabled === false) return
-      log.info("auto-reconnecting MCP server", { name })
+      const s = yield* InstanceState.get(state)
+      const decision = McpReconnectPolicy.decide({ budget: s.reconnect.get(name), now: Date.now() })
+      if (decision.type === "wait") {
+        log.debug("MCP reconnect deferred by backoff", { name, waitMs: decision.waitMs })
+        return
+      }
+      if (decision.type === "exhausted") {
+        log.warn("MCP reconnect budget exhausted; connect manually to retry", {
+          name,
+          failures: s.reconnect.get(name)?.failures ?? McpReconnectPolicy.MAX_ATTEMPTS,
+        })
+        return
+      }
+      log.info("auto-reconnecting MCP server", { name, attempt: decision.attempt })
       yield* createAndStore(name, { ...mcpCfg, enabled: true }).pipe(Effect.catch(() => Effect.void))
+      if (s.status[name]?.status === "connected") {
+        s.reconnect.set(name, { failures: 0, nextAt: 0, connectedAt: Date.now() })
+        return
+      }
+      s.reconnect.set(name, {
+        failures: decision.attempt,
+        nextAt: Date.now() + McpReconnectPolicy.delayFor(decision.attempt),
+      })
+      if (decision.attempt >= McpReconnectPolicy.MAX_ATTEMPTS)
+        log.warn("MCP reconnect budget exhausted; connect manually to retry", { name, failures: decision.attempt })
     })
 
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: ConfigMCP.Info) {
       yield* createAndStore(name, mcp)
       const s = yield* InstanceState.get(state)
+      // 261104 Red 显式新增/改配置视为人工介入，清掉退避预算
+      s.reconnect.delete(name)
       return { status: s.status }
     })
 
@@ -1330,6 +1373,8 @@ export const layer = Layer.effect(
         return
       }
       const s = yield* InstanceState.get(state)
+      // 261104 Red 手动 connect 视为人工介入，清掉退避预算（自动重连仍受退避约束）
+      s.reconnect.delete(name)
       const request = {}
       s.requests.set(name, request)
       const pending = s.creating.get(name)
@@ -1341,6 +1386,8 @@ export const layer = Layer.effect(
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
       const s = yield* InstanceState.get(state)
       s.requests.delete(name)
+      // 261104 Red 手动断开清掉退避预算：下次 connect 立即重试，不被旧失败次数挡住
+      s.reconnect.delete(name)
       if (s.creating.has(name)) s.cancelled.add(name)
       yield* closeClient(s, name)
       delete s.clients[name]

@@ -14,6 +14,7 @@
 - **TUI Context 构成支持键盘操作**（`sidebar/context-composition.tsx`、`config/keybind.ts`）：侧栏折叠件此前只有 `onMouseDown`，纯键盘用户无法展开 Composition 及组明细。新增 `sidebar_composition_toggle`（默认 `<leader>i`）切换 Composition，键盘展开时一并显示 system/tools/messages 三组明细、再按整块收起；鼠标仍保留逐组开合。键位可经 `keybind` 配置覆盖。验证：sidebar-composition 5 pass（键盘用例摘掉实现即变红）、sidebar-context 通过、typecheck exit 0。
 - **TUI Context 构成长标签按显示宽度裁剪**（`sidebar/context-composition.tsx`）：后端 label 上限 48 字符（按字符数截），侧栏内容实际 37 列，展开明细时 ASCII 标签折成 2 行、CJK 双宽折成 3 行。明细行按 `Bun.stringWidth` 裁到 26 列并补省略号，仅影响 TUI 渲染。验证：42 列渲染用例覆盖 ASCII 与 CJK，摘掉裁剪即变红。
 - **重复工具失败停止时落成消息 error，子代理回执不再误报 completed**（`session/prompt.ts`、`session/message-v2.ts`）：`ToolFailureGuard` 停止本轮时只往正文追加说明，assistant 消息的 `finish` 仍停在 `tool-calls`，`finished` 判定把它当正常完成——子代理回执与 `task_status` 都报 `state: completed`，父代理以为任务成功（实测 explore 子代理 14:18:43 已停止，父代理拿到的回执却是 `state: completed`）。现在停止时写入 `ToolFailureStoppedError` 并发布 `session.error`：task 结果、`task_status`、TUI 错误态与通知都能看到失败；loop 已 break，不会据此重试。模型可见四问：①无提示词注入变化；②固定前缀不动；③无前缀结构变化；④无新增注入项。验证：prompt 重复失败用例 7 pass（摘掉 error 赋值 6 条变红）、task_status 13 pass、typecheck exit 0、openapi drift 一致。
+- **MCP 启动总预算与重连退避**（`mcp/index.ts`、`mcp/reconnect-policy.ts`）：connect 与初始工具同步各自有 30s 单步超时，但组合最坏可拖到 60s+ 且一直占着创建锁；现在整段收口到「单步超时 ×2」的总预算，超时收敛成 failed 状态。自动重连此前每次工具调用失败都直接重连、无上限，配置错的 server 会被反复 spawn；改为 500ms 起指数退避、30s 上限、10 次封顶，连接稳定 30s 才重置预算，手动 connect/add/disconnect 清空预算。策略对齐 deepseek-harness `mcp-client`（`6acca42d71`）。验证：reconnect-policy 6 pass（摘掉上限判断即变红）、MCP 现有 41 pass、typecheck exit 0。
 
 ### [0.14.1] - 2026-11-04
 
