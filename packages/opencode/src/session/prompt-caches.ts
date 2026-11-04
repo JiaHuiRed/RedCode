@@ -75,6 +75,16 @@ export function requestSnapshot(sessionID: string, modelKey: string) {
   return snapshot
 }
 
+/**
+ * 261104 Red 压缩请求复用主请求的完整消息前缀：压缩用它 + 摘要指令，消息段才能像
+ * system/tools 一样命中缓存。实测只复用 system/tools 时 223,626 输入命中 38,912，
+ * history 从第 0 条起就是 rewrite——压缩侧用 toModelMessagesEffect(head)，主请求用的是
+ * stitchModelMessages 的稳定化快照，两者前缀不一致。
+ */
+export function pinnedMessages(sessionID: string, modelKey: string) {
+  return PromptCaches.modelMsgs.get(sessionID)?.get(modelKey)?.messages
+}
+
 // 260811 cc audit R4 分代结算（哥哥拍板：缓存优先）：
 // msgPin/modelMsgs 把已发送的消息钉死在首次快照上——这是前缀缓存的命根子，但也意味着
 // 一切对旧消息的改写（compaction prune 打的 compacted 标记、DCP 的压缩改写）在平时

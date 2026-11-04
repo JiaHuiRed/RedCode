@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   dropSession,
   overlayToolDefs,
+  pinnedMessages,
   PromptCaches,
   requestSnapshot,
   settlePromptCaches,
@@ -211,6 +212,19 @@ describe("request snapshot", () => {
     PromptCaches.request.set(sessionID, { sessionID, modelKey: "m", agent: "build", system: [], tools: {} })
     dropSession(sessionID)
     expect(requestSnapshot(sessionID, "m")).toBeUndefined()
+  })
+})
+
+// 261104 Red 压缩消息段复用主请求的稳定化快照：只有同模型才有意义。
+describe("pinned messages", () => {
+  test("returns the stabilized messages only for the matching model", () => {
+    const sessionID = "ses_pinned"
+    PromptCaches.modelMsgs.set(sessionID, new Map([
+      ["m", { sessionID, modelKey: "m", messages: [{ role: "user", content: "hi" }] }],
+    ]))
+    expect(pinnedMessages(sessionID, "m")?.length).toBe(1)
+    expect(pinnedMessages(sessionID, "other")).toBeUndefined()
+    dropSession(sessionID)
   })
 })
 

@@ -8,7 +8,7 @@ import { Token } from "@/util/token"
 import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionProcessor } from "./processor"
-import { requestSnapshot } from "./prompt-caches"
+import { pinnedMessages, requestSnapshot } from "./prompt-caches"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
@@ -595,6 +595,11 @@ export const layer = Layer.effect(
         mark("request")
         requestStartedAt = checkpoint
         const snapshot = requestSnapshot(input.sessionID, `${model.providerID}/${model.id}`)
+        // 261104 Red 消息段复用主请求的稳定化快照：head 的 toModelMessagesEffect 与主请求的
+        // stitchModelMessages 前缀从第 0 条就不同，实测 history 全 rewrite、只有 system/tools
+        // 命中。用 pinned（主请求实际发出的消息）才能让消息段一起命中；缺失时退回选段。
+        const pinned = pinnedMessages(input.sessionID, `${model.providerID}/${model.id}`)
+        const history = pinned ?? modelMessages
         // 261104 Red 压缩请求必须沿用主请求的 agent：最终 system 的第一段是 agent prompt，
         // 固定用 "compaction" 会让前缀从第一个 token 就与主请求不同，复用的 system 也白费。
         const agent = (snapshot ? yield* agents.get(snapshot.agent) : undefined) ?? compactionAgent
@@ -605,7 +610,7 @@ export const layer = Layer.effect(
           // 实测 141,943 输入 0 命中、全价计费。快照缺失（冷启动/被回收/换模型）时退回空。
           tools: snapshot?.tools ?? {},
           system: snapshot ? [...snapshot.system] : [],
-          messages: [...modelMessages, {
+          messages: [...history, {
             role: "user",
             content: [{ type: "text", text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],
           }], model,
