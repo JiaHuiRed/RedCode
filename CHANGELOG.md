@@ -10,6 +10,9 @@
 
 ### [Unreleased]
 
+- **TUI Context 构成支持键盘操作**（`sidebar/context-composition.tsx`、`config/keybind.ts`）：侧栏折叠件此前只有 `onMouseDown`，纯键盘用户无法展开 Composition 及组明细。新增 `sidebar_composition_toggle`（默认 `<leader>i`）切换 Composition，键盘展开时一并显示 system/tools/messages 三组明细、再按整块收起；鼠标仍保留逐组开合。键位可经 `keybind` 配置覆盖。验证：sidebar-composition 5 pass（键盘用例摘掉实现即变红）、sidebar-context 通过、typecheck exit 0。
+- **TUI Context 构成长标签按显示宽度裁剪**（`sidebar/context-composition.tsx`）：后端 label 上限 48 字符（按字符数截），侧栏内容实际 37 列，展开明细时 ASCII 标签折成 2 行、CJK 双宽折成 3 行。明细行按 `Bun.stringWidth` 裁到 26 列并补省略号，仅影响 TUI 渲染。验证：42 列渲染用例覆盖 ASCII 与 CJK，摘掉裁剪即变红。
+
 ### [0.14.1] - 2026-11-04
 
 - **OpenCode Go 订阅额度接入侧栏**：TUI、GUI 与桌宠复用已有额度快照，显示 5 小时、周和月用量及重置时间；使用已配置的 Go API key 查询用量接口，月窗口不假设固定天数。设计与取舍见 [Go 额度决策](docs/notes/implemented/feature/2026-11-04-opencode-go-quota.md)。

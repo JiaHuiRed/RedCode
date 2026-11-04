@@ -76,6 +76,8 @@ export const Definitions = {
   theme_switch_mode: keybind("none", "Switch between light and dark theme mode"),
   theme_mode_lock: keybind("none", "Lock or unlock theme mode"),
   sidebar_toggle: keybind("<leader>b", "Toggle sidebar"),
+  // 261104 Red Context 构成的键盘入口：侧栏折叠件此前只有 onMouseDown。
+  sidebar_composition_toggle: keybind("<leader>i", "Inspect context composition"),
   scrollbar_toggle: keybind("none", "Toggle session scrollbar"),
   status_view: keybind("<leader>s", "View status"),
 
@@ -273,6 +275,7 @@ export const CommandMap = {
   theme_switch_mode: "theme.switch_mode",
   theme_mode_lock: "theme.mode.lock",
   sidebar_toggle: "session.sidebar.toggle",
+  sidebar_composition_toggle: "sidebar.composition.toggle",
   scrollbar_toggle: "session.toggle.scrollbar",
   status_view: "redcode.status",
   session_export: "session.export",

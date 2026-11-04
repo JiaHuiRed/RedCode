@@ -1,5 +1,6 @@
 import type { AssistantMessage, ContextSnapshot, Message } from "@redcode-ai/sdk/v2"
 import type { TuiPluginApi } from "@redcode-ai/plugin/tui"
+import { useBindings } from "@tui/keymap"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 
 // 261104 Red 同一条 assistant 可在流式过程中多次更新；只在完成后的稳定身份变化时刷新。
@@ -48,7 +49,37 @@ export function ContextComposition(props: {
 }) {
   const theme = () => props.api.theme.current
   const [open, setOpen] = createSignal(false)
-  const [detail, setDetail] = createSignal<string>()
+  const [detail, setDetail] = createSignal<readonly string[]>([])
+  // 261104 Red 键盘等价操作：侧栏折叠件此前只有 onMouseDown。键盘展开时三组明细
+  // 一并展示（一次看全，收起时清空），鼠标仍可逐组开合；键位走 keybind 配置
+  // （默认 <leader>i），改键不用动代码。
+  const toggle = () => {
+    setOpen((value) => {
+      setDetail(value ? [] : ["system", "tools", "messages"])
+      return !value
+    })
+  }
+  // 鼠标只切开合，保留逐组开合的原有手感；键盘走 toggle 一次看全。
+  const toggleOpen = () => {
+    setOpen((value) => {
+      if (value) setDetail([])
+      return !value
+    })
+  }
+  const toggleGroup = (id: string) => {
+    setDetail((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  }
+  useBindings(() => ({
+    commands: [
+      {
+        name: "sidebar.composition.toggle",
+        title: "Inspect context composition",
+        category: "Context",
+        run: toggle,
+      },
+    ],
+    bindings: props.api.tuiConfig.keybinds.gather("sidebar", ["sidebar.composition.toggle"]),
+  }))
   let cached: { key: string; data: ContextSnapshot } | undefined
   const pending = new Map<string, Promise<{ key: string; data?: ContextSnapshot; error?: string }>>()
   const request = createMemo(() => open() ? snapshotRequestKey(props.sessionID, props.messages) : false)
@@ -79,7 +110,7 @@ export function ContextComposition(props: {
 
   return (
     <box flexDirection="column">
-      <box onMouseDown={() => setOpen((value) => !value)}>
+      <box onMouseDown={toggleOpen}>
         <text fg={theme().textMuted}>
           {open() ? "▾" : "▸"} Composition
           <Show when={open() && !snapshot.loading && current()?.data}>
@@ -95,13 +126,13 @@ export function ContextComposition(props: {
                 <For each={snapshotGroups(value())}>
                   {(group) => (
                     <box flexDirection="column">
-                      <box onMouseDown={() => setDetail((current) => current === group.id ? undefined : group.id)}>
+                      <box onMouseDown={() => toggleGroup(group.id)}>
                         <text fg={theme().textMuted}>
-                          {"  "}{detail() === group.id ? "▾" : "▸"} {group.label} {props.compact(group.tokens)}
+                          {"  "}{detail().includes(group.id) ? "▾" : "▸"} {group.label} {props.compact(group.tokens)}
                           {group.percent === undefined ? "" : ` · ${group.percent}%`}
                         </text>
                       </box>
-                      <Show when={detail() === group.id}>
+                      <Show when={detail().includes(group.id)}>
                         <For each={group.items}>
                           {(item) => <text fg={theme().textMuted}>{"    "}{fitLabel(item.label)} {props.compact(item.tokens)}</text>}
                         </For>
