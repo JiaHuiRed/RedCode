@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+### [0.14.1] - 2026-11-04
+
 - **OpenCode Go 订阅额度接入侧栏**：TUI、GUI 与桌宠复用已有额度快照，显示 5 小时、周和月用量及重置时间；使用已配置的 Go API key 查询用量接口，月窗口不假设固定天数。设计与取舍见 [Go 额度决策](docs/notes/implemented/feature/2026-11-04-opencode-go-quota.md)。
 - **TUI Context 侧栏精简**：移除底部重复的 agent 名称行。
 - **TUI Context 展示引擎档位与构成**：进度条按服务端已有档位上色；默认折叠的 Composition 按需展示 system、工具和消息的估算构成及快照时间。口径与刷新边界见 [引擎档位](docs/notes/implemented/feature/2026-08-19-context-bar-level-color.md) 和 [构成快照](docs/notes/implemented/feature/2026-08-20-context-inspector.md)。
@@ -26,6 +28,15 @@
 - **文件已读状态跨重启保留**（`file/time.ts`）：「写前已读」守卫的记录此前是纯进程内存态，server 重启后哪怕同一会话刚读过，首次覆写仍要求重读——续接长会话时最容易撞。参照 ZCode 的 `tool/17-read-file-state-resume.md`（其 ZCT-202606-B2299F52 记录了同款用户反馈），改为按会话落 `data/file-time/<sessionID>.json`，冷启动后首次 record/assert 惰性加载。磁盘读失败、JSON 损坏、版本不符一律按「没读过」处理——fail-safe 方向必须是要求重读，不能放行旧内容；读取失败或被跳过的文件本来就没进内存表，不落盘。上限：单会话 2000 条（超出丢最旧）、超过 7 天的记录在进程首次写入时清理、evictor 回收会话时连磁盘记录一起删。这不进模型上下文，行为影响是重启后续接可以继续改已读过的文件，不再被迫重读。验证：time 套件 6 pass（新增「重启后仍记得」「重启后外部改动仍被拦」「损坏记录按未读」）、write 18 pass、edit 65 pass、apply_patch 29 pass、typecheck exit 0。
 
 - **MCP 表单保真、白名单三态与文件状态写删竞态**（`settings-mcp.tsx`、`config/config.ts`、`file/time.ts`）：外部审查三项。① 编辑既有 MCP 时命令按 `command.join(" ")` 回显、保存再按空白 split，带空格的路径（`C:\My Tools\server.py`）会被拆成两个 token，保存一次就毁掉启动命令——改为编辑态按 JSON 数组回显，简单命令输入仍保留给新增，解析失败直接报错不再静默落盘。② `config/mcp.ts` 里「不写 tools=开放全部、`[]`=屏蔽全部」本可表达三态，但表单只在非空时提交 tools，导致 GUI 无法表达「屏蔽全部」，清空白名单还会被增量合并读回旧规则；改为三态选择，并在 `updateGlobal` 里对 mcp 条目的 `tools` 做整条替换（缺省即删除），表单未展示的字段保持不动。③ `FileTime` 的写盘与 evictor 回收此前是两条队列，会话被回收后晚到的写会把刚删掉的文件重建、让续接绕过重读；删除排进同一写队列，并用已淘汰集合丢弃迟到写与阻止重新加载。验证：config 99 pass（新增「不带 tools 清除旧白名单」）、time 7 pass（新增「被回收的会话不会被排队的写重新创建」）、app/opencode typecheck exit 0；真机确认编辑既有 MCP 时命令显示为 JSON 数组、白名单显示为「仅以下工具」。
+
+- **接入 SCNet Token Plan 两个模型**（`seed/redcode.home.jsonc`）：seed 模板新增 scnet-token-plan 供应商，只放行 DeepSeek-V4.1-Flash-1017 与 GLM-5.3-Flash，手写 attachment 与 interleaved（reasoning_content）——默认探测按 `apiID.includes("deepseek")` 大小写敏感，大写模型 ID 不命中、不手写就拿不到思考内容。凭据写 `data/auth.json` 不入库，live 与 seed 保持一致防同步反向覆盖。验证：headless run 两模型正常回复、图片输入可识别。（0.14.0 漏收编，本版补录。）
+- **工具参数流式推送**（`session/processor.ts`）：tool-input-delta 按节流间隔把 pending part 的 raw 推给客户端做渐进预览，写长文档的 args 流式生成期间不再只有一行 Preparing；完成时 state 切 running 不带 raw 自然清场。纯 bus 推送不落库，不影响模型可见内容。
+- **MCP connecting 状态与连接完成自动刷新**（`packages/app`）：连接中状态实时显示、连接完成自动刷新列表，消除「看似反复重试」的错觉。
+- **投影跳过在途 assistant，并行请求不再携带中间态条目**（`session/message-v2.ts`）：记忆召回等并行请求在主轮流式中途读库组装 body 时，会把未收尾 assistant 消息的中间态条目带上线；条目收尾后下一请求前缀在该条目分叉、尾部缓存作废（ses_ffe5e5 三次中段回退 ≈20k token，383→8363 字符改写实证）。守卫：无 finish 且无 error 的在途 assistant 整体跳过，收尾后以完整形态首次出现，投影保持纯追加。模型可见四问：并行请求 history 不再含中间态条目；并行请求略小、固定前缀不动；消除分叉点、前缀恢复 append；无新增注入。验证：message-v2 79 pass、typecheck exit 0。取证见 [缓存不稳定审计](docs/notes/proposed/bug-fix/2026-10-12-gpt-6.1-sol-cache-instability.md) §2026-11-04。
+- **网关收尾挂起按 idleAfterUsageMs 短窗掐流**（`session/processor.ts`、`config/reasoning-stall.ts`）：GLM 对长上下文请求实测「响应主体已吐完但流不关」挂起形态（finish part 已到、EOF 迟迟不来），streamText 卡在 step 边界，idleMs（300s）全程空转、在途工具被误标 aborted（301s 整拍 ×5 实证）。race 兜底：finish 事件到达后的静默按 idleAfterUsageMs（默认 60s，可配置）掐流续跑；finish 未到的纯思考静默仍走 idleMs，长思考保护不回退。process 出口加 step.exit TEMP 探针辅助定位残余静默段，归因后撤除。模型可见四问：无注入变化；挂起轮重发提前；无前缀结构变化；无新增注入。验证：新用例 + idle 纯思考用例 + doom_loop 全过、typecheck exit 0。
+- **CI 拆分层级并修复一批基建问题**（`.github/workflows/`）：push 快闸（smoke 321 核心用例 + 契约快闸）与 nightly 全量（4500 unit + 170 httpapi）分层，push 不再等全量；heavy lane 逐文件独立进程避免同进程文件互染（全局 60s 超时实测 2h7m 已回退 30s）；单测失败继续跑其余包不挡主套件；放宽 opencode CI 超时并关闭 gates filewatcher；Bun cache 仅由 typecheck 保存去重；修复两批 CI 失败与测试契约漂移、对齐额度耗尽文案断言。261103 首次四 check 全绿。
+- **修复胶囊圆角契约**（`packages/app`）：index.css 与 pet-layer.css 补 corner-shape: round，修复 UI 全圆契约失败。
+- **openrouter 白名单收敛至 stealth/crouton-alpha**（`seed/redcode.home.jsonc`）：只留 11-03 上线的免费 stealth 模型，其余免费层条目一并过滤——白名单决定模型可见性，残留条目只制造列表噪音。
 
 ### [0.14.0] - 2026-10-31
 - **忙碌引导改为待消费形态并新增打断发送**（`packages/opencode/src/session/`、`packages/app/src/components/prompt-input*`、`pages/session.tsx`、TUI `prompt/index.tsx`）：忙碌时的引导（steer）现在落 `pending_steer` 待消费形态——已进消息流（用户随时可编辑/撤回），但未领取前对模型隐藏（组装、`MessageV2.latest` 与 reminder 收集三处排除，防 promote 后落库的窗口竞态）；loop 每步组装前 `promotePendingSteer` 领取转 steer，与编辑/撤回在 queueLock 串行，领取后编辑明确 409 不悄悄改历史。busy 判定以服务端 Runner 为准（`isBusy` 查询），不信客户端快照。新增 `interruptPrompt` 服务端入口（`POST /session/:id/interrupt_prompt`）：单请求串行「取消当前 Runner → 提交新消息 → 开新轮」，客户端不再自己串 abort + prompt 两个请求；不碰 Git 快照、不回滚工作区文件，旧工具中断由 cancelTree 异步收尾。GUI 忙碌且输入非空时主按钮旁出现「打断并发送」按钮（与引导发送并存，纯停止仍是忙碌+空输入的 stop 形态），TUI 忙碌默认从 queue 对齐为 steer、`/pending` 同时管理 queued 与 pending_steer。GUI 待消费 dock 同时接受 queued 与 pending_steer 两形态（编辑/撤回/立即送达三键共用）。模型可见四问见 [引导与打断决策](docs/notes/implemented/feature/2026-10-31-steer-pending-interrupt.md)。
