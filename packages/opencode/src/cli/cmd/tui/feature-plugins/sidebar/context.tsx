@@ -106,10 +106,6 @@ export function contextSource(messages: ReadonlyArray<Message>) {
 // 命中率等比率仍按已加载消息算（聚合行没有 miss 分桶）。聚合缺失时退回子集累计。
 type TokenAggregate = { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
 
-// 261011 Red 会话累计（Session total）优先读服务端会话行聚合：msg() 只是分页已
-// 加载子集，长会话下能比真实累计小一个数量级（本机现场 1.8 千万 vs 1.3 亿）。
-// 口径与 GUI session-context-metrics.ts 的 SessionAggregate 一致（260930 同款修复），
-// 命中率等比率仍按已加载消息算（聚合行没有 miss 分桶）。聚合缺失时退回子集累计。
 // 261028 Red 第三参并入子代理用量：元素是子会话行，从 session.children 端点拿全量
 // （sync.data.session 只是近期/有限条目，从列表求和会静默漏算老会话——261022 同款
 // 坑），行上带 projector 随 step-finish 维护的 token 聚合。与 GUI 模型按钮悬停的
