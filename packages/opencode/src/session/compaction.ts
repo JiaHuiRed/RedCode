@@ -1022,10 +1022,28 @@ export const layer = Layer.effect(
       auto: boolean
       overflow?: boolean
     }) {
+      // 261104 Red 压缩父消息的 model.variant 曾在链路上游丢失（取证与代价见
+      // docs/notes/proposed/bug-fix/2026-10-12-gpt-6.1-sol-cache-instability.md §2026-11-04）：
+      // 父→SUM→followup→续跑 assistant 全链继承这条 model，variant 缺失会让压缩重建与
+      // 续跑整体落到错误 reasoning 参数的缓存池（实测 25 分钟错档 + 用户下条真实消息
+      // 翻回时 207k 全价重读）。此处以会话当前选择兜底；守卫同 prompt.ts 的
+      // sessionVariant——仅当与请求模型同源且非 "default" 才继承。
+      // 会话行缺失时不兜底、不改 create 的错误签名，行为与修复前一致。
+      const current = yield* session.get(input.sessionID).pipe(Effect.option)
+      const variant =
+        input.model.variant ??
+        (Option.isSome(current) &&
+        current.value.model &&
+        current.value.model.providerID === input.model.providerID &&
+        current.value.model.id === input.model.modelID &&
+        current.value.model.variant &&
+        current.value.model.variant !== "default"
+          ? current.value.model.variant
+          : undefined)
       const msg = yield* session.updateMessage({
         id: MessageID.ascending(),
         role: "user",
-        model: input.model,
+        model: variant ? { ...input.model, variant } : input.model,
         sessionID: input.sessionID,
         agent: input.agent,
         time: { created: Date.now() },

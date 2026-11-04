@@ -625,6 +625,66 @@ describe("session.compaction.create", () => {
       }),
     ),
   )
+
+  // 261104 Red 回归：caller 传来的 model 丢 variant 时（2026-11-03 ses_ffe5e5… 事故形态），
+  // 压缩父消息以会话当前选择兜底，父→SUM→followup→续跑全链 variant 不再掉档。
+  it.live(
+    "compaction parent inherits session variant when caller model lacks one",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const ssn = yield* SessionNs.Service
+
+        const info = yield* ssn.create({
+          model: { id: ModelID.make("test-model"), providerID: ProviderID.make("test"), variant: "max" },
+        })
+
+        yield* compact.create({
+          sessionID: info.id,
+          agent: "build",
+          model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test-model") },
+          auto: true,
+        })
+
+        const msgs = yield* ssn.messages({ sessionID: info.id })
+        const parent = msgs[0].info
+        expect(parent).toMatchObject({ role: "user" })
+        const model = parent.role === "user" ? parent.model : undefined
+        expect(model).toMatchObject({
+          providerID: "test",
+          modelID: "test-model",
+          variant: "max",
+        })
+      }),
+    ),
+  )
+
+  it.live(
+    "compaction parent does not inherit session variant across models",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const ssn = yield* SessionNs.Service
+
+        const info = yield* ssn.create({
+          model: { id: ModelID.make("test-model"), providerID: ProviderID.make("test"), variant: "max" },
+        })
+
+        yield* compact.create({
+          sessionID: info.id,
+          agent: "build",
+          model: { providerID: ProviderID.make("test"), modelID: ModelID.make("other-model") },
+          auto: true,
+        })
+
+        const msgs = yield* ssn.messages({ sessionID: info.id })
+        const parent = msgs[0].info
+        expect(parent).toMatchObject({ role: "user" })
+        const model = parent.role === "user" ? parent.model : undefined
+        expect(model?.variant).toBeUndefined()
+      }),
+    ),
+  )
 })
 
 describe("session.compaction.prune", () => {
