@@ -1567,6 +1567,13 @@ export function Prompt(props: PromptProps) {
   )
   const borderHighlight = createMemo(() => tint(theme.border, highlight(), agentMetaAlpha()))
 
+  // 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。
+  const workspacePath = createMemo(() => project.instance.directory())
+  const workspaceName = createMemo(() => {
+    const path = workspacePath()
+    return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+  })
+
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
     if (store.mode === "shell") {
@@ -1617,6 +1624,26 @@ export function Prompt(props: PromptProps) {
   return (
     <>
       <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
+        {/* 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。 */}
+        <box
+          width="100%"
+          flexDirection="row"
+          justifyContent="space-between"
+          paddingLeft={2}
+          paddingRight={2}
+          flexShrink={0}
+          backgroundColor={theme.backgroundElement}
+        >
+          <box flexDirection="row" gap={1} flexShrink={1}>
+            <text fg={theme.primary}>📁</text>
+            <text fg={theme.text}>
+              <span style={{ bold: true }}>{workspaceName()}</span>
+            </text>
+            <text fg={theme.textMuted} wrapMode="none">
+              {workspacePath()}
+            </text>
+          </box>
+        </box>
         <box
           width="100%"
           border={["left"]}

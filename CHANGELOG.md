@@ -19,6 +19,7 @@
 - **压缩摘要框架与多轮合并**（`context-compaction.ts`、`compaction.ts`）：摘要渲染的框架行补「当作既定背景，直接继续，不要复述或确认」（对齐 harness 的 checkpoint preamble 与 codex 的 summary prefix），减少压缩后模型复述摘要、把摘要当新指令或重做已完成工作；模板新增多轮压缩合并规则（保留仍为真的事实、丢弃过时、合并成一份，对齐 harness）。框架行的 `[Historical context summary.` 前缀保持不变，回声检测锚点不受影响。验证：compaction + processor-effect + instruction-echo 171 pass、typecheck exit 0。
 - **压缩请求复用主请求前缀，命中 KV cache**（`prompt-caches.ts`、`prompt.ts`、`compaction.ts`）：压缩调用原先用 `system: []` + `compaction` agent 独立构造，最终 system 第一段是 compaction prompt，与主请求从第一个 token 就不同——实测一次真实压缩 141,943 输入 **0 命中**、全价计费。现在主请求把 system/tools/agent 快照存入 `PromptCaches.request`，压缩请求按同一 modelKey 取用；快照缺失、被回收或换模型时退回独立请求。agent 也必须沿用主请求（最终 system 第一段是 agent prompt），否则复用的 system 白费。验证：prompt-caches 15 pass（模型不匹配用例摘掉判据即变红）、compaction 84 pass、typecheck exit 0；真机对照待下一次自然压缩（看压缩请求 cacheRead 是否从 0 变为接近输入量）。
 - **压缩消息段复用主请求稳定化快照**（`prompt-caches.ts`、`compaction.ts`）：只复用 system/tools 时实测 223,626 输入命中 38,912（17.4%），日志里 `history` 从第 0 条起就是 rewrite——压缩侧用 `toModelMessagesEffect(head)`，主请求用 `stitchModelMessages` 的稳定化快照，前缀不一致。现在压缩消息段直接用主请求的 pinned messages + 摘要指令，消息段与 system/tools 一起命中；快照缺失时退回选段。验证：prompt-caches 16 pass、compaction 84 pass、typecheck exit 0；真机对照待下一次压缩。
+- **输入框标题栏显示工作区路径**（`tui/component/prompt/index.tsx`）：多开 TUI 办公时，输入框上方多一行「📁 项目名 路径」，用于区分窗口、避免把需求发到另一个工作区。路径取 `project.instance.directory()`，项目名取路径末段；纯展示，不改变输入框行为。后续计划支持直接切换工作区。验证：typecheck exit 0（TUI 视觉待重启目检）。
 
 ### [0.14.1] - 2026-11-04
 
