@@ -1377,7 +1377,11 @@ export const layer = Layer.effect(
               //   aborted（ses_ffe5e5bdeb 2026-11-04 六次实测，301s 整拍）。step-finish 到达后
               //   按 idleAfterUsageMs 短窗掐流续跑；step-finish 未到的纯思考静默不受影响，
               //   仍由管道内 timeoutOrElse（idleMs）兜底。
-              yield* Effect.race(
+              // 261104 Red 必须用 raceFirst 而不是 race：v4 的 race 只认第一个**成功**，
+              //   早失败会被忽略、继续等另一分支——provider 4xx 时流立刻失败，而
+              //   Deferred.await(stepFinishSeen) 永不来，prompt.loop 挂死（CI 三个
+              //   失败用例 30s 超时即此）。raceFirst 任一分支完成即定胜负，失败照常传播。
+              yield* Effect.raceFirst(
                 stream.pipe(
               // 261020 Red 静默兜底（主判据）：供应商在 idleMs 内不再吐任何分片，判定这一路流
               // 已卡住。计时只覆盖「等上游下一个分片」的时间——tap 里执行工具时上游并未拉取，
