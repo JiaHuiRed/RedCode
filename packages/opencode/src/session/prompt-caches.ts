@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai"
+import type { ModelMessage, Tool } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 import { PromptPin } from "./prompt-pin"
@@ -19,11 +19,23 @@ type SystemCache = {
 type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]>; nativeRevision?: string }
 type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
 type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }
+// 261104 Red 最近一次主请求的 system/tools 快照：压缩请求复用它，使压缩调用的前缀与
+// 主请求一致、命中供应商 KV cache。压缩不再从 system: [] 重新开始（实测 141k 输入 0 命中，
+// 全价计费）。tools 按会话单个存储（模型无关，与 PromptCaches.tools 同口径）。
+export type RequestSnapshot = {
+  sessionID: string
+  modelKey: string
+  /** 主请求实际使用的 agent 名：压缩请求沿用它，最终 system 的第一段才与主请求一致。 */
+  agent: string
+  system: string[]
+  tools: Record<string, Tool>
+}
 type PromptCacheState = {
   system: Map<string, Map<string, SystemCache>>
   msgPin: Map<string, MessagePinCache>
   modelMsgs: Map<string, Map<string, ModelMessagesCache>>
   tools: Map<string, ToolCache>
+  request: Map<string, RequestSnapshot>
   souls: Map<string, SoulSnapshot>
   // 260819 cc audit：会话最后一次被使用的时刻，供 TTL/数量回收用。跟四个缓存放同一个
   // globalThis 槽 —— 分开放会让「模块被实例化多次」时各实例按各自的视图回收共享的缓存。
@@ -47,12 +59,21 @@ export const PromptCaches = (globalWithCaches.__rc_prompt_caches ??= {
   // if skill/agent lists change mid-session the tool schema JSON mutates → prefix cache breaks.
   // 260804 Red tools cache is model-agnostic (descriptions come from disk, not model) — no modelKey.
   tools: new Map<string, ToolCache>(),
+  request: new Map<string, RequestSnapshot>(),
   souls: new Map<string, SoulSnapshot>(),
   seen: new Map<string, number>(),
 })
 // 老实例先建好对象、新实例只拿到引用时补齐字段（`??=` 只认整个对象存不存在）
 PromptCaches.seen ??= new Map<string, number>()
 PromptCaches.souls ??= new Map<string, SoulSnapshot>()
+
+// 261104 Red 压缩请求的前缀复用：只返回与该模型匹配的主请求快照。
+// 模型切换或快照已被回收时返回 undefined，调用方退回独立请求（system: []）。
+export function requestSnapshot(sessionID: string, modelKey: string) {
+  const snapshot = PromptCaches.request.get(sessionID)
+  if (!snapshot || snapshot.modelKey !== modelKey) return undefined
+  return snapshot
+}
 
 // 260811 cc audit R4 分代结算（哥哥拍板：缓存优先）：
 // msgPin/modelMsgs 把已发送的消息钉死在首次快照上——这是前缀缓存的命根子，但也意味着
@@ -96,7 +117,7 @@ const evictor = sessionEvictor({
   seen: PromptCaches.seen,
 })
 
-/** 把一个会话从全部四个缓存里彻底摘掉。settle 只管 msgPin/modelMsgs，这里连 system/tools 一起。 */
+/** 把一个会话从全部缓存里彻底摘掉。settle 只管 msgPin/modelMsgs，这里连 system/tools/request 一起。 */
 export function dropSession(sessionID: string) {
   // 261029 Red 磁盘 pin 与 system/tools 同生命周期，会话回收时一并清掉
   PromptPin.drop(sessionID)
@@ -104,6 +125,7 @@ export function dropSession(sessionID: string) {
     settlePromptCaches(sessionID, "evict") +
     (PromptCaches.system.delete(sessionID) ? 1 : 0) +
     (PromptCaches.tools.delete(sessionID) ? 1 : 0) +
+    (PromptCaches.request.delete(sessionID) ? 1 : 0) +
     (PromptCaches.souls.delete(sessionID) ? 1 : 0)
   evictor.forget(sessionID)
   return dropped

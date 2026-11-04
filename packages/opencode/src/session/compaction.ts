@@ -8,6 +8,7 @@ import { Token } from "@/util/token"
 import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionProcessor } from "./processor"
+import { requestSnapshot } from "./prompt-caches"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
@@ -496,8 +497,8 @@ export const layer = Layer.effect(
       const userMessage = parent.info
       return yield* Effect.gen(function* () {
         const cfg = yield* config.get()
-        const agent = yield* agents.get("compaction")
-        if (!agent) throw new Error("Built-in compaction agent is missing")
+        const compactionAgent = yield* agents.get("compaction")
+        if (!compactionAgent) throw new Error("Built-in compaction agent is missing")
         // 261012 Red Summaries must use the model and variant that produced the triggering turn.
         const mainModel = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(
           Effect.orDie,
@@ -593,8 +594,17 @@ export const layer = Layer.effect(
         })
         mark("request")
         requestStartedAt = checkpoint
+        const snapshot = requestSnapshot(input.sessionID, `${model.providerID}/${model.id}`)
+        // 261104 Red 压缩请求必须沿用主请求的 agent：最终 system 的第一段是 agent prompt，
+        // 固定用 "compaction" 会让前缀从第一个 token 就与主请求不同，复用的 system 也白费。
+        const agent = (snapshot ? yield* agents.get(snapshot.agent) : undefined) ?? compactionAgent
         const result = yield* processor.process({
-          user: userMessage, agent, sessionID: input.sessionID, tools: {}, system: [],
+          user: userMessage, agent, sessionID: input.sessionID,
+          // 261104 Red 复用上一次主请求的 system/tools 前缀：两段逐字节一致才能在供应商侧
+          // 命中 KV cache。此前 system: []，压缩请求从第一个 token 起就与主请求不同，
+          // 实测 141,943 输入 0 命中、全价计费。快照缺失（冷启动/被回收/换模型）时退回空。
+          tools: snapshot?.tools ?? {},
+          system: snapshot ? [...snapshot.system] : [],
           messages: [...modelMessages, {
             role: "user",
             content: [{ type: "text", text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],

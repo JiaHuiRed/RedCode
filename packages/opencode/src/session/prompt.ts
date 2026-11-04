@@ -2239,6 +2239,15 @@ export const layer = Layer.effect(
               return "continue" as const
             }
           }
+          // 261104 Red 存本次主请求的 system/tools 快照：压缩请求复用它以命中 KV cache
+          // （压缩原先 system: []，实测 141k 输入 0 命中、全价计费）。
+          PromptCaches.request.set(sessionID, {
+            sessionID,
+            modelKey: `${stepSettings.model.providerID}/${stepSettings.model.id}`,
+            agent: agent.name,
+            system: [...system],
+            tools: sortedTools,
+          })
           const result = yield* handle.process(
             {
               user: stepSettings.user,

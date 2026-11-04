@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { dropSession, overlayToolDefs, PromptCaches, settlePromptCaches, touchSession } from "../../src/session/prompt-caches"
+import {
+  dropSession,
+  overlayToolDefs,
+  PromptCaches,
+  requestSnapshot,
+  settlePromptCaches,
+  touchSession,
+} from "../../src/session/prompt-caches"
 
 // 260811 cc audit R4: 分代结算的边界语义——只清目标会话的 msgPin/modelMsgs，
 // system/tools 与别的会话不受牵连。
@@ -20,6 +27,7 @@ function seed(sessionID: string) {
     ]),
   )
   PromptCaches.tools.set(sessionID, { sessionID, defs: new Map() })
+  PromptCaches.request.set(sessionID, { sessionID, modelKey: "p/m", agent: "build", system: ["sys"], tools: {} })
   PromptCaches.souls.set(sessionID, {
     id: "karina",
     info: undefined,
@@ -96,20 +104,22 @@ describe("session.prompt-caches", () => {
         PromptCaches.msgPin,
         PromptCaches.modelMsgs,
         PromptCaches.tools,
+        PromptCaches.request,
         PromptCaches.souls,
       ])
         m.clear()
       PromptCaches.seen.clear()
     }
 
-    test("dropSession 四个缓存一起摘干净（settle 只摘两个）", () => {
+    test("dropSession 五个缓存一起摘干净（settle 只摘两个）", () => {
       fresh()
       seed("ses_x")
-      expect(dropSession("ses_x")).toBe(5)
+      expect(dropSession("ses_x")).toBe(6)
       expect(PromptCaches.msgPin.has("ses_x")).toBe(false)
       expect(PromptCaches.modelMsgs.has("ses_x")).toBe(false)
       expect(PromptCaches.system.has("ses_x")).toBe(false)
       expect(PromptCaches.tools.has("ses_x")).toBe(false)
+      expect(PromptCaches.request.has("ses_x")).toBe(false)
       expect(PromptCaches.souls.has("ses_x")).toBe(false)
       expect(PromptCaches.seen.has("ses_x")).toBe(false)
     })
@@ -171,6 +181,36 @@ describe("session.prompt-caches", () => {
       expect(PromptCaches.seen.size).toBe(2)
       expect(PromptCaches.system.has("ses_a")).toBe(true)
     })
+  })
+})
+
+// 261104 Red 压缩请求前缀复用的判据：只有同一会话、同一模型的主请求快照才可用；
+// 快照缺失（冷启动/被回收）或模型切换时必须退回独立请求。
+describe("request snapshot", () => {
+  test("returns undefined without a snapshot", () => {
+    PromptCaches.request.delete("ses_snapshot_missing")
+    expect(requestSnapshot("ses_snapshot_missing", "openai/gpt-6.1-sol")).toBeUndefined()
+  })
+
+  test("returns the snapshot only for the matching model", () => {
+    const sessionID = "ses_snapshot_match"
+    PromptCaches.request.set(sessionID, {
+      sessionID,
+      modelKey: "opencode-go/deepseek-v4.1-flash",
+      agent: "build",
+      system: ["sys-a"],
+      tools: {},
+    })
+    expect(requestSnapshot(sessionID, "opencode-go/deepseek-v4.1-flash")?.system).toEqual(["sys-a"])
+    expect(requestSnapshot(sessionID, "openai/gpt-6.1-sol")).toBeUndefined()
+    PromptCaches.request.delete(sessionID)
+  })
+
+  test("dropSession clears the snapshot", () => {
+    const sessionID = "ses_snapshot_drop"
+    PromptCaches.request.set(sessionID, { sessionID, modelKey: "m", agent: "build", system: [], tools: {} })
+    dropSession(sessionID)
+    expect(requestSnapshot(sessionID, "m")).toBeUndefined()
   })
 })
 
