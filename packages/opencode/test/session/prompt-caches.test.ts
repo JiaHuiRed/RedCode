@@ -2,15 +2,30 @@ import { describe, expect, test } from "bun:test"
 import {
   dropSession,
   overlayToolDefs,
-  pinnedMessages,
+  recordRequest,
   PromptCaches,
   requestSnapshot,
   settlePromptCaches,
   touchSession,
 } from "../../src/session/prompt-caches"
+import type { RequestSnapshot } from "../../src/session/prompt-caches"
+import { MessageID, SessionID } from "../../src/session/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 
 // 260811 cc audit R4: 分代结算的边界语义——只清目标会话的 msgPin/modelMsgs，
 // system/tools 与别的会话不受牵连。
+
+function sent(sessionID: string, modelKey = "p/m"): RequestSnapshot {
+  return {
+    sessionID, modelKey,
+    agent: { name: "build", mode: "primary", permission: [], options: {} },
+    user: {
+      id: MessageID.ascending(), sessionID: SessionID.make(sessionID), role: "user", agent: "build",
+      time: { created: 0 }, model: { providerID: ProviderID.make("p"), modelID: ModelID.make("m") },
+    },
+    system: ["sys"], tools: {}, messages: [{ role: "user", content: "hi" }],
+  }
+}
 
 function seed(sessionID: string) {
   PromptCaches.msgPin.set(sessionID, { sessionID, messages: new Map([["m1", [{ type: "text", text: "hi" }]]]) })
@@ -28,7 +43,7 @@ function seed(sessionID: string) {
     ]),
   )
   PromptCaches.tools.set(sessionID, { sessionID, defs: new Map() })
-  PromptCaches.request.set(sessionID, { sessionID, modelKey: "p/m", agent: "build", system: ["sys"], tools: {} })
+  recordRequest(sent(sessionID))
   PromptCaches.souls.set(sessionID, {
     id: "karina",
     info: undefined,
@@ -195,13 +210,7 @@ describe("request snapshot", () => {
 
   test("returns the snapshot only for the matching model", () => {
     const sessionID = "ses_snapshot_match"
-    PromptCaches.request.set(sessionID, {
-      sessionID,
-      modelKey: "opencode-go/deepseek-v4.1-flash",
-      agent: "build",
-      system: ["sys-a"],
-      tools: {},
-    })
+    recordRequest({ ...sent(sessionID, "opencode-go/deepseek-v4.1-flash"), system: ["sys-a"] })
     expect(requestSnapshot(sessionID, "opencode-go/deepseek-v4.1-flash")?.system).toEqual(["sys-a"])
     expect(requestSnapshot(sessionID, "openai/gpt-6.1-sol")).toBeUndefined()
     PromptCaches.request.delete(sessionID)
@@ -209,21 +218,36 @@ describe("request snapshot", () => {
 
   test("dropSession clears the snapshot", () => {
     const sessionID = "ses_snapshot_drop"
-    PromptCaches.request.set(sessionID, { sessionID, modelKey: "m", agent: "build", system: [], tools: {} })
+    recordRequest(sent(sessionID, "m"))
     dropSession(sessionID)
     expect(requestSnapshot(sessionID, "m")).toBeUndefined()
   })
 })
 
-// 261104 Red 压缩消息段复用主请求的稳定化快照：只有同模型才有意义。
-describe("pinned messages", () => {
-  test("returns the stabilized messages only for the matching model", () => {
+describe("sent request generation", () => {
+  test("does not borrow unsent assembly messages or mutated agent settings", () => {
     const sessionID = "ses_pinned"
+    const input = sent(sessionID, "m")
+    recordRequest(input)
     PromptCaches.modelMsgs.set(sessionID, new Map([
-      ["m", { sessionID, modelKey: "m", messages: [{ role: "user", content: "hi" }] }],
+      ["m", { sessionID, modelKey: "m", messages: [{ role: "user", content: "unsent" }] }],
     ]))
-    expect(pinnedMessages(sessionID, "m")?.length).toBe(1)
-    expect(pinnedMessages(sessionID, "other")).toBeUndefined()
+    input.agent.prompt = "changed after send"
+    input.messages.push({ role: "user", content: "later" })
+    expect(requestSnapshot(sessionID, "m")?.messages).toEqual([{ role: "user", content: "hi" }])
+    expect(requestSnapshot(sessionID, "m")?.agent.prompt).toBeUndefined()
+    expect(requestSnapshot(sessionID, "other")).toBeUndefined()
+    dropSession(sessionID)
+  })
+
+  test("requires the same reasoning variant", () => {
+    const sessionID = "ses_variant"
+    const input = sent(sessionID, "m")
+    input.user.model.variant = "max"
+    recordRequest(input)
+    expect(requestSnapshot(sessionID, "m", "max")).toBeDefined()
+    expect(requestSnapshot(sessionID, "m", "high")).toBeUndefined()
+    expect(requestSnapshot(sessionID, "m")).toBeUndefined()
     dropSession(sessionID)
   })
 })

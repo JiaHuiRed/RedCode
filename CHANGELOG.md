@@ -8,6 +8,11 @@
 
 ---
 
+### [Unreleased]
+
+- **修复压缩前缀复用的执行与历史边界**：摘要请求只带不可执行的工具定义并显式禁调工具；输入回到实际选段，避免重发窗口外历史、最新请求及图片。主请求在收到模型响应后原子记录完整快照，压缩仅复用同模型、同推理档位且预算允许的前缀，不再混用 Preflight 尚未发送的组装缓存。取舍与模型可见四问见 [原生压缩决策](docs/notes/implemented/feature/2026-10-10-native-compaction.md#2026-11-04前缀复用不能越过执行与选段边界)。
+- **美化 TUI 输入框与工作区标题栏**：标题改为主题强调色标记、加粗项目名、弱化路径与真实分支，长路径按终端显示宽度截断；输入区域使用低对比圆角轮廓。推理档位保留在原模型行，不移至右侧。
+
 ### [0.15.0] - 2026-11-04
 
 - **修复 provider 失败后 `prompt.loop` 挂死**（`session/processor.ts`）：`idleAfterUsageMs` 短窗用 `Effect.race` 与 step-finish 信号竞速，但 Effect v4 的 `race` 只认第一个**成功**——provider 返回 4xx 时流立即失败，早失败被忽略、继续等永不到来的 finish 事件，loop 挂死（CI smoke 三个用例 30s 超时，`prompt.test.ts:1044/1266/2954`）。改用 `raceFirst`，任一分支完成即定胜负、失败照常传播；短窗语义不变。验证：prompt 102 pass / 13 skip、processor-effect 34 pass、smoke lane 全绿、typecheck exit 0。

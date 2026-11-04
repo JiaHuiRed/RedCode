@@ -8,7 +8,7 @@ import { Token } from "@/util/token"
 import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionProcessor } from "./processor"
-import { pinnedMessages, requestSnapshot } from "./prompt-caches"
+import { requestSnapshot } from "./prompt-caches"
 import { Agent } from "@/agent/agent"
 import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
@@ -24,6 +24,7 @@ import * as ContextCompaction from "./context-compaction"
 import * as NativeContext from "./native-context"
 import * as NativeRuntime from "./native-context-runtime"
 import { NamedError } from "@redcode-ai/core/util/error"
+import { SystemPrompt } from "./system"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -594,26 +595,34 @@ export const layer = Layer.effect(
         })
         mark("request")
         requestStartedAt = checkpoint
-        const snapshot = requestSnapshot(input.sessionID, `${model.providerID}/${model.id}`)
-        // 261104 Red 消息段复用主请求的稳定化快照：head 的 toModelMessagesEffect 与主请求的
-        // stitchModelMessages 前缀从第 0 条就不同，实测 history 全 rewrite、只有 system/tools
-        // 命中。用 pinned（主请求实际发出的消息）才能让消息段一起命中；缺失时退回选段。
-        const pinned = pinnedMessages(input.sessionID, `${model.providerID}/${model.id}`)
-        const history = pinned ?? modelMessages
-        // 261104 Red 压缩请求必须沿用主请求的 agent：最终 system 的第一段是 agent prompt，
-        // 固定用 "compaction" 会让前缀从第一个 token 就与主请求不同，复用的 system 也白费。
-        const agent = (snapshot ? yield* agents.get(snapshot.agent) : undefined) ?? compactionAgent
+        const messages = [...modelMessages, {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],
+        }]
+        const sent = requestSnapshot(input.sessionID, `${model.providerID}/${model.id}`, userMessage.model.variant)
+        const inputBudget = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+        const snapshot = sent && inputBudget > 0 &&
+          estimateModelMessages(messages, model) +
+            Token.estimate([sent.agent.prompt ?? SystemPrompt.provider(model).join("\n\n"), ...sent.system, sent.user.system ?? ""].join("\n")) +
+            Token.estimate(JSON.stringify(sent.tools)) <= inputBudget
+          ? sent
+          : undefined
+        // 261104 Red 只摘要选定 head，不能为缓存重发窗口外历史、图片或未发送的新输入。
+        // 工具只保留 wire 定义，不携带 execute/输入生命周期回调；processor 的摘要 guard 仍保留。
+        // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
         const result = yield* processor.process({
-          user: userMessage, agent, sessionID: input.sessionID,
-          // 261104 Red 复用上一次主请求的 system/tools 前缀：两段逐字节一致才能在供应商侧
-          // 命中 KV cache。此前 system: []，压缩请求从第一个 token 起就与主请求不同，
-          // 实测 141,943 输入 0 命中、全价计费。快照缺失（冷启动/被回收/换模型）时退回空。
-          tools: snapshot?.tools ?? {},
+          user: snapshot
+            ? { ...userMessage, system: snapshot.user.system, tools: snapshot.user.tools }
+            : userMessage,
+          agent: snapshot?.agent ?? compactionAgent, sessionID: input.sessionID,
+          permission: snapshot?.permission,
+          parentSessionID: snapshot?.parentSessionID,
+          tools: Object.fromEntries(Object.entries(snapshot?.tools ?? {}).map(([name, tool]) => [name, {
+            description: tool.description, inputSchema: tool.inputSchema, strict: tool.strict, providerOptions: tool.providerOptions,
+          }])),
+          toolChoice: "none",
           system: snapshot ? [...snapshot.system] : [],
-          messages: [...history, {
-            role: "user",
-            content: [{ type: "text", text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],
-          }], model,
+          messages, model,
         })
         if (result !== "continue" || processor.message.error) return "stop" as const
         mark("commit")

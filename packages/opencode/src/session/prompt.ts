@@ -3,7 +3,7 @@ import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { ImageTokens } from "./image-tokens"
-import { overlayToolDefs, PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
+import { overlayToolDefs, PromptCaches, recordRequest, settlePromptCaches, touchSession } from "./prompt-caches"
 import { PromptPin } from "./prompt-pin"
 import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
@@ -2239,15 +2239,6 @@ export const layer = Layer.effect(
               return "continue" as const
             }
           }
-          // 261104 Red 存本次主请求的 system/tools 快照：压缩请求复用它以命中 KV cache
-          // （压缩原先 system: []，实测 141k 输入 0 命中、全价计费）。
-          PromptCaches.request.set(sessionID, {
-            sessionID,
-            modelKey: `${stepSettings.model.providerID}/${stepSettings.model.id}`,
-            agent: agent.name,
-            system: [...system],
-            tools: sortedTools,
-          })
           const result = yield* handle.process(
             {
               user: stepSettings.user,
@@ -2262,6 +2253,18 @@ export const layer = Layer.effect(
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             },
             Effect.gen(function* () {
+              // 261104 Red 真实模型响应确认发送后，原子记录同代快照；preflight/准备失败不覆盖。
+              recordRequest({
+                sessionID,
+                modelKey: `${stepSettings.model.providerID}/${stepSettings.model.id}`,
+                user: stepSettings.user,
+                agent,
+                permission: stepSettings.session.permission,
+                parentSessionID: stepSettings.session.parentID,
+                system,
+                tools: sortedTools,
+                messages: outgoing,
+              })
               if (ownedQueuedMessageID) {
                 const messageID = ownedQueuedMessageID
                 yield* sessions.acknowledgeQueuedMessage({ sessionID, messageID }).pipe(Effect.orDie)

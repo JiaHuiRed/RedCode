@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { APICallError } from "ai"
+import { APICallError, jsonSchema, tool } from "ai"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Bus } from "../../src/bus"
@@ -35,6 +35,7 @@ import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { Snippet } from "@/session/snippet"
 import * as ContextCompaction from "../../src/session/context-compaction"
 import { Database } from "../../src/storage/db"
+import { dropSession, PromptCaches } from "../../src/session/prompt-caches"
 
 void Log.init({ print: false })
 
@@ -876,6 +877,128 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  for (const reuse of [true, false]) {
+    itCompaction.instance(
+      `native summary ${reuse ? "keeps tool schemas without executable callbacks" : "falls back when the cached prefix exceeds the input budget"}`,
+      () => {
+        const responses = llm()
+        let executed = 0
+        let captured: LLM.StreamInput | undefined
+        responses.push((input) =>
+          Stream.fromEffect(Effect.promise(async () => {
+            captured = input
+            await input.tools.write?.execute?.({}, { toolCallId: "summary-write", messages: input.messages, context: {} })
+          })).pipe(Stream.flatMap(() => reply("Completed work retained.")(input))),
+        )
+        return Effect.gen(function* () {
+          const ssn = yield* SessionNs.Service
+          const ctx = yield* TestInstance
+          const chat = yield* ssn.create({ title: "Summary tool isolation" })
+          yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
+          const first = yield* createUserMessage(chat.id, "Earlier task")
+          const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+          yield* ssn.updatePart({
+            id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+            text: "Completed implementation evidence. ".repeat(500),
+          })
+          yield* createUserMessage(chat.id, "Current task outside the summary")
+          const write = tool({
+            description: "Write a file",
+            inputSchema: jsonSchema({ type: "object", properties: {} }),
+            execute: async () => { executed++; return "written" },
+            onInputStart: () => { executed++ },
+            onInputDelta: () => { executed++ },
+            onInputAvailable: () => { executed++ },
+          })
+          PromptCaches.request.set(chat.id, {
+            sessionID: chat.id, modelKey: "test/test-model",
+            agent: { name: "build", mode: "primary", permission: [], options: {}, prompt: "SENT_AGENT_PROMPT" },
+            user: first, messages: [{ role: "user", content: "Earlier task" }],
+            system: [reuse ? "sent-system" : "oversized-prefix ".repeat(100000)], tools: { write },
+          })
+          yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+          const messages = yield* ssn.messages({ sessionID: chat.id })
+          expect(yield* SessionCompaction.use.process({
+            parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: false,
+          })).toBe("continue")
+          expect(executed).toBe(0)
+          expect(captured?.toolChoice).toBe("none")
+          expect(captured?.agent.name).toBe(reuse ? "build" : "compaction")
+          if (reuse) expect(captured?.agent.prompt).toBe("SENT_AGENT_PROMPT")
+          expect(captured?.system).toEqual(reuse ? ["sent-system"] : [])
+          expect(captured?.tools.write?.inputSchema).toBe(reuse ? write.inputSchema : undefined)
+          expect(captured?.tools.write?.execute).toBeUndefined()
+          expect(captured?.tools.write?.onInputStart).toBeUndefined()
+          expect(captured?.tools.write?.onInputDelta).toBeUndefined()
+          expect(captured?.tools.write?.onInputAvailable).toBeUndefined()
+          expect(write.execute).toBeDefined()
+        }).pipe(withCompaction({
+          llm: responses.layer, provider: wide(),
+          config: cfg({ native: { enabled: true, trigger_tokens: 60000, target_tokens: 40000, reminder_tokens: 54000, summary_max_tokens: 1000 } }),
+        }))
+      },
+    )
+  }
+
+  itCompaction.instance("native summary excludes pinned media and history outside its incremental window", () => {
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    responses.push(reply("First window completed."))
+    responses.push(reply("Second window completed.", (input) => inputs.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Incremental summary range" })
+      yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
+      const first = yield* createUserMessage(chat.id, "First task")
+      const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+        text: "FIRST_WINDOW_RAW_EVIDENCE ".repeat(1000),
+      })
+      const next = yield* createUserMessage(chat.id, "Second task")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      const before = yield* ssn.messages({ sessionID: chat.id })
+      expect(yield* SessionCompaction.use.process({
+        parentID: before.at(-1)!.info.id, messages: before, sessionID: chat.id, auto: false,
+      })).toBe("continue")
+      const second = yield* createAssistantMessage(chat.id, next.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: second.id, sessionID: chat.id, type: "text",
+        text: "SECOND_WINDOW_EVIDENCE ".repeat(1000),
+      })
+      const latest = yield* createUserMessage(chat.id, "LATEST_UNCOMPRESSED_REQUEST")
+      const pinned: LLM.StreamInput["messages"] = [{
+        role: "user", content: [
+          { type: "text", text: "FIRST_WINDOW_RAW_EVIDENCE LATEST_UNCOMPRESSED_REQUEST" },
+          { type: "image", image: "data:image/png;base64,AAAA" },
+        ],
+      }]
+      PromptCaches.modelMsgs.set(chat.id, new Map([["test/test-model", {
+        sessionID: chat.id, modelKey: "test/test-model", messages: pinned,
+      }]]))
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      expect(yield* SessionCompaction.use.process({
+        parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: false,
+      })).toBe("continue")
+      const wire = JSON.stringify(inputs[0]?.messages)
+      expect(wire).toContain("First window completed.")
+      expect(wire).toContain("SECOND_WINDOW_EVIDENCE")
+      expect(wire).not.toContain("FIRST_WINDOW_RAW_EVIDENCE")
+      expect(wire).not.toContain("LATEST_UNCOMPRESSED_REQUEST")
+      expect(wire).not.toContain("data:image/")
+      const blocks = ContextCompaction.list(chat.id)
+      expect(blocks).toHaveLength(2)
+      expect(blocks[1]?.sourceMessageIDs).toContain(second.id)
+      expect(blocks[1]?.sourceMessageIDs).not.toContain(latest.id)
+      expect(blocks[1]?.sourceMessageIDs).not.toContain(done.id)
+    }).pipe(withCompaction({
+      llm: responses.layer, provider: wide(),
+      config: cfg({ native: { enabled: true, trigger_tokens: 60000, target_tokens: 40000, reminder_tokens: 54000, summary_max_tokens: 1000 } }),
+    }))
+  })
+
   for (const native of [false, true]) {
     for (const unfinished of [false, true]) {
       itCompaction.instance(`${native ? "native" : "legacy"} manual compaction ${unfinished ? "resumes unfinished work" : "leaves finished work idle"}`, () => {

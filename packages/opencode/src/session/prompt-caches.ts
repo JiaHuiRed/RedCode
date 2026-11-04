@@ -1,8 +1,9 @@
-import type { ModelMessage, Tool } from "ai"
+import type { ModelMessage } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 import { PromptPin } from "./prompt-pin"
 import type { Snapshot as SoulSnapshot } from "./soul"
+import type { StreamInput } from "./llm"
 
 const log = Log.create({ service: "prompt-caches" })
 
@@ -19,16 +20,13 @@ type SystemCache = {
 type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]>; nativeRevision?: string }
 type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
 type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }
-// 261104 Red 最近一次主请求的 system/tools 快照：压缩请求复用它，使压缩调用的前缀与
-// 主请求一致、命中供应商 KV cache。压缩不再从 system: [] 重新开始（实测 141k 输入 0 命中，
-// 全价计费）。tools 按会话单个存储（模型无关，与 PromptCaches.tools 同口径）。
-export type RequestSnapshot = {
-  sessionID: string
+// 261104 Red 已收到模型响应的主请求整组快照；modelMsgs 只是下轮组装缓存，不能当作已发送。
+// 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
+export type RequestSnapshot = Pick<
+  StreamInput,
+  "sessionID" | "user" | "agent" | "system" | "tools" | "messages" | "permission" | "parentSessionID"
+> & {
   modelKey: string
-  /** 主请求实际使用的 agent 名：压缩请求沿用它，最终 system 的第一段才与主请求一致。 */
-  agent: string
-  system: string[]
-  tools: Record<string, Tool>
 }
 type PromptCacheState = {
   system: Map<string, Map<string, SystemCache>>
@@ -69,20 +67,18 @@ PromptCaches.souls ??= new Map<string, SoulSnapshot>()
 
 // 261104 Red 压缩请求的前缀复用：只返回与该模型匹配的主请求快照。
 // 模型切换或快照已被回收时返回 undefined，调用方退回独立请求（system: []）。
-export function requestSnapshot(sessionID: string, modelKey: string) {
+export function requestSnapshot(sessionID: string, modelKey: string, variant?: string) {
   const snapshot = PromptCaches.request.get(sessionID)
-  if (!snapshot || snapshot.modelKey !== modelKey) return undefined
+  if (!snapshot || snapshot.modelKey !== modelKey || snapshot.user.model.variant !== variant) return undefined
   return snapshot
 }
 
-/**
- * 261104 Red 压缩请求复用主请求的完整消息前缀：压缩用它 + 摘要指令，消息段才能像
- * system/tools 一样命中缓存。实测只复用 system/tools 时 223,626 输入命中 38,912，
- * history 从第 0 条起就是 rewrite——压缩侧用 toModelMessagesEffect(head)，主请求用的是
- * stitchModelMessages 的稳定化快照，两者前缀不一致。
- */
-export function pinnedMessages(sessionID: string, modelKey: string) {
-  return PromptCaches.modelMsgs.get(sessionID)?.get(modelKey)?.messages
+export function recordRequest(input: RequestSnapshot) {
+  const { tools, ...data } = input
+  PromptCaches.request.set(input.sessionID, {
+    ...structuredClone(data),
+    tools: Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, { ...tool }])),
+  })
 }
 
 // 260811 cc audit R4 分代结算（哥哥拍板：缓存优先）：

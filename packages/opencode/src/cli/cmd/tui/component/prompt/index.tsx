@@ -17,7 +17,6 @@ import { fileURLToPath } from "url"
 import { Filesystem } from "@/util/filesystem"
 import { useLocal } from "@tui/context/local"
 import { tint, useTheme } from "@tui/context/theme"
-import { EmptyBorder, SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
@@ -167,6 +166,43 @@ function formatEditorContext(selection: EditorSelection) {
   return `<system-reminder>${ranges.join("\n")} This may or may not be relevant to the current task.</system-reminder>\n`
 }
 
+// 261104 Red 标题行按**显示宽度**截断：Bun.stringWidth 认双宽 CJK/emoji，
+// String.length 会把双宽中文当成一列，低估路径占宽后就会撑爆一行。
+// prefix = 保留开头（项目名），suffix = 保留结尾（工作区路径的末段信息量更大）。
+function ellipsize(text: string, width: number, keep: "prefix" | "suffix") {
+  if (width <= 0) return ""
+  if (Bun.stringWidth(text) <= width) return text
+  const chars = Array.from(text)
+  const ordered = keep === "suffix" ? chars.reverse() : chars
+  const kept: string[] = []
+  let used = 0
+  for (const char of ordered) {
+    const next = Bun.stringWidth(char)
+    if (used + next > width - 1) break // 省略号占 1 列
+    used += next
+    kept.push(char)
+  }
+  return keep === "suffix" ? `…${kept.reverse().join("")}` : `${kept.join("")}…`
+}
+
+// 261104 Red 标题行排版：竖线 1 列 + 间隙 1 列 + 项目名 + 间隙 1 列 + 路径，右侧分支前留 2 列。
+// 优先级项目名 > 路径尾部 > 分支：任何一段超预算都截断，整行绝不折行。
+// 极窄终端下先收起分支、再收起路径，保证「竖线 + 项目名」始终完整落在行内。
+function layoutPromptTitle(input: { width: number; name: string; path: string; branch?: string }) {
+  const inner = Math.max(3, input.width - 4) // 标题行左右 padding 各 2
+  const branchCap = Math.min(Math.floor(inner / 3), inner - 4 - Bun.stringWidth(input.name))
+  const branchWidth = input.branch ? Math.min(Bun.stringWidth(input.branch), Math.max(0, branchCap)) : 0
+  const showBranch = branchWidth >= 6
+  const nameSlot = Math.max(1, inner - 2 - (showBranch ? branchWidth + 2 : 0))
+  const name = ellipsize(input.name, nameSlot, "prefix")
+  const pathSlot = nameSlot - Bun.stringWidth(name) - 1
+  return {
+    name,
+    path: pathSlot > 0 ? ellipsize(input.path, pathSlot, "suffix") : undefined,
+    branch: showBranch && input.branch ? ellipsize(input.branch, branchWidth, "suffix") : undefined,
+  }
+}
+
 let stashed: { prompt: PromptInfo; cursor: number } | undefined
 
 export function Prompt(props: PromptProps) {
@@ -195,6 +231,9 @@ export function Prompt(props: PromptProps) {
   const paletteShortcut = useCommandShortcut("command.palette.show")
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
+  // 261104 Red 标题行预算用实测的 prompt 宽度：首页 prompt 有 max_width，
+  // 终端更宽时按终端宽度排版会把标题排到面板外面。首次布局前先按终端宽度兜底。
+  const [promptWidth, setPromptWidth] = createSignal(0)
   const { theme, syntax } = useTheme()
   const kv = useKV()
   const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
@@ -1565,14 +1604,20 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  const borderHighlight = createMemo(() => tint(theme.border, highlight(), agentMetaAlpha()))
+  // 261104 Red 输入区轮廓：主题低对比边框 + 一点 agent 色（0.35）轻描一圈圆角，
+  // 取代原来"左侧单边竖线 + 底部 ▀ 补丁"的边界模拟。
+  const inputBorder = createMemo(() => tint(theme.borderSubtle ?? theme.border, highlight(), 0.35 * agentMetaAlpha()))
 
   // 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。
   const workspacePath = createMemo(() => project.instance.directory())
-  const workspaceName = createMemo(() => {
-    const path = workspacePath()
-    return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
-  })
+  const workspaceTitle = createMemo(() =>
+    layoutPromptTitle({
+      width: promptWidth() || dimensions().width,
+      name: workspacePath().split(/[\\/]/).filter(Boolean).at(-1) ?? workspacePath(),
+      path: workspacePath(),
+      branch: sync.data.vcs?.branch,
+    }),
+  )
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1623,35 +1668,59 @@ export function Prompt(props: PromptProps) {
 
   return (
     <>
-      <box ref={(r: BoxRenderable) => (anchor = r)} visible={props.visible !== false} width="100%">
-        {/* 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。 */}
+      <box
+        ref={(r: BoxRenderable) => {
+          anchor = r
+          r.onSizeChange = () => setPromptWidth(r.width)
+        }}
+        visible={props.visible !== false}
+        width="100%"
+      >
+        {/* 261104 Red 输入框标题栏：agent 色短竖线 + 加粗项目名 + muted 路径 + 右侧分支。
+            上下留白把标题从深色面板里抬出来；长路径已按显示宽度截断，整行不折行。 */}
         <box
           width="100%"
           flexDirection="row"
           justifyContent="space-between"
+          alignItems="center"
           paddingLeft={2}
           paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
           flexShrink={0}
           backgroundColor={theme.backgroundElement}
         >
-          <box flexDirection="row" gap={1} flexShrink={1}>
-            <text fg={theme.primary}>📁</text>
-            <text fg={theme.text}>
-              <span style={{ bold: true }}>{workspaceName()}</span>
+          <box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
+            <text flexShrink={0} fg={fadeColor(highlight(), agentMetaAlpha())}>
+              ▍
             </text>
-            <text fg={theme.textMuted} wrapMode="none">
-              {workspacePath()}
+            <text fg={theme.text} wrapMode="none" flexShrink={0}>
+              <span style={{ bold: true }}>{workspaceTitle().name}</span>
             </text>
+            <Show when={workspaceTitle().path}>
+              {(path) => (
+                <text fg={theme.textMuted} wrapMode="none" flexShrink={0}>
+                  {path()}
+                </text>
+              )}
+            </Show>
           </box>
+          <Show when={workspaceTitle().branch}>
+            {(branch) => (
+              <box flexShrink={0} paddingLeft={2}>
+                <text fg={theme.textMuted} wrapMode="none">
+                  {branch()}
+                </text>
+              </box>
+            )}
+          </Show>
         </box>
         <box
           width="100%"
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...SplitBorder.customBorderChars,
-            bottomLeft: "╹",
-          }}
+          border
+          borderStyle="rounded"
+          borderColor={inputBorder()}
+          backgroundColor={theme.backgroundElement}
         >
           <box
             paddingLeft={2}
@@ -1835,32 +1904,6 @@ export function Prompt(props: PromptProps) {
               </Show>
             </box>
           </box>
-        </box>
-        <box
-          height={1}
-          border={["left"]}
-          borderColor={borderHighlight()}
-          customBorderChars={{
-            ...EmptyBorder,
-            vertical: theme.backgroundElement.a !== 0 ? "╹" : " ",
-          }}
-        >
-          <box
-            height={1}
-            border={["bottom"]}
-            borderColor={theme.backgroundElement}
-            customBorderChars={
-              theme.backgroundElement.a !== 0
-                ? {
-                    ...EmptyBorder,
-                    horizontal: "▀",
-                  }
-                : {
-                    ...EmptyBorder,
-                    horizontal: " ",
-                  }
-            }
-          />
         </box>
         <box width="100%" flexDirection="row" justifyContent="space-between">
           <Switch>

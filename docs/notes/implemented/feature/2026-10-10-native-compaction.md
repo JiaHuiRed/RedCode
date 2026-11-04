@@ -243,3 +243,31 @@ native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩�
 - 账本测试 16 pass、压缩流程 81 pass；TUI 真实 UserMessage 展开渲染 17 pass。失败帧为“Compaction 失败 / 未提交的摘要草稿 / 压前最近主请求实报 381,059 tokens · 未提交”，无净增减或压后首个请求数字。opencode typecheck 在 tsgo 崩溃后自动回退 TypeScript 5.9.3，通过、退出码 0。
 
 模型可见四问：① 运行时代码不改 system、工具 schema、摘要模板、投影渲染和正常请求原文，仅修正提交事务和客户端错误；项目 MEMORY 另删除已解决的 flaky 状态、改正文来源说明（见 Memory V4 note）；② 运行时不新增固定前缀，MEMORY 文案变化的精确 token 差未测；③ 成功仍由既有 revision 结算，失败不提交投影、不重置前缀，MEMORY 字节变化只影响新会话该段及之后的前缀；④ 无新增自动注入项，错误诊断有上述四层/逐字段硬限，不记录 SQL 参数或无界堆栈。源码需重新加载才能应用；隔离复现不能追认旧日志中已经丢失的底层错误码。
+
+## 2026-11-04：前缀复用不能越过执行与选段边界
+
+### 复现
+
+当天新增的前缀复用存在三个相互独立的问题：
+
+- `processNative` 把主请求工具对象原样交给 LLM。processor 已有 summary 工具事件拒绝逻辑，不能说完全没有守卫；但 SDK 持有的 `execute` 和输入生命周期回调仍然可调用。隔离测试模拟运行时调用收到的 `write.execute`，旧实现实际执行一次。
+- 摘要输入直接用整段 `modelMsgs` 替换已选 `head`，越过窗口边界，也绕过 `stripMedia` 和工具输出截断。双窗口测试在第二次摘要中复现旧窗口原文、窗口外最新请求及 pinned 图片重新入模。
+- `modelMsgs` 在 Preflight 前更新，`request` 在之后更新；压缩因而可能拼出两代数据。真实本地 HTTP 流程先完成一轮，再用大输入立即触发 Preflight，确认新输入只完成组装、没有发出普通模型请求。
+
+### 决策
+
+1. 摘要只传工具的 description/inputSchema/strict/providerOptions，不保留任何执行或输入生命周期回调；请求显式 `toolChoice: "none"`。processor 原有 summary 拒绝逻辑继续作为违规工具事件的终止边界，主请求工具不被原地修改。
+2. 撤销无条件整段消息复用。摘要始终使用实际选中的 `head`，沿用媒体剥离、每条工具输出 2000 字符截断，以及上一窗口摘要作为背景的既有路径。保留 system/tools 前缀复用，不为了消息段命中率扩大摘要范围或媒体输入。
+3. `modelMsgs` 明确只拥有下一轮的组装稳定化缓存。`request` 在 processor 的真实模型响应回调中一次性记录匹配的 user、agent 对象、system、tools、messages、permission、parentSessionID 和 modelKey；user 同时携带 variant。可序列化部分深拷贝，工具对象复制但保留主请求自己的执行函数。Preflight、准备失败、未收到响应的请求不替换旧快照；后者宁可不复用，也不冒认服务端缓存已建立。
+4. 摘要只取同会话、同 provider/model、同 variant 的发送快照。agent 对象与 user.system 一起复用，不在压缩时重新解析可能已经改变的同名 agent；前缀加选段和摘要指令的估算输入若超出 `usable()` 预算，或窗口未知，则回退独立 compaction agent/空工具请求。估算沿用现有 Token/image-tokens 口径，不承诺供应商一定命中缓存。
+
+### 取舍与模型可见四问
+
+1. 原来的「完整 pinned 历史 + 摘要指令」改为「选段转换结果 + 摘要指令」；模板、工具 schema/description、旧窗口背景原文不改。工具选择从默认 auto 改为 none，执行回调只在本地剥离，不作为新提示词注入。
+2. 固定前缀净增 0 token；摘要变量输入去掉窗口外消息和图片。发送快照只是内存记录，不是新增模型输入，不能把它当作额外注入。
+3. 正常主请求的稳定化布局和 revision 结算不改。摘要仍尽量复用 system/tools；消息前缀可能从选段转换的首个差异处失效，这是避免错误摘要和多发输入的明确代价。不以测试宣称真实命中率、耗时或额度收益。
+4. 无新增自动注入项，沿用既有摘要、选段消息、active/retained 预算与工具输出截断；额外前缀复用受现有模型输入预算约束。默认摘要上限仍是 12000 token，没有本次新增加的超大提示段。
+
+验证覆盖回调隔离、超预算前缀回退、双窗口及图片排除、发送与组装分代、variant 隔离、快照不受后续对象修改影响。测试使用隔离数据库及本地/脚本化模型，不调用真实供应商，不修改现场会话。
+
+最终定向验证：summary/preflight 7 pass，prompt-caches 与 TUI prompt-soul-submit 20 pass；opencode typecheck、版本一致性、`git diff --check` 通过。扩展连跑另外遇到既有 `stops quickly when aborted during retry backoff` 的 1 秒就绪超时，以及 `cancel with queued callers resolves all cleanly` 的 3 秒测试超时；未修改这些阈值，不宣称整文件回归全绿。TUI 另以真实 Prompt renderer 检查六组宽度/路径/分支字符帧，档位仍在模型行。未重编、提交或推送。

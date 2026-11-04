@@ -66,6 +66,7 @@ import { runSteerableTask, steerTask, TaskTool, type TaskPromptOps } from "@/too
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import { TaskStatusTool } from "@/tool/task_status"
 import { InstanceRef } from "@/effect/instance-ref"
+import { dropSession, PromptCaches } from "@/session/prompt-caches"
 
 void Log.init({ print: false })
 
@@ -1323,6 +1324,46 @@ for (const cancelled of [false, true]) {
     }),
   )
 }
+
+it.instance("native preflight does not replace the last sent request with unsent stabilized messages", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { native: {
+        enabled: true, trigger_tokens: 10000, target_tokens: 1000,
+        reminder_tokens: 10000, summary_max_tokens: 1000,
+      } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Sent versus prepared request" })
+    yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
+    yield* llm.text("Earlier completed implementation. ".repeat(500), { usage: { input: 100, output: 5 } })
+    yield* prompt.prompt({
+      sessionID: chat.id, agent: "build", model: ref,
+      parts: [{ type: "text", text: "FIRST_SENT_REQUEST" }],
+    })
+    const sent = PromptCaches.request.get(chat.id)
+    expect(sent).toBeDefined()
+    expect(JSON.stringify(sent?.messages)).toContain("FIRST_SENT_REQUEST")
+    yield* llm.push(reply().text("Partial summary").hang())
+    const running = yield* prompt.prompt({
+      sessionID: chat.id, agent: "build", model: ref,
+      parts: [{ type: "text", text: "UNSENT_PREFLIGHT_INPUT ".repeat(3000) }],
+    }).pipe(Effect.forkChild)
+    yield* awaitWithTimeout(llm.wait(2), "preflight summary did not start", "10 seconds")
+    expect(PromptCaches.request.get(chat.id)).toBe(sent)
+    expect(JSON.stringify(PromptCaches.request.get(chat.id))).not.toContain("UNSENT_PREFLIGHT_INPUT")
+    expect(JSON.stringify(PromptCaches.modelMsgs.get(chat.id)?.get("test/test-model")?.messages)).toContain(
+      "UNSENT_PREFLIGHT_INPUT",
+    )
+    const summary = JSON.stringify((yield* llm.inputs)[1])
+    expect(summary).toContain("Summarize the supplied")
+    expect(summary).not.toContain("UNSENT_PREFLIGHT_INPUT")
+    yield* prompt.cancel(chat.id)
+    yield* Fiber.await(running)
+  }),
+)
 
 for (const sameModel of [true, false]) {
   it.instance(
