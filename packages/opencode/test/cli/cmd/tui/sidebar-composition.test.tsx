@@ -133,3 +133,43 @@ test("404 and network failures show distinct states and can be retried", async (
     app.renderer.destroy()
   }
 })
+
+// 261104 Red 侧栏 42 列下，后端上限 48 字符的 label（CJK 双宽 96 列）必须裁到单行：
+// 不裁时明细行会折成 2–3 行，展开面板被撑高。ascii 与 CJK 各验一次。
+test("long labels stay on one line at sidebar width", async () => {
+  const api = { theme: { current: { textMuted: RGBA.fromHex("#888888") } } } as unknown as TuiPluginApi
+  const app = await testRender(() => (
+    <ContextComposition api={api} sessionID="test" messages={[]} compact={String}
+      load={async () => ({
+        response: new Response(),
+        data: {
+          providerID: "test", modelID: "test", time: 1_700_000_000_000, total: 100,
+          system: {
+            tokens: 20, confidence: "medium",
+            segments: [{ label: "x".repeat(48), tokens: 10 }, { label: "判".repeat(48), tokens: 10 }],
+          },
+          tools: { count: 0, tokens: 0, confidence: "low", top: [] },
+          messages: { count: 0, tokens: 0, confidence: "medium", byRole: [] },
+        },
+      })} />
+  ), { width: 42, height: 20 })
+  try {
+    await app.renderOnce()
+    await app.mockMouse.click(3, 0)
+    await app.renderOnce()
+    await app.renderOnce()
+    await app.mockMouse.click(3, 1)
+    await app.renderOnce()
+    const lines = app.captureCharFrame().split("\n")
+    const ascii = lines.filter((line) => line.includes("x"))
+    const cjk = lines.filter((line) => line.includes("判"))
+    expect(ascii.length).toBe(1)
+    expect(cjk.length).toBe(1)
+    expect(ascii[0]).toContain("…")
+    expect(cjk[0]).toContain("…")
+    expect(Bun.stringWidth(ascii[0].trimEnd())).toBeLessThanOrEqual(42)
+    expect(Bun.stringWidth(cjk[0].trimEnd())).toBeLessThanOrEqual(42)
+  } finally {
+    app.renderer.destroy()
+  }
+})

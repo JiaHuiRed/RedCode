@@ -21,6 +21,24 @@ export function snapshotGroups(snapshot: ContextSnapshot) {
   }))
 }
 
+// 261104 Red 侧栏内容宽 42 - border 2 - padding 2 - paddingRight 1 = 37 列；明细行是
+// 4 空格缩进 + label + 1 空格 + compact(tokens)（最长约 6 字符）。后端 label 上限 48
+// 字符（CJK 双宽可达 96 列），不裁就会换行成 2–3 行、把展开面板撑高。按显示宽度裁到
+// 26 列：37 - 4 - 1 - 6，保证单行放得下。
+const LABEL_COLUMNS = 26
+export function fitLabel(label: string): string {
+  if (Bun.stringWidth(label) <= LABEL_COLUMNS) return label
+  let text = ""
+  let width = 0
+  for (const char of label) {
+    const next = Bun.stringWidth(char)
+    if (width + next > LABEL_COLUMNS - 1) break
+    text += char
+    width += next
+  }
+  return text + "…"
+}
+
 export function ContextComposition(props: {
   api: TuiPluginApi
   sessionID: string
@@ -85,7 +103,7 @@ export function ContextComposition(props: {
                       </box>
                       <Show when={detail() === group.id}>
                         <For each={group.items}>
-                          {(item) => <text fg={theme().textMuted}>{"    "}{item.label} {props.compact(item.tokens)}</text>}
+                          {(item) => <text fg={theme().textMuted}>{"    "}{fitLabel(item.label)} {props.compact(item.tokens)}</text>}
                         </For>
                       </Show>
                     </box>
