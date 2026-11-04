@@ -1604,9 +1604,9 @@ export function Prompt(props: PromptProps) {
     () => !!local.agent.current() && store.mode === "normal" && showVariant(),
     animationsEnabled,
   )
-  // 261104 Red 输入区轮廓：主题低对比边框 + 一点 agent 色（0.35）轻描一圈圆角，
+  // 261104 Red 输入区轮廓：整圈用 agent 色描边（0.8 混合，避开纯色霓虹感），
   // 取代原来"左侧单边竖线 + 底部 ▀ 补丁"的边界模拟。
-  const inputBorder = createMemo(() => tint(theme.borderSubtle ?? theme.border, highlight(), 0.35 * agentMetaAlpha()))
+  const inputBorder = createMemo(() => tint(theme.borderSubtle ?? theme.border, highlight(), 0.8 * agentMetaAlpha()))
 
   // 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。
   const workspacePath = createMemo(() => project.instance.directory())
@@ -1678,7 +1678,7 @@ export function Prompt(props: PromptProps) {
       >
         {/* 261104 Red 输入框标题栏：agent 色短竖线 + 加粗项目名 + muted 路径 + 右侧分支。
             标题与输入框同用 backgroundPanel（比输入区深一档），形成「外框深、输入区浅」的层次；
-            只占一行，不再上下留白。长路径按显示宽度截断，整行不折行。 */}
+            底部留一行呼吸感。长路径按显示宽度截断，整行不折行。 */}
         <box
           width="100%"
           flexDirection="row"
@@ -1686,6 +1686,7 @@ export function Prompt(props: PromptProps) {
           alignItems="center"
           paddingLeft={3}
           paddingRight={2}
+          paddingBottom={1}
           flexShrink={0}
           backgroundColor={theme.backgroundPanel}
         >
