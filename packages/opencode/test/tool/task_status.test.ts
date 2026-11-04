@@ -1,17 +1,26 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { BackgroundStore } from "@/background/store"
 import { Bus } from "@/bus"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"
-import { MessageID } from "@/session/schema"
+import { MessageID, PartID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { TaskStatusTool, stallWarning } from "@/tool/task_status"
 import { Truncate } from "@/tool/truncate"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { disposeAllInstances } from "../fixture/fixture"
+import { TestInstance, disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+
+// 261104 Red 落盘目录指到临时目录：重启恢复用例会写状态文件，不能落到真实 data 目录。
+const store = await mkdtemp(path.join(os.tmpdir(), "redcode-task-status-store-"))
+afterAll(() => rm(store, { recursive: true, force: true }))
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -27,6 +36,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     SessionStatus.defaultLayer,
     Truncate.defaultLayer,
     RuntimeFlags.layer(flags),
+    Layer.succeed(BackgroundStore.directory, store),
   )
 
 const it = testEffect(layer({ experimentalBackgroundSubagents: true }))
@@ -158,6 +168,59 @@ describe("tool.task_status", () => {
       expect(result.output).toContain("state: completed")
       expect(result.output).toContain("all done")
       expect(result.metadata.timed_out).toBe(false)
+    }),
+  )
+
+  it.instance("restores completed output from the child session after a restart", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const test = yield* TestInstance
+      const chat = yield* sessions.create({})
+
+      const message = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        sessionID: chat.id,
+        time: { created: Date.now(), completed: Date.now() },
+        parentID: MessageID.ascending(),
+        modelID: ModelID.make("test"),
+        providerID: ProviderID.make("test"),
+        mode: "build",
+        agent: "build",
+        path: { cwd: test.directory, root: test.directory },
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        finish: "stop",
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: message.id,
+        type: "text",
+        text: "restored from session",
+      })
+
+      // 落盘快照不含 output：模拟重启后 hydrate 出来的 completed 任务。
+      yield* BackgroundStore.write(store, test.directory, [
+        { id: chat.id, type: "task", status: "completed", started_at: 1, completed_at: 2 },
+      ])
+
+      const def = yield* (yield* TaskStatusTool).init()
+      const result = yield* def.execute(
+        { task_id: chat.id },
+        {
+          sessionID: chat.id,
+          messageID: MessageID.ascending(),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("state: completed")
+      expect(result.output).toContain("restored from session")
     }),
   )
 

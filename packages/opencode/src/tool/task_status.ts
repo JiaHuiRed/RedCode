@@ -94,19 +94,28 @@ export const TaskStatusTool = Tool.define(
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
 
+    // 261104 Red 落盘快照不含 output（子代理全文可达数 MB），重启恢复的 completed 任务
+    // 本身没有输出文本。结果仍在子会话里，按最新 assistant 消息补回来，避免返回空文本。
+    const jobText = Effect.fn("TaskStatusTool.jobText")(function* (taskID: SessionID, job: BackgroundJob.Info) {
+      if (job.output) return job.output
+      if (job.error) return job.error
+      if (job.status === "running") return "Task is still running."
+      if (job.status === "cancelled") return "Task was cancelled."
+      if (job.status !== "completed") return ""
+      const latest = yield* sessions
+        .findMessage(taskID, (item) => item.info.role === "assistant")
+        .pipe(Effect.orDie)
+      if (Option.isNone(latest)) return ""
+      const message = inspectMessage(latest.value)
+      return message?.state === "completed" ? message.text : ""
+    })
+
     const inspect: (taskID: SessionID, warnMs: number) => Effect.Effect<InspectResult> = Effect.fn(
       "TaskStatusTool.inspect",
     )(function* (taskID: SessionID, warnMs: number) {
       const job = yield* jobs.get(taskID)
       if (job) {
-        let text =
-          job.output ??
-          job.error ??
-          (job.status === "running"
-            ? "Task is still running."
-            : job.status === "cancelled"
-              ? "Task was cancelled."
-              : "")
+        let text = yield* jobText(taskID, job)
         if (job.status === "running") {
           const current = yield* status.get(taskID)
           if (current.type === "busy" || current.type === "retry") {
@@ -247,14 +256,12 @@ export const TaskStatusTool = Tool.define(
         params.wait === true
           ? yield* jobs.wait({ id: params.task_id, timeout: params.timeout_ms ?? DEFAULT_TIMEOUT })
           : { info: yield* jobs.get(params.task_id), timedOut: false }
-      const inspected = waited.info
+      const info = waited.info
+      const inspected = info
         ? {
             result: {
-              state: waited.info.status,
-              text:
-                waited.info.output ??
-                waited.info.error ??
-                (waited.info.status === "running" ? "Task is still running." : ""),
+              state: info.status,
+              text: yield* jobText(params.task_id, info),
             },
             timedOut: waited.timedOut,
           }

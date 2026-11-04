@@ -30,10 +30,9 @@ export type Snapshot = {
 }
 
 const VERSION = 1
-// 与内存侧同口径：完成态至多 50 条。磁盘再宽一点没有意义——面板也就展示这些。
+// 与内存侧 prune 同口径：完成态至多 50 条。运行中的任务不进这个上限——它们要靠落盘
+// 在重启后提示「上次未正常结束」，按时间全量截断会把跑得最久、启动最早的任务挤掉。
 const KEEP = 50
-// 同一个工作区的落盘串行化：并发完成的任务会同时写同一个文件，交错 rename 时
-// 后写的旧快照可能盖掉新快照（Windows 上还会撞 EPERM）。按目标文件排一条链。
 const queues = new Map<string, Promise<void>>()
 
 function serialized(target: string, task: () => Promise<void>) {
@@ -52,20 +51,38 @@ function file(target: string, workspace: string) {
 
 export const read = (target: string, workspace: string) =>
   Effect.promise(async (): Promise<Snapshot | undefined> => {
-    const text = await readFile(file(target, workspace), "utf8").catch(() => undefined)
+    const destination = file(target, workspace)
+    const text = await readFile(destination, "utf8").catch((error: unknown) => {
+      // 状态文件只影响重启后的可见性：读不到就当没有，但权限/磁盘问题要留痕。
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT")
+        console.warn(`background job state read failed: ${destination}: ${String(error)}`)
+      return undefined
+    })
     if (!text) return undefined
-    const parsed = JSON.parse(text) as { version?: number; saved_at?: number; records?: Entry[] } | undefined
-    if (!parsed || parsed.version !== VERSION || !Array.isArray(parsed.records)) return undefined
-    return { version: VERSION, saved_at: Number(parsed.saved_at) || 0, records: parsed.records as Entry[] }
+    try {
+      const parsed = JSON.parse(text) as { version?: number; saved_at?: number; records?: Entry[] } | undefined
+      if (!parsed || parsed.version !== VERSION || !Array.isArray(parsed.records)) return undefined
+      return { version: VERSION, saved_at: Number(parsed.saved_at) || 0, records: parsed.records as Entry[] }
+    } catch (error) {
+      // 手改、旧版本遗留或磁盘损坏都可能产生非法 JSON。一份坏文件不该阻断该工作区的
+      // 后台服务初始化；下一次写盘会用原子替换覆盖它。
+      console.warn(`background job state parse failed: ${destination}: ${String(error)}`)
+      return undefined
+    }
   })
 
 export const write = (target: string, workspace: string, records: Info[]) =>
   Effect.promise(async () => {
     const destination = file(target, workspace)
+    const running = records.filter((record) => record.status === "running")
+    const finished = records
+      .filter((record) => record.status !== "running")
+      .sort((a, b) => a.started_at - b.started_at)
+      .slice(-KEEP)
     const snapshot: Snapshot = {
       version: VERSION,
       saved_at: Date.now(),
-      records: [...records].sort((a, b) => a.started_at - b.started_at).slice(-KEEP).map(toRecord),
+      records: [...running, ...finished].sort((a, b) => a.started_at - b.started_at).map(toRecord),
     }
     // 同目录 temp + rename 走核心工具：它带 Windows 上 EACCES/EBUSY/EPERM 的重试。
     await serialized(destination, () => AppFileSystem.writeFileAtomic(destination, JSON.stringify(snapshot)))

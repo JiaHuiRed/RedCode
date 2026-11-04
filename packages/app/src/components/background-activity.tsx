@@ -11,6 +11,7 @@ import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
+import { errorMessage } from "@/utils/session-helpers"
 
 type JobStatus = "running" | "completed" | "error" | "cancelled"
 
@@ -59,11 +60,11 @@ export function DialogBackground() {
   const navigate = useNavigate()
 
   const [data, { refetch }] = createResource(async () => {
-    const [jobs, terminals] = await Promise.all([
-      sdk.client.background.list().then((result) => result.data ?? []),
-      sdk.client.pty.list().then((result) => result.data ?? []),
-    ])
-    return { jobs: jobs as Job[], terminals: terminals as Terminal[] }
+    const [jobs, terminals] = await Promise.all([sdk.client.background.list(), sdk.client.pty.list()])
+    // SDK 把服务端错误放在 result.error 里，不抛异常；不检查会把失败渲染成「没有后台活动」。
+    if (jobs.error) throw jobs.error
+    if (terminals.error) throw terminals.error
+    return { jobs: (jobs.data ?? []) as Job[], terminals: (terminals.data ?? []) as Terminal[] }
   })
 
   // 面板里看的就是「现在还在跑什么」，两秒一轮；关掉面板立即停。
@@ -112,8 +113,17 @@ export function DialogBackground() {
         row={row}
         onDone={async () => {
           try {
-            if (row.kind === "job") await sdk.client.background.cancel({ jobID: row.id })
-            else await sdk.client.pty.remove({ ptyID: row.id })
+            const result =
+              row.kind === "job"
+                ? await sdk.client.background.cancel({ jobID: row.id })
+                : await sdk.client.pty.remove({ ptyID: row.id })
+            // SDK 把服务端错误放在 result.error 里，不抛异常；只 catch 会静默失败。
+            if (result.error)
+              showToast({
+                variant: "error",
+                title: language.t("common.requestFailed"),
+                description: errorMessage(result.error, language.t("error.chain.unknown")),
+              })
           } catch (error) {
             showToast({
               variant: "error",
@@ -132,6 +142,11 @@ export function DialogBackground() {
       title={language.t("dialog.background.title")}
       description={language.t("dialog.background.description", { running: running(), total: rows().length })}
     >
+      <Show when={data.error}>
+        <div class="px-4 py-2 text-12-regular text-v2-state-fg-danger">
+          {language.t("common.requestFailed")}: {errorMessage(data.error, language.t("error.chain.unknown"))}
+        </div>
+      </Show>
       <List
         search={{ placeholder: language.t("common.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.background.empty")}

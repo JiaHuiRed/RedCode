@@ -45,11 +45,11 @@ export function DialogBackground() {
   const toast = useToast()
 
   const [data, { refetch }] = createResource(async () => {
-    const [jobs, terminals] = await Promise.all([
-      sdk.client.background.list().then((result) => result.data ?? []),
-      sdk.client.pty.list().then((result) => result.data ?? []),
-    ])
-    return { jobs, terminals }
+    const [jobs, terminals] = await Promise.all([sdk.client.background.list(), sdk.client.pty.list()])
+    // SDK 把服务端错误放在 result.error 里，不抛异常；不检查会把失败显示成「没有后台活动」。
+    if (jobs.error) throw jobs.error
+    if (terminals.error) throw terminals.error
+    return { jobs: jobs.data ?? [], terminals: terminals.data ?? [] }
   })
 
   // 面板里看的就是"现在还在跑什么"，两秒一轮刷新，关掉面板立即停。
@@ -95,6 +95,15 @@ export function DialogBackground() {
   }
 
   const options = createMemo<DialogSelectOption<Item>[]>(() => {
+    if (data.error)
+      return [
+        {
+          title: "加载失败",
+          description: errorMessage(data.error),
+          value: { kind: "empty" as const },
+          disabled: true,
+        },
+      ]
     const current = data()
     if (!current) return []
     const now = Date.now()
