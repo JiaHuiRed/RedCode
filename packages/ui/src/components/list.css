@@ -175,6 +175,141 @@
       }
     }
 
+    /* 261106 Red header/item/add 样式上提到 scroll 层：虚拟分支的条目直接挂在 virtua 的
+       绝对定位包装下，不经过 list-group/list-items，两分支共用同一套样式（非虚拟匹配的
+       元素集合不变，只是祖先选择器少了中间层）。 */
+    [data-slot="list-header"] {
+      display: flex;
+      z-index: 10;
+      padding: 8px 12px 8px 8px;
+      justify-content: space-between;
+      align-items: center;
+      align-self: stretch;
+      background: var(--surface-raised-stronger-non-alpha);
+      position: sticky;
+      top: 0;
+
+      color: var(--text-weak);
+
+      /* text-14-medium */
+      font-family: var(--font-family-sans);
+      font-size: 14px;
+      font-style: normal;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-large); /* 142.857% */
+      letter-spacing: var(--letter-spacing-normal);
+
+      &::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        height: 16px;
+        background: linear-gradient(to bottom, var(--surface-raised-stronger-non-alpha), transparent);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+
+      &[data-stuck="true"]::after {
+        opacity: 1;
+      }
+    }
+
+    [data-slot="list-item"] {
+      display: flex;
+      position: relative;
+      width: 100%;
+      padding: 6px 8px 6px 8px;
+      align-items: center;
+      color: var(--text-strong);
+      scroll-margin-top: 28px;
+
+      /* text-14-medium */
+      font-family: var(--font-family-sans);
+      font-size: 14px;
+      font-style: normal;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-large); /* 142.857% */
+      letter-spacing: var(--letter-spacing-normal);
+
+      [data-slot="list-item-selected-icon"] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        aspect-ratio: 1/1;
+        [data-component="icon"] {
+          color: var(--icon-strong-base);
+        }
+      }
+      [data-slot="list-item-active-icon"] {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        aspect-ratio: 1/1;
+        [data-component="icon"] {
+          color: var(--icon-strong-base);
+        }
+      }
+
+      [data-slot="list-item-extra-icon"] {
+        color: var(--icon-base);
+        margin-left: -4px;
+      }
+
+      [data-slot="list-item-divider"] {
+        position: absolute;
+        bottom: 0;
+        left: var(--list-divider-inset, 16px);
+        right: var(--list-divider-inset, 16px);
+        height: 1px;
+        background: var(--border-weak-base);
+        pointer-events: none;
+      }
+
+      &[data-active="true"] {
+        border-radius: var(--radius-md);
+        background: var(--surface-raised-base-hover);
+        [data-slot="list-item-active-icon"] {
+          display: inline-flex;
+        }
+        [data-slot="list-item-extra-icon"] {
+          display: block !important;
+          color: var(--icon-strong-base) !important;
+        }
+      }
+      &:active {
+        background: var(--surface-raised-base-active);
+      }
+      &:focus-visible {
+        outline: none;
+      }
+    }
+
+    [data-slot="list-item-add"] {
+      display: flex;
+      position: relative;
+      width: 100%;
+      padding: 6px 8px 6px 8px;
+      align-items: center;
+      color: var(--text-strong);
+
+      /* text-14-medium */
+      font-family: var(--font-family-sans);
+      font-size: 14px;
+      font-style: normal;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-large); /* 142.857% */
+      letter-spacing: var(--letter-spacing-normal);
+
+      [data-component="input"] {
+        width: 100%;
+      }
+    }
+
     [data-slot="list-group"] {
       position: relative;
       display: flex;
@@ -184,147 +319,34 @@
         padding-bottom: 12px;
       }
 
-      [data-slot="list-header"] {
-        display: flex;
-        z-index: 10;
-        padding: 8px 12px 8px 8px;
-        justify-content: space-between;
-        align-items: center;
-        align-self: stretch;
-        background: var(--surface-raised-stronger-non-alpha);
-        position: sticky;
-        top: 0;
-
-        color: var(--text-weak);
-
-        /* text-14-medium */
-        font-family: var(--font-family-sans);
-        font-size: 14px;
-        font-style: normal;
-        font-weight: var(--font-weight-medium);
-        line-height: var(--line-height-large); /* 142.857% */
-        letter-spacing: var(--letter-spacing-normal);
-
-        &::after {
-          content: "";
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          height: 16px;
-          background: linear-gradient(to bottom, var(--surface-raised-stronger-non-alpha), transparent);
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 0.15s ease;
-        }
-
-        &[data-stuck="true"]::after {
-          opacity: 1;
-        }
-      }
-
       [data-slot="list-items"] {
         display: flex;
         flex-direction: column;
         align-items: flex-start;
         align-self: stretch;
 
-        [data-slot="list-item"] {
-          display: flex;
-          position: relative;
-          width: 100%;
-          padding: 6px 8px 6px 8px;
-          align-items: center;
-          color: var(--text-strong);
-          scroll-margin-top: 28px;
-
-          /* text-14-medium */
-          font-family: var(--font-family-sans);
-          font-size: 14px;
-          font-style: normal;
-          font-weight: var(--font-weight-medium);
-          line-height: var(--line-height-large); /* 142.857% */
-          letter-spacing: var(--letter-spacing-normal);
-
-          [data-slot="list-item-selected-icon"] {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            aspect-ratio: 1/1;
-            [data-component="icon"] {
-              color: var(--icon-strong-base);
-            }
-          }
-          [data-slot="list-item-active-icon"] {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            aspect-ratio: 1/1;
-            [data-component="icon"] {
-              color: var(--icon-strong-base);
-            }
-          }
-
-          [data-slot="list-item-extra-icon"] {
-            color: var(--icon-base);
-            margin-left: -4px;
-          }
-
-          [data-slot="list-item-divider"] {
-            position: absolute;
-            bottom: 0;
-            left: var(--list-divider-inset, 16px);
-            right: var(--list-divider-inset, 16px);
-            height: 1px;
-            background: var(--border-weak-base);
-            pointer-events: none;
-          }
-
-          [data-slot="list-item"]:last-child [data-slot="list-item-divider"] {
-            display: none;
-          }
-
-          &[data-active="true"] {
-            border-radius: var(--radius-md);
-            background: var(--surface-raised-base-hover);
-            [data-slot="list-item-active-icon"] {
-              display: inline-flex;
-            }
-            [data-slot="list-item-extra-icon"] {
-              display: block !important;
-              color: var(--icon-strong-base) !important;
-            }
-          }
-          &:active {
-            background: var(--surface-raised-base-active);
-          }
-          &:focus-visible {
-            outline: none;
-          }
+        /* 261106 Red 真实末项的分隔线隐藏仍只包在 list-items 下：虚拟条目不在 list-items
+           内，分隔线由渲染条件直接控制，不能被 :last-child 规则误伤。 */
+        [data-slot="list-item"]:last-child [data-slot="list-item-divider"] {
+          display: none;
         }
+      }
+    }
 
-        [data-slot="list-item-add"] {
-          display: flex;
-          position: relative;
-          width: 100%;
-          padding: 6px 8px 6px 8px;
-          align-items: center;
-          color: var(--text-strong);
+    /* 261106 Red 虚拟分支：virtua 容器是 list-scroll 唯一子元素，12px 的组间 gap 失效，
+       组距补在 header 的 margin-top 上（首个条目除外）；末条目补 12px 底部留白，
+       对齐非虚拟 .list-group:last-child 的 padding-bottom。 */
+    &[data-virtual] {
+      [data-slot="list-header"] {
+        margin-top: 12px;
 
-          /* text-14-medium */
-          font-family: var(--font-family-sans);
-          font-size: 14px;
-          font-style: normal;
-          font-weight: var(--font-weight-medium);
-          line-height: var(--line-height-large); /* 142.857% */
-          letter-spacing: var(--letter-spacing-normal);
-
-          [data-component="input"] {
-            width: 100%;
-          }
+        &[data-first="true"] {
+          margin-top: 0;
         }
+      }
+
+      [data-last="true"] {
+        padding-bottom: 12px;
       }
     }
   }

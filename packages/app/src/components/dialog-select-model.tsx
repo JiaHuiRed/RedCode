@@ -40,6 +40,9 @@ const ModelList: Component<{
   return (
     <List
       class={`flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0 ${props.class ?? ""}`}
+      // 261106 Red 几百个模型全量 <For> 渲染 + findByKey 全列表扫描是热路径，
+      //   开启 List 的 opt-in 虚拟化：分组摊平后由 virtua 逐窗渲染，高亮跟随走 scrollToIndex。
+      virtual
       search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true, action: props.action }}
       emptyMessage={language.t("dialog.model.empty")}
       key={(x) => `${x.provider.id}:${x.id}`}

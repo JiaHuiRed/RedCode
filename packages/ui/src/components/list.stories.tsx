@@ -168,3 +168,29 @@ export const GroupHeader = {
     )
   },
 }
+
+// 261106 Red 虚拟分支演示：几百条目场景（如模型选择）用 virtual 开启 virtua 渲染。
+export const Virtual = {
+  render: () => {
+    const groups = ["Group A", "Group B", "Group C", "Group D"]
+    const items = Array.from({ length: 60 }, (_, i) => ({
+      id: `item-${i}`,
+      title: `Item ${i + 1}`,
+      group: groups[i % groups.length],
+    }))
+    return (
+      <div style={{ height: "320px", display: "flex", "flex-direction": "column" }}>
+        <mod.List
+          class="flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
+          items={items}
+          key={(item) => item.id}
+          groupBy={(item) => item.group}
+          search={true}
+          virtual={true}
+        >
+          {(item) => item.title}
+        </mod.List>
+      </div>
+    )
+  },
+}

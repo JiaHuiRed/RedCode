@@ -1,11 +1,15 @@
 import { type FilteredListProps, useFilteredList } from "@redcode-ai/ui/hooks"
-import { createEffect, For, type JSX, on, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, type JSX, on, type Accessor, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { useI18n } from "../context/i18n"
 import { Icon, type IconProps } from "./icon"
 import { IconButton } from "./icon-button"
 import { TextField } from "./text-field"
+import { flattenListGroups, itemIndexByKey, type FlatListEntry } from "./list-flat"
+
+const EMPTY_ENTRIES: FlatListEntry<never>[] = []
 
 function findByKey(container: HTMLElement, key: string) {
   const nodes = container.querySelectorAll<HTMLElement>('[data-slot="list-item"][data-key]')
@@ -47,6 +51,12 @@ export interface ListProps<T> extends FilteredListProps<T> {
   divider?: boolean
   add?: ListAddProps
   groupHeader?: (group: { category: string; items: T[] }) => JSX.Element
+  /**
+   * 261106 Red opt-in 虚拟化。开启后分组结构摊平（flattenListGroups）交给 virtua
+   * Virtualizer 逐窗渲染，键盘高亮经扁平 index 映射滚动；sticky 分组头在该分支不启用。
+   * 默认 false，非虚拟路径行为不变。
+   */
+  virtual?: boolean
 }
 
 export interface ListRef {
@@ -93,6 +103,18 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
   const searchAction = () => searchProps().action
   const addProps = () => props.add
   const showAdd = () => !!addProps()
+
+  // 261106 Red 虚拟分支状态：handle 供 scrollToIndex 导航；非 virtual 时 memo 短路成空数组，
+  //   其余消费者不为扁平化付成本。虚拟下不再 querySelectorAll——未渲染条目不在 DOM 里，
+  //   定位一律走「扁平数组 index 映射」（virtualIndexByKey）。
+  const [virtualizer, setVirtualizer] = createSignal<VirtualizerHandle>()
+
+  const virtualEntries = createMemo<readonly FlatListEntry<T>[]>(() => {
+    if (!props.virtual) return EMPTY_ENTRIES
+    return flattenListGroups(grouped.latest, { key: props.key, add: showAdd() })
+  })
+
+  const virtualIndexByKey = createMemo<ReadonlyMap<string, number>>(() => itemIndexByKey(virtualEntries()))
 
   const moved = (event: MouseEvent) => event.movementX !== 0 || event.movementY !== 0
 
@@ -142,6 +164,17 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     const key = props.key(props.current)
     flat()
     if (centeredKey === key) return
+    // 261106 Red 虚拟分支没有全量 DOM，居中走 handle.scrollToIndex；条目高度未测得时
+    //   virtua 用估算值滚动并在测量后校正。handle 未就绪时先不记 centeredKey，
+    //   等 handle 信号触发本效果重跑。
+    if (props.virtual) {
+      const handle = virtualizer()
+      const index = virtualIndexByKey().get(key)
+      if (!handle || index === undefined) return
+      centeredKey = key
+      handle.scrollToIndex(index, { align: "center" })
+      return
+    }
     requestAnimationFrame(() => {
       const element = findByKey(scroll, key)
       if (!element) return
@@ -155,6 +188,22 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     if (store.mouseActive || all.length === 0) return
     const scroll = scrollRef()
     if (!scroll) return
+    // 261106 Red 虚拟分支：高亮跟随不走 querySelectorAll，改经扁平 index 映射
+    //   + handle.scrollToIndex；首项对齐顶端与非虚拟的 scroll.scrollTo(0,0) 等价。
+    if (props.virtual) {
+      const handle = virtualizer()
+      if (!handle) return
+      const key = active()
+      if (!key) return
+      if (key === props.key(all[0])) {
+        handle.scrollTo(0)
+        return
+      }
+      const index = virtualIndexByKey().get(key)
+      if (index === undefined) return
+      handle.scrollToIndex(index, { align: "center" })
+      return
+    }
     if (active() === props.key(all[0])) {
       scroll.scrollTo(0, 0)
       return
@@ -210,11 +259,92 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
     setFilter: (value) => applyFilter(value, { ref: true }),
   })
 
-  const renderAdd = () => {
+  // 261106 Red 条目节点抽成单一实现，虚拟/非虚拟共用：data-key/active/selected、
+  //   itemWrapper（Tooltip 包装）、分隔线、current 勾选全部保持原语义，避免两份 JSX 漂移。
+  //   index/showDivider/dataLast 用 accessor 传——非虚拟的组内下标来自 For，是响应式的。
+  const renderItem = (
+    item: T,
+    index: () => number,
+    showDivider: () => boolean | undefined,
+    dataLast?: () => boolean,
+  ) => {
+    const node = (
+      <button
+        data-slot="list-item"
+        data-key={props.key(item)}
+        data-active={props.key(item) === active()}
+        data-selected={item === props.current}
+        data-last={dataLast?.() ? "true" : undefined}
+        onClick={() => handleSelect(item, index())}
+        onKeyDown={handleKey}
+        type="button"
+        onMouseMove={(event) => {
+          if (!moved(event)) return
+          setStore("mouseActive", true)
+          setActive(props.key(item))
+        }}
+        onMouseLeave={() => {
+          if (!store.mouseActive) return
+          setActive(null)
+        }}
+      >
+        {props.children(item)}
+        <Show when={item === props.current}>
+          <span data-slot="list-item-selected-icon">
+            <Icon name="check-small" />
+          </span>
+        </Show>
+        <Show when={props.activeIcon}>
+          {(icon) => (
+            <span data-slot="list-item-active-icon">
+              <Icon name={icon()} />
+            </span>
+          )}
+        </Show>
+        {showDivider() && <span data-slot="list-item-divider" />}
+      </button>
+    )
+    if (props.itemWrapper) return props.itemWrapper(item, node)
+    return node
+  }
+
+  // 261106 Red 虚拟分支逐条渲染：header 不走 GroupHeader（sticky 与 virtua 的绝对定位
+  //   条目冲突，滚动监听不启用）；item 复用 renderItem；add 行在扁平数组末尾。
+  const renderVirtualEntry = (entry: FlatListEntry<T>, index: Accessor<number>): JSX.Element => {
+    const last = () => index() === virtualEntries().length - 1
+    if (entry.type === "header") {
+      return (
+        <div
+          data-slot="list-header"
+          data-first={index() === 0 ? "true" : undefined}
+          data-last={last() ? "true" : undefined}
+        >
+          {props.groupHeader?.(entry.group) ?? entry.category}
+        </div>
+      )
+    }
+    if (entry.type === "item") {
+      return renderItem(
+        entry.item,
+        () => entry.index,
+        () => props.divider && (entry.index !== entry.groupSize - 1 || (showAdd() && entry.lastGroup)),
+        last,
+      )
+    }
+    return renderAdd(last)
+  }
+
+  // 261106 Red dataLast：虚拟分支给最后一个扁平条目补 12px 底部留白（对齐非虚拟
+  //   .list-group:last-child 的 padding-bottom），非虚拟不传即无该属性。
+  const renderAdd = (dataLast?: () => boolean) => {
     const add = addProps()
     if (!add) return null
     return (
-      <div data-slot="list-item-add" classList={{ [add.class ?? ""]: !!add.class }}>
+      <div
+        data-slot="list-item-add"
+        data-last={dataLast?.() ? "true" : undefined}
+        classList={{ [add.class ?? ""]: !!add.class }}
+      >
         {add.render()}
       </div>
     )
@@ -323,7 +453,7 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
           {searchAction()}
         </div>
       </Show>
-      <div ref={setScrollRef} data-slot="list-scroll">
+      <div ref={setScrollRef} data-slot="list-scroll" data-virtual={props.virtual ? "true" : undefined}>
         <Show
           when={flat().length > 0 || showAdd()}
           fallback={
@@ -332,69 +462,48 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
             </div>
           }
         >
-          <For each={grouped.latest}>
-            {(group, groupIndex) => {
-              const isLastGroup = () => groupIndex() === grouped.latest.length - 1
-              return (
+          {/* 261106 Red 分支选择用三元而不是 <Show>：Solid 的 Show fallback/children 是
+              在父组件渲染时求值的，嵌套 Show 会让非虚拟 <For> 在虚拟模式下照样全量建树，
+              虚拟化等于白做。三元只执行被选中的分支（virtual 按消费点是静态 prop）。 */}
+          {props.virtual ? (
+            /* 261106 Red 虚拟分支：条目高度动态（header 矮 item 高），不传 itemSize 让 virtua
+                自行测量；scrollRef 指向 list-scroll，复用既有滚动语义。 */
+            <Virtualizer data={virtualEntries()} scrollRef={scrollRef()} ref={(handle) => setVirtualizer(handle)}>
+              {(entry, index) => renderVirtualEntry(entry, index)}
+            </Virtualizer>
+          ) : (
+            <>
+              <For each={grouped.latest}>
+                {(group, groupIndex) => {
+                  const isLastGroup = () => groupIndex() === grouped.latest.length - 1
+                  return (
+                    <div data-slot="list-group">
+                      <Show when={group.category}>
+                        <GroupHeader group={group} />
+                      </Show>
+                      <div data-slot="list-items">
+                        <For each={group.items}>
+                          {(item, i) =>
+                            renderItem(
+                              item,
+                              i,
+                              () => props.divider && (i() !== group.items.length - 1 || (showAdd() && isLastGroup())),
+                            )
+                          }
+                        </For>
+                        <Show when={showAdd() && isLastGroup()}>{renderAdd()}</Show>
+                      </div>
+                    </div>
+                  )
+                }}
+              </For>
+              <Show when={grouped.latest.length === 0 && showAdd()}>
                 <div data-slot="list-group">
-                  <Show when={group.category}>
-                    <GroupHeader group={group} />
-                  </Show>
-                  <div data-slot="list-items">
-                    <For each={group.items}>
-                      {(item, i) => {
-                        const node = (
-                          <button
-                            data-slot="list-item"
-                            data-key={props.key(item)}
-                            data-active={props.key(item) === active()}
-                            data-selected={item === props.current}
-                            onClick={() => handleSelect(item, i())}
-                            onKeyDown={handleKey}
-                            type="button"
-                            onMouseMove={(event) => {
-                              if (!moved(event)) return
-                              setStore("mouseActive", true)
-                              setActive(props.key(item))
-                            }}
-                            onMouseLeave={() => {
-                              if (!store.mouseActive) return
-                              setActive(null)
-                            }}
-                          >
-                            {props.children(item)}
-                            <Show when={item === props.current}>
-                              <span data-slot="list-item-selected-icon">
-                                <Icon name="check-small" />
-                              </span>
-                            </Show>
-                            <Show when={props.activeIcon}>
-                              {(icon) => (
-                                <span data-slot="list-item-active-icon">
-                                  <Icon name={icon()} />
-                                </span>
-                              )}
-                            </Show>
-                            {props.divider && (i() !== group.items.length - 1 || (showAdd() && isLastGroup())) && (
-                              <span data-slot="list-item-divider" />
-                            )}
-                          </button>
-                        )
-                        if (props.itemWrapper) return props.itemWrapper(item, node)
-                        return node
-                      }}
-                    </For>
-                    <Show when={showAdd() && isLastGroup()}>{renderAdd()}</Show>
-                  </div>
+                  <div data-slot="list-items">{renderAdd()}</div>
                 </div>
-              )
-            }}
-          </For>
-          <Show when={grouped.latest.length === 0 && showAdd()}>
-            <div data-slot="list-group">
-              <div data-slot="list-items">{renderAdd()}</div>
-            </div>
-          </Show>
+              </Show>
+            </>
+          )}
         </Show>
       </div>
     </div>
