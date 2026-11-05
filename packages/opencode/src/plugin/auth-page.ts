@@ -1,7 +1,26 @@
 // 261106 Red codex.ts / xai.ts 各自内嵌了一份逐字相同的 OAuth 回调页 HTML（success + error
 // 两张，字节级 diff 确认仅 <title> 一词之差；error 页另有一处注入方式差异），抽到这里共享。
-// error 页的 <div class="error"> 内容两处转义策略不同（codex 原样注入、xai 经 escapeHtml），
-// 为保持各自原行为不动，errorHtml 由调用方传入最终要注入的 HTML 片段，本模块不做转义。
+// 261106 Red error 页原本由调用方自行决定转义（codex 原样注入 → URL error_description 可注
+// 入 HTML），现在统一收普通文本、本模块内部转义，调用方无法再忘记转义。
+
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;"
+      case "<":
+        return "&lt;"
+      case ">":
+        return "&gt;"
+      case '"':
+        return "&quot;"
+      case "'":
+        return "&#39;"
+      default:
+        return char
+    }
+  })
+}
 
 export function renderAuthSuccessPage(options: { title: string }): string {
   return `<!doctype html>
@@ -47,7 +66,7 @@ export function renderAuthSuccessPage(options: { title: string }): string {
 </html>`
 }
 
-export function renderAuthErrorPage(options: { title: string; errorHtml: string }): string {
+export function renderAuthErrorPage(options: { title: string; error: string }): string {
   return `<!doctype html>
 <html>
   <head>
@@ -91,7 +110,7 @@ export function renderAuthErrorPage(options: { title: string; errorHtml: string 
     <div class="container">
       <h1>Authorization Failed</h1>
       <p>An error occurred during authorization.</p>
-      <div class="error">${options.errorHtml}</div>
+      <div class="error">${escapeHtml(options.error)}</div>
     </div>
   </body>
 </html>`

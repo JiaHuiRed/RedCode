@@ -184,10 +184,11 @@ async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promis
   return response.json()
 }
 
-// 261106 Red HTML 模板抽至 auth-page.ts 与 xai.ts 共享，本文件仅保留 title 差异与 error 原样注入行为
+// 261106 Red HTML 模板抽至 auth-page.ts 与 xai.ts 共享；error 文本为普通字符串，
+// 模板内部统一转义（error_description 来自 URL 参数，不可信，不得原样进 HTML）
 const HTML_SUCCESS = renderAuthSuccessPage({ title: "RedCode - Codex Authorization Successful" })
 const HTML_ERROR = (error: string) =>
-  renderAuthErrorPage({ title: "RedCode - Codex Authorization Failed", errorHtml: error })
+  renderAuthErrorPage({ title: "RedCode - Codex Authorization Failed", error })
 
 interface PendingOAuth {
   pkce: PkceCodes
@@ -213,9 +214,17 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
       const error = url.searchParams.get("error")
       const errorDescription = url.searchParams.get("error_description")
 
+      // 261106 Red state 验证必须先于一切分支：错误回调同样来自浏览器 URL，未验证就
+      // reject/clear 会放行 CSRF 篡改进行中的登录。验证失败只回错误页，不动 pendingOAuth。
+      if (!pendingOAuth || state !== pendingOAuth.state) {
+        res.writeHead(400, { "Content-Type": "text/html" })
+        res.end(HTML_ERROR("Invalid state - potential CSRF attack"))
+        return
+      }
+
       if (error) {
         const errorMsg = errorDescription || error
-        pendingOAuth?.reject(new Error(errorMsg))
+        pendingOAuth.reject(new Error(errorMsg))
         pendingOAuth = undefined
         res.writeHead(200, { "Content-Type": "text/html" })
         res.end(HTML_ERROR(errorMsg))
@@ -224,16 +233,7 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
 
       if (!code) {
         const errorMsg = "Missing authorization code"
-        pendingOAuth?.reject(new Error(errorMsg))
-        pendingOAuth = undefined
-        res.writeHead(400, { "Content-Type": "text/html" })
-        res.end(HTML_ERROR(errorMsg))
-        return
-      }
-
-      if (!pendingOAuth || state !== pendingOAuth.state) {
-        const errorMsg = "Invalid state - potential CSRF attack"
-        pendingOAuth?.reject(new Error(errorMsg))
+        pendingOAuth.reject(new Error(errorMsg))
         pendingOAuth = undefined
         res.writeHead(400, { "Content-Type": "text/html" })
         res.end(HTML_ERROR(errorMsg))
@@ -265,7 +265,9 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
   })
 
   await new Promise<void>((resolve, reject) => {
-    oauthServer!.listen(OAUTH_PORT, () => {
+    // 261106 Red 显式绑 loopback：不指定 host 会监听全部网络接口，局域网内其他机器
+    // 也能打到本机 OAuth 回调端口。redirect_uri 仍是 localhost（上游注册如此）。
+    oauthServer!.listen(OAUTH_PORT, "127.0.0.1", () => {
       log.info("codex oauth server started", { port: OAUTH_PORT })
       resolve()
     })

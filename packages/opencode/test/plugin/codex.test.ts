@@ -473,6 +473,82 @@ describe("plugin.codex", () => {
       { authorization: "Bearer access-new", accountId: "acc-123" },
     ])
   })
+
+  // 261106 Red 审计 P1-01 回归：state 验证先于 error 分支、错误页转义、
+  // 伪造回调不清 pending、用户取消 / 服务端拒绝 / 正常授权原语义保持。
+  test("oauth callback validates state first, escapes error HTML, and keeps normal flows intact", async () => {
+    const realFetch = globalThis.fetch
+    const hooks = await CodexAuthPlugin({} as never)
+    try {
+      const authorize = async () => {
+        const started = (await hooks.auth!.methods![0]!.authorize!()) as {
+          url: string
+          callback: () => Promise<unknown>
+        }
+        const state = new URL(started.url).searchParams.get("state")!
+        return { started, state }
+      }
+      // 2s 兜底：若回归清掉了 pending，callback() 会挂到 5 分钟超时，不等它
+      const outcome = (started: { callback: () => Promise<unknown> }) =>
+        Promise.race([
+          started.callback().then(
+            () => "resolved" as const,
+            (err: Error) => `rejected:${err.message}` as const,
+          ),
+          new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 2000)),
+        ])
+
+      // 会话 1：伪造 state 的回调被 state 门拦下，不回显攻击者文本，也不消费 pending
+      const first = await authorize()
+      const payload = "</div><script>alert(1)</script>"
+      const forged = await fetch(
+        `http://127.0.0.1:1455/auth/callback?error=server_error&error_description=${encodeURIComponent(payload)}&state=forged`,
+      )
+      expect(forged.status).toBe(400)
+      const forgedHtml = await forged.text()
+      expect(forgedHtml).toContain("Invalid state - potential CSRF attack")
+      expect(forgedHtml).not.toContain("alert(1)")
+
+      const forgedCode = await fetch("http://127.0.0.1:1455/auth/callback?code=x&state=forged")
+      expect(forgedCode.status).toBe(400)
+
+      // pending 仍在：正确 state 的服务端拒绝按原语义终止本会话，且错误文本经转义上页
+      const denied = await fetch(
+        `http://127.0.0.1:1455/auth/callback?error=server_error&error_description=${encodeURIComponent(payload)}&state=${first.state}`,
+      )
+      expect(denied.status).toBe(200)
+      const deniedHtml = await denied.text()
+      expect(deniedHtml).toContain("&lt;script&gt;")
+      expect(deniedHtml).not.toContain("<script>alert(1)</script>")
+      expect(await outcome(first.started)).toBe(`rejected:${payload}`)
+
+      // 会话 2：用户取消
+      const second = await authorize()
+      const cancel = await fetch("http://127.0.0.1:1455/cancel")
+      expect(await cancel.text()).toContain("Login cancelled")
+      expect(await outcome(second.started)).toBe("rejected:Login cancelled")
+
+      // 会话 3：正常授权，token 交换拦截到本地 mock，不触网
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).startsWith("https://auth.openai.com/oauth/token")) {
+          return Response.json({
+            id_token: createTestJwt({ chatgpt_account_id: "acc-flow" }),
+            access_token: "access-flow",
+            refresh_token: "refresh-flow",
+            expires_in: 3600,
+          })
+        }
+        return realFetch(input, init)
+      }) as typeof fetch
+      const third = await authorize()
+      const ok = await fetch(`http://127.0.0.1:1455/auth/callback?code=auth-code&state=${third.state}`)
+      expect(ok.status).toBe(200)
+      expect(await ok.text()).toContain("Authorization Successful")
+      expect(await outcome(third.started)).toBe("resolved")
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 })
 
 async function waitFor(predicate: () => boolean) {

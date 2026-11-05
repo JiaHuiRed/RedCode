@@ -78,24 +78,8 @@ function generateState(): string {
   return base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)).buffer)
 }
 
-export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case "&":
-        return "&amp;"
-      case "<":
-        return "&lt;"
-      case ">":
-        return "&gt;"
-      case '"':
-        return "&quot;"
-      case "'":
-        return "&#39;"
-      default:
-        return char
-    }
-  })
-}
+// 261106 Red escapeHtml 移入 auth-page.ts 由模板内部统一执行；此处 re-export 维持既有导入面
+export { escapeHtml } from "./auth-page"
 
 interface TokenResponse {
   access_token: string
@@ -307,10 +291,11 @@ export async function pollDeviceCodeToken(
   throw new Error("xAI device authorization timed out")
 }
 
-// 261106 Red HTML 模板抽至 auth-page.ts 与 codex.ts 共享，本文件仅保留 title 差异与 error 转义行为
+// 261106 Red HTML 模板抽至 auth-page.ts 与 codex.ts 共享；error 文本为普通字符串，
+// 模板内部统一转义（error_description 来自 URL 参数，不可信，不得原样进 HTML）
 const HTML_SUCCESS = renderAuthSuccessPage({ title: "RedCode - xAI Authorization Successful" })
 const HTML_ERROR = (error: string) =>
-  renderAuthErrorPage({ title: "RedCode - xAI Authorization Failed", errorHtml: escapeHtml(error) })
+  renderAuthErrorPage({ title: "RedCode - xAI Authorization Failed", error })
 
 // CORS allowlist for the loopback callback. The redirect_uri itself is
 // already bound to 127.0.0.1 and gated by PKCE+state, so we only accept
@@ -357,9 +342,18 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
       const error = url.searchParams.get("error")
       const errorDescription = url.searchParams.get("error_description")
 
+      // 261106 Red state 验证必须先于一切分支，与 codex.ts 同构修复：错误回调同样来自
+      // 浏览器 URL，未验证就 reject/clear 会放行 CSRF 篡改进行中的登录。验证失败只回
+      // 错误页，不动 pendingOAuth。
+      if (!pendingOAuth || state !== pendingOAuth.state) {
+        res.writeHead(400, { "Content-Type": "text/html" })
+        res.end(HTML_ERROR("Invalid state - potential CSRF attack"))
+        return
+      }
+
       if (error) {
         const errorMsg = errorDescription || error
-        pendingOAuth?.reject(new Error(errorMsg))
+        pendingOAuth.reject(new Error(errorMsg))
         pendingOAuth = undefined
         res.writeHead(200, { "Content-Type": "text/html" })
         res.end(HTML_ERROR(errorMsg))
@@ -368,16 +362,7 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
 
       if (!code) {
         const errorMsg = "Missing authorization code"
-        pendingOAuth?.reject(new Error(errorMsg))
-        pendingOAuth = undefined
-        res.writeHead(400, { "Content-Type": "text/html" })
-        res.end(HTML_ERROR(errorMsg))
-        return
-      }
-
-      if (!pendingOAuth || state !== pendingOAuth.state) {
-        const errorMsg = "Invalid state - potential CSRF attack"
-        pendingOAuth?.reject(new Error(errorMsg))
+        pendingOAuth.reject(new Error(errorMsg))
         pendingOAuth = undefined
         res.writeHead(400, { "Content-Type": "text/html" })
         res.end(HTML_ERROR(errorMsg))
