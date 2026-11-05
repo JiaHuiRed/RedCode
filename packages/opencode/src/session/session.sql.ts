@@ -111,7 +111,16 @@ export const MessageTable = sqliteTable(
     ...Timestamps,
     data: text({ mode: "json" }).notNull().$type<InfoData>(),
   },
-  (table) => [index("message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id)],
+  (table) => [
+    index("message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id),
+    // 261105 Red promotePendingSteer 每步按 delivery 找待领取引导：没有该投影索引时
+    // 即使无待领取消息也要逐行 json_extract 整个会话（2612 条实测 50ms/步）。partial
+    // 索引只收 pending_steer 行（通常 0 行）。SQLite 需要 ANALYZE 统计才会选它，
+    // 迁移末尾补 ANALYZE message；否则优化器仍走 session_time_created_id_idx。
+    index("message_pending_steer_idx")
+      .on(table.session_id)
+      .where(sql`json_extract(${table.data}, '$.delivery') = 'pending_steer'`),
+  ],
 )
 
 export const PartTable = sqliteTable(
@@ -134,6 +143,13 @@ export const PartTable = sqliteTable(
     //   单列那个不再保留——(session_id, id) 的前缀就能服务原来所有 `where session_id=?` 的查询，
     //   多留一个只会给每次 part 写入多维护一棵树（流式期间每 step 写 8–12 条）。
     index("part_session_id_id_idx").on(table.session_id, table.id),
+    // 261105 Red 260930 给 recentToolParts 加了 json_extract(type)='tool' 与 parentID JOIN
+    // 后，260903 的排序直读失效：查询先全扫会话分片再过滤（484 消息实测 27.9ms、2612 条
+    // 43.5ms，每次工具调用最多两次）。partial 索引把扫描面收到 tool 分片（实测 1.25/6.3ms）。
+    // 同样依赖迁移末尾的 ANALYZE part 才会被优化器选中。
+    index("part_session_tool_idx")
+      .on(table.session_id, table.message_id, table.id)
+      .where(sql`json_extract(${table.data}, '$.type') = 'tool'`),
   ],
 )
 
