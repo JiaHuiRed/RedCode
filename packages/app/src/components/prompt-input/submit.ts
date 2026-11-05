@@ -253,13 +253,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return language.t("common.requestFailed")
   }
 
-  const abort = async () => {
-    const sessionID = params.id
-    if (!sessionID) return Promise.resolve()
-
+  const clearTodo = (sessionID: string) => {
     globalSync.todo.set(sessionID, [])
     const [, setStore] = globalSync.child(sdk.directory)
     setStore("todo", sessionID, [])
+  }
+
+  const abort = async () => {
+    const sessionID = params.id
+    if (!sessionID) return Promise.resolve()
 
     input.onAbort?.()
 
@@ -268,13 +270,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       queued.abort.abort()
       queued.cleanup()
       pending.delete(sessionID)
+      clearTodo(sessionID)
       return Promise.resolve()
     }
-    return sdk.client.session
-      .abort({
-        sessionID,
+
+    // 261105 Red 待办延后到停止确认后再清：此前先清 todo 再 abort().catch(noop)，
+    // 请求失败时模型仍在跑、待办已被清空，用户看不到还在执行什么也没有失败提示。
+    try {
+      await sdk.client.session.abort({ sessionID })
+    } catch (err) {
+      showToast({
+        title: language.t("prompt.toast.abortFailed.title"),
+        description: errorMessage(err),
       })
-      .catch(() => {})
+      return
+    }
+    clearTodo(sessionID)
   }
 
   // 261018 Red 评论的移除与恢复都必须钉在**提交时那个会话**上（与 restoreInput 同源）：

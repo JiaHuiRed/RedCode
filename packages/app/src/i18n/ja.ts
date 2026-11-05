@@ -294,6 +294,7 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "コマンドの送信に失敗しました",
   "prompt.toast.promptSendFailed.title": "プロンプトの送信に失敗しました",
   "prompt.toast.promptSendFailed.description": "セッションを取得できませんでした",
+  "prompt.toast.abortFailed.title": "生成の停止に失敗しました",
   "prompt.toast.draftStorageFull.title": "下書きの保存領域が不足しています",
   "prompt.toast.draftStorageFull.description":
     "ローカルストレージの空きが足りず下書きを保存できません。空き容量を確保するか、送信して内容を保持してください。",
