@@ -671,9 +671,14 @@ export function MessageTimeline(props: {
   let assistantContentVersion = 0
   const partSignatures = new Map<string, string>()
   const messageSignatures = new Map<string, string>()
+  // 261105 Red 工具 view 的序列化长度按引用缓存：view 只在工具结束时写入一次，但
+  // activeAssistantContentVersion 在流式期间每批 SSE 都会重算，旧实现每帧对每个已
+  // 完成工具重新 JSON.stringify 整个 view（注释早就写着「不必每帧 stringify」，代码
+  // 却一直这么做）。引用不变即复用长度，引用变了才重新序列化。
+  const viewLengthCache = new Map<string, { view: unknown; length: number }>()
   const activeAssistantContentVersion = createMemo(() => {
     let seenParts: Set<string> | undefined
-    const needsCleanup = partSignatures.size > 1000
+    const needsCleanup = partSignatures.size > 1000 || viewLengthCache.size > 1000
     if (needsCleanup) seenParts = new Set()
     for (const message of activeAssistantMessages()) {
       const messageSignature = `${message.id}:${message.time.completed ?? ""}:${message.error?.name ?? ""}`
@@ -697,7 +702,13 @@ export function MessageTimeline(props: {
           // 用序列化长度进签名足够触发首次渲染，不必每帧 stringify 整个 view。
           const metadataView =
             metadata && typeof metadata === "object" && "view" in metadata && metadata.view
-              ? JSON.stringify(metadata.view).length
+              ? (() => {
+                  const cached = viewLengthCache.get(part.id)
+                  if (cached && cached.view === metadata.view) return cached.length
+                  const length = JSON.stringify(metadata.view).length
+                  viewLengthCache.set(part.id, { view: metadata.view, length })
+                  return length
+                })()
               : 0
           signature = `${part.id}:${part.tool}:${part.state.status}:${output}:${metadataOutput}:${metadataView}`
         } else {
@@ -712,6 +723,9 @@ export function MessageTimeline(props: {
     if (seenParts) {
       for (const id of partSignatures.keys()) {
         if (!seenParts.has(id)) partSignatures.delete(id)
+      }
+      for (const id of viewLengthCache.keys()) {
+        if (!seenParts.has(id)) viewLengthCache.delete(id)
       }
     }
     return assistantContentVersion
