@@ -10,6 +10,9 @@
 
 ### [Unreleased]
 
+- **List 组件 opt-in 虚拟化，模型选择对话框接入**（`ui/src/components/list.tsx`、`list-flat.ts` 新增、`app/src/components/dialog-select-model.tsx`）：模型选择列表此前数百条目全量渲染，`findByKey` 每键击 querySelectorAll 全列表线性扫描。加 `virtual` 开关（默认关，非虚拟路径 DOM 逐字节不变），扁平化分组进 Virtualizer（virtua/solid，动态高度），键盘导航改 key→扁平 index 映射 + scrollToIndex，零 DOM 扫描。取舍：虚拟分支分组头不吸附（sticky 与虚拟化冲突），组间距 margin 补齐。story 补 60 条目变体。验证：ui/app typecheck exit 0，list-flat 7 + use-filtered-list 2 + token-refs 1 全绿。
+- **file-tree 补 WAI-ARIA treeview 键盘导航**（`app/src/components/file-tree.tsx`）：↑↓ 在可见节点间移动（Home/End 首尾）、→ 展开/进首子项、← 折叠/回父目录，深目录不再按 N 次 Tab 穿透；roving tabindex（光标节点唯一可 Tab，点击焦点回写光标）；role=tree/treeitem/group + aria-level/aria-selected。决策抽三个纯函数（listLevelNodes/visibleTreeNodes/moveTreeCursor，渲染与漫游共用切片口径），新增 5 条单测。验证：app typecheck exit 0，file-tree 8 pass。
+
 - **新增 ui Meter 用量条组件**（`ui/src/components/meter.tsx` 新增、`session-context-usage.tsx`、`session-context-tab.tsx`）：session-context-usage 悬浮条与 context-tab 的配额/构成/分解条共 4 处手搓同构的 track+填充 div 均无读屏语义，收编为单值（progressbar role + aria 值）/多段（aria-hidden，信息由图例承载）两种模式的共享组件；视觉零变化（同 4px/8px、同圆角、同色源）。story 补齐。验证：ui/app typecheck exit 0、token-refs 守门过、session-context-usage 5 pass。
 - **删除 22 个零使用的 v2 组件**（`ui/src/v2/components/*`，−8212 行）：v2 是 fork 初始自带的第二代组件库，5 个月从未系统性迁移——实际在役仅 7 个品牌组件（icon/icon-button/button/avatar/wordmark/chi-task-sticker/effort-slider）与 token 层（app 直接引用 --v2- token 34 处），全部保留。删除的 22 个零 import 基础件打包占用本就为零（组件 css 是模块内 side-effect import），消的是维护税：全量 token 清扫陪跑、v1↔v2 行为逻辑双份（~350 行）、新 UI 用哪套的歧义。token-refs 死类守门测试为动态扫描自动适配；迁移重启时 git 历史随时可捞。验证：ui/app/desktop typecheck exit 0、token-refs 过。
 
