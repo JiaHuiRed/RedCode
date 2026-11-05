@@ -1,4 +1,5 @@
 import type { Message } from "@redcode-ai/sdk/v2"
+import { cacheHitPercent } from "@redcode-ai/core/util/cache-rate"
 
 /**
  * 261028 Red 子代理页脚的用量行：总 token + cache 命中率。
@@ -46,9 +47,10 @@ export function subagentUsage(
       aggregate.tokens.cache.write
     : sumTotal
   if (total <= 0) return
-  const cacheDenom = sumRead + sumMiss + sumWrite
+  // 261105 Red 公式收敛到 core/util/cache-rate，精度保持 1 位。
+  const cachePct = sumRead > 0 ? cacheHitPercent({ read: sumRead, miss: sumMiss, write: sumWrite }, 1) : undefined
   const parts: string[] = []
-  if (sumRead > 0) parts.push(`Cache: ${Math.round((sumRead / cacheDenom) * 1000) / 10}%`)
+  if (cachePct !== undefined) parts.push(`Cache: ${cachePct}%`)
   parts.push(`Total ${total.toLocaleString()}`)
   return { label: parts.join(" · ") }
 }

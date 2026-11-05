@@ -1,5 +1,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import { USD_TO_CNY } from "@redcode-ai/core/currency"
+import { cacheHitPercent } from "@redcode-ai/core/util/cache-rate"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, createResource, Match, onCleanup, Show, Switch } from "solid-js"
 import { Global } from "@redcode-ai/core/global"
@@ -87,8 +88,8 @@ function Stats(props: { api: TuiPluginApi }) {
         ?.cost as { currency?: string } | undefined
       return sum + (cost?.currency === "CNY" ? model.cost : model.cost * USD_TO_CNY)
     }, 0)
-    const denominator = data.tokens.cacheRead + data.tokens.cacheWrite + data.tokens.input
-    const hitPct = denominator > 0 ? Math.round((data.tokens.cacheRead / denominator) * 100) : null
+    const hitPct =
+      cacheHitPercent({ read: data.tokens.cacheRead, miss: data.tokens.input, write: data.tokens.cacheWrite }, 0) ?? null
     return { costCNY, hitPct, count: data.sessions }
   })
 

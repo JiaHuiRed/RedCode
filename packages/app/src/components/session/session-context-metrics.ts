@@ -1,4 +1,5 @@
 import type { AssistantMessage, CompactionPart, Message, Part } from "@redcode-ai/sdk/v2/client"
+import { cacheHitPercent, cacheStalled } from "@redcode-ai/core/util/cache-rate"
 
 type Provider = {
   id: string
@@ -204,21 +205,13 @@ const build = (messages: Message[] = [], providers: Provider[] = [], aggregate?:
       // gives the true total instead of an either/or pick that silently drops whichever bucket the
       // buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
       // 260923 Red read/miss/write 已随主循环一趟累计，这里只做归一
-      cacheHit: (() => {
-        const denom = sumRead + sumMiss + sumWrite
-        return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 10000) / 100 : null
-      })(),
+      cacheHit: sumRead > 0 ? (cacheHitPercent({ read: sumRead, miss: sumMiss, write: sumWrite }, 2) ?? null) : null,
       // 260805 Red 单次交互（最近一轮请求）命中率 + 缓存冻结判据，对齐 TUI 4d596f3。
       // 累计值对"缓存卡住"几乎没有诊断力（全窗口平均，冻结几十轮才看得出）；真正的判据
       // 是**本轮 read 有没有在长**——正常每轮递增，卡住时纹丝不动而 write/miss 每轮重付。
       // stalled：连续 3 轮 read 完全不变且本轮未命中 > 3k = 前缀缓存被钉死。
-      turnHitPct: lastTurn ? Math.round((lastTurn.read / (lastTurn.read + lastTurn.bad)) * 10000) / 100 : null,
-      stalled: (() => {
-        if (!lastTurn || lastTurn.read <= 0) return false
-        let flat = 0
-        for (let i = turns.length - 2; i >= 0 && turns[i].read === lastTurn.read; i--) flat++
-        return flat >= 2 && lastTurn.bad > 3000
-      })(),
+      turnHitPct: lastTurn ? cacheHitPercent({ read: lastTurn.read, miss: lastTurn.bad, write: 0 }, 2)! : null,
+      stalled: cacheStalled(turns),
       total,
       // 260819 cc 口径修复：usage 原来是 total / limit，而 total 是**整个会话累计**
       // （注释里 'Aggregate across all assistant messages' 写得很明白）。长会话累计动辄是窗口的

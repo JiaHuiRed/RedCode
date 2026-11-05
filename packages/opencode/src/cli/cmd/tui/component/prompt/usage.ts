@@ -4,6 +4,7 @@
 // 零风险第一刀。行为零改动：memo 依赖（sessionID + sync.data.message + sync.data.session）原样搬移。
 import { createMemo } from "solid-js"
 import { cacheMissStreak, type CacheMissStreak } from "@redcode-ai/core/util/cache-streak"
+import { cacheHitPercent, cacheStalled, type CacheTurn } from "@redcode-ai/core/util/cache-rate"
 import type { useSync } from "../../context/sync"
 
 export interface PromptUsage {
@@ -41,7 +42,7 @@ export function usePromptUsage(
       sumMiss = 0,
       sumWrite = 0
     // 逐轮序列，用来算本轮值和"缓存有没有停止延伸"
-    const turns: Array<{ read: number; bad: number }> = []
+    const turns: CacheTurn[] = []
     for (const m of msg) {
       if (m.role === "assistant") {
         const read = m.tokens.cache.read
@@ -53,8 +54,9 @@ export function usePromptUsage(
       }
     }
     if (sumRead <= 0) return
+    // 261105 Red 三桶求和与精度收敛到 core/util/cache-rate，行为参数不变。
     const cacheDenom = sumRead + sumMiss + sumWrite
-    const cacheHitPct = Math.round((sumRead / cacheDenom) * 10000) / 100
+    const cacheHitPct = cacheHitPercent({ read: sumRead, miss: sumMiss, write: sumWrite }, 2)!
     const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 10000) / 100
 
     // 260804 Red 本轮命中率 + 冻结判据。
@@ -68,10 +70,8 @@ export function usePromptUsage(
     // write 每轮 55~84k，命中率线性跌到 50% 且不自愈。判据取"连续 3 轮 read 完全不变
     // 且本轮未命中 > 3k"——按这条扫历史数据，三次冻结全部命中，健康轮次零误报。
     const last = turns[turns.length - 1]
-    const turnHitPct = last ? Math.round((last.read / (last.read + last.bad)) * 10000) / 100 : undefined
-    let flat = 0
-    for (let i = turns.length - 2; i >= 0 && turns[i].read === last?.read && last.read > 0; i--) flat++
-    const stalled = flat >= 2 && (last?.bad ?? 0) > 3000
+    const turnHitPct = last ? cacheHitPercent({ read: last.read, miss: last.bad, write: 0 }, 2)! : undefined
+    const stalled = cacheStalled(turns)
 
     // 260804 Red 会话全历史命中率：上面两个都是从 sync.data.message 算的，只覆盖客户端
     // 当前持有的消息（重启归零）；这个取会话记录上的累计 token，落在 DB 里、跨重启不丢，
@@ -84,7 +84,10 @@ export function usePromptUsage(
     // 它是从百分比反推不出来的（要知道总量），而且直接对应账单上按全价计费的那部分。
     const lifeMiss = (record?.input ?? 0) + (record?.cache.write ?? 0)
     const lifeDenom = lifeRead + lifeMiss
-    const lifeHitPct = lifeDenom > 0 && lifeRead > 0 ? Math.round((lifeRead / lifeDenom) * 10000) / 100 : undefined
+    const lifeHitPct =
+      lifeDenom > 0 && lifeRead > 0
+        ? cacheHitPercent({ read: lifeRead, miss: record?.input ?? 0, write: record?.cache.write ?? 0 }, 2)
+        : undefined
 
     // 261013 Red 连续零命中事故检测：与上面 stalled（缓存停止延伸）互补 —— stalled 抓
     // 「read 纹丝不动」的钉死形态，这里抓「整轮归零连烧全价」的事故形态（Sol 六连零命中

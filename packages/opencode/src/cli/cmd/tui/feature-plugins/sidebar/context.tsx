@@ -1,5 +1,6 @@
 import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 import { USD_TO_CNY } from "@redcode-ai/core/currency"
+import { cacheHitPercent } from "@redcode-ai/core/util/cache-rate"
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, createResource, onCleanup, Show } from "solid-js"
@@ -140,9 +141,7 @@ export function sessionUsage(
       sessionTotalReasoning += m.tokens.reasoning
     }
   }
-  const cacheDenom = sumRead + sumMiss + sumWrite
-  const ownTotal = aggregate?.tokens
-    ? aggregate.tokens.input +
+  const ownTotal = aggregate?.tokens    ? aggregate.tokens.input +
       aggregate.tokens.output +
       aggregate.tokens.reasoning +
       aggregate.tokens.cache.read +
@@ -162,7 +161,7 @@ export function sessionUsage(
     cacheRead: sumRead,
     cacheMiss: sumMiss,
     cacheWrite: sumWrite,
-    cacheHit: cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null,
+    cacheHit: sumRead > 0 ? (cacheHitPercent({ read: sumRead, miss: sumMiss, write: sumWrite }, 1) ?? null) : null,
     sessionTotal: ownTotal + subagentTotal,
     subagentTotal,
   }

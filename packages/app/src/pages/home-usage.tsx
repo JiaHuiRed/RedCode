@@ -16,6 +16,7 @@
  */
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { cacheHitRate } from "@redcode-ai/core/util/cache-rate"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme"
 import { useLanguage } from "@/context/language"
@@ -436,14 +437,15 @@ function HomeUsagePanelInner(props: { directory: string | undefined; onCollapse:
     const cacheWrite = data?.tokens.cacheWrite ?? 0
     const cacheMiss = data?.tokens.input ?? 0
     const output = (data?.tokens.output ?? 0) + (data?.tokens.reasoning ?? 0)
-    const denominator = cacheRead + cacheWrite + cacheMiss
+    // 261105 Red 公式收敛到 core/util/cache-rate；这里保留未四舍五入的比率，显示层再格式化。
+    const rate = cacheHitRate({ read: cacheRead, miss: cacheMiss, write: cacheWrite })
     return {
       costCNY: costCNY(),
       cacheRead,
       cacheWrite,
       cacheMiss,
       output,
-      cacheHitPct: denominator > 0 ? (cacheRead / denominator) * 100 : null,
+      cacheHitPct: rate === undefined ? null : rate * 100,
     }
   })
 

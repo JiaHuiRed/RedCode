@@ -25,6 +25,7 @@
 //   event arrives, the queue entry is removed and the footer falls back
 //   to the next pending request or to the prompt view.
 import type { Event, Part, PermissionRequest, QuestionRequest, ToolPart } from "@redcode-ai/sdk/v2"
+import { cacheHitPercent } from "@redcode-ai/core/util/cache-rate"
 import * as Locale from "@/util/locale"
 import { toolView } from "./tool"
 import type { FooterOutput, FooterPatch, FooterView, StreamCommit } from "./types"
@@ -170,7 +171,7 @@ function formatUsage(
   // inflated hit。来龙去脉见 prompt/usage.ts:31-36、home-usage.tsx:437-446。
   const read = tokens?.cache?.read ?? 0
   const cacheHitPct =
-    read > 0 ? Math.round((read / (read + (tokens?.input ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10 : undefined
+    read > 0 ? cacheHitPercent({ read, miss: tokens?.input ?? 0, write: tokens?.cache?.write ?? 0 }, 1) : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 
   const text =
