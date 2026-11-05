@@ -26,6 +26,7 @@ import * as path from "path"
 import * as fs from "fs"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
+import { McpEvidence } from "./evidence"
 import { McpAuth } from "./auth"
 import { checkHealthCycle, type HealthFailure } from "./health"
 import { BusEvent } from "../bus/bus-event"
@@ -865,8 +866,13 @@ export const layer = Layer.effect(
       // but t.close() in acquireUseRelease release handler uses process.kill() which is
       // unreliable on Windows for compiled exes. We need the PID to killProcessTree on failure.
       const spawnedPid = transport.pid
+      // 261105 Red 证据链：stderr 逐 chunk 进日志的同时留有界缓冲，连接失败时脱敏截断
+      // 后拼进 status.error——此前用户只能看到 "Connection closed"，真正的报错只落在日志里。
+      const evidence = McpEvidence.createStderrEvidence()
       transport.stderr?.on("data", (chunk: Buffer) => {
-        log.info(`mcp stderr: ${chunk.toString()}`, { key })
+        const text = chunk.toString()
+        log.info(`mcp stderr: ${text}`, { key })
+        evidence.push(text)
       })
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
@@ -877,22 +883,22 @@ export const layer = Layer.effect(
         })),
         Effect.catch((error): Effect.Effect<{ client: MCPClient | undefined; status: Status }> => {
           const msg = error instanceof Error ? error.message : String(error)
+          const detailed = McpEvidence.describeLocalFailure(msg, evidence.recent())
           log.error("local mcp startup failed", {
             key,
             command: mcp.command,
             cwd,
             phase: "startup",
             timeout: connectTimeout,
-            error: msg,
+            error: detailed,
           })
+          const status: Status = { status: "failed" as const, error: detailed }
           // 260620 Red kill orphaned process — without this, failed MCP servers become
           // orphans that accumulate on every reconnect/reconcile cycle (8+ copies observed).
           if (spawnedPid) {
-            return killProcessTree(spawnedPid).pipe(
-              Effect.andThen(Effect.succeed({ client: undefined, status: { status: "failed" as const, error: msg } })),
-            )
+            return killProcessTree(spawnedPid).pipe(Effect.andThen(Effect.succeed({ client: undefined, status })))
           }
-          return Effect.succeed({ client: undefined, status: { status: "failed" as const, error: msg } })
+          return Effect.succeed({ client: undefined, status })
         }),
       )
     })

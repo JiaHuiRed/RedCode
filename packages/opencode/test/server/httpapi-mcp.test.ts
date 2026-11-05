@@ -192,4 +192,74 @@ describe("mcp HttpApi", () => {
       },
     },
   )
+
+  it.instance(
+    "reports a missing command with a startup hint instead of a bare error",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const handler = yield* handlerScoped
+
+        const connected = yield* request(handler, "/mcp/missing/connect", tmp.directory, { method: "POST" })
+        expect(connected.status).toBe(200)
+
+        const statuses = yield* json<Record<string, { status: string; error?: string }>>(
+          yield* request(handler, McpPaths.status, tmp.directory),
+        )
+        const failed = statuses["missing"]
+        expect(failed?.status).toBe("failed")
+        // 261105 Red 证据链：命令不存在时给出排查建议；stderr 为空则不拼证据段。
+        // POSIX 上 spawn 错误以 ENOENT 冒出、走「could not be started」分支；Windows 上
+        // transport 吞掉 spawn 错误只报 Connection closed、走「exited during startup」分支。
+        const expected = process.platform === "win32" ? "exited during startup" : "could not be started"
+        expect(failed?.error).toContain(expected)
+        expect(failed?.error).not.toContain("stdio stderr")
+      }),
+    {
+      config: {
+        mcp: {
+          missing: {
+            type: "local",
+            command: ["definitely-not-a-real-command-redcode-mcp-test"],
+            enabled: false,
+          },
+        },
+      },
+    },
+  )
+
+  it.instance(
+    "attaches sanitized stderr evidence when the server exits during startup",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const handler = yield* handlerScoped
+
+        const connected = yield* request(handler, "/mcp/crashy/connect", tmp.directory, { method: "POST" })
+        expect(connected.status).toBe(200)
+
+        const statuses = yield* json<Record<string, { status: string; error?: string }>>(
+          yield* request(handler, McpPaths.status, tmp.directory),
+        )
+        const failed = statuses["crashy"]
+        expect(failed?.status).toBe("failed")
+        expect(failed?.error).toContain("exited during startup")
+        expect(failed?.error).toContain("stdio stderr")
+        // 261105 Red 证据脱敏：key 含 TOKEN 的赋值整值遮蔽，明文不得出现在错误里。
+        expect(failed?.error).toContain("[redacted]")
+        expect(failed?.error).not.toContain("supersecret123")
+        expect(failed!.error!.length).toBeLessThan(1200)
+      }),
+    {
+      config: {
+        mcp: {
+          crashy: {
+            type: "local",
+            command: [process.execPath, "-e", "console.error('API_TOKEN=supersecret123'); process.exit(1)"],
+            enabled: false,
+          },
+        },
+      },
+    },
+  )
 })
