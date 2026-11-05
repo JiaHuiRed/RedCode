@@ -245,9 +245,12 @@ describe("mcp HttpApi", () => {
         expect(failed?.status).toBe("failed")
         expect(failed?.error).toContain("exited during startup")
         expect(failed?.error).toContain("stdio stderr")
-        // 261105 Red 证据脱敏：key 含 TOKEN 的赋值整值遮蔽，明文不得出现在错误里。
+        // 261105 Red 证据脱敏：KEY=VALUE / Authorization / JSON 键值三种形态都要遮，
+        // 明文不得出现在错误里（审计 RC-015-02）。
         expect(failed?.error).toContain("[redacted]")
         expect(failed?.error).not.toContain("supersecret123")
+        expect(failed?.error).not.toContain("supersecret456")
+        expect(failed?.error).not.toContain("supersecret789")
         expect(failed!.error!.length).toBeLessThan(1200)
       }),
     {
@@ -255,7 +258,11 @@ describe("mcp HttpApi", () => {
         mcp: {
           crashy: {
             type: "local",
-            command: [process.execPath, "-e", "console.error('API_TOKEN=supersecret123'); process.exit(1)"],
+            command: [
+              process.execPath,
+              "-e",
+              "console.error('API_TOKEN=supersecret123'); console.error('Authorization: Bearer supersecret456'); console.error(JSON.stringify({ apiKey: 'supersecret789' })); process.exit(1)",
+            ],
             enabled: false,
           },
         },

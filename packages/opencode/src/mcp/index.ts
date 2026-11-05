@@ -868,11 +868,11 @@ export const layer = Layer.effect(
       const spawnedPid = transport.pid
       // 261105 Red 证据链：stderr 逐 chunk 进日志的同时留有界缓冲，连接失败时脱敏截断
       // 后拼进 status.error——此前用户只能看到 "Connection closed"，真正的报错只落在日志里。
+      // 261105 Red 审计 RC-015-02：普通日志不再落原始 stderr；按行补齐后拿到的已是脱敏
+      // 文本（跨 chunk 拆开的赋值会被整段遮住），原文只留在内存缓冲里。
       const evidence = McpEvidence.createStderrEvidence()
       transport.stderr?.on("data", (chunk: Buffer) => {
-        const text = chunk.toString()
-        log.info(`mcp stderr: ${text}`, { key })
-        evidence.push(text)
+        for (const line of evidence.push(chunk.toString())) log.info(`mcp stderr: ${line}`, { key })
       })
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
