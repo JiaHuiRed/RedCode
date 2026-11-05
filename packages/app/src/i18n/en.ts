@@ -349,6 +349,7 @@ export const dict = {
   "dialog.background.status.completed": "Completed",
   "dialog.background.status.error": "Failed",
   "dialog.background.status.cancelled": "Cancelled",
+  "dialog.background.status.orphaned": "Ended unexpectedly",
   "dialog.background.stop.action": "Stop",
   "dialog.background.stop.title": "Stop background activity",
   "dialog.background.stop.description":

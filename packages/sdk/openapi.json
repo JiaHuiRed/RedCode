@@ -14278,7 +14278,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["running", "exited"]
+            "enum": ["running", "exited", "orphaned"]
           },
           "pid": {
             "type": "integer",

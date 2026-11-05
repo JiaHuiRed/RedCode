@@ -45,13 +45,16 @@ function serialized(target: string, task: () => Promise<void>) {
   return next
 }
 
-function file(target: string, workspace: string) {
-  return path.join(target, `${Bun.hash(workspace).toString(36)}.json`)
+// 261105 Red namespace 隔离快照文件：PTY 终端复用同一套落盘但单列一份
+// （<hash>.pty.json），两个服务各自整写自己的文件，互不覆盖。
+function file(target: string, workspace: string, namespace?: string) {
+  const name = Bun.hash(workspace).toString(36)
+  return path.join(target, namespace ? `${name}.${namespace}.json` : `${name}.json`)
 }
 
-export const read = (target: string, workspace: string) =>
+export const read = (target: string, workspace: string, namespace?: string) =>
   Effect.promise(async (): Promise<Snapshot | undefined> => {
-    const destination = file(target, workspace)
+    const destination = file(target, workspace, namespace)
     const text = await readFile(destination, "utf8").catch((error: unknown) => {
       // 状态文件只影响重启后的可见性：读不到就当没有，但权限/磁盘问题要留痕。
       if ((error as NodeJS.ErrnoException)?.code !== "ENOENT")
@@ -71,9 +74,9 @@ export const read = (target: string, workspace: string) =>
     }
   })
 
-export const write = (target: string, workspace: string, records: Info[]) =>
+export const write = (target: string, workspace: string, records: Info[], namespace?: string) =>
   Effect.promise(async () => {
-    const destination = file(target, workspace)
+    const destination = file(target, workspace, namespace)
     const running = records.filter((record) => record.status === "running")
     const finished = records
       .filter((record) => record.status !== "running")

@@ -1,6 +1,6 @@
 # 后台活动中心（TUI 阶段一）
 
-状态:implemented（TUI 面板 + GUI 只读/终止 + 任务状态持久化；PTY 孤儿记录待做）
+状态:implemented（TUI 面板 + GUI 只读/终止 + 任务状态持久化 + PTY 孤儿记录）
 
 ## 问题
 
@@ -43,6 +43,21 @@
   调用方在文件还是 running 时读到已完成。done 一律已决，已完成任务 await 它是即时返回。
 - 目录走 `Context.Reference`（同 soul 的先例），测试用 `Layer.succeed` 指到临时目录。
 
+## PTY 孤儿记录（261105）
+
+- 落盘：create 写 running 记录、remove（onExit 同路径）删记录、finalizer teardown 后清空快照。
+  快照只含「运行中终端 + 待再见孤儿」，干净退出不产生假孤儿；只有崩溃/硬杀退出才留下 running
+  记录，下次启动归位成 `orphaned`。快照文件 `<data>/background/<工作区哈希>.pty.json`，
+  `BackgroundStore.read/write` 加 namespace 参数隔离——任务快照与终端快照各自整写，互不覆盖。
+- 语义：孤儿记录在快照侧保持 running，重复重启仍可见（直到某次干净退出清空）；内存侧归位为
+  `orphaned`——进程状态未知（Unix 下子进程可能仍是孤儿），不用 exited 撒谎。孤儿条目 hydrate
+  时按 started_at 截 50 条，与完成态 KEEP 同口径。
+- 交互：孤儿行只展示、不可终止——PID 跨重启可能被复用，按 PID 杀进程有误杀风险，延续「面板不
+  冒充进程管理器」。徽标只数 `GET /background` 的 running；孤儿经 `GET /pty` 露出，不会虚增
+  「● 后台 N」，也不会挤进后台任务类目。
+- 边界校验：`store.read` 只做 JSON 解析，孤儿恢复处对 metadata（pid 正整数 / command / cwd /
+  args 字符串数组）一次性校验，坏记录跳过，不往服务内部传未知值。
+
 ## 验证
 
 - httpapi：coverage / auth 各 172 pass（含 `background.list`、`background.cancel` 两条场景）。
@@ -51,3 +66,4 @@
 - GUI：`packages/app` typecheck exit 0、i18n parity 4 pass；浏览器实测「后台」按钮 → 空态 → 临时 PTY 出现后计数与列表正确，清理后恢复为空。
 - GUI 终止：浏览器实测 PTY 行点「终止」→ 二次确认 → 进程消失、`GET /pty` 归零；任务分支由 httpapi `background.cancel` 场景覆盖。
 - 持久化：`bun test ./test/background` 11 pass（新增落盘往返、hydrate 归位、无状态文件三条）；opencode 与 app typecheck exit 0。
+- PTY 孤儿记录：`store.test` + `pty-orphans.test` 8 pass（新增 namespace 隔离、孤儿归位、坏 metadata 跳过三条；live create/remove 用例与 pty-session 同门槛在 win32 跳过）；opencode 与 app typecheck exit 0、`check:openapi-drift` 一致、i18n parity 4 pass。

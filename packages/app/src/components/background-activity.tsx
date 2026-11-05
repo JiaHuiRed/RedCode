@@ -30,7 +30,7 @@ type Terminal = {
   id: string
   title: string
   cwd: string
-  status: "running" | "exited"
+  status: "running" | "exited" | "orphaned"
   pid: number
 }
 
@@ -98,7 +98,13 @@ export function DialogBackground() {
         id: pty.id,
         kind: "terminal",
         title: pty.title,
-        status: pty.status === "running" ? language.t("dialog.background.status.running") : undefined,
+        // 261105 Red orphaned：上次进程退出时仍在运行的终端，重启后从快照恢复，只展示不可终止。
+        status:
+          pty.status === "running"
+            ? language.t("dialog.background.status.running")
+            : pty.status === "orphaned"
+              ? language.t("dialog.background.status.orphaned")
+              : undefined,
         detail: `${language.t("dialog.background.type.terminal")} · PID ${pty.pid} · ${pty.cwd}`,
         running: pty.status === "running",
       }))

@@ -1,6 +1,7 @@
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
+import { BackgroundStore } from "@/background/store"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
 import { spawn as cpSpawn } from "child_process"
@@ -17,6 +18,11 @@ const log = Log.create({ service: "pty" })
 
 const BUFFER_LIMIT = 1024 * 1024 * 2
 const BUFFER_CHUNK = 64 * 1024
+// 261105 Red PTY 终端登记落盘：与任务快照共用 background 目录但单列文件（namespace 隔离）。
+// 孤儿记录条数与 store 的完成态上限同口径。决策见
+// docs/notes/implemented/feature/2026-11-04-background-center.md
+const PTY_NAMESPACE = "pty"
+const ORPHAN_KEEP = 50
 const encoder = new TextEncoder()
 
 type Socket = {
@@ -28,8 +34,44 @@ type Socket = {
 
 const sock = (ws: Socket) => (ws.data && typeof ws.data === "object" ? ws.data : ws)
 
+// 261105 Red pty 登记与 store Entry 的互转：定位字段进 metadata，快照只存运行中的
+// 终端与待再见的孤儿记录，不含输出缓冲。
+function toEntry(info: Info, started_at: number): BackgroundStore.Entry {
+  return {
+    id: info.id,
+    type: "pty",
+    title: info.title,
+    status: "running",
+    started_at,
+    metadata: { command: info.command, args: info.args, cwd: info.cwd, pid: info.pid },
+  }
+}
+
+function orphanFromEntry(record: BackgroundStore.Entry): Orphan | undefined {
+  // store.read 只做 JSON 解析不做 schema 校验，这里是对快照文件的唯一边界校验：
+  // 字段不齐的记录跳过，不往服务内部传未知值。
+  const meta = record.metadata
+  if (!meta || typeof meta !== "object") return undefined
+  const { pid, command, args, cwd } = meta as Record<string, unknown>
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return undefined
+  if (typeof command !== "string" || typeof cwd !== "string") return undefined
+  if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) return undefined
+  if (typeof record.id !== "string" || !record.id.startsWith("pty")) return undefined
+  const info: Info = {
+    id: PtyID.ascending(record.id),
+    title: typeof record.title === "string" ? record.title : `Terminal ${record.id.slice(-4)}`,
+    command,
+    args: args as string[],
+    cwd,
+    status: "orphaned",
+    pid,
+  }
+  return { info, started_at: record.started_at }
+}
+
 type Active = {
   info: Info
+  started_at: number
   process: Proc
   buffer: string
   bufferCursor: number
@@ -37,9 +79,18 @@ type Active = {
   subscribers: Map<unknown, Socket>
 }
 
+// 261105 Red 从快照恢复的孤儿登记：进程随上次退出失去归属（Unix 下可能仍在跑），
+// 只在内存里挂到本次 list；快照侧保持 running，重复重启仍可见，直到被 finalizer 清空。
+type Orphan = {
+  info: Info
+  started_at: number
+}
+
 type State = {
   dir: string
+  store: string
   sessions: Map<PtyID, Active>
+  orphans: Map<PtyID, Orphan>
 }
 
 // WebSocket control frame: 0x00 + UTF-8 JSON.
@@ -60,7 +111,9 @@ export const Info = Schema.Struct({
   command: Schema.String,
   args: Schema.Array(Schema.String),
   cwd: Schema.String,
-  status: Schema.Literals(["running", "exited"]),
+  // 261105 Red orphaned：上次进程退出时仍在运行的终端登记，重启后从快照恢复。
+  // 进程本身状态未知（可能仍是孤儿），不用 exited 撒谎；只展示、不可终止（PID 可能已被复用）。
+  status: Schema.Literals(["running", "exited", "orphaned"]),
   pid: PositiveInt,
 }).annotate({ identifier: "Pty" })
 
@@ -146,17 +199,37 @@ export const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Pty.state")(function* (ctx) {
-        const state = {
+        // 261105 Red 启动时读回上次的终端登记：崩溃/硬杀退出时没机会走 remove 的记录
+        // 归位成 orphaned——面板要能看见「上次还有个终端没关」。正常退出走 finalizer
+        // 清空快照，不会产生假孤儿。
+        const store = yield* BackgroundStore.directory
+        const snapshot = yield* BackgroundStore.read(store, ctx.directory, PTY_NAMESPACE)
+        const orphans = new Map<PtyID, Orphan>()
+        const stale = (snapshot?.records ?? [])
+          .filter((record) => record.status === "running")
+          .sort((a, b) => a.started_at - b.started_at)
+          .slice(-ORPHAN_KEEP)
+        for (const record of stale) {
+          const orphan = orphanFromEntry(record)
+          if (orphan) orphans.set(orphan.info.id, orphan)
+        }
+
+        const state: State = {
           dir: ctx.directory,
+          store,
           sessions: new Map<PtyID, Active>(),
+          orphans,
         }
 
         yield* Effect.addFinalizer(() =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
+            // 261105 Red teardown 杀掉全部终端后把快照一并清空：孤儿记录只在进程来不及
+            // 清理（崩溃、硬杀）时出现，干净退出/状态被 LRU 回收（cap 10）不留旧记录。
             for (const session of state.sessions.values()) {
               teardown(session)
             }
             state.sessions.clear()
+            yield* BackgroundStore.write(store, ctx.directory, [], PTY_NAMESPACE)
           }),
         )
 
@@ -166,11 +239,24 @@ export const layer = Layer.effect(
       10,
     )
 
+    // 261105 Red 当前登记写进快照：运行中的终端 + 已恢复的孤儿记录（保持 running，
+    // 重复重启仍可见）。写失败由 store 内部记日志，不影响终端本身。
+    const persist = Effect.fn("Pty.persist")(function* () {
+      const s = yield* InstanceState.get(state)
+      const entries = [
+        ...Array.from(s.sessions.values(), (session) => toEntry(session.info, session.started_at)),
+        ...Array.from(s.orphans.values(), (orphan) => toEntry(orphan.info, orphan.started_at)),
+      ]
+      yield* BackgroundStore.write(s.store, s.dir, entries, PTY_NAMESPACE)
+    })
+
     const remove = Effect.fn("Pty.remove")(function* (id: PtyID) {
       const s = yield* InstanceState.get(state)
       const session = s.sessions.get(id)
       if (!session) return
       s.sessions.delete(id)
+      // 261105 Red 终端退场即删记录：正常退出不留痕，孤儿只来自没机会走 remove 的崩溃。
+      yield* persist()
       log.info("removing session", { id })
       teardown(session)
       yield* bus.publish(Event.Deleted, { id: session.info.id })
@@ -178,12 +264,15 @@ export const layer = Layer.effect(
 
     const list = Effect.fn("Pty.list")(function* () {
       const s = yield* InstanceState.get(state)
-      return Array.from(s.sessions.values()).map((session) => session.info)
+      return [
+        ...Array.from(s.sessions.values()).map((session) => session.info),
+        ...Array.from(s.orphans.values()).map((orphan) => orphan.info),
+      ]
     })
 
     const get = Effect.fn("Pty.get")(function* (id: PtyID) {
       const s = yield* InstanceState.get(state)
-      return s.sessions.get(id)?.info
+      return s.sessions.get(id)?.info ?? s.orphans.get(id)?.info
     })
 
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
@@ -232,8 +321,10 @@ export const layer = Layer.effect(
         status: "running",
         pid: proc.pid,
       } as const
+      const started_at = Date.now()
       const session: Active = {
         info,
+        started_at,
         process: proc,
         buffer: "",
         bufferCursor: 0,
@@ -241,6 +332,7 @@ export const layer = Layer.effect(
         subscribers: new Map(),
       }
       s.sessions.set(id, session)
+      yield* persist()
       proc.onData((chunk) => {
         session.cursor += chunk.length
 
@@ -283,6 +375,8 @@ export const layer = Layer.effect(
       if (!session) return
       if (input.title) {
         session.info.title = input.title
+        // 261105 Red 标题是快照的定位字段，改了要跟着落盘；resize 不落盘。
+        yield* persist()
       }
       if (input.size) {
         session.process.resize(input.size.cols, input.size.rows)

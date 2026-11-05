@@ -364,6 +364,7 @@ export const dict = {
   "dialog.background.status.completed": "已完成",
   "dialog.background.status.error": "失败",
   "dialog.background.status.cancelled": "已取消",
+  "dialog.background.status.orphaned": "未正常结束",
   "dialog.background.stop.action": "终止",
   "dialog.background.stop.title": "终止后台活动",
   "dialog.background.stop.description":

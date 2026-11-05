@@ -95,4 +95,26 @@ describe("background.store", () => {
       await rm(dir, { recursive: true, force: true })
     }
   })
+
+  test("isolates namespaced snapshots from the default file", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "redcode-bg-ns-"))
+    try {
+      await Effect.runPromise(
+        BackgroundStore.write(
+          dir,
+          "/workspace/ns",
+          [{ id: "pty_1", type: "pty", status: "running", started_at: 1 }],
+          "pty",
+        ),
+      )
+
+      // 任务快照与 pty 快照各自整写自己的文件：pty 落盘后默认文件仍读不到。
+      expect(await Effect.runPromise(BackgroundStore.read(dir, "/workspace/ns"))).toBeUndefined()
+      const snapshot = await Effect.runPromise(BackgroundStore.read(dir, "/workspace/ns", "pty"))
+      expect(snapshot?.records).toHaveLength(1)
+      expect(snapshot?.records[0]?.type).toBe("pty")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

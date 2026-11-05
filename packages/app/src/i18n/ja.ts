@@ -314,6 +314,7 @@ export const dict = {
   "dialog.background.status.completed": "完了",
   "dialog.background.status.error": "失敗",
   "dialog.background.status.cancelled": "キャンセル",
+  "dialog.background.status.orphaned": "正常終了せず",
   "dialog.background.stop.action": "停止",
   "dialog.background.stop.title": "バックグラウンド活動を停止",
   "dialog.background.stop.description":

@@ -671,70 +671,6 @@ export class Event extends HeyApiClient {
   }
 }
 
-export class Background extends HeyApiClient {
-  /**
-   * List background activities
-   *
-   * List background jobs registered by this instance (running and recently finished). Full output is not included.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<BackgroundListResponses, BackgroundListErrors, ThrowOnError>({
-      url: "/background",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Cancel a background activity
-   *
-   * Cancel a running background job and any background jobs nested under it.
-   */
-  public cancel<ThrowOnError extends boolean = false>(
-    parameters: {
-      jobID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "jobID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<BackgroundCancelResponses, BackgroundCancelErrors, ThrowOnError>({
-      url: "/background/{jobID}/cancel",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Config2 extends HeyApiClient {
   /**
    * Get configuration
@@ -5704,6 +5640,70 @@ export class Tui extends HeyApiClient {
   }
 }
 
+export class Background extends HeyApiClient {
+  /**
+   * List background activities
+   *
+   * List background jobs registered by this instance (running and recently finished). Full output is not included.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<BackgroundListResponses, BackgroundListErrors, ThrowOnError>({
+      url: "/background",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel a background activity
+   *
+   * Cancel a running background job and any background jobs nested under it.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<BackgroundCancelResponses, BackgroundCancelErrors, ThrowOnError>({
+      url: "/background/{jobID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class OpencodeClient extends HeyApiClient {
   public static readonly __registry = new HeyApiRegistry<OpencodeClient>()
 
@@ -5730,11 +5730,6 @@ export class OpencodeClient extends HeyApiClient {
   private _event?: Event
   get event(): Event {
     return (this._event ??= new Event({ client: this.client }))
-  }
-
-  private _background?: Background
-  get background(): Background {
-    return (this._background ??= new Background({ client: this.client }))
   }
 
   private _config?: Config2
@@ -5855,5 +5850,10 @@ export class OpencodeClient extends HeyApiClient {
   private _tui?: Tui
   get tui(): Tui {
     return (this._tui ??= new Tui({ client: this.client }))
+  }
+
+  private _background?: Background
+  get background(): Background {
+    return (this._background ??= new Background({ client: this.client }))
   }
 }

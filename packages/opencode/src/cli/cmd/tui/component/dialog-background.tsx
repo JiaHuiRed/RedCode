@@ -24,7 +24,7 @@ type Terminal = {
   id: string
   title: string
   cwd: string
-  status: "running" | "exited"
+  status: "running" | "exited" | "orphaned"
   pid: number
 }
 
@@ -123,11 +123,12 @@ export function DialogBackground() {
       onSelect: () => void cancelJob(job),
     }))
     for (const pty of terminals) {
+      const status = pty.status === "running" ? "运行中" : pty.status === "orphaned" ? "未正常结束" : "已退出"
       items.push({
         title: `${pty.status === "running" ? "●" : "○"} ${pty.title}`,
         value: { kind: "terminal" as const, pty },
         category: "终端",
-        description: `PID ${pty.pid} · ${pty.status === "running" ? "运行中" : "已退出"} · ${pty.cwd}`,
+        description: `PID ${pty.pid} · ${status} · ${pty.cwd}`,
         disabled: pty.status !== "running",
         onSelect: () => void killTerminal(pty),
       })
