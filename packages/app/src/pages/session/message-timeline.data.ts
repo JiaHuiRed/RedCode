@@ -336,7 +336,7 @@ export namespace Timeline {
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
+        .map((part) => (part.type === "reasoning" ? reasoningHeadingOf(part) : undefined))
         .find((value): value is string => !!value)
       // 260811 Red 思考计时：优先取首个 reasoning part 的 time.start（reasoning-start 事件已写）；
       // 行创建时 reasoning part 可能还没建立（busy 在 reasoning-start 之前就置位），回退到行创建时刻，
@@ -398,6 +398,21 @@ export namespace Timeline {
 
   function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
     return typeof value.file === "string"
+  }
+
+  // 261106 Red busy 期间活跃轮 memo 每 flush（16ms 帧合并）重算一次 heading：
+  // 未命中标题的 reasoning 全文会被 4 个正则整扫，找不到时永远不命中缓存外层也没有缓存。
+  // 按 part 对象 + text.length 记忆化（reasoning 文本只追加，长度不变即文本未变）；
+  // WeakMap 随 part 对象回收，无无界增长。
+  const reasoningHeadingCache = new WeakMap<object, { length: number; value: string | undefined }>()
+  function reasoningHeadingOf(part: { text?: string }) {
+    const text = part.text
+    if (!text) return undefined
+    const cached = reasoningHeadingCache.get(part)
+    if (cached && cached.length === text.length) return cached.value
+    const value = reasoningHeading(text)
+    reasoningHeadingCache.set(part, { length: text.length, value })
+    return value
   }
 
   function reasoningHeading(text: string) {

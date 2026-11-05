@@ -106,8 +106,11 @@ function sameKeys(a: readonly string[] | undefined, b: readonly string[] | undef
 // 它一旦测量失败就是整片空白且没有降级。这里加一条普通 DOM flow 作为可对照的第二条渲染路径：
 // 两种渲染共用同一份 timelineRows / TimelineRowView / 分页 / history loader，只换最外层容器。
 // 开关走 localStorage（改完刷新页面即切换），不碰用户配置。
+// 261106 Red 语义本就是"改完刷新页面即切换"，改为模块级懒读一次：canAnchorBottom/
+// scheduleScrollToEnd/maybeAnchorBottom 在流式期每 flush 调用，不必每次同步读 localStorage。
+let nativeTimelineEnabledCache: boolean | undefined
 const nativeTimelineEnabled = () =>
-  typeof localStorage !== "undefined" && localStorage.getItem("redcode:native-timeline") === "1"
+  (nativeTimelineEnabledCache ??= typeof localStorage !== "undefined" && localStorage.getItem("redcode:native-timeline") === "1")
 
 const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60

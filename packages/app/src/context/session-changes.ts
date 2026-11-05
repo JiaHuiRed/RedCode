@@ -253,9 +253,13 @@ export async function catchUpSessionChanges(input: {
   }
 
   const changed = [...ids]
-  for (const id of changed) {
+  // 261106 Red 逐条串行改为有界并发（块 8）：断线积压 N 条时收敛从 N×RTT 降到 ~N/8×RTT。
+  // fetchMessage 侧每条自带 isCurrent() 代次守卫，过期响应在写入 staged 前被丢弃；
+  // staged 本就按 fetch 会话重置，块间保留 active() 检查维持取消粒度。
+  const FETCH_CHUNK = 8
+  for (let i = 0; i < changed.length; i += FETCH_CHUNK) {
     if (!input.active()) return { status: "cancelled" } as const
-    await input.messageIDs(id, input.active)
+    await Promise.all(changed.slice(i, i + FETCH_CHUNK).map((id) => input.messageIDs(id, input.active)))
   }
   if (!input.active()) return { status: "cancelled" } as const
   await input.apply(changed, input.active)
