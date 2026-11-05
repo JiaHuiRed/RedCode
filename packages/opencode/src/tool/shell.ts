@@ -7,6 +7,7 @@ import * as Log from "@redcode-ai/core/util/log"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { IsolationBoundaryRef } from "@/effect/instance-ref"
 import { InstanceState } from "@/effect/instance-state"
+import { projectRoot } from "@/project/root"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
 
@@ -684,9 +685,15 @@ export const ShellTool = Tool.define(
               GIT_DIR: path.join(boundary, ".git"),
               GIT_WORK_TREE: boundary,
             }
+      // 261105 Red 会话上下文随每次 Bash 调用注入：命令模板的 shell 块已改为转交 Bash 工具
+      // 执行（解析期不再代跑），脚本靠这组变量区分会话/定位项目。PROJECT_ROOT 是会话创建
+      // 目录，不随 cd 漂移。见 docs/notes/implemented/feature/2026-11-05-zcode-v3.17.2-absorption.md
+      const instance = yield* InstanceState.context
       return {
         ...process.env,
         ...isolation,
+        REDCODE_SESSION_ID: ctx.sessionID,
+        REDCODE_PROJECT_ROOT: projectRoot(instance),
         ...extra.env,
       }
     })

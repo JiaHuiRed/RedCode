@@ -3401,48 +3401,15 @@ it.instance(
   30_000,
 )
 
-unix(
-  "command ! expansion uses configured shell over env shell",
-  () =>
-    withSh(() =>
-      Effect.gen(function* () {
-        if (!(yield* hasBash)) return
-        const { llm } = yield* useServerConfig((url) => ({
-          ...providerCfg(url),
-          shell: "bash",
-          command: {
-            probe: {
-              template: "Probe: !`[[ 1 -eq 1 ]] && printf configured`",
-            },
-          },
-        }))
-
-        const { prompt, chat } = yield* boot()
-        yield* llm.text("done")
-
-        const result = yield* prompt.command({
-          sessionID: chat.id,
-          command: "probe",
-          arguments: "",
-        })
-
-        expect(result.info.role).toBe("assistant")
-        const inputs = yield* llm.inputs
-        expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("configured")
-      }),
-    ),
-  30_000,
-)
-
 it.instance(
-  "command ! expansion marks non-zero exit",
+  "command ! shell block is handed off instead of executed at parse time",
   () =>
     Effect.gen(function* () {
       const { llm } = yield* useServerConfig((url) => ({
         ...providerCfg(url),
         command: {
           probe: {
-            template: "Probe: !`node -e \"process.stdout.write('ok'); process.exit(7)\"`",
+            template: "Probe: !`[[ 1 -eq 1 ]] && printf configured`",
           },
         },
       }))
@@ -3457,8 +3424,76 @@ it.instance(
       })
 
       expect(result.info.role).toBe("assistant")
-      const inputs = yield* llm.inputs
-      expect(JSON.stringify(inputs.at(-1)?.messages)).toMatch(/Command failed with exit code \d+\./)
+      // 261105 Red 解析期不再执行 shell：块以来源声明 + fenced 代码块进 prompt，执行走 Bash
+      // 工具（权限层可见、可审批）。声明文案只在 handoff 路径出现——旧解析期执行会把块
+      // 整体替换成输出，声明不存在，因此正向断言即可判别两条路径。
+      const messages = JSON.stringify((yield* llm.inputs).at(-1)?.messages)
+      expect(messages).toContain("comes from the /probe command file")
+      expect(messages).toContain("```bash")
+      expect(messages).toContain("[[ 1 -eq 1 ]] && printf configured")
+    }),
+  { config: cfg },
+  30_000,
+)
+
+it.instance(
+  "command arguments containing ! blocks stay literal text",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        command: {
+          probe: {
+            template: "Run task: $ARGUMENTS",
+          },
+        },
+      }))
+
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: "probe",
+        arguments: "go !`echo evil`",
+      })
+
+      expect(result.info.role).toBe("assistant")
+      // 261105 Red 改写先于参数替换：参数里夹带的 `!` 块保持字面文本，不会被当成命令转交。
+      const messages = JSON.stringify((yield* llm.inputs).at(-1)?.messages)
+      expect(messages).toContain("go !`echo evil`")
+      expect(messages).not.toContain("comes from the /probe command file")
+    }),
+  { config: cfg },
+  30_000,
+)
+
+it.instance(
+  "command shell block substitutes arguments inside the handed-off block",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        command: {
+          probe: {
+            template: "Probe: !`echo $ARGUMENTS`",
+          },
+        },
+      }))
+
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: "probe",
+        arguments: "hello-world",
+      })
+
+      expect(result.info.role).toBe("assistant")
+      const messages = JSON.stringify((yield* llm.inputs).at(-1)?.messages)
+      expect(messages).toContain("comes from the /probe command file")
+      expect(messages).toContain("echo hello-world")
     }),
   { config: cfg },
   30_000,

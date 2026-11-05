@@ -42,18 +42,15 @@ import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
-import { Shell } from "@/shell/shell"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
-import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef, IsolationBoundaryRef } from "@/effect/instance-ref"
 import { InstanceStore } from "@/project/instance-store"
-import { projectRoot } from "@/project/root"
 import { Worktree } from "@/worktree"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -2530,62 +2527,36 @@ export const layer = Layer.effect(
       }
       const agentName = cmd.agent ?? input.agent
 
+      // 261105 Red shell 块先改写再替换参数：解析期不再执行 shell（原实现绕过权限层且 UI
+      // 不可见），块转交模型的 Bash 工具调用，由权限层决定放行/询问/拒绝。改写在前，用户
+      // 参数里夹带的 `!` 块永远不会被当成命令；块内的 $ARGUMENTS/$N 在改写后的 fenced 文本
+      // 上替换，命令文件零改动。
+      const handoffed = ConfigMarkdown.handoffShellBlocks(yield* Effect.promise(async () => cmd.template), {
+        name: cmd.name,
+      })
+
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-      const templateCommand = yield* Effect.promise(async () => cmd.template)
 
-      const placeholders = templateCommand.match(placeholderRegex) ?? []
+      const placeholders = handoffed.match(placeholderRegex) ?? []
       let last = 0
       for (const item of placeholders) {
         const value = Number(item.slice(1))
         if (value > last) last = value
       }
 
-      const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+      const withArgs = handoffed.replaceAll(placeholderRegex, (_, index) => {
         const position = Number(index)
         const argIndex = position - 1
         if (argIndex >= args.length) return ""
         if (position === last) return args.slice(argIndex).join(" ")
         return args[argIndex]
       })
-      const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
+      const usesArgumentsPlaceholder = handoffed.includes("$ARGUMENTS")
       let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
 
       if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
         template = template + "\n\n" + input.arguments
-      }
-
-      const shellMatches = ConfigMarkdown.shell(template)
-      if (shellMatches.length > 0) {
-        const cfg = yield* config.get()
-        const sh = Shell.preferred(cfg.shell)
-        const limits = yield* truncate.limits()
-        // 260918 Red 命令替换直接进入 prompt，沿用 shell 工具的可配置上限和超时上限；见审计 §2.3。
-        const timeout = Math.min(flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000, flags.bashMaxTimeoutMs ?? 10 * 60 * 1000)
-        // 260913 Red 命令模板里的 shell 应在会话项目目录执行；REDCODE_PROJECT_ROOT 供 recall 等脚本定位项目。
-        const ctx = yield* InstanceState.context
-        const results = yield* Effect.promise(() =>
-          Promise.all(
-            shellMatches.map(async ([, cmd]) => {
-              const result = await Process.text([cmd], {
-                shell: sh,
-                nothrow: true,
-                cwd: ctx.directory,
-                env: { REDCODE_PROJECT_ROOT: projectRoot(ctx) },
-                timeout,
-                maxOutputBytes: limits.maxBytes,
-                maxErrorBytes: limits.maxBytes,
-              })
-              const notices = [
-                result.stdoutTruncated ? `Command output truncated after ${limits.maxBytes} bytes.` : undefined,
-                result.code === 0 ? undefined : `Command failed with exit code ${result.code}.`,
-              ].filter((item): item is string => item !== undefined)
-              return notices.length ? `${result.text}\n\n[${notices.join(" ")}]` : result.text
-            }),
-          ),
-        )
-        let index = 0
-        template = template.replace(bashRegex, () => results[index++])
       }
       template = template.trim()
 
@@ -2809,7 +2780,6 @@ export function createStructuredOutputTool(input: {
     },
   })
 }
-const bashRegex = /!`([^`]+)`/g
 // Match [Image N] as single token, quoted strings, or non-space sequences
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
