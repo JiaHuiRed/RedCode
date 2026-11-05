@@ -80,7 +80,8 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData; monthly?:
           return (
             <div class="flex flex-col gap-1">
               {/* 261106 Red 换 ui Meter；track 走默认 --surface-weak，与原 bg-surface-base 同源 */}
-              <Meter value={percent} color={quotaColor(percent)} />
+              {/* 261106 Red 审计 P2-04：进度条必须带读屏名称，否则分不清 5 小时/每周/月度额度 */}
+              <Meter value={percent} color={quotaColor(percent)} label={props.label} />
               <Show when={resetAt > 0}>
                 <div class="text-11-regular text-text-weaker">
                   {language.t("context.quota.resetsAt", {
