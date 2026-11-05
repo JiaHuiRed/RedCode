@@ -562,8 +562,10 @@ export function renderable(part: PartType, showReasoningSummaries = true) {
     if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
     return true
   }
-  if (part.type === "text") return !!part.text?.trim()
-  if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
+  // 261106 Red `text.trim()` 每次全文分配一个新串；流式期活跃轮每 flush 都会调到这里，
+  // 长回复下是持续 GC 压力。`/\S/` 是同一判定（存在非空白字符），命中即短路、零分配。
+  if (part.type === "text") return /\S/.test(part.text ?? "")
+  if (part.type === "reasoning") return showReasoningSummaries && /\S/.test(part.text ?? "")
   return !!PART_MAPPING[part.type]
 }
 
