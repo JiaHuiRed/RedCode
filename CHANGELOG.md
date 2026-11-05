@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.16.0] - 2026-11-06
 
 - **文件树键盘导航三处边界**（`app/src/components/file-tree.tsx`）：第三方审计 P2-01/02/03，对新增键盘导航的收尾。父子/叶子查找抽 `parentPathOf`/`leafNameOf` 双分隔符助手——服务端 file.list 的 path.relative 在 win32 返回反斜杠，`lastIndexOf("/")` 找不到分隔符导致 ← 无法返回父目录；→ 展开目录加直系子代校验，空目录/过滤后无可见子项时下一个可见节点是兄弟、不再越级；roving tabindex 失效光标恢复：新纯函数 `resolveTreeCursor`，光标节点因过滤/折叠/刷新从可见集合消失时，根实例把唯一 Tab 停靠点让给首个可见节点，不再整树 tabindex=-1 无入口。新增 4 条单测。验证：app typecheck exit 0，file-tree 12 pass。
 - **文件树键族统一归一正斜杠，修复 Windows 下 filter/diff 着色/选中全族失配**（`app/src/context/file.tsx`、`file/path.ts`、`file/watcher.ts`、`file-tree-panel.tsx`）：树节点 path 来自 `path.relative`（win32 反斜杠），而 filter allowed/kinds/active/diff.file 全部来自 git numstat 输出、恒为 / 形，逐字比对在 Windows 下整族失配（filtered 视图、diff 着色、active 选中、点击定位）。修法收敛在树键族：`canonicalizeTreePath` 规范形助手 + 入库映射与 normalizeDir 归一 + watcher 树操作走规范形；内容缓存/标签键族（store.file/tabs）保持原生形态不动，波及面收敛。顺带修复反斜杠 watcher 事件漏拦 `.git` 与 add/unlink 父目录刷新静默失效；panel 的 kinds normalize 双反斜杠转义笔误一并收编助手。新增 2 条反斜杠事件回归。验证：app typecheck exit 0，watcher 9 + path + file-tree 12 全绿；Windows GUI 实景（changes 标签）待人工确认。
