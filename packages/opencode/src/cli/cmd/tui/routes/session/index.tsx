@@ -874,27 +874,34 @@ export function Session() {
         const revertMsg = revert ? messages().find((x) => x.id === revert) : undefined
         const message = messages().findLast((x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && x.role === "user")
         if (!message) return
-        void sdk.client.session
+        const parts = sync.data.part[message.id]
+        const draft = parts.reduce(
+          (agg, part) => {
+            if (part.type === "text") {
+              if (!part.synthetic) agg.input += part.text
+            }
+            if (part.type === "file") agg.parts.push(part)
+            return agg
+          },
+          { input: "", parts: [] as PromptInfo["parts"] },
+        )
+        // 261105 Red 先确认撤销成功再覆盖输入框：此前 void revert 后立即 prompt.set，
+        // 请求失败时撤销没生效、未发送草稿已被历史消息替换且没有任何提示。
+        await sdk.client.session
           .revert({
             sessionID: route.sessionID,
             messageID: message.id,
           })
           .then(() => {
             toBottom()
+            prompt?.set(draft)
           })
-        const parts = sync.data.part[message.id]
-        prompt?.set(
-          parts.reduce(
-            (agg, part) => {
-              if (part.type === "text") {
-                if (!part.synthetic) agg.input += part.text
-              }
-              if (part.type === "file") agg.parts.push(part)
-              return agg
-            },
-            { input: "", parts: [] as PromptInfo["parts"] },
-          ),
-        )
+          .catch((error) => {
+            toast.show({
+              message: error instanceof Error ? error.message : "撤销失败",
+              variant: "error",
+            })
+          })
         dialog.clear()
       },
     },
@@ -906,24 +913,34 @@ export function Session() {
       slash: {
         name: "redo",
       },
-      run: () => {
+      run: async () => {
         dialog.clear()
         const messageID = session()?.revert?.messageID
         if (!messageID) return
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = messages().find((x) => x.id === messageID)
         const message = revertMsg ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0) : undefined
-        if (!message) {
-          void sdk.client.session.unrevert({
-            sessionID: route.sessionID,
+        const failed = (error: unknown) =>
+          toast.show({
+            message: error instanceof Error ? error.message : "重做失败",
+            variant: "error",
           })
-          prompt?.set({ input: "", parts: [] })
+        if (!message) {
+          // 261105 Red 恢复成功后才清空输入框：unrevert 失败时保留用户现有草稿。
+          await sdk.client.session
+            .unrevert({
+              sessionID: route.sessionID,
+            })
+            .then(() => prompt?.set({ input: "", parts: [] }))
+            .catch(failed)
           return
         }
-        void sdk.client.session.revert({
-          sessionID: route.sessionID,
-          messageID: message.id,
-        })
+        await sdk.client.session
+          .revert({
+            sessionID: route.sessionID,
+            messageID: message.id,
+          })
+          .catch(failed)
       },
     },
     {
