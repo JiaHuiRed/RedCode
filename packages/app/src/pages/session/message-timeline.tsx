@@ -585,11 +585,17 @@ export function MessageTimeline(props: {
     ),
   )
 
+  // 261106 Red 按 turn 切片合并替代「flatMap 全量数组 + 全局 byKey Map」：流式期每
+  // flush 只有一轮在变，未变轮直接沿用上帧行引用，成本从 O(全会话行) 降到 O(变化轮)。
+  // lastTurns 由本闭包持有——per-turn memo 的返回值本就与上一帧输出同源（见
+  // TimelineRow.mergeTurnRows 的输入契约）。benchmark：script/bench-timeline-merge.ts。
+  let lastTurnRows: TimelineRow.TimelineRow[][] | undefined
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
-    // 261011 Red B0.1: 最终行合并（flatMap + 复用）的真实耗时（ZW-02 归位）
+    // 261011 Red B0.1: 最终行合并的真实耗时（ZW-02 归位）
     const started = guiDiagnostics.enabled() ? performance.now() : undefined
-    const rows = messageRowMemos().flatMap((memo) => memo())
-    const merged = rows.length === 0 ? rows : reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
+    const turns = messageRowMemos().map((memo) => memo())
+    const merged = TimelineRow.mergeTurnRows({ turns, lastTurns: lastTurnRows, previous })
+    lastTurnRows = turns
     if (started !== undefined) {
       guiDiagnostics.record("timeline.merge", {
         name: "rows",

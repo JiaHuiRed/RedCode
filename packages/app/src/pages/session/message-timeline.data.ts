@@ -137,6 +137,69 @@ export namespace TimelineRow {
     return Equal.equals(a, b)
   }
 
+  // 261106 Red 稳定的 spacer 单例：mergeTurnRows 的输出尾行引用恒定，帧间尾部不再抖。
+  // 行对象按不可变值语义使用（Equal.equals 结构判等，无任何写路径），共享实例安全。
+  // 导出供差分测试同源使用。
+  export const bottomSpacer = new BottomSpacer()
+
+  /**
+   * 261106 Red 按 turn 切片的最终合并——替代「flatMap 全量数组 + 全局 byKey Map」。
+   *
+   * 依据：每行的 key 都内嵌本轮 userMessageID（user-message:/turn-divider:/assistant-part:/
+   * thinking:/diff-summary:/error:/assistant-pending:/retry: 全部如此），行永远不会跨轮匹配，
+   * 所以全局 Map ≡ 逐轮 Map；而 messageRowMemos 里未变轮的数组引用逐帧稳定（260903 cc 的
+   * per-turn memo），未变轮直接沿用上一帧行引用，只有变化轮走逐轮 reuse。
+   *
+   * 轮对齐：每轮首行是 CommentStrip 或 UserMessage，key 内嵌本轮 userMessageID——
+   * 用「首行 key 字符串」把当前轮对到上一轮的行数组，对 trim（头部移动）、第 0 轮被
+   * 重建、同帧 trim+追加都成立；对不上（会话切换、全新轮）则 reuse 对 undefined，
+   * 等价现行实现按 key 不匹配后全换新。每帧只付 O(轮数) 次 key 计算（仅慢路径）。
+   *
+   * 输入契约：turns[i] 必须是各轮 memo 的**返回值**（自身已是 reuse 合并产物，元素与
+   * 上一帧输出同源），不能是 construct 的原始产物——未变轮的快速路径直接沿用 turn 的
+   * 元素，喂原始产物会把「只存在于上帧输出里的复用行」换成 turn 里从未进过输出的
+   * 新实例（差分测试抓出过）。
+   *
+   * 全部轮引用未变时原样返回 previous（=== 短路，下游派生链就地停住），与 reuse 的
+   * 短路语义一致。spacer 用稳定单例，尾行引用恒定。
+   */
+  export function mergeTurnRows(input: {
+    turns: TimelineRow[][]
+    lastTurns: TimelineRow[][] | undefined
+    previous: TimelineRow[] | undefined
+  }): TimelineRow[] {
+    const { turns, lastTurns } = input
+    if (turns.length === 0) return []
+    if (
+      input.previous &&
+      lastTurns &&
+      turns.length === lastTurns.length &&
+      turns.every((turn, index) => turn === lastTurns[index])
+    ) {
+      return input.previous
+    }
+    let lastIndex: Map<string, TimelineRow[]> | undefined
+    if (lastTurns && lastTurns.length > 0) {
+      lastIndex = new Map()
+      for (const turn of lastTurns) {
+        const row = turn[0]
+        if (row) lastIndex.set(key(row), turn)
+      }
+    }
+    const out: TimelineRow[] = []
+    for (const turn of turns) {
+      const first = turn[0]
+      const last = first ? lastIndex?.get(key(first)) : undefined
+      if (last !== undefined && turn === last) {
+        for (const row of turn) out.push(row)
+        continue
+      }
+      for (const row of reuse(last, turn)) out.push(row)
+    }
+    out.push(bottomSpacer)
+    return out
+  }
+
   /**
    * 逐行复用旧的行对象；**整个数组都没变时把 previous 原样还回去**。
    *
