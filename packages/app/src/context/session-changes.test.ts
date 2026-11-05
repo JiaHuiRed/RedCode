@@ -345,6 +345,62 @@ describe("session change journal", () => {
     ).rejects.toThrow("non-contiguous")
   })
 
+  // 261106 Red 审计 P2-04：有界并发不只是「结果对」，上限本身也要钉死。
+  // TOTAL 取 24 = 三个完整块：串行退化（peak=1）与上限漂移（peak>8）都会在此现形。
+  test("message backfill concurrency is bounded and applies every changed message once", async () => {
+    const total = 24
+    let inFlight = 0
+    let peak = 0
+    const fetched: string[] = []
+    const applied: string[][] = []
+    const result = await catchUpSessionChanges({
+      after: 0,
+      active: () => true,
+      changes: async () =>
+        page(
+          Array.from({ length: total }, (_, i) => marker(i + 1, `m-${i + 1}`)),
+          total,
+          total,
+        ),
+      messageIDs: async (id) => {
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        fetched.push(id)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        inFlight--
+      },
+      snapshot: async () => {},
+      apply: async (ids) => void applied.push(ids),
+    })
+    expect(result.status).toBe("applied")
+    expect(peak).toBeGreaterThan(1) // 确实并行，而非串行退化
+    expect(peak).toBeLessThanOrEqual(8) // 上限不得超过 8
+    expect(fetched.length).toBe(total)
+    expect(new Set(fetched).size).toBe(total) // 每条只拉一次
+    expect(applied).toEqual([Array.from({ length: total }, (_, i) => `m-${i + 1}`)]) // 一次性整批应用
+  })
+
+  test("a failing message fetch rejects catchup and never acknowledges the backfilled cursor", async () => {
+    const journal = createSessionChangeJournal({
+      fetch: async (query) =>
+        query.after === -1
+          ? page([], 0)
+          : page(
+              Array.from({ length: 10 }, (_, i) => marker(i + 1, `m-${i + 1}`)),
+              10,
+              10,
+            ),
+      refreshSnapshot: async () => {},
+      fetchMessage: async (id) => {
+        if (id === "m-3") throw new Error("message fetch failed")
+      },
+      apply: async () => {},
+    })
+    await journal.catchup(() => true) // 建立初始 cursor
+    await expect(journal.catchup(() => true)).rejects.toThrow("message fetch failed")
+    expect(journal.cursor()).toBe(0)
+  })
+
   test("subscribes to server.connected on global channel only", () => {
     const emitter = createGlobalEmitter<{ global: { type: string }; directoryA: { type: string } }>()
     let requests = 0
