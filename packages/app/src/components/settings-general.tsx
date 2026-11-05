@@ -614,7 +614,10 @@ export const SettingsGeneral: Component = () => {
             )
           })()}
 
-          <SettingsRow title="Chat Background" description="Image shown behind the chat window (applies to all chats)">
+          <SettingsRow
+            title={language.t("settings.general.row.chatBackground.title")}
+            description={language.t("settings.general.row.chatBackground.description")}
+          >
             <div class="flex items-center gap-3">
               <div
                 class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
@@ -638,7 +641,7 @@ export const SettingsGeneral: Component = () => {
                   size="small"
                   onClick={() => chatBgInput?.click()}
                 >
-                  Upload
+                  {language.t("settings.general.action.upload")}
                 </Button>
                 <Show when={settings.appearance.chatBackground()}>
                   <Button
@@ -647,7 +650,7 @@ export const SettingsGeneral: Component = () => {
                     size="small"
                     onClick={handleChatBgRemove}
                   >
-                    Remove
+                    {language.t("settings.general.action.remove")}
                   </Button>
                 </Show>
               </div>
@@ -655,8 +658,8 @@ export const SettingsGeneral: Component = () => {
           </SettingsRow>
 
           <SettingsRow
-            title="Home Background"
-            description="Image shown behind the home / no-session screen (independent from chat background)"
+            title={language.t("settings.general.row.homeBackground.title")}
+            description={language.t("settings.general.row.homeBackground.description")}
           >
             <div class="flex items-center gap-3">
               <div
@@ -681,7 +684,7 @@ export const SettingsGeneral: Component = () => {
                   size="small"
                   onClick={() => homeBgInput?.click()}
                 >
-                  Upload
+                  {language.t("settings.general.action.upload")}
                 </Button>
                 <Show when={settings.appearance.homeBackground()}>
                   <Button
@@ -690,7 +693,7 @@ export const SettingsGeneral: Component = () => {
                     size="small"
                     onClick={handleHomeBgRemove}
                   >
-                    Remove
+                    {language.t("settings.general.action.remove")}
                   </Button>
                 </Show>
               </div>
@@ -915,13 +918,16 @@ export const SettingsGeneral: Component = () => {
       <div class="flex flex-col gap-3">
         {/* ── User Profile ── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">Profile</h3>
+          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.profile")}</h3>
           <SettingsList>
-            <SettingsRow title="Display Name" description="Your display name shown in messages">
+            <SettingsRow
+              title={language.t("settings.general.row.displayName.title")}
+              description={language.t("settings.general.row.displayName.description")}
+            >
               <div class="w-full sm:w-[280px]">
                 <TextField
                   data-action="settings-profile-name"
-                  label="Display Name"
+                  label={language.t("settings.general.row.displayName.title")}
                   hideLabel
                   value={settings.userProfile.displayName()}
                   onChange={(value) => settings.userProfile.setDisplayName(value.trim())}
@@ -933,7 +939,10 @@ export const SettingsGeneral: Component = () => {
               </div>
             </SettingsRow>
 
-            <SettingsRow title="Avatar" description="Custom avatar for your messages">
+            <SettingsRow
+              title={language.t("settings.general.row.avatar.title")}
+              description={language.t("settings.general.row.avatar.description")}
+            >
               <div class="flex items-center gap-3">
                 <Avatar
                   fallback={(settings.userProfile.displayName() || "U")[0] || "U"}
@@ -956,7 +965,7 @@ export const SettingsGeneral: Component = () => {
                     size="small"
                     onClick={() => userFileInput?.click()}
                   >
-                    Upload
+                    {language.t("settings.general.action.upload")}
                   </Button>
                   <Show when={userPreview()}>
                     <Button
@@ -965,7 +974,7 @@ export const SettingsGeneral: Component = () => {
                       size="small"
                       onClick={handleUserRemove}
                     >
-                      Remove
+                      {language.t("settings.general.action.remove")}
                     </Button>
                   </Show>
                 </div>
@@ -976,11 +985,13 @@ export const SettingsGeneral: Component = () => {
 
         {/* ── Assistant (RedCode) Profile ── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">Assistant Avatar</h3>
+          <h3 class="text-14-medium text-text-strong pb-2">
+            {language.t("settings.general.section.assistantAvatar")}
+          </h3>
           <SettingsList>
             <SettingsRow
-              title="Avatar"
-              description="Custom avatar for assistant messages. Applies only to sessions without a bound Soul — those use their own avatar."
+              title={language.t("settings.general.row.assistantAvatar.title")}
+              description={language.t("settings.general.row.assistantAvatar.description")}
             >
               <div class="flex items-center gap-3">
                 <Avatar
@@ -1004,7 +1015,7 @@ export const SettingsGeneral: Component = () => {
                     size="small"
                     onClick={() => assistantFileInput?.click()}
                   >
-                    Upload
+                    {language.t("settings.general.action.upload")}
                   </Button>
                   <Show when={assistantPreview()}>
                     <Button
@@ -1013,7 +1024,7 @@ export const SettingsGeneral: Component = () => {
                       size="small"
                       onClick={handleAssistantRemove}
                     >
-                      Remove
+                      {language.t("settings.general.action.remove")}
                     </Button>
                   </Show>
                 </div>

@@ -125,6 +125,7 @@ function Segmented<T extends string>(props: {
 }
 
 function Heatmap(props: { usage: Usage; dark: boolean; formatNumber: (n: number) => string }) {
+  const t = useLanguage().t
   const ramp = () => (props.dark ? HEAT_DARK : HEAT_LIGHT)
   const days = createMemo(() => calendarDays(props.usage, Date.now()))
   const byDay = createMemo(() => new Map(props.usage.daily.map((d) => [d.day, d])))
@@ -159,7 +160,7 @@ function Heatmap(props: { usage: Usage; dark: boolean; formatNumber: (n: number)
                       <div class="flex flex-col gap-0.5">
                         <span class="text-text-invert-strong tabular-nums">{day}</span>
                         <span class="text-text-invert-base tabular-nums">
-                          {props.formatNumber(entry()?.output ?? 0)} out · {entry()?.messages ?? 0}
+                          {props.formatNumber(entry()?.output ?? 0)} {t("home.usage.tokens.out")} · {entry()?.messages ?? 0}
                         </span>
                       </div>
                     }
@@ -605,7 +606,8 @@ function HomeUsagePanelInner(props: { directory: string | undefined; onCollapse:
                       {slice.isOther ? t("home.usage.other") : slice.label}
                     </span>
                     <span class="ml-auto shrink-0 tabular-nums text-v2-text-text-muted">
-                      {compact(slice.input)} in · {compact(slice.output)} out
+                      {compact(slice.input)} {t("home.usage.tokens.in")} · {compact(slice.output)}{" "}
+                      {t("home.usage.tokens.out")}
                     </span>
                     <span class="w-12 shrink-0 text-right tabular-nums text-v2-text-text-base [font-weight:530]">
                       {(slice.share * 100).toFixed(1)}%

@@ -507,7 +507,9 @@ export function SessionContextTab(
       value: () => {
         const c = ctx()
         if (c?.turnHitPct == null) return "—"
-        return c.stalled ? `${formatter().percent(c.turnHitPct)} · 缓存未延伸` : `${formatter().percent(c.turnHitPct)}`
+        return c.stalled
+          ? `${formatter().percent(c.turnHitPct)} · ${language.t("context.stats.cacheNotExtended")}`
+          : `${formatter().percent(c.turnHitPct)}`
       },
       color: "var(--syntax-critical)",
     },
