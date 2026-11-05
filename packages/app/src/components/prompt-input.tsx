@@ -1222,7 +1222,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       // 261106 Red Esc 打断加 blank() 门，与 tooltip 承诺（stopping 才显示 Stop+Esc）及
       // canInterruptSend（261031 AUD-04）的收窄方向对齐：输入框有字时 Esc 不再误杀
       // 运行中的轮次；显式打断走清空后 Esc/Enter 或 Ctrl+G。
-      if (working() && blank()) {
+      // 261106 Red IME 组合期间 Esc 属于输入法（取消候选词），不得顺带 abort 模型执行。
+      if (working() && blank() && !isImeComposing(event)) {
         void abort()
         event.preventDefault()
         event.stopPropagation()
