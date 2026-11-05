@@ -71,7 +71,7 @@ export function SessionComposerRegion(props: {
   // 被冲掉，且必须先处理弹窗才能继续打。GUI 的弹窗是鼠标点按钮，与输入没有按键冲突
   // （TUI 不同，那边选项键含 h/l，所以 TUI 只保内容、仍禁输入），因此这里直接常驻，
   // 弹窗期间照常打字。
-  const showComposer = createMemo(() => true)
+  // 261106 Red 上面的常驻决策落地后 showComposer 恒真，假 memo 直接删掉，<Show> 一并移除。
 
   const previewPrompt = () =>
     prompt
@@ -208,102 +208,100 @@ export function SessionComposerRegion(props: {
           </div>
         </Show>
 
-        <Show when={showComposer()}>
-          <Show
-            when={prompt.ready()}
-            fallback={
-              <>
-                <Show when={rolled()} keyed>
-                  {(revert) => (
-                    <div class="pb-2">
-                      <SessionRevertDock
-                        items={revert.items}
-                        restoring={revert.restoring}
-                        disabled={revert.disabled}
-                        onRestore={revert.onRestore}
-                      />
-                    </div>
-                  )}
-                </Show>
-                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
-                  {handoffPrompt() || language.t("prompt.loading")}
-                </div>
-              </>
-            }
-          >
-            <Show when={rolled()} keyed>
-              {(revert) => (
-                <div
-                  style={{
-                    "margin-top": `${-36 * value()}px`,
-                  }}
-                >
-                  <SessionRevertDock
-                    items={revert.items}
-                    restoring={revert.restoring}
-                    disabled={revert.disabled}
-                    onRestore={revert.onRestore}
-                  />
-                </div>
-              )}
-            </Show>
-            <div
-              classList={{
-                "relative z-10": true,
-              }}
-              style={{
-                "margin-top": `${-lift()}px`,
-              }}
-            >
-              <Show when={props.followup?.items.length}>
-                <SessionFollowupDock
-                  items={props.followup!.items}
-                  sending={props.followup!.sending}
-                  action={props.followup!.action}
-                  onSend={props.followup!.onSend}
-                  onEdit={props.followup!.onEdit}
-                  onUpdate={props.followup!.onUpdate}
-                  onCancel={props.followup!.onCancel}
-                />
+        <Show
+          when={prompt.ready()}
+          fallback={
+            <>
+              <Show when={rolled()} keyed>
+                {(revert) => (
+                  <div class="pb-2">
+                    <SessionRevertDock
+                      items={revert.items}
+                      restoring={revert.restoring}
+                      disabled={revert.disabled}
+                      onRestore={revert.onRestore}
+                    />
+                  </div>
+                )}
               </Show>
-              <Show
-                when={child()}
-                fallback={
-                  // 260808 Red: 这里原本还套了一层 <Show when={!blocked()}>，权限/提问弹窗
-                  // 一出现就把 PromptInput 卸载、连同正在编辑的内容一起销毁。已去掉——
-                  // 弹窗期间输入框常驻，随便打字（GUI 弹窗是点按钮，没有按键冲突）。
-                  <PromptInput
-                    variant={props.placement === "inline" ? "new-session" : undefined}
-                    ref={props.inputRef}
-                    newSessionWorktree={props.newSessionWorktree}
-                    onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
-                    onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                    edit={props.followup?.edit}
-                    onEditLoaded={props.followup?.onEditLoaded}
-                    shouldQueue={props.followup?.queue}
-                    onAbort={props.followup?.onAbort}
-                    onSubmit={props.onSubmit}
-                  />
-                }
+              <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
+                {handoffPrompt() || language.t("prompt.loading")}
+              </div>
+            </>
+          }
+        >
+          <Show when={rolled()} keyed>
+            {(revert) => (
+              <div
+                style={{
+                  "margin-top": `${-36 * value()}px`,
+                }}
               >
-                <div
-                  ref={props.inputRef}
-                  class="w-full rounded-lg border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
-                >
-                  <span>{language.t("session.child.promptDisabled")} </span>
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      class="text-text-base transition-colors hover:text-text-strong"
-                      onClick={openParent}
-                    >
-                      {language.t("session.child.backToParent")}
-                    </button>
-                  </Show>
-                </div>
-              </Show>
-            </div>
+                <SessionRevertDock
+                  items={revert.items}
+                  restoring={revert.restoring}
+                  disabled={revert.disabled}
+                  onRestore={revert.onRestore}
+                />
+              </div>
+            )}
           </Show>
+          <div
+            classList={{
+              "relative z-10": true,
+            }}
+            style={{
+              "margin-top": `${-lift()}px`,
+            }}
+          >
+            <Show when={props.followup?.items.length}>
+              <SessionFollowupDock
+                items={props.followup!.items}
+                sending={props.followup!.sending}
+                action={props.followup!.action}
+                onSend={props.followup!.onSend}
+                onEdit={props.followup!.onEdit}
+                onUpdate={props.followup!.onUpdate}
+                onCancel={props.followup!.onCancel}
+              />
+            </Show>
+            <Show
+              when={child()}
+              fallback={
+                // 260808 Red: 这里原本还套了一层 <Show when={!blocked()}>，权限/提问弹窗
+                // 一出现就把 PromptInput 卸载、连同正在编辑的内容一起销毁。已去掉——
+                // 弹窗期间输入框常驻，随便打字（GUI 弹窗是点按钮，没有按键冲突）。
+                <PromptInput
+                  variant={props.placement === "inline" ? "new-session" : undefined}
+                  ref={props.inputRef}
+                  newSessionWorktree={props.newSessionWorktree}
+                  onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
+                  onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                  edit={props.followup?.edit}
+                  onEditLoaded={props.followup?.onEditLoaded}
+                  shouldQueue={props.followup?.queue}
+                  onAbort={props.followup?.onAbort}
+                  onSubmit={props.onSubmit}
+                />
+              }
+            >
+              <div
+                ref={props.inputRef}
+                class="w-full rounded-lg border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+              >
+                <span>{language.t("session.child.promptDisabled")} </span>
+                <Show when={parentID()}>
+                  <button
+                    type="button"
+                    class="text-text-base transition-colors hover:text-text-strong"
+                    onClick={openParent}
+                  >
+                    {language.t("session.child.backToParent")}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+          </div>
         </Show>
       </div>
     </div>

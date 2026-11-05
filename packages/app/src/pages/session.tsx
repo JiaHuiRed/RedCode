@@ -31,7 +31,7 @@ import { Button } from "@redcode-ai/ui/button"
 import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode, checksum } from "@redcode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
-import { NewSessionDesignView, SessionHeader } from "@/components/session"
+import { NewSessionDesignView } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { createReconnectRefresh } from "@/context/reconnect"
@@ -1409,12 +1409,18 @@ export default function Page() {
     if (!id) return emptyFollowups
    return followup.items[id] ?? emptyFollowups
  })
- // 261031 Red pending_steer = 忙碌引导的待消费形态，与 queued 一起进待消费 dock
- // （编辑/撤回/立即送达三键共用，服务端 API 已同时接受两种形态）。
- const pendingSteerMessages = createMemo(() =>
-   userMessages().filter((message) => message.delivery === "pending_steer"),
- )
- const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"))
+  // 261031 Red pending_steer = 忙碌引导的待消费形态，与 queued 一起进待消费 dock
+  // （编辑/撤回/立即送达三键共用，服务端 API 已同时接受两种形态）。
+  // 261106 Red 补 equals: same（与上方 userMessages 同款）：新消息落地但 delivery 未变时
+  // 不再向下游（followupDock）传播全等新数组。
+  const pendingSteerMessages = createMemo(
+    () => userMessages().filter((message) => message.delivery === "pending_steer"),
+    undefined,
+    { equals: same },
+  )
+  const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"), undefined, {
+    equals: same,
+  })
 
   const editingFollowup = createMemo(() => {
     const id = params.id
@@ -1867,7 +1873,7 @@ export default function Page() {
           注意不能把边界加到路由层（cb3b8b4e 试过，已撤回）——那会废掉 solid-router 的
           transition，反而从「保持旧画面」退化成「立刻清空」。边界必须贴着挂起源。 */}
         <Suspense>{sessionSync() ?? ""}</Suspense>
-        <SessionHeader />
+
         <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
           <Show when={!isDesktop() && !!params.id}>
             <Tabs value={store.mobileTab} class="h-auto">
