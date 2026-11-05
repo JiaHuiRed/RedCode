@@ -4,6 +4,9 @@ import * as solidJsRouter from "@solidjs/router"
 let shouldListRoot: typeof import("./file-tree").shouldListRoot
 let shouldListExpanded: typeof import("./file-tree").shouldListExpanded
 let dirsToExpand: typeof import("./file-tree").dirsToExpand
+let listLevelNodes: typeof import("./file-tree").listLevelNodes
+let visibleTreeNodes: typeof import("./file-tree").visibleTreeNodes
+let moveTreeCursor: typeof import("./file-tree").moveTreeCursor
 
 beforeAll(async () => {
   // 261013 Red 残缺 mock 会被同进程后加载的测试文件消费（261003、261012 两犯）；
@@ -37,6 +40,9 @@ beforeAll(async () => {
   shouldListRoot = mod.shouldListRoot
   shouldListExpanded = mod.shouldListExpanded
   dirsToExpand = mod.dirsToExpand
+  listLevelNodes = mod.listLevelNodes
+  visibleTreeNodes = mod.visibleTreeNodes
+  moveTreeCursor = mod.moveTreeCursor
 })
 
 describe("file tree fetch discipline", () => {
@@ -78,5 +84,120 @@ describe("file tree fetch discipline", () => {
 
     expect(second).toEqual([])
     expect(dirsToExpand({ level: 1, filter, expanded: () => false })).toEqual([])
+  })
+})
+
+// 261106 Red 树键盘导航纯函数：单层切片、可见平铺、光标决策
+describe("file tree keyboard navigation", () => {
+  type FileNodeLike = import("@redcode-ai/sdk/v2").FileNode
+  // 真实 FileNode 的 name 是叶子名（basename），不是完整路径——排序按 name 走
+  const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1)
+  const dir = (path: string): FileNodeLike => ({
+    name: nameOf(path),
+    path,
+    absolute: path,
+    type: "directory",
+    ignored: false,
+  })
+  const file = (path: string): FileNodeLike => ({
+    name: nameOf(path),
+    path,
+    absolute: path,
+    type: "file",
+    ignored: false,
+  })
+
+  test("listLevelNodes synthesizes filtered entries and sorts dirs first", () => {
+    const nodes = listLevelNodes({
+      children: [file("/r/b.ts")],
+      filter: { files: new Set(["/r/a.ts", "/r/b.ts"]), dirs: new Set(["/r/src"]) },
+      parentPath: "/r",
+    })
+    expect(nodes.map((node) => node.path)).toEqual(["/r/src", "/r/a.ts", "/r/b.ts"])
+  })
+
+  test("listLevelNodes passes through unfiltered children", () => {
+    const children = [dir("/r/src"), file("/r/a.ts")]
+    expect(listLevelNodes({ children, parentPath: "/r" })).toBe(children)
+  })
+
+  test("visibleTreeNodes walks expanded dirs in DFS order and respects chain guard", () => {
+    const tree: Record<string, FileNodeLike[]> = {
+      "/r": [dir("/r/src"), file("/r/readme.md")],
+      "/r/src": [dir("/r/src/nested"), file("/r/src/a.ts")],
+      "/r/src/nested": [file("/r/src/nested/deep.ts")],
+    }
+    const visible = visibleTreeNodes({
+      path: "/r",
+      chain: ["/r"],
+      level: 0,
+      children: (dir) => tree[dir] ?? [],
+      expanded: (dir) => dir === "/r/src" || dir === "/r/src/nested",
+    })
+    expect(visible.map((node) => node.path)).toEqual([
+      "/r/src",
+      "/r/src/nested",
+      "/r/src/nested/deep.ts",
+      "/r/src/a.ts",
+      "/r/readme.md",
+    ])
+
+    // chain 环路：nested 已在链上时不深入（与渲染 "..." fallback 一致）
+    const guarded = visibleTreeNodes({
+      path: "/r/src/nested",
+      chain: ["/r", "/r/src", "/r/src/nested"],
+      level: 2,
+      children: (dir) => tree[dir] ?? [],
+      expanded: () => true,
+    })
+    expect(guarded.map((node) => node.path)).toEqual(["/r/src/nested/deep.ts"])
+  })
+
+  test("moveTreeCursor arrows/home/end", () => {
+    const visible = [dir("/a"), dir("/a/b"), file("/a/b/c.ts"), file("/a/d.ts")]
+    const input = { visible, expanded: () => false, rootPath: "/a" }
+
+    expect(moveTreeCursor({ ...input, key: "arrowdown", current: "/a" })).toBe("/a/b")
+    expect(moveTreeCursor({ ...input, key: "arrowdown", current: "/a/d.ts" })).toBe("/a/d.ts")
+    expect(moveTreeCursor({ ...input, key: "arrowup", current: "/a/b" })).toBe("/a")
+    expect(moveTreeCursor({ ...input, key: "arrowup", current: "/a" })).toBe("/a")
+    expect(moveTreeCursor({ ...input, key: "home", current: "/a/d.ts" })).toBe("/a")
+    expect(moveTreeCursor({ ...input, key: "end", current: "/a" })).toBe("/a/d.ts")
+    expect(moveTreeCursor({ ...input, key: "arrowdown", current: undefined })).toBe("/a")
+  })
+
+  test("moveTreeCursor right expands collapsed and enters expanded; left collapses or walks to parent", () => {
+    const expanded = new Set<string>(["/a"])
+    const visible = [dir("/a"), dir("/a/b"), file("/a/b/c.ts"), file("/a/d.ts")]
+    const expandCalls: string[] = []
+    const collapseCalls: string[] = []
+    const input = {
+      visible,
+      expanded: (path: string) => expanded.has(path),
+      expand: (path: string) => {
+        expandCalls.push(path)
+        expanded.add(path)
+      },
+      collapse: (path: string) => {
+        collapseCalls.push(path)
+        expanded.delete(path)
+      },
+      rootPath: "/a",
+    }
+
+    // 折叠目录 Right = 展开、光标不动
+    expect(moveTreeCursor({ ...input, key: "arrowright", current: "/a/b" })).toBe("/a/b")
+    expect(expandCalls).toEqual(["/a/b"])
+    // 展开目录 Right = 进入首个子项
+    expect(moveTreeCursor({ ...input, key: "arrowright", current: "/a" })).toBe("/a/b")
+    // 文件 Right 不动
+    expect(moveTreeCursor({ ...input, key: "arrowright", current: "/a/b/c.ts" })).toBe("/a/b/c.ts")
+    // 展开目录 Left = 折叠、光标不动
+    expect(moveTreeCursor({ ...input, key: "arrowleft", current: "/a/b" })).toBe("/a/b")
+    expect(collapseCalls).toEqual(["/a/b"])
+    // 非展开项 Left = 走到父目录
+    expect(moveTreeCursor({ ...input, key: "arrowleft", current: "/a/b/c.ts" })).toBe("/a/b")
+    // 根层节点的父是 rootPath，不动
+    expect(moveTreeCursor({ ...input, key: "arrowleft", current: "/a/d.ts" })).toBe("/a/d.ts")
   })
 })

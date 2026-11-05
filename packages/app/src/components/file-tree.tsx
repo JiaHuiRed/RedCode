@@ -1,11 +1,13 @@
 import { useFile } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
+import { useLanguage } from "@/context/language"
 import { Collapsible } from "@redcode-ai/ui/collapsible"
 import { FileIcon } from "@redcode-ai/ui/file-icon"
 import { Icon } from "@redcode-ai/ui/icon"
 import {
   createEffect,
   createMemo,
+  createSignal,
   For,
   Match,
   on,
@@ -76,6 +78,146 @@ const kindDotColor = (kind: Kind) => {
   if (kind === "add") return "background-color: var(--icon-diff-add-base)"
   if (kind === "del") return "background-color: var(--icon-diff-delete-base)"
   return "background-color: var(--icon-diff-modified-base)"
+}
+
+// 261106 Red 树键盘导航（WAI-ARIA treeview）：三个纯函数支撑——单层列表（渲染与
+// 漫游共用同一口径）、可见节点平铺（沿展开目录 DFS）、光标移动决策（不落 DOM，
+// 组件层只负责 focus 与 expand/collapse 副作用）。
+
+/** 单层节点列表：store children + filter 合成 + 排序，渲染 memo 与漫游 walker 共用。 */
+export function listLevelNodes(input: { children: FileNode[]; filter?: Filter; parentPath: string }): FileNode[] {
+  const current = input.filter
+  if (!current) return input.children
+
+  const parent = (path: string) => {
+    const idx = path.lastIndexOf("/")
+    if (idx === -1) return ""
+    return path.slice(0, idx)
+  }
+
+  const leaf = (path: string) => {
+    const idx = path.lastIndexOf("/")
+    return idx === -1 ? path : path.slice(idx + 1)
+  }
+
+  const out = input.children.filter((node) => {
+    if (node.type === "file") return current.files.has(node.path)
+    return current.dirs.has(node.path)
+  })
+
+  const seen = new Set(out.map((node) => node.path))
+
+  for (const dir of current.dirs) {
+    if (parent(dir) !== input.parentPath) continue
+    if (seen.has(dir)) continue
+    out.push({
+      name: leaf(dir),
+      path: dir,
+      absolute: dir,
+      type: "directory",
+      ignored: false,
+    })
+    seen.add(dir)
+  }
+
+  for (const item of current.files) {
+    if (parent(item) !== input.parentPath) continue
+    if (seen.has(item)) continue
+    out.push({
+      name: leaf(item),
+      path: item,
+      absolute: item,
+      type: "file",
+      ignored: false,
+    })
+    seen.add(item)
+  }
+
+  out.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === "directory" ? -1 : 1
+    }
+    return a.name.localeCompare(b.name)
+  })
+
+  return out
+}
+
+/** 可见节点平铺：沿展开目录 DFS，chain 环路与 MAX_DEPTH 守卫与渲染 fallback（"..."）一致。 */
+export function visibleTreeNodes(input: {
+  path: string
+  filter?: Filter
+  chain: readonly string[]
+  level: number
+  children: (dir: string) => FileNode[]
+  expanded: (dir: string) => boolean
+}): FileNode[] {
+  const out: FileNode[] = []
+  const seen = new Set<string>()
+  const walk = (dir: string, depth: number) => {
+    if (depth >= MAX_DEPTH) return
+    for (const node of listLevelNodes({ children: input.children(dir), filter: input.filter, parentPath: dir })) {
+      out.push(node)
+      if (node.type !== "directory") continue
+      if (!input.expanded(node.path)) continue
+      const id = node.path.replace(/[\\/]+$/, "").replaceAll("\\", "/")
+      if (seen.has(id) || input.chain.includes(id)) continue
+      seen.add(id)
+      walk(node.path, depth + 1)
+    }
+  }
+  walk(input.path, input.level)
+  return out
+}
+
+export type TreeNavKey = "arrowdown" | "arrowup" | "arrowright" | "arrowleft" | "home" | "end"
+
+/** 光标移动决策：返回新的光标 path；expand/collapse 副作用经 hooks 回调，方便单测。 */
+export function moveTreeCursor(input: {
+  key: TreeNavKey
+  visible: FileNode[]
+  current: string | undefined
+  expanded: (dir: string) => boolean
+  expand?: (dir: string) => void
+  collapse?: (dir: string) => void
+  rootPath: string
+}): string | undefined {
+  const { visible, current } = input
+  if (visible.length === 0) return current
+  const index = current ? visible.findIndex((node) => node.path === current) : -1
+
+  switch (input.key) {
+    case "arrowdown":
+      return visible[Math.min(visible.length - 1, index + 1)]?.path ?? current
+    case "arrowup":
+      return visible[Math.max(0, index <= 0 ? 0 : index - 1)]?.path ?? current
+    case "home":
+      return visible[0]?.path
+    case "end":
+      return visible[visible.length - 1]?.path
+    case "arrowright": {
+      const node = visible[index]
+      if (!node || node.type !== "directory") return current
+      if (!input.expanded(node.path)) {
+        input.expand?.(node.path)
+        return current
+      }
+      // 已展开：下一个可见节点即首个子项（DFS 序）
+      return visible[Math.min(visible.length - 1, index + 1)]?.path ?? current
+    }
+    case "arrowleft": {
+      const node = visible[index]
+      if (!node) return current
+      if (node.type === "directory" && input.expanded(node.path)) {
+        input.collapse?.(node.path)
+        return current
+      }
+      const idx = node.path.lastIndexOf("/")
+      const parent = idx === -1 ? "" : node.path.slice(0, idx)
+      if (!parent || parent === input.rootPath) return current
+      return visible.some((item) => item.path === parent) ? parent : current
+    }
+  }
 }
 
 const visibleKind = (node: FileNode, kinds?: ReadonlyMap<string, Kind>, marks?: Set<string>) => {
@@ -207,8 +349,11 @@ export default function FileTree(props: {
   _deeps?: Map<string, number>
   _kinds?: ReadonlyMap<string, Kind>
   _chain?: readonly string[]
+  /** 261106 Red 树键盘导航：光标 path，根实例持有、经此透传给嵌套层（与 _chain 同模式） */
+  _cursor?: () => string | undefined
 }) {
   const file = useFile()
+  const language = useLanguage()
   const level = props.level ?? 0
   const draggable = () => props.draggable ?? true
 
@@ -218,6 +363,61 @@ export default function FileTree(props: {
       .replace(/[\\/]+$/, "")
       .replaceAll("\\", "/")
   const chain = props._chain ? [...props._chain, key(props.path)] : [key(props.path)]
+  const isRoot = !props._chain
+
+  // 261106 Red 键盘漫游（roving tabindex）：光标落在哪个节点，哪个节点 tabindex=0，
+  // 其余全部 -1——深层目录不再需要按 N 次 Tab 穿透。光标未初始化时首层第一个节点可 Tab。
+  const [cursor, setCursor] = createSignal<string | undefined>(undefined)
+  const rovingCursor = props._cursor ?? cursor
+
+  const tabStop = (path: string) => {
+    const current = rovingCursor()
+    if (current) return current === path
+    return isRoot && nodes()[0]?.path === path
+  }
+
+  let rootRef: HTMLDivElement | undefined
+
+  const handleTreeFocusIn = (event: FocusEvent) => {
+    const target = event.target as HTMLElement
+    const path = target.closest?.("[data-tree-node]")?.getAttribute("data-tree-node")
+    if (path) setCursor(path)
+  }
+
+  const handleTreeKeydown = (event: KeyboardEvent) => {
+    const navKeys: Record<string, TreeNavKey> = {
+      ArrowDown: "arrowdown",
+      ArrowUp: "arrowup",
+      ArrowRight: "arrowright",
+      ArrowLeft: "arrowleft",
+      Home: "home",
+      End: "end",
+    }
+    const nav = navKeys[event.key]
+    if (!nav) return
+    const visible = visibleTreeNodes({
+      path: props.path,
+      filter: filter(),
+      chain,
+      level,
+      children: (dir) => file.tree.children(dir),
+      expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
+    })
+    if (visible.length === 0) return
+    const next = moveTreeCursor({
+      key: nav,
+      visible,
+      current: rovingCursor(),
+      expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
+      expand: (dir) => file.tree.expand(dir),
+      collapse: (dir) => file.tree.collapse(dir),
+      rootPath: props.path,
+    })
+    event.preventDefault()
+    if (!next || next === rovingCursor()) return
+    setCursor(next)
+    rootRef?.querySelector<HTMLElement>(`[data-tree-node="${CSS.escape(next)}"]`)?.focus()
+  }
 
   const filter = createMemo(() => {
     if (props._filter) return props._filter
@@ -327,66 +527,22 @@ export default function FileTree(props: {
   )
 
   const nodes = createMemo(() => {
-    const nodes = file.tree.children(props.path)
-    const current = filter()
-    if (!current) return nodes
-
-    const parent = (path: string) => {
-      const idx = path.lastIndexOf("/")
-      if (idx === -1) return ""
-      return path.slice(0, idx)
-    }
-
-    const leaf = (path: string) => {
-      const idx = path.lastIndexOf("/")
-      return idx === -1 ? path : path.slice(idx + 1)
-    }
-
-    const out = nodes.filter((node) => {
-      if (node.type === "file") return current.files.has(node.path)
-      return current.dirs.has(node.path)
-    })
-
-    const seen = new Set(out.map((node) => node.path))
-
-    for (const dir of current.dirs) {
-      if (parent(dir) !== props.path) continue
-      if (seen.has(dir)) continue
-      out.push({
-        name: leaf(dir),
-        path: dir,
-        absolute: dir,
-        type: "directory",
-        ignored: false,
-      })
-      seen.add(dir)
-    }
-
-    for (const item of current.files) {
-      if (parent(item) !== props.path) continue
-      if (seen.has(item)) continue
-      out.push({
-        name: leaf(item),
-        path: item,
-        absolute: item,
-        type: "file",
-        ignored: false,
-      })
-      seen.add(item)
-    }
-
-    out.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === "directory" ? -1 : 1
-      }
-      return a.name.localeCompare(b.name)
-    })
-
-    return out
+    // 261106 Red 切片逻辑抽到 listLevelNodes：键盘漫游 walker 与渲染共用同一口径
+    return listLevelNodes({ children: file.tree.children(props.path), filter: filter(), parentPath: props.path })
   })
 
   return (
-    <div data-component="filetree" class={`flex flex-col gap-0.5 ${props.class ?? ""}`}>
+    <div
+      data-component="filetree"
+      class={`flex flex-col gap-0.5 ${props.class ?? ""}`}
+      // 261106 Red treeview 语义：根容器 role=tree，键盘与焦点同步只在根实例挂（嵌套实例
+      // 的事件会冒泡上来，避免同一按键被处理两次）。
+      ref={rootRef}
+      role={isRoot ? "tree" : undefined}
+      aria-label={isRoot ? language.t("home.shortcuts.fileTree") : undefined}
+      onKeyDown={isRoot ? handleTreeKeydown : undefined}
+      onFocusIn={isRoot ? handleTreeFocusIn : undefined}
+    >
       <For each={nodes()}>
         {(node) => {
           const expanded = () => file.tree.state(node.path)?.expanded ?? false
@@ -405,7 +561,12 @@ export default function FileTree(props: {
                   open={expanded()}
                   onOpenChange={(open) => (open ? file.tree.expand(node.path) : file.tree.collapse(node.path))}
                 >
-                  <Collapsible.Trigger>
+                  <Collapsible.Trigger
+                    role="treeitem"
+                    aria-level={level + 1}
+                    tabindex={tabStop(node.path) ? 0 : -1}
+                    data-tree-node={node.path}
+                  >
                     <FileTreeNode
                       node={node}
                       level={level}
@@ -420,7 +581,7 @@ export default function FileTree(props: {
                       </div>
                     </FileTreeNode>
                   </Collapsible.Trigger>
-                  <Collapsible.Content class="relative pt-0.5">
+                  <Collapsible.Content class="relative pt-0.5" role="group">
                     <div
                       classList={{
                         "absolute top-0 bottom-0 w-px pointer-events-none bg-border-weak-base opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none": true,
@@ -447,6 +608,7 @@ export default function FileTree(props: {
                         _deeps={deeps()}
                         _kinds={kinds()}
                         _chain={chain}
+                        _cursor={rovingCursor}
                       />
                     </Show>
                   </Collapsible.Content>
@@ -464,6 +626,11 @@ export default function FileTree(props: {
                   as="button"
                   type="button"
                   onClick={() => props.onFileClick?.(node)}
+                  role="treeitem"
+                  aria-level={level + 1}
+                  aria-selected={node.path === props.active}
+                  tabindex={tabStop(node.path) ? 0 : -1}
+                  data-tree-node={node.path}
                 >
                   <div class="w-4 shrink-0" />
                   <Switch>
