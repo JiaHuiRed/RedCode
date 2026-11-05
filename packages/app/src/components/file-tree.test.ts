@@ -7,6 +7,7 @@ let dirsToExpand: typeof import("./file-tree").dirsToExpand
 let listLevelNodes: typeof import("./file-tree").listLevelNodes
 let visibleTreeNodes: typeof import("./file-tree").visibleTreeNodes
 let moveTreeCursor: typeof import("./file-tree").moveTreeCursor
+let resolveTreeCursor: typeof import("./file-tree").resolveTreeCursor
 
 beforeAll(async () => {
   // 261013 Red 残缺 mock 会被同进程后加载的测试文件消费（261003、261012 两犯）；
@@ -43,6 +44,7 @@ beforeAll(async () => {
   listLevelNodes = mod.listLevelNodes
   visibleTreeNodes = mod.visibleTreeNodes
   moveTreeCursor = mod.moveTreeCursor
+  resolveTreeCursor = mod.resolveTreeCursor
 })
 
 describe("file tree fetch discipline", () => {
@@ -199,5 +201,50 @@ describe("file tree keyboard navigation", () => {
     expect(moveTreeCursor({ ...input, key: "arrowleft", current: "/a/b/c.ts" })).toBe("/a/b")
     // 根层节点的父是 rootPath，不动
     expect(moveTreeCursor({ ...input, key: "arrowleft", current: "/a/d.ts" })).toBe("/a/d.ts")
+  })
+
+  // 261106 Red 审计 P2-01：Windows 原生反斜杠路径（服务端 file.list 的 path.relative
+  // 在 win32 返回反斜杠），父子查找必须双分隔符，否则 Left 无法返回父目录
+  test("arrowleft walks to the parent on Windows backslash paths", () => {
+    const visible = [dir("src"), dir("src\\lib"), file("src\\lib\\main.tsx")]
+    const input = { visible, expanded: () => false, rootPath: "src" }
+    expect(moveTreeCursor({ ...input, key: "arrowleft", current: "src\\lib\\main.tsx" })).toBe("src\\lib")
+    // 首层节点的父即根，原地不动
+    expect(moveTreeCursor({ ...input, key: "arrowleft", current: "src\\lib" })).toBe("src\\lib")
+  })
+
+  test("listLevelNodes places filtered entries under backslash parents", () => {
+    const nodes = listLevelNodes({
+      children: [],
+      filter: { files: new Set(["src\\main.tsx"]), dirs: new Set(["src\\lib"]) },
+      parentPath: "src",
+    })
+    expect(nodes.map((node) => node.path)).toEqual(["src\\lib", "src\\main.tsx"])
+  })
+
+  // 261106 Red 审计 P2-02：展开但没有可见子项（空目录/过滤后无子项）时，
+  // 下一个可见节点是兄弟，Right 不得越级跳到兄弟
+  test("arrowright on an expanded directory without visible children stays put", () => {
+    const expanded = new Set<string>(["src", "src/empty"])
+    const input = {
+      visible: [dir("src"), dir("src/empty"), file("src/main.ts")],
+      expanded: (path: string) => expanded.has(path),
+      rootPath: "src",
+    }
+    expect(moveTreeCursor({ ...input, key: "arrowright", current: "src/empty" })).toBe("src/empty")
+    // 对照：有可见子项时仍进入首子项
+    const withChild = [dir("src"), dir("src/empty"), file("src/empty/child.ts"), file("src/main.ts")]
+    expect(
+      moveTreeCursor({ ...input, visible: withChild, key: "arrowright", current: "src/empty" }),
+    ).toBe("src/empty/child.ts")
+  })
+
+  // 261106 Red 审计 P2-03：光标节点从可见集合消失（过滤/折叠/刷新）时回退，
+  // 根层把 Tab 停靠点让给首个可见节点，不再整树 tabindex=-1 无入口
+  test("resolveTreeCursor drops a cursor that left the visible set", () => {
+    const visible = [dir("/a"), file("/a/b.ts")]
+    expect(resolveTreeCursor({ cursor: "/a", visible })).toBe("/a")
+    expect(resolveTreeCursor({ cursor: "/a/removed.ts", visible })).toBeUndefined()
+    expect(resolveTreeCursor({ cursor: undefined, visible })).toBeUndefined()
   })
 })

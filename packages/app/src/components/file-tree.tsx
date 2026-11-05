@@ -84,21 +84,22 @@ const kindDotColor = (kind: Kind) => {
 // 漫游共用同一口径）、可见节点平铺（沿展开目录 DFS）、光标移动决策（不落 DOM，
 // 组件层只负责 focus 与 expand/collapse 副作用）。
 
+// 261106 Red 审计 P2-01：file.normalize 刻意保留 Windows 原生分隔符（服务端
+// file.list 的 path.relative 在 win32 返回反斜杠），父子/叶子查找必须同时
+// 识别 / 与 \，lastIndexOf("/") 在 Windows 下找不到分隔符。
+const parentPathOf = (path: string) => {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
+  return idx === -1 ? "" : path.slice(0, idx)
+}
+const leafNameOf = (path: string) => {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
+  return idx === -1 ? path : path.slice(idx + 1)
+}
+
 /** 单层节点列表：store children + filter 合成 + 排序，渲染 memo 与漫游 walker 共用。 */
 export function listLevelNodes(input: { children: FileNode[]; filter?: Filter; parentPath: string }): FileNode[] {
   const current = input.filter
   if (!current) return input.children
-
-  const parent = (path: string) => {
-    const idx = path.lastIndexOf("/")
-    if (idx === -1) return ""
-    return path.slice(0, idx)
-  }
-
-  const leaf = (path: string) => {
-    const idx = path.lastIndexOf("/")
-    return idx === -1 ? path : path.slice(idx + 1)
-  }
 
   const out = input.children.filter((node) => {
     if (node.type === "file") return current.files.has(node.path)
@@ -108,10 +109,10 @@ export function listLevelNodes(input: { children: FileNode[]; filter?: Filter; p
   const seen = new Set(out.map((node) => node.path))
 
   for (const dir of current.dirs) {
-    if (parent(dir) !== input.parentPath) continue
+    if (parentPathOf(dir) !== input.parentPath) continue
     if (seen.has(dir)) continue
     out.push({
-      name: leaf(dir),
+      name: leafNameOf(dir),
       path: dir,
       absolute: dir,
       type: "directory",
@@ -121,10 +122,10 @@ export function listLevelNodes(input: { children: FileNode[]; filter?: Filter; p
   }
 
   for (const item of current.files) {
-    if (parent(item) !== input.parentPath) continue
+    if (parentPathOf(item) !== input.parentPath) continue
     if (seen.has(item)) continue
     out.push({
-      name: leaf(item),
+      name: leafNameOf(item),
       path: item,
       absolute: item,
       type: "file",
@@ -202,8 +203,10 @@ export function moveTreeCursor(input: {
         input.expand?.(node.path)
         return current
       }
-      // 已展开：下一个可见节点即首个子项（DFS 序）
-      return visible[Math.min(visible.length - 1, index + 1)]?.path ?? current
+      // 已展开：下一个可见节点是首个子项才进入（DFS 序）；空目录/过滤后无可见
+      // 子项时下一个是兄弟节点，不得越级（审计 P2-02），保持光标原位。
+      const next = visible[Math.min(visible.length - 1, index + 1)]?.path
+      return next !== undefined && parentPathOf(next) === node.path ? next : current
     }
     case "arrowleft": {
       const node = visible[index]
@@ -212,12 +215,21 @@ export function moveTreeCursor(input: {
         input.collapse?.(node.path)
         return current
       }
-      const idx = node.path.lastIndexOf("/")
-      const parent = idx === -1 ? "" : node.path.slice(0, idx)
+      const parent = parentPathOf(node.path)
       if (!parent || parent === input.rootPath) return current
       return visible.some((item) => item.path === parent) ? parent : current
     }
   }
+}
+
+/**
+ * 261106 Red 审计 P2-03：roving tabindex 失效光标恢复——光标节点因过滤、目录折叠或
+ * 刷新从可见集合消失时返回 undefined，根层把 Tab 停靠点让给首个可见节点，
+ * 整棵树始终有且只有一个有效 Tab 入口，不再出现全 -1 无入口的死角。
+ */
+export function resolveTreeCursor(input: { cursor: string | undefined; visible: FileNode[] }): string | undefined {
+  if (!input.cursor) return undefined
+  return input.visible.some((node) => node.path === input.cursor) ? input.cursor : undefined
 }
 
 const visibleKind = (node: FileNode, kinds?: ReadonlyMap<string, Kind>, marks?: Set<string>) => {
@@ -370,9 +382,25 @@ export default function FileTree(props: {
   const [cursor, setCursor] = createSignal<string | undefined>(undefined)
   const rovingCursor = props._cursor ?? cursor
 
+  // 261106 Red 审计 P2-03：整树可见平铺只在根实例求值（嵌套实例的 tabStop 不经过它，
+  // memo 惰性创建零成本），用于失效光标恢复判定。
+  const allVisible = createMemo(() =>
+    visibleTreeNodes({
+      path: props.path,
+      filter: filter(),
+      chain,
+      level,
+      children: (dir) => file.tree.children(dir),
+      expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
+    }),
+  )
+
   const tabStop = (path: string) => {
     const current = rovingCursor()
-    if (current) return current === path
+    // 261106 Red 审计 P2-03：根层做失效光标恢复；嵌套层只做精确匹配——恢复出的
+    // 唯一停靠点由根层首个可见节点承担，嵌套层不得补第二个入口。
+    const effective = isRoot ? resolveTreeCursor({ cursor: current, visible: allVisible() }) : current
+    if (effective) return effective === path
     return isRoot && nodes()[0]?.path === path
   }
 
