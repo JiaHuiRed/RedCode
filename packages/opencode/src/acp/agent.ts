@@ -41,6 +41,7 @@ import {
   type ResumeSessionResponse,
   type Role,
   type SessionInfo,
+  type SessionUpdate,
   type SetSessionModelRequest,
   type SessionConfigOption,
   type SetSessionConfigOptionRequest,
@@ -239,22 +240,19 @@ export class Agent implements ACPAgent {
                 const hash = Hash.fast(output)
                 if (part.tool === ShellID.ToolID) {
                   if (this.shellSnapshots.get(part.callID) === hash) {
-                    await this.connection
-                      .sessionUpdate({
-                        sessionId,
-                        update: {
-                          sessionUpdate: "tool_call_update",
-                          toolCallId: part.callID,
-                          status: "in_progress",
-                          kind: toToolKind(part.tool),
-                          title: part.tool,
-                          locations: toLocations(part.tool, part.state.input),
-                          rawInput: part.state.input,
-                        },
-                      })
-                      .catch((error) => {
-                        log.error("failed to send tool in_progress to ACP", { error })
-                      })
+                    await this.sendUpdate(
+                      sessionId,
+                      {
+                        sessionUpdate: "tool_call_update",
+                        toolCallId: part.callID,
+                        status: "in_progress",
+                        kind: toToolKind(part.tool),
+                        title: part.tool,
+                        locations: toLocations(part.tool, part.state.input),
+                        rawInput: part.state.input,
+                      },
+                      "failed to send tool in_progress to ACP",
+                    )
                     return
                   }
                   this.shellSnapshots.set(part.callID, hash)
@@ -267,23 +265,20 @@ export class Agent implements ACPAgent {
                   },
                 })
               }
-              await this.connection
-                .sessionUpdate({
-                  sessionId,
-                  update: {
-                    sessionUpdate: "tool_call_update",
-                    toolCallId: part.callID,
-                    status: "in_progress",
-                    kind: toToolKind(part.tool),
-                    title: part.tool,
-                    locations: toLocations(part.tool, part.state.input),
-                    rawInput: part.state.input,
-                    ...(content.length > 0 && { content }),
-                  },
-                })
-                .catch((error) => {
-                  log.error("failed to send tool in_progress to ACP", { error })
-                })
+              await this.sendUpdate(
+                sessionId,
+                {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: part.callID,
+                  status: "in_progress",
+                  kind: toToolKind(part.tool),
+                  title: part.tool,
+                  locations: toLocations(part.tool, part.state.input),
+                  rawInput: part.state.input,
+                  ...(content.length > 0 && { content }),
+                },
+                "failed to send tool in_progress to ACP",
+              )
               return
 
             case "completed": {
@@ -295,80 +290,71 @@ export class Agent implements ACPAgent {
               if (part.tool === "todowrite") {
                 const parsedTodos = decodeTodos(part.state.output)
                 if (Result.isSuccess(parsedTodos)) {
-                  await this.connection
-                    .sessionUpdate({
-                      sessionId,
-                      update: {
-                        sessionUpdate: "plan",
-                        entries: parsedTodos.success.map((todo) => {
-                          const status: PlanEntry["status"] =
-                            todo.status === "cancelled" ? "completed" : (todo.status as PlanEntry["status"])
-                          return {
-                            priority: "medium",
-                            status,
-                            content: todo.content,
-                          }
-                        }),
-                      },
-                    })
-                    .catch((error) => {
-                      log.error("failed to send session update for todo", { error })
-                    })
+                  await this.sendUpdate(
+                    sessionId,
+                    {
+                      sessionUpdate: "plan",
+                      entries: parsedTodos.success.map((todo) => {
+                        const status: PlanEntry["status"] =
+                          todo.status === "cancelled" ? "completed" : (todo.status as PlanEntry["status"])
+                        return {
+                          priority: "medium",
+                          status,
+                          content: todo.content,
+                        }
+                      }),
+                    },
+                    "failed to send session update for todo",
+                  )
                 } else {
                   log.error("failed to parse todo output", { error: parsedTodos.failure })
                 }
               }
 
-              await this.connection
-                .sessionUpdate({
-                  sessionId,
-                  update: {
-                    sessionUpdate: "tool_call_update",
-                    toolCallId: part.callID,
-                    status: "completed",
-                    kind,
-                    content,
-                    title: part.state.title,
-                    rawInput: part.state.input,
-                    rawOutput: completedToolRawOutput(part),
-                  },
-                })
-                .catch((error) => {
-                  log.error("failed to send tool completed to ACP", { error })
-                })
+              await this.sendUpdate(
+                sessionId,
+                {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: part.callID,
+                  status: "completed",
+                  kind,
+                  content,
+                  title: part.state.title,
+                  rawInput: part.state.input,
+                  rawOutput: completedToolRawOutput(part),
+                },
+                "failed to send tool completed to ACP",
+              )
               return
             }
             case "error":
               this.toolStarts.delete(part.callID)
               this.shellSnapshots.delete(part.callID)
-              await this.connection
-                .sessionUpdate({
-                  sessionId,
-                  update: {
-                    sessionUpdate: "tool_call_update",
-                    toolCallId: part.callID,
-                    status: "failed",
-                    kind: toToolKind(part.tool),
-                    title: part.tool,
-                    rawInput: part.state.input,
-                    content: [
-                      {
-                        type: "content",
-                        content: {
-                          type: "text",
-                          text: part.state.error,
-                        },
+              await this.sendUpdate(
+                sessionId,
+                {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: part.callID,
+                  status: "failed",
+                  kind: toToolKind(part.tool),
+                  title: part.tool,
+                  rawInput: part.state.input,
+                  content: [
+                    {
+                      type: "content",
+                      content: {
+                        type: "text",
+                        text: part.state.error,
                       },
-                    ],
-                    rawOutput: {
-                      error: part.state.error,
-                      metadata: part.state.metadata,
                     },
+                  ],
+                  rawOutput: {
+                    error: part.state.error,
+                    metadata: part.state.metadata,
                   },
-                })
-                .catch((error) => {
-                  log.error("failed to send tool error to ACP", { error })
-                })
+                },
+                "failed to send tool error to ACP",
+              )
               return
           }
         }
@@ -408,40 +394,34 @@ export class Agent implements ACPAgent {
         if (!part) return
 
         if (part.type === "text" && props.field === "text" && part.ignored !== true) {
-          await this.connection
-            .sessionUpdate({
-              sessionId,
-              update: {
-                sessionUpdate: "agent_message_chunk",
-                messageId: props.messageID,
-                content: {
-                  type: "text",
-                  text: props.delta,
-                },
+          await this.sendUpdate(
+            sessionId,
+            {
+              sessionUpdate: "agent_message_chunk",
+              messageId: props.messageID,
+              content: {
+                type: "text",
+                text: props.delta,
               },
-            })
-            .catch((error) => {
-              log.error("failed to send text delta to ACP", { error })
-            })
+            },
+            "failed to send text delta to ACP",
+          )
           return
         }
 
         if (part.type === "reasoning" && props.field === "text") {
-          await this.connection
-            .sessionUpdate({
-              sessionId,
-              update: {
-                sessionUpdate: "agent_thought_chunk",
-                messageId: props.messageID,
-                content: {
-                  type: "text",
-                  text: props.delta,
-                },
+          await this.sendUpdate(
+            sessionId,
+            {
+              sessionUpdate: "agent_thought_chunk",
+              messageId: props.messageID,
+              content: {
+                type: "text",
+                text: props.delta,
               },
-            })
-            .catch((error) => {
-              log.error("failed to send reasoning delta to ACP", { error })
-            })
+            },
+            "failed to send reasoning delta to ACP",
+          )
         }
         return
       }
@@ -758,23 +738,20 @@ export class Agent implements ACPAgent {
                 },
               })
             }
-            await this.connection
-              .sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "tool_call_update",
-                  toolCallId: part.callID,
-                  status: "in_progress",
-                  kind: toToolKind(part.tool),
-                  title: part.tool,
-                  locations: toLocations(part.tool, part.state.input),
-                  rawInput: part.state.input,
-                  ...(runningContent.length > 0 && { content: runningContent }),
-                },
-              })
-              .catch((err) => {
-                log.error("failed to send tool in_progress to ACP", { error: err })
-              })
+            await this.sendUpdate(
+              sessionId,
+              {
+                sessionUpdate: "tool_call_update",
+                toolCallId: part.callID,
+                status: "in_progress",
+                kind: toToolKind(part.tool),
+                title: part.tool,
+                locations: toLocations(part.tool, part.state.input),
+                rawInput: part.state.input,
+                ...(runningContent.length > 0 && { content: runningContent }),
+              },
+              "failed to send tool in_progress to ACP",
+            )
             break
           case "completed":
             this.toolStarts.delete(part.callID)
@@ -785,100 +762,88 @@ export class Agent implements ACPAgent {
             if (part.tool === "todowrite") {
               const parsedTodos = decodeTodos(part.state.output)
               if (Result.isSuccess(parsedTodos)) {
-                await this.connection
-                  .sessionUpdate({
-                    sessionId,
-                    update: {
-                      sessionUpdate: "plan",
-                      entries: parsedTodos.success.map((todo) => {
-                        const status: PlanEntry["status"] =
-                          todo.status === "cancelled" ? "completed" : (todo.status as PlanEntry["status"])
-                        return {
-                          priority: "medium",
-                          status,
-                          content: todo.content,
-                        }
-                      }),
-                    },
-                  })
-                  .catch((err) => {
-                    log.error("failed to send session update for todo", { error: err })
-                  })
+                await this.sendUpdate(
+                  sessionId,
+                  {
+                    sessionUpdate: "plan",
+                    entries: parsedTodos.success.map((todo) => {
+                      const status: PlanEntry["status"] =
+                        todo.status === "cancelled" ? "completed" : (todo.status as PlanEntry["status"])
+                      return {
+                        priority: "medium",
+                        status,
+                        content: todo.content,
+                      }
+                    }),
+                  },
+                  "failed to send session update for todo",
+                )
               } else {
                 log.error("failed to parse todo output", { error: parsedTodos.failure })
               }
             }
 
-            await this.connection
-              .sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "tool_call_update",
-                  toolCallId: part.callID,
-                  status: "completed",
-                  kind,
-                  content,
-                  title: part.state.title,
-                  rawInput: part.state.input,
-                  rawOutput: completedToolRawOutput(part),
-                },
-              })
-              .catch((err) => {
-                log.error("failed to send tool completed to ACP", { error: err })
-              })
+            await this.sendUpdate(
+              sessionId,
+              {
+                sessionUpdate: "tool_call_update",
+                toolCallId: part.callID,
+                status: "completed",
+                kind,
+                content,
+                title: part.state.title,
+                rawInput: part.state.input,
+                rawOutput: completedToolRawOutput(part),
+              },
+              "failed to send tool completed to ACP",
+            )
             break
           case "error":
             this.toolStarts.delete(part.callID)
             this.shellSnapshots.delete(part.callID)
-            await this.connection
-              .sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: "tool_call_update",
-                  toolCallId: part.callID,
-                  status: "failed",
-                  kind: toToolKind(part.tool),
-                  title: part.tool,
-                  rawInput: part.state.input,
-                  content: [
-                    {
-                      type: "content",
-                      content: {
-                        type: "text",
-                        text: part.state.error,
-                      },
+            await this.sendUpdate(
+              sessionId,
+              {
+                sessionUpdate: "tool_call_update",
+                toolCallId: part.callID,
+                status: "failed",
+                kind: toToolKind(part.tool),
+                title: part.tool,
+                rawInput: part.state.input,
+                content: [
+                  {
+                    type: "content",
+                    content: {
+                      type: "text",
+                      text: part.state.error,
                     },
-                  ],
-                  rawOutput: {
-                    error: part.state.error,
-                    metadata: part.state.metadata,
                   },
+                ],
+                rawOutput: {
+                  error: part.state.error,
+                  metadata: part.state.metadata,
                 },
-              })
-              .catch((err) => {
-                log.error("failed to send tool error to ACP", { error: err })
-              })
+              },
+              "failed to send tool error to ACP",
+            )
             break
         }
       } else if (part.type === "text") {
         if (part.text) {
           const audience: Role[] | undefined = part.synthetic ? ["assistant"] : part.ignored ? ["user"] : undefined
-          await this.connection
-            .sessionUpdate({
-              sessionId,
-              update: {
-                sessionUpdate: message.info.role === "user" ? "user_message_chunk" : "agent_message_chunk",
-                messageId: message.info.id,
-                content: {
-                  type: "text",
-                  text: part.text,
-                  ...(audience && { annotations: { audience } }),
-                },
+          await this.sendUpdate(
+            sessionId,
+            {
+              sessionUpdate: message.info.role === "user" ? "user_message_chunk" : "agent_message_chunk",
+              messageId: message.info.id,
+              content: {
+                type: "text",
+                text: part.text,
+                ...(audience && { annotations: { audience } }),
               },
-            })
-            .catch((err) => {
-              log.error("failed to send text to ACP", { error: err })
-            })
+            },
+            "failed to send text to ACP",
+          )
         }
       } else if (part.type === "file") {
         // Replay file attachments as appropriate ACP content blocks.
@@ -895,18 +860,15 @@ export class Agent implements ACPAgent {
 
         if (url.startsWith("file://")) {
           // Local file reference - send as resource_link
-          await this.connection
-            .sessionUpdate({
-              sessionId,
-              update: {
-                sessionUpdate: messageChunk,
-                messageId: message.info.id,
-                content: { type: "resource_link", uri: url, name: filename, mimeType: mime },
-              },
-            })
-            .catch((err) => {
-              log.error("failed to send resource_link to ACP", { error: err })
-            })
+          await this.sendUpdate(
+            sessionId,
+            {
+              sessionUpdate: messageChunk,
+              messageId: message.info.id,
+              content: { type: "resource_link", uri: url, name: filename, mimeType: mime },
+            },
+            "failed to send resource_link to ACP",
+          )
         } else if (url.startsWith("data:")) {
           // Embedded content - parse data URL and send as appropriate block type
           const base64Match = url.match(/^data:([^;]+);base64,(.*)$/)
@@ -917,23 +879,20 @@ export class Agent implements ACPAgent {
 
           if (effectiveMime.startsWith("image/")) {
             // Image - send as image block
-            await this.connection
-              .sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: messageChunk,
-                  messageId: message.info.id,
-                  content: {
-                    type: "image",
-                    mimeType: effectiveMime,
-                    data: base64Data,
-                    uri: pathToFileURL(filename).href,
-                  },
+            await this.sendUpdate(
+              sessionId,
+              {
+                sessionUpdate: messageChunk,
+                messageId: message.info.id,
+                content: {
+                  type: "image",
+                  mimeType: effectiveMime,
+                  data: base64Data,
+                  uri: pathToFileURL(filename).href,
                 },
-              })
-              .catch((err) => {
-                log.error("failed to send image to ACP", { error: err })
-              })
+              },
+              "failed to send image to ACP",
+            )
           } else {
             // Non-image: text types get decoded, binary types stay as blob
             const isText = effectiveMime.startsWith("text/") || effectiveMime === "application/json"
@@ -946,41 +905,44 @@ export class Agent implements ACPAgent {
                 }
               : { uri: fileUri, mimeType: effectiveMime, blob: base64Data }
 
-            await this.connection
-              .sessionUpdate({
-                sessionId,
-                update: {
-                  sessionUpdate: messageChunk,
-                  messageId: message.info.id,
-                  content: { type: "resource", resource },
-                },
-              })
-              .catch((err) => {
-                log.error("failed to send resource to ACP", { error: err })
-              })
+            await this.sendUpdate(
+              sessionId,
+              {
+                sessionUpdate: messageChunk,
+                messageId: message.info.id,
+                content: { type: "resource", resource },
+              },
+              "failed to send resource to ACP",
+            )
           }
         }
         // URLs that don't match file:// or data: are skipped (unsupported)
       } else if (part.type === "reasoning") {
         if (part.text) {
-          await this.connection
-            .sessionUpdate({
-              sessionId,
-              update: {
-                sessionUpdate: "agent_thought_chunk",
-                messageId: message.info.id,
-                content: {
-                  type: "text",
-                  text: part.text,
-                },
+          await this.sendUpdate(
+            sessionId,
+            {
+              sessionUpdate: "agent_thought_chunk",
+              messageId: message.info.id,
+              content: {
+                type: "text",
+                text: part.text,
               },
-            })
-            .catch((err) => {
-              log.error("failed to send reasoning to ACP", { error: err })
-            })
+            },
+            "failed to send reasoning to ACP",
+          )
         }
       }
     }
+  }
+
+  // 261106 Red sessionUpdate + catch-log 样板收敛：原 17 处逐字重复（仅 payload 与日志文案不同，
+  // catch 均为纯 log.error 无其他副作用），抽为一个私有方法。不含无 catch 的两处直发点
+  // （available_commands_update 的 void 直发、config_option_update 的裸 await，错误语义不同，保持原样）。
+  private async sendUpdate(sessionId: string, update: SessionUpdate, label: string): Promise<void> {
+    await this.connection.sessionUpdate({ sessionId, update }).catch((error) => {
+      log.error(label, { error })
+    })
   }
 
   private shellOutput(part: ToolPart) {
@@ -994,22 +956,19 @@ export class Agent implements ACPAgent {
   private async toolStart(sessionId: string, part: ToolPart) {
     if (this.toolStarts.has(part.callID)) return
     this.toolStarts.add(part.callID)
-    await this.connection
-      .sessionUpdate({
-        sessionId,
-        update: {
-          sessionUpdate: "tool_call",
-          toolCallId: part.callID,
-          title: part.tool,
-          kind: toToolKind(part.tool),
-          status: "pending",
-          locations: [],
-          rawInput: {},
-        },
-      })
-      .catch((error) => {
-        log.error("failed to send tool pending to ACP", { error })
-      })
+    await this.sendUpdate(
+      sessionId,
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: part.callID,
+        title: part.tool,
+        kind: toToolKind(part.tool),
+        status: "pending",
+        locations: [],
+        rawInput: {},
+      },
+      "failed to send tool pending to ACP",
+    )
   }
 
   private async loadAvailableModes(directory: string): Promise<ModeOption[]> {

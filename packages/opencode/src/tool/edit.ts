@@ -926,6 +926,24 @@ export const UnicodeNormalizedReplacer: Replacer = function* (content, find) {
     startIndex = index + normFind.length
   }
 }
+// 261106 Red 「行区间 → 字符偏移」换算原在 LineTrimmedReplacer 与 BlockAnchorReplacer
+// （单候选/多候选）三处逐字重复，抽为一个 helper。语义：返回 content 中 [startLine, endLine]
+// 闭区间行对应的原文子串——含行间换行符，不含末行换行符。
+function sliceLines(content: string, lines: string[], startLine: number, endLine: number): string {
+  let matchStartIndex = 0
+  for (let k = 0; k < startLine; k++) {
+    matchStartIndex += lines[k].length + 1
+  }
+  let matchEndIndex = matchStartIndex
+  for (let k = startLine; k <= endLine; k++) {
+    matchEndIndex += lines[k].length
+    if (k < endLine) {
+      matchEndIndex += 1
+    }
+  }
+  return content.substring(matchStartIndex, matchEndIndex)
+}
+
 export const LineTrimmedReplacer: Replacer = function* (content, find) {
   const originalLines = content.split("\n")
   if (originalLines.length > LINE_SCAN_MAX_CONTENT_LINES) return
@@ -949,20 +967,7 @@ export const LineTrimmedReplacer: Replacer = function* (content, find) {
     }
 
     if (matches) {
-      let matchStartIndex = 0
-      for (let k = 0; k < i; k++) {
-        matchStartIndex += originalLines[k].length + 1
-      }
-
-      let matchEndIndex = matchStartIndex
-      for (let k = 0; k < searchLines.length; k++) {
-        matchEndIndex += originalLines[i + k].length
-        if (k < searchLines.length - 1) {
-          matchEndIndex += 1 // Add newline character except for the last line
-        }
-      }
-
-      yield content.substring(matchStartIndex, matchEndIndex)
+      yield sliceLines(content, originalLines, i, i + searchLines.length - 1)
     }
   }
 }
@@ -1059,18 +1064,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
     }
 
     if (similarity >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD) {
-      let matchStartIndex = 0
-      for (let k = 0; k < startLine; k++) {
-        matchStartIndex += originalLines[k].length + 1
-      }
-      let matchEndIndex = matchStartIndex
-      for (let k = startLine; k <= endLine; k++) {
-        matchEndIndex += originalLines[k].length
-        if (k < endLine) {
-          matchEndIndex += 1 // Add newline character except for the last line
-        }
-      }
-      yield content.substring(matchStartIndex, matchEndIndex)
+      yield sliceLines(content, originalLines, startLine, endLine)
     }
     return
   }
@@ -1112,18 +1106,7 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   // Threshold judgment
   if (maxSimilarity >= MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD && bestMatch) {
     const { startLine, endLine } = bestMatch
-    let matchStartIndex = 0
-    for (let k = 0; k < startLine; k++) {
-      matchStartIndex += originalLines[k].length + 1
-    }
-    let matchEndIndex = matchStartIndex
-    for (let k = startLine; k <= endLine; k++) {
-      matchEndIndex += originalLines[k].length
-      if (k < endLine) {
-        matchEndIndex += 1
-      }
-    }
-    yield content.substring(matchStartIndex, matchEndIndex)
+    yield sliceLines(content, originalLines, startLine, endLine)
   }
 }
 
