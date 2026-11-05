@@ -1,4 +1,5 @@
 import type { FileNode } from "@redcode-ai/sdk/v2"
+import { canonicalizeTreePath } from "./path"
 
 type WatcherEvent = {
   type: string
@@ -26,7 +27,11 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
 
   const path = ops.normalize(rawPath)
   if (!path) return
-  if (path.startsWith(".git/")) return
+  // 261106 Red 审计：树键族查找走规范形（/，见 canonicalizeTreePath），与入库后的
+  // 树节点键对齐；内容缓存/标签键族（hasFile/isOpen/loadFile）保持 ops 原生形态不动。
+  // .git 前缀检查也必须在规范形上做，否则反斜杠事件（win32）漏拦。
+  const treePath = canonicalizeTreePath(path)
+  if (treePath.startsWith(".git/")) return
 
   if (ops.hasFile(path) || ops.isOpen?.(path)) {
     ops.loadFile(path)
@@ -34,10 +39,10 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
 
   if (kind === "change") {
     const dir = (() => {
-      if (path === "") return ""
-      const node = ops.node(path)
+      if (treePath === "") return ""
+      const node = ops.node(treePath)
       if (node?.type !== "directory") return
-      return path
+      return treePath
     })()
     if (dir === undefined) return
     if (!ops.isDirLoaded(dir)) return
@@ -46,7 +51,7 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
   }
   if (kind !== "add" && kind !== "unlink") return
 
-  const parent = path.split("/").slice(0, -1).join("/")
+  const parent = treePath.split("/").slice(0, -1).join("/")
   if (!ops.isDirLoaded(parent)) return
 
   ops.refreshDir(parent)

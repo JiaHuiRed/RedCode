@@ -80,6 +80,14 @@ export function decodeFilePath(input: string) {
   }
 }
 
+// 261106 Red 审计：树键族规范形。服务端 file.list（path.relative）与 watcher 事件
+// 在 win32 带原生反斜杠，而 filter/kinds/active 等 git 侧数据（numstat 输出）恒为
+// / 形；树入库与树查找统一归一成 /，不归一则 Windows 下整族比对失配。
+// 内容缓存与标签键族（store.file / tabs）不走此函数，保持原生形态不变。
+export function canonicalizeTreePath(path: string): string {
+  return path.replaceAll("\\", "/")
+}
+
 export function encodeFilePath(filepath: string): string {
   // Normalize Windows paths: convert backslashes to forward slashes
   let normalized = filepath.replace(/\\/g, "/")

@@ -8,7 +8,7 @@ import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { createPathHelpers } from "./file/path"
+import { canonicalizeTreePath, createPathHelpers } from "./file/path"
 import {
   approxBytes,
   evictContentLru,
@@ -72,8 +72,16 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const tree = createFileTreeStore({
       scope,
-      normalizeDir: path.normalizeDir,
-      list: (dir) => sdk.client.file.list({ path: dir }).then((x) => x.data ?? []),
+      // 261106 Red 审计：树键族统一规范形（见 canonicalizeTreePath），否则 Windows
+      // 原生反斜杠节点与 git 侧 / 形的 filter/kinds/active 整族比对失配
+      normalizeDir: (input) => canonicalizeTreePath(path.normalizeDir(input)),
+      list: (dir) =>
+        sdk.client.file.list({ path: dir }).then((x) =>
+          (x.data ?? []).map((node) => ({
+            ...node,
+            path: canonicalizeTreePath(node.path),
+          })),
+        ),
       onError: (message) => {
         showToast({
           variant: "error",

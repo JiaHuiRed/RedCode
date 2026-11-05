@@ -146,4 +146,57 @@ describe("file watcher invalidation", () => {
 
     expect(refresh).toEqual([])
   })
+
+  // 261106 Red 审计：win32 watcher 事件带原生反斜杠，树键族查找必须归一成 /，
+  // 否则 add/unlink 的父目录推导 split("/") 拆不开、目录刷新静默失效。
+  // 反斜杠经 String.fromCharCode(92) 构造，源码不含反斜杠字面量。
+  const BS = String.fromCharCode(92)
+  test("windows backslash events refresh the canonical tree key", () => {
+    const refresh: string[] = []
+    const loads: string[] = []
+    invalidateFromWatcher(
+      {
+        type: "file.watcher.updated",
+        properties: {
+          file: `D:${BS}repo${BS}src${BS}new.ts`,
+          event: "add",
+        },
+      },
+      {
+        // 模拟 createPathHelpers.normalize：剥离根前缀、保留原生分隔符（正则中匹配
+        // 一个字面反斜杠需要两个字符，故 BS 翻倍）
+        normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        hasFile: () => false,
+        loadFile: (path) => loads.push(path),
+        node: () => undefined,
+        isDirLoaded: (path) => path === "src",
+        refreshDir: (path) => refresh.push(path),
+      },
+    )
+    expect(refresh).toEqual(["src"])
+    expect(loads).toEqual([])
+  })
+
+  test("windows backslash events skip .git paths on the canonical form", () => {
+    const loads: string[] = []
+    invalidateFromWatcher(
+      {
+        type: "file.watcher.updated",
+        properties: {
+          file: `D:${BS}repo${BS}.git${BS}objects${BS}ab${BS}cd1234`,
+          event: "change",
+        },
+      },
+      {
+        normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        hasFile: () => true,
+        isOpen: () => false,
+        loadFile: (path) => loads.push(path),
+        node: () => undefined,
+        isDirLoaded: () => true,
+        refreshDir: () => {},
+      },
+    )
+    expect(loads).toEqual([])
+  })
 })
