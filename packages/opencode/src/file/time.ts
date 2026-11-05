@@ -35,6 +35,9 @@ const MAX_FILES = 2000
 // 不值得，且这类文件本来也多半不是模型手改的对象。
 const MAX_HASH_BYTES = 8 * 1024 * 1024
 
+// 261105 Red 测试钩子：digest 累计读取的字节数，用于断言超限文件不被读入内存。
+let bytesHashed = 0
+
 interface Stamp {
   mtime: number
   hash?: string
@@ -161,9 +164,16 @@ async function mtime(filepath: string) {
 }
 
 // 261105 Red 内容哈希：mtime 抖动（checkout/无改动保存/touch）不该逼模型重读大文件。
+// 261105 Red 验收补洞：assert 侧的比对同样要守住大小上限——record 之后文件被外部换成
+// 几百 MiB 的大文件时，直接 readFile 会把整个文件读进内存。超限按「无法比对」处理，
+// 走 modified externally 分支（fail-safe 方向与记录阶段一致）。
 async function digest(filepath: string) {
+  const stat = await fsp.stat(filepath).catch(() => undefined)
+  if (!stat || stat.size > MAX_HASH_BYTES) return undefined
   const data = await fsp.readFile(filepath).catch(() => undefined)
-  return data ? createHash("sha256").update(data).digest("hex").slice(0, 32) : undefined
+  if (!data) return undefined
+  bytesHashed += data.length
+  return createHash("sha256").update(data).digest("hex").slice(0, 32)
 }
 
 // record 用一次 stat + 一次 read 取一致快照，避免 mtime 与内容分两次读之间被改。
@@ -229,6 +239,9 @@ export namespace FileTime {
       ),
     )
   })
+
+  /** 测试钩子：digest 累计读取的字节数（断言超限大文件不被读入内存） */
+  export const hashBytesRead = () => bytesHashed
 
   /** 测试钩子：当前驻留的会话数（同 edit.ts 的 fileLockCount，只给测试断言回收用） */
   export const sessionCount = () => state.size

@@ -60,6 +60,34 @@ describe("mcp.evidence", () => {
     expect(lines.join("\n")).not.toContain("ecretvalue")
   })
 
+  // 261105 Red 验收补洞：CUT_BACKOFF 只降低概率，不构成保证——键名恰好跨在回退后的
+  // 切点上时，第一段没有 "="、第二段 key 只剩尾字母（不敏感），下一次补齐成完整行后
+  // 值以明文进日志。
+  test("redacts a key split across the cut on an unterminated line", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    // 总长 599，切点 599 - 64 = 535，落在 API_TOKEN 的键名中间（API_T|OKEN=...）。
+    const chunk = "x".repeat(530) + "API_TOKEN=supersecret123" + "y".repeat(45)
+    const lines = [...evidence.push(chunk), ...evidence.push("\n")]
+    const output = [...lines, evidence.recent()].join("\n")
+    expect(output).toContain("[redacted]")
+    expect(output).not.toContain("supersecret123")
+  })
+
+  // 261105 Red 验收补洞：进程 startup 失败常只输出一行没有结尾换行的错误就退出，
+  // 只读完整行会让 recent() 为空，用户仍看不到任何 stderr 证据。
+  test("recent keeps an unterminated final line as evidence", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    expect(evidence.push("Error: missing config")).toEqual([])
+    expect(evidence.recent()).toContain("Error: missing config")
+  })
+
+  test("recent redacts an unterminated final line", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    evidence.push("API_TOKEN=supersecret123")
+    expect(evidence.recent()).toContain("API_TOKEN=[redacted]")
+    expect(evidence.recent()).not.toContain("supersecret123")
+  })
+
   test("bounds an unterminated line without dropping the log", () => {
     const evidence = McpEvidence.createStderrEvidence()
     const lines = evidence.push("y".repeat(McpEvidence.EVIDENCE_MAX_CHARS * 2))

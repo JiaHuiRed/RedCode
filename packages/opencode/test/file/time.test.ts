@@ -104,6 +104,18 @@ test("内容真的变了仍然拦截，并引导精确替换", async () => {
   await expect(Effect.runPromise(FileTime.assert("ses_hint", file))).rejects.toThrow(/oldString replacement/)
 })
 
+// 261105 Red 验收补洞：assert 侧的哈希比对同样守住 8MB 上限——record 之后文件被外部
+// 换成大文件时不能整个读进内存，按「无法比对」走修改拦截（fail-safe）。
+test("外部替换成超过哈希上限的大文件时仍然拦截", async () => {
+  await Effect.runPromise(FileTime.record("ses_big", file))
+  await new Promise((r) => setTimeout(r, 10))
+  await fs.writeFile(file, Buffer.alloc(8 * 1024 * 1024 + 1, "z"))
+  const before = FileTime.hashBytesRead()
+  await expect(Effect.runPromise(FileTime.assert("ses_big", file))).rejects.toThrow(/modified externally/i)
+  // 修复前 digest 会把整个大文件读进来再算哈希（结果同样是拦截，只能靠读取量区分）
+  expect(FileTime.hashBytesRead() - before).toBe(0)
+})
+
 test("重启后 mtime 抖动仍能靠哈希放行", async () => {
   await Effect.runPromise(FileTime.record("ses_persist_hash", file))
   await FileTime.flush()

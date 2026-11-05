@@ -27,8 +27,8 @@ const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{6,}/gi
 
 const RAW_KEEP = 4000
 export const EVIDENCE_MAX_CHARS = 512
-// 261105 Red 无换行流的切分回退窗口：切点前留这么多字符到下一段，避免把正在形成的
-// 敏感键/值切在两段中间（两段都识别不到 → 明文）。
+// 261105 Red 无换行流的切分回退窗口：切点在脱敏后的文本上取，回退只是避免把
+// [redacted] 标记或普通词切成两半——泄露防护不再依赖这个窗口。
 const CUT_BACKOFF = 64
 
 // 有界尾部缓冲：只留最近 4000 字符原始 stderr。失败的根因几乎总在最后几行
@@ -45,11 +45,16 @@ export function createStderrEvidence() {
       pending = lines.pop() ?? ""
       // 261105 Red 安全边界重做：先在完整段上脱敏、再切分。原实现先按 512 硬切、再
       // 逐段脱敏，键名/值跨切点时两段都识别不到（API_TO|KEN=secret 两段都漏遮）。
-      // 切分点再回退 CUT_BACKOFF 字符到下一段，键不会断在切点上。
+      // 261105 Red 验收补洞：此前切分仍作用在原文上、只靠 CUT_BACKOFF 回退，键名恰好
+      // 跨在回退后的切点时照样被拆开（API_TOKE|N=secret，第二段 key=N 不敏感 → 明文）。
+      // 现在脱敏作用于整个 pending，切点只可能落在 [redacted] 或普通文本中间。
       if (pending.length > EVIDENCE_MAX_CHARS + CUT_BACKOFF) {
-        const cut = pending.length - CUT_BACKOFF
-        lines.push(redact(pending.slice(0, cut)))
-        pending = pending.slice(cut)
+        const masked = redact(pending)
+        const cut = masked.length - CUT_BACKOFF
+        if (cut > 0) {
+          lines.push(masked.slice(0, cut))
+          pending = masked.slice(cut)
+        }
       }
       const output = lines.map(redactLine).filter((line) => line.trim().length > 0)
       // 261105 Red raw 只保留脱敏后的行：否则超长密钥值（字段名被挤出 4000 缓冲）
@@ -58,7 +63,13 @@ export function createStderrEvidence() {
       if (raw.length > RAW_KEEP) raw = raw.slice(raw.length - RAW_KEEP)
       return output
     },
-    recent: () => raw,
+    // 261105 Red 未换行的尾行同样要能作为证据：MCP 进程 startup 失败时常常只输出一行
+    // 无结尾换行的 "Error: missing config" 就退出，只读完整行会让 recent() 为空，用户
+    // 看到的仍是「没有任何 stderr」的失败提示。出口再脱敏一次（幂等）。
+    recent: () => {
+      const merged = raw + redact(pending)
+      return merged.length > RAW_KEEP ? merged.slice(merged.length - RAW_KEEP) : merged
+    },
   }
 }
 
