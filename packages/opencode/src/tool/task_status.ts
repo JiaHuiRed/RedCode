@@ -1,5 +1,6 @@
 import * as Tool from "./tool"
 import DESCRIPTION from "./task_status.md" with { type: "text" }
+import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
@@ -90,6 +91,7 @@ export const TaskStatusTool = Tool.define(
   "task_status",
   Effect.gen(function* () {
     const jobs = yield* BackgroundJob.Service
+    const canceller = yield* BackgroundCancel.Service
     const sessions = yield* Session.Service
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
@@ -242,14 +244,8 @@ export const TaskStatusTool = Tool.define(
       }
 
       if (params.cancel) {
-        const cancelledIDs = yield* jobs.cancelTree(params.task_id)
-        // 261023 Red fiber 中断跑不到 processor 收尾的 status.set(idle)，状态表会残留
-        // busy/retry——TUI 的等待指示器读的就是它，于是任务表 cancelled 了、spinner 还在转
-        // （261023 实证）。cancel 后把已取消任务（job id 即 session id）的遗留状态归位。
-        for (const id of cancelledIDs) {
-          const sessionID = id as SessionID
-          if ((yield* status.get(sessionID)).type !== "idle") yield* status.set(sessionID, { type: "idle" })
-        }
+        // 261105 Red 取消后 SessionStatus 归位下沉到 BackgroundCancel，与 HTTP 后台面板同一条路径。
+        yield* canceller.cancelTree(params.task_id)
       }
 
       const waited =

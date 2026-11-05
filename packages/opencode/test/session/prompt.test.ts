@@ -9,6 +9,7 @@ import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
+import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
@@ -208,6 +209,7 @@ function makePrompt(input?: {
     mcp,
     filesystem,
     BackgroundJob.defaultLayer,
+    BackgroundCancel.defaultLayer,
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,

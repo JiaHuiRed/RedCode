@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { Agent } from "@/agent/agent"
+import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { BackgroundStore } from "@/background/store"
 import { Bus } from "@/bus"
@@ -29,6 +30,7 @@ afterEach(async () => {
 const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Layer.mergeAll(
     Agent.defaultLayer,
+    BackgroundCancel.defaultLayer,
     BackgroundJob.defaultLayer,
     Bus.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
@@ -258,6 +260,7 @@ describe("tool.task_status", () => {
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
       const tool = yield* TaskStatusTool
       const def = yield* tool.init()
       const chat = yield* sessions.create({})
@@ -270,6 +273,9 @@ describe("tool.task_status", () => {
         metadata: { parentSessionId: chat.id },
         run: Effect.never,
       })
+      // 261105 Red 审计 RC-015-01：取消必须把残留的 busy/retry 归位成 idle。
+      yield* status.set(chat.id, { type: "busy" })
+      yield* status.set(child.id, { type: "retry", attempt: 1, message: "provider quota exceeded", next: 0 })
 
       const result = yield* def.execute(
         { task_id: chat.id, cancel: true },
@@ -287,6 +293,8 @@ describe("tool.task_status", () => {
       expect(result.output).toContain("state: cancelled")
       expect((yield* jobs.get(chat.id))?.status).toBe("cancelled")
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+      expect((yield* status.get(child.id)).type).toBe("idle")
     }),
   )
 

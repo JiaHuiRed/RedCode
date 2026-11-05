@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "../../src/agent/agent"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
@@ -83,7 +84,9 @@ const toolRegistryLayer = ToolRegistry.layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(Agent.defaultLayer),
   Layer.provide(Session.defaultLayer),
-  Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer)),
+  Layer.provide(
+    Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundCancel.defaultLayer),
+  ),
   Layer.provide(Provider.defaultLayer),
   Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
   Layer.provide(Reference.defaultLayer),
@@ -102,6 +105,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Layer.mergeAll(
     noopPluginLayer,
     Agent.defaultLayer,
+    BackgroundCancel.defaultLayer,
     BackgroundJob.defaultLayer,
     Bus.defaultLayer,
     Config.defaultLayer,

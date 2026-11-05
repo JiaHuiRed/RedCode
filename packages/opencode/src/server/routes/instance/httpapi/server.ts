@@ -13,6 +13,7 @@ import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
+import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
@@ -240,6 +241,7 @@ export function createRoutes(
       Agent.defaultLayer,
       Auth.defaultLayer,
       BackgroundJob.defaultLayer,
+      BackgroundCancel.defaultLayer,
       Command.defaultLayer,
       Config.defaultLayer,
       File.defaultLayer,
