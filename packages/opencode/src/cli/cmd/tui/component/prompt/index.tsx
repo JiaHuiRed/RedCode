@@ -1456,9 +1456,12 @@ export function Prompt(props: PromptProps) {
 
   async function pasteInputText(text: string) {
     const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-    const pastedContent = normalizedText.trim()
+    // 261105 Red trim 只用于路径与阈值判断，摘要保存的是原文：此前先把整段 trim
+    // 再 pasteText，粘贴代码时首行缩进/末尾空行被静默删掉；短文本分支用的却是原文，
+    // 同一内容跨过阈值后行为不一致。
+    const trimmed = normalizedText.trim()
     const filepath = iife(() => {
-      const raw = pastedContent.replace(/^['"]+|['"]+$/g, "")
+      const raw = trimmed.replace(/^['"]+|['"]+$/g, "")
       if (raw.startsWith("file://")) {
         try {
           return fileURLToPath(raw)
@@ -1500,12 +1503,12 @@ export function Prompt(props: PromptProps) {
       }
     }
 
-    const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1
+    const lineCount = (trimmed.match(/\n/g)?.length ?? 0) + 1
     if (
-      (lineCount >= 3 || pastedContent.length > 150) &&
+      (lineCount >= 3 || trimmed.length > 150) &&
       kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)
     ) {
-      pasteText(pastedContent, `[Pasted ~${lineCount} lines]`)
+      pasteText(normalizedText, `[Pasted ~${lineCount} lines]`)
       return
     }
 
