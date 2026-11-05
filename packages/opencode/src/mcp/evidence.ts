@@ -27,6 +27,9 @@ const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]{6,}/gi
 
 const RAW_KEEP = 4000
 export const EVIDENCE_MAX_CHARS = 512
+// 261105 Red 无换行流的切分回退窗口：切点前留这么多字符到下一段，避免把正在形成的
+// 敏感键/值切在两段中间（两段都识别不到 → 明文）。
+const CUT_BACKOFF = 64
 
 // 有界尾部缓冲：只留最近 4000 字符原始 stderr。失败的根因几乎总在最后几行
 // （缺依赖的报错在进程退出前打出），头部的历史噪音可以丢。
@@ -37,17 +40,23 @@ export function createStderrEvidence() {
   return {
     // 返回本次补齐的完整行（已脱敏），供普通日志使用；未换行的尾行留到下一次。
     push(chunk: string) {
-      raw += chunk
-      if (raw.length > RAW_KEEP) raw = raw.slice(raw.length - RAW_KEEP)
       pending += chunk
       const lines = pending.split(/\r?\n/)
       pending = lines.pop() ?? ""
-      // 无换行的超长输出不能无限攒着；到上限就按一段处理（截断仍按证据上限）。
-      if (pending.length > EVIDENCE_MAX_CHARS) {
-        lines.push(pending)
-        pending = ""
+      // 261105 Red 安全边界重做：先在完整段上脱敏、再切分。原实现先按 512 硬切、再
+      // 逐段脱敏，键名/值跨切点时两段都识别不到（API_TO|KEN=secret 两段都漏遮）。
+      // 切分点再回退 CUT_BACKOFF 字符到下一段，键不会断在切点上。
+      if (pending.length > EVIDENCE_MAX_CHARS + CUT_BACKOFF) {
+        const cut = pending.length - CUT_BACKOFF
+        lines.push(redact(pending.slice(0, cut)))
+        pending = pending.slice(cut)
       }
-      return lines.map(redactLine).filter((line) => line.trim().length > 0)
+      const output = lines.map(redactLine).filter((line) => line.trim().length > 0)
+      // 261105 Red raw 只保留脱敏后的行：否则超长密钥值（字段名被挤出 4000 缓冲）
+      // 会以裸值形式留在内存里，出口再做正则也救不回来。出口的 redact 是幂等的。
+      raw += output.join("\n") + (output.length > 0 ? "\n" : "")
+      if (raw.length > RAW_KEEP) raw = raw.slice(raw.length - RAW_KEEP)
+      return output
     },
     recent: () => raw,
   }
@@ -71,6 +80,29 @@ export function redact(input: string) {
 export function sanitizeEvidence(input: string) {
   const masked = redact(input)
   return masked.length > EVIDENCE_MAX_CHARS ? masked.slice(masked.length - EVIDENCE_MAX_CHARS) : masked
+}
+
+// 261105 Red 命令参数同样可能携带凭据：`--api-key xxx`、`--token=xxx`、
+// `-H "Authorization: ..."`。敏感 flag 的下一个参数整段遮，其余走 KEY=VALUE/header 规则。
+const SENSITIVE_FLAG = /^--?[A-Za-z0-9-]*(?:key|token|secret|password|passwd|credential|cookie)[A-Za-z0-9-]*$/i
+
+export function redactCommand(command: readonly string[]): string[] {
+  const out: string[] = []
+  let maskNext = false
+  for (const part of command) {
+    if (maskNext) {
+      out.push("[redacted]")
+      maskNext = false
+      continue
+    }
+    if (SENSITIVE_FLAG.test(part)) {
+      out.push(part)
+      maskNext = true
+      continue
+    }
+    out.push(redact(part))
+  }
+  return out
 }
 
 // 按 error message 分诊配一句排查建议；分类只看连接错误本身，不按 stderr 内容改判

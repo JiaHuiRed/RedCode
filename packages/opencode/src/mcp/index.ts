@@ -886,7 +886,8 @@ export const layer = Layer.effect(
           const detailed = McpEvidence.describeLocalFailure(msg, evidence.recent())
           log.error("local mcp startup failed", {
             key,
-            command: mcp.command,
+            // 261105 Red 命令行参数可能带 --api-key/-H Authorization 凭据，日志里不能出现原值。
+            command: McpEvidence.redactCommand(mcp.command),
             cwd,
             phase: "startup",
             timeout: connectTimeout,

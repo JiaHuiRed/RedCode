@@ -37,13 +37,32 @@ describe("mcp.evidence", () => {
     const evidence = McpEvidence.createStderrEvidence()
     const lines = [...evidence.push("starting\nAPI_TO"), ...evidence.push("KEN=supersecret123\nready\n")]
     expect(lines).toEqual(["starting", "API_TOKEN=[redacted]", "ready"])
-    // 原文只留在内存缓冲里，由失败时的 describeLocalFailure 统一脱敏。
-    expect(evidence.recent()).toContain("supersecret123")
+    // 261105 Red 原始缓冲也脱敏：超长密钥值的字段名可能被挤出 4000 窗口，留存原值
+    // 等于给裸值留后门。出口的 redact 幂等，再遮一次无副作用。
+    expect(evidence.recent()).not.toContain("supersecret123")
+    expect(evidence.recent()).toContain("[redacted]")
+  })
+
+  // 261105 Red 验收漏洞：512 硬切 + 逐段脱敏时，键名跨切点会被拆成两段，两段都
+  // 识别不到敏感字段。切分改为「先脱敏再切 + 回退窗口」后不得再漏。
+  test("redacts a key split across the early-cut boundary", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    const lines = [...evidence.push("x".repeat(508) + "API_TO"), ...evidence.push("KEN=supersecret123\n")]
+    // 508 前缀正好把值推到 512 证据上限之外：截断会切掉 [redacted] 标记本身，
+    // 但密钥值不能以任何形式出现——安全优先于标记可读性。
+    expect(lines.join("\n")).not.toContain("supersecret123")
+  })
+
+  test("does not leak a key that straddles the backoff cut", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    const first = "x".repeat(McpEvidence.EVIDENCE_MAX_CHARS + 40) + "API_TOKEN="
+    const lines = [...evidence.push(first + "s".repeat(20)), ...evidence.push("ecretvalue\n")]
+    expect(lines.join("\n")).not.toContain("ecretvalue")
   })
 
   test("bounds an unterminated line without dropping the log", () => {
     const evidence = McpEvidence.createStderrEvidence()
-    const lines = evidence.push("y".repeat(McpEvidence.EVIDENCE_MAX_CHARS + 1))
+    const lines = evidence.push("y".repeat(McpEvidence.EVIDENCE_MAX_CHARS * 2))
     expect(lines).toHaveLength(1)
     expect(lines[0].length).toBeLessThanOrEqual(McpEvidence.EVIDENCE_MAX_CHARS)
   })
@@ -59,5 +78,39 @@ describe("mcp.evidence", () => {
     expect(output).toContain("stdio stderr")
     expect(output).toContain("[redacted]")
     expect(output).not.toContain("supersecret123")
+  })
+
+  // 261105 Red 启动失败日志同样不能带凭据：--api-key 的下一个参数、--token=xxx、
+  // -H "Authorization: ..." 三种形态都要遮。
+  test("redacts credentials in command arguments", () => {
+    expect(
+      McpEvidence.redactCommand([
+        "npx",
+        "server",
+        "--api-key",
+        "supersecret123",
+        "--token=supersecret456",
+        "-H",
+        "Authorization: Bearer supersecret789",
+      ]),
+    ).toEqual([
+      "npx",
+      "server",
+      "--api-key",
+      "[redacted]",
+      "--token=[redacted]",
+      "-H",
+      "Authorization: [redacted]",
+    ])
+  })
+
+  test("keeps ordinary command arguments intact", () => {
+    expect(McpEvidence.redactCommand(["npx", "-y", "@scope/server", "--port", "8080"])).toEqual([
+      "npx",
+      "-y",
+      "@scope/server",
+      "--port",
+      "8080",
+    ])
   })
 })
