@@ -1,0 +1,21 @@
+[data-component="meter"] {
+  display: flex;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: var(--surface-weak);
+}
+
+[data-component="meter"][data-size="thin"] {
+  height: 4px;
+}
+
+[data-component="meter"][data-size="normal"] {
+  height: 8px;
+}
+
+[data-component="meter"] > [data-slot="meter-fill"],
+[data-component="meter"] > [data-slot="meter-segment"] {
+  height: 100%;
+  min-width: 0;
+}

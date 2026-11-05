@@ -7,6 +7,7 @@ import { findLast } from "@redcode-ai/core/util/array"
 import { same } from "@/utils/same"
 import { compareTime } from "@/utils/id"
 import { Icon } from "@redcode-ai/ui/icon"
+import { Meter } from "@redcode-ai/ui/meter"
 import { CapsuleRow } from "@redcode-ai/ui/capsule"
 import { Accordion } from "@redcode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
@@ -78,15 +79,8 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData; monthly?:
           const resetAt = quotaNum(window().resetAt)
           return (
             <div class="flex flex-col gap-1">
-              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden">
-                <div
-                  class="h-full"
-                  style={{
-                    width: `${percent}%`,
-                    "background-color": quotaColor(percent),
-                  }}
-                />
-              </div>
+              {/* 261106 Red 换 ui Meter；track 走默认 --surface-weak，与原 bg-surface-base 同源 */}
+              <Meter value={percent} color={quotaColor(percent)} />
               <Show when={resetAt > 0}>
                 <div class="text-11-regular text-text-weaker">
                   {language.t("context.quota.resetsAt", {
@@ -676,16 +670,13 @@ export function SessionContextTab(
                               <Show when={inspectTime()}>{(time) => <> · {time()}</>}</Show>
                             </div>
                           </div>
-                          <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-                            <For each={inspectGroups()}>
-                              {(item) => (
-                                <div
-                                  class="h-full"
-                                  style={{ width: `${item.percent}%`, "background-color": INSPECT_COLOR[item.key] }}
-                                />
-                              )}
-                            </For>
-                          </div>
+                          {/* 261106 Red 换 ui Meter 多段模式；构成信息由下方图例承载，条本身 aria-hidden */}
+                          <Meter
+                            segments={inspectGroups().map((item) => ({
+                              value: item.percent,
+                              color: INSPECT_COLOR[item.key],
+                            }))}
+                          />
                           <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
                             <For each={inspectGroups()}>
                               {(item) => (
@@ -730,19 +721,13 @@ export function SessionContextTab(
                       <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
                         <div class="flex flex-col gap-2">
                           <div class="text-11-regular text-text-weak">{language.t("context.breakdown.title")}</div>
-                          <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-                            <For each={breakdown()}>
-                              {(segment) => (
-                                <div
-                                  class="h-full"
-                                  style={{
-                                    width: `${segment.width}%`,
-                                    "background-color": BREAKDOWN_COLOR[segment.key],
-                                  }}
-                                />
-                              )}
-                            </For>
-                          </div>
+                          {/* 261106 Red 换 ui Meter 多段模式；同上由图例承载 */}
+                          <Meter
+                            segments={breakdown().map((segment) => ({
+                              value: segment.width,
+                              color: BREAKDOWN_COLOR[segment.key],
+                            }))}
+                          />
                           <div class="flex flex-wrap gap-x-3 gap-y-1">
                             <For each={breakdown()}>
                               {(segment) => (

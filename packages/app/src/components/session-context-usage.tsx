@@ -4,6 +4,7 @@
 // 原 SessionCompactButton 组件并入本文件。
 import { Show, createMemo } from "solid-js"
 import { Tooltip, type TooltipProps } from "@redcode-ai/ui/tooltip"
+import { Meter } from "@redcode-ai/ui/meter"
 import { ProgressCircle } from "@redcode-ai/ui/progress-circle"
 import { Button } from "@redcode-ai/ui/button"
 import { Dialog } from "@redcode-ai/ui/dialog"
@@ -215,20 +216,17 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
               {/* 260829 cc 占比色条。此前这个悬浮只有三行数字，占用率要靠读百分比才知道，
                   而"还剩多少"是它最该一眼给出的东西。底槽从 tooltip 自己的文字色 color-mix
                   出来，不引入新 token。宽度按 usage 钳在 100%：窗口口径可能短暂超过 limit
-                  （比如上一轮刚压缩、limit 换了模型），条不该溢出容器。 */}
+                  （比如上一轮刚压缩、limit 换了模型），条不该溢出容器（Meter 内部钳制）。
+                  261106 Red 换 ui Meter，读屏带 progressbar 语义。 */}
               <Show when={ctx().usage !== null}>
-                <div
-                  class="mt-1.5 mb-0.5 h-1 w-full overflow-hidden rounded-full"
-                  style={{ "background-color": "color-mix(in srgb, var(--text-invert-base) 22%, transparent)" }}
-                >
-                  <div
-                    class="h-full rounded-full"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, ctx().usage!))}%`,
-                      "background-color": TIER_BAR[strokeTier()],
-                    }}
-                  />
-                </div>
+                <Meter
+                  class="mt-1.5 mb-0.5"
+                  size="thin"
+                  value={ctx().usage!}
+                  color={TIER_BAR[strokeTier()]}
+                  track="color-mix(in srgb, var(--text-invert-base) 22%, transparent)"
+                  label={language.t("context.usage.window")}
+                />
               </Show>
             </Show>
             <Show when={ctx().firstChunkMs !== null}>
