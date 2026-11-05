@@ -250,8 +250,15 @@ function HomeDesign() {
   // 261106 Red 移除项目加二次确认：右键菜单一点直接 project.remove 不可恢复。
   function removeProject(project: LocalProject) {
     const doRemove = async () => {
+      // 261106 Red SDK 默认不因 HTTP 错误抛异常（无 throwOnError 时返回 error 对象），
+      // try/catch 拦不到 4xx/5xx；服务端确认成功前不得关闭本地项目。
       if (project.id && project.id !== "global") {
-        await globalSDK.client.project.remove({ projectID: project.id })
+        try {
+          await globalSDK.client.project.remove({ projectID: project.id }, { throwOnError: true })
+        } catch (err) {
+          notifyServerError(language.t, err)
+          return
+        }
       }
       layout.projects.close(project.worktree)
       if (state.project === project.worktree) setState("project", undefined)
@@ -284,12 +291,17 @@ function HomeDesign() {
 
   async function archiveSession(session: Session) {
     // 261106 Red 归档失败不再静默：此前无 catch，rejection 无人消费，界面零反馈。
+    // 261106 Red 加 throwOnError：SDK 对 HTTP 4xx/5xx 默认不抛异常，catch 拦不到，
+    // 服务端失败时会误删本地会话记录（刷新后又出现）。
     try {
-      await globalSDK.client.session.update({
-        sessionID: session.id,
-        directory: session.directory,
-        time: { archived: Date.now() },
-      })
+      await globalSDK.client.session.update(
+        {
+          sessionID: session.id,
+          directory: session.directory,
+          time: { archived: Date.now() },
+        },
+        { throwOnError: true },
+      )
     } catch (err) {
       notifyServerError(language.t, err)
       return
@@ -303,12 +315,17 @@ function HomeDesign() {
   //   取消后刷新归档列表，让它从"已归档"视图里消失。
   async function unarchiveSession(session: Session) {
     // 261106 Red 取消归档失败同样给出反馈（本地 store 未变，失败后列表与真实状态一致）。
+    // 261106 Red 加 throwOnError：HTTP 失败默认不抛异常，否则失败后仍继续刷新列表，
+    // 呈现与服务端不一致的状态。
     try {
-      await globalSDK.client.session.update({
-        sessionID: session.id,
-        directory: session.directory,
-        unarchive: true,
-      })
+      await globalSDK.client.session.update(
+        {
+          sessionID: session.id,
+          directory: session.directory,
+          unarchive: true,
+        },
+        { throwOnError: true },
+      )
     } catch (err) {
       notifyServerError(language.t, err)
       return

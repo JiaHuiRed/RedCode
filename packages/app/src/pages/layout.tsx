@@ -544,12 +544,17 @@ export default function Layout(props: ParentProps) {
 
     // 261106 Red 归档失败不再静默：此路径挂在全局快捷键（mod+shift+backspace）上，
     // 无 catch 即 unhandled rejection，界面零反馈。
+    // 261106 Red 加 throwOnError：SDK 对 HTTP 4xx/5xx 默认不抛异常，catch 拦不到，
+    // 服务端失败时会误删本地会话记录。
     try {
-      await globalSDK.client.session.update({
-        directory: session.directory,
-        sessionID: session.id,
-        time: { archived: Date.now() },
-      })
+      await globalSDK.client.session.update(
+        {
+          directory: session.directory,
+          sessionID: session.id,
+          time: { archived: Date.now() },
+        },
+        { throwOnError: true },
+      )
     } catch (err) {
       notifyServerError(language.t, err)
       return
