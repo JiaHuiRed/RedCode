@@ -8,6 +8,20 @@
 
 ---
 
+### [0.15.2] - 2026-11-05
+
+- **会话热路径补 partial index**（`session/session.sql.ts`、migration `20261105035555_pending_steer_tool_part_idx`）：`promotePendingSteer`（每步开头）与 `recentToolParts`（每次工具调用 ×2）走 `session_id + json_extract(type) + parent_id JOIN`，既有 `(session_id, id)` 覆盖不到，2612 消息实测 49.99ms / 43.49ms。新增 `message_pending_steer_idx`、`part_session_tool_idx` 两个 partial index，迁移末尾补 `ANALYZE message/part`（副本实测不 ANALYZE 时优化器不选 partial index）。验证：EXPLAIN 命中新索引，steer 50ms→0.04ms、工具记录 43.49ms→0.83ms；迁移单次约 13s（3GB 库）。
+- **TUI 撤销失败不再覆盖输入框草稿**（`tui/routes/session/index.tsx`）：undo/redo 此前不等待 revert 结果就用历史消息覆盖输入框，请求失败时原草稿丢失、界面与服务端不一致。现在等待成功后才更新输入框，失败 toast 并保留原草稿。
+- **GUI 停止生成失败不再静默清空待办**（`prompt-input/submit.ts`、三语 i18n）：abort 错误被 `.catch(() => {})` 吞掉，而本地待办已先清空。现在待办清理延后到 abort 成功，失败提示 `prompt.toast.abortFailed`。
+- **TUI 粘贴摘要保留原文首尾空白**（`prompt/index.tsx`）：超过 3 行/150 字符的粘贴此前 `trim()` 后存摘要，展开后首行缩进、末尾空行消失，与短文本分支行为不一致。现在 trim 只用于路径识别与阈值判断，摘要保存规范化原文。
+- **GUI 多附件部分失败会提示**（`prompt-input/attachments.ts`、三语 i18n）：一次加入多个附件时只要有一个成功，失败项就被静默丢掉。现在有失败即提示部分成功（`prompt.toast.attachmentPartial`），已成功加入的保留。
+- **缓存命中率收敛到唯一纯函数**（`packages/core/src/util/cache-rate.ts`、7 处调用点）：`read / (read + miss + write)` 此前在 TUI 提示区、侧边栏、子代理页脚、run 模式、首页与 GUI 上下文面板、使用页各自实现，另有单轮值与冻结判据副本（260707 曾因漏桶出现 99% vs 96%）。现在统一到 `cacheHitRate` / `cacheHitPercent` / `cacheStalled`，调用方保留各自数据范围、空值语义与小数精度。验证：cache-rate 12 pass、TUI 三文件 47 pass、GUI 指标 29 pass、三包 typecheck exit 0。
+- **GUI 工具 view 序列化长度按引用缓存**（`message-timeline.tsx`）：流式期间每批 SSE 重算签名，对每个已完成工具的 `metadata.view` 重新 `JSON.stringify` 整个对象（注释早已写明 view 只在结束时写入一次）。现在按 part.id 缓存引用与长度，引用不变直接复用；清理与签名表同口径。
+- **压缩块每步只读一次快照**（`context-compaction.ts`、`native-context-runtime.ts`、`prompt.ts`）：`revision` / `history` / `project` 同一步各调一次 `list()`，`select()` 整行并 JSON 解码每份摘要；`lastCommit` 又为取一个时间戳全解一遍。现在 `revision` 用 `listIDs` 只投影 id、`lastCommittedAt` 只取时间戳、history/project 共享同一步的块快照。模型可见四问：①无渲染变化；②固定前缀 token 零增减；③无 KV cache 影响；④无新增注入项，摘要仍受既有上限约束。验证：context-compaction/native-context 37 pass、typecheck exit 0。
+- **MCP 脱敏边界重做**（`mcp/evidence.ts`、`mcp/index.ts`）：512 硬切 + 逐段脱敏在键名/值跨切点时两段都识别不到（`API_TO|KEN=secret`）；raw 缓冲存原文，超长密钥值的字段名被挤出 4000 窗口后只剩裸值；启动失败日志直接写 `mcp.command`，`--api-key xxx` 会原样进日志。现在先在完整段上脱敏再切分、切点回退 64 字符，raw 只留存脱敏行；新增 `redactCommand` 遮蔽敏感 flag 参数。验证：evidence 17 pass（跨切分点、回退窗口、命令参数三形态）。
+- **PTY 终止结果透传**（`pty/index.ts`、`handlers/pty.ts`、GUI 后台面板）：`pty.remove` 此前返回 void、handler 无条件 `return true`，taskkill 未确认成功时 GUI 收不到失败信号。现在返回 boolean（不存在的 id 视为 true），非 Windows 分支 kill 抛错不再当成功（ESRCH 除外），GUI 收到 false 时提示「终端未确认终止」。验证：pty-session 1 pass 2 skip（live 用例 win32 跳过）、i18n parity 4 pass。
+- **写前已读守卫支持 mtime 抖动放行**（`file/time.ts`）：守卫此前只比 mtime，`git checkout` 回同一内容、编辑器无改动保存、touch 都会逼模型重读整个大文件。现在记录内容哈希（sha256 前 32 位，>8MB 不记，退化为纯 mtime 比对），mtime 变了但字节相同则放行并刷新记录；外部改动的报错补一句「只想改局部时用 oldString 精确替换，可跳过整文件重读」。记录格式升 v2，旧记录一律当没读过（fail-safe）。验证：file/time 10 pass（新增 mtime 抖动放行、内容真变仍拦、重启后哈希放行三例）。
+
 ### [0.15.1] - 2026-11-05
 
 - **PTY 退出监听先于落盘**（`pty/index.ts`）：`create` 此前先 `persist()`（异步磁盘 I/O）再挂 `onData`/`onExit`，短生命周期进程可能在落盘期间退出、事件不重放，登记永远停在 running。现在 spawn 后同步登记 → 挂监听 → 最后落盘（审计 RC-015-03）。
