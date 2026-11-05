@@ -11,6 +11,7 @@ function mountAttachmentActions(input: {
   scope: () => Scope | undefined
   writeAttachment: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   readClipboardImage?: () => Promise<File | null>
+  onTranslate?: (key: string) => void
 }) {
   const editor = document.createElement("div")
   editor.contentEditable = "true"
@@ -22,7 +23,12 @@ function mountAttachmentActions(input: {
     cursor: () => 0,
     set: (value: Prompt, _cursor?: number, scope?: Scope) => stores.set(scopeKey(scope), value),
   }
-  const language = { t: (key: string | number) => String(key) }
+  const language = {
+    t: (key: string | number) => {
+      input.onTranslate?.(String(key))
+      return String(key)
+    },
+  }
 
   const mounted = createRoot((dispose) => ({
     actions: createPromptAttachmentsWithContext(
@@ -197,6 +203,26 @@ describe("attachment prompt scope", () => {
         "clipboard.zip",
       ])
       expect(mounted.stores.has(scopeKey(scopeB))).toBe(false)
+    } finally {
+      mounted.dispose()
+      mounted.editor.remove()
+    }
+  })
+
+  // 261105 Red 部分失败必须提示：此前 found 为真就吞掉失败项，用户以为文件全加上了。
+  test("warns when only part of a batch is added", async () => {
+    const translated: string[] = []
+    const mounted = mountAttachmentActions({
+      scope: () => undefined,
+      onTranslate: (key) => translated.push(key),
+      writeAttachment: async (directory, filename) => `${directory}/${filename}`,
+    })
+
+    try {
+      const ok = archive("good.zip")
+      const bad = new File([Uint8Array.of(0, 255, 1, 2)], "blob.bin", { type: "application/octet-stream" })
+      expect(await mounted.actions.addAttachments([ok, bad])).toBe(true)
+      expect(translated).toContain("prompt.toast.attachmentPartial.title")
     } finally {
       mounted.dispose()
       mounted.editor.remove()

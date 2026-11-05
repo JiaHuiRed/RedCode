@@ -344,6 +344,8 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "发送提示失败",
   "prompt.toast.promptSendFailed.description": "无法获取会话",
   "prompt.toast.abortFailed.title": "停止生成失败",
+  "prompt.toast.attachmentPartial.title": "部分附件未添加",
+  "prompt.toast.attachmentPartial.description": "{{total}} 个文件中有 {{failed}} 个未能添加，其余已加入。",
   "prompt.toast.draftStorageFull.title": "草稿存储已满",
   "prompt.toast.draftStorageFull.description": "本地存储空间不足，草稿无法保存。请清理空间，或直接发送以保留内容。",
   "prompt.toast.attachmentTooLarge.title": "附件超出上限",

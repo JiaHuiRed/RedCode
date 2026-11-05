@@ -197,18 +197,33 @@ export function createPromptAttachmentsWithContext(
     if (reason === "needs-desktop") return warnArchiveNeedsDesktop()
     return warn()
   }
+  // 261105 Red 部分失败也要提示：此前 found 为真就吞掉失败项，多选或拖入多个文件时
+  // 用户以为全部加入，实际发送内容缺件。
+  const warnPartial = (failed: number, total: number) => {
+    showToast({
+      title: language.t("prompt.toast.attachmentPartial.title"),
+      description: language.t("prompt.toast.attachmentPartial.description", { failed, total }),
+    })
+  }
 
   const addAttachmentsInScope = async (files: File[], target: AttachmentTarget, toast = true) => {
     let found = false
+    let failed = 0
     let reason: AttachFailure | undefined
 
     for (const file of files) {
       const result = await add(file, target, false)
       if (result.ok) found = true
-      else reason = pickReason(reason, result.reason)
+      else {
+        failed++
+        reason = pickReason(reason, result.reason)
+      }
     }
 
-    if (!found && files.length > 0 && toast && reason) warnFailure(reason)
+    if (files.length > 0 && toast && reason) {
+      if (found) warnPartial(failed, files.length)
+      else warnFailure(reason)
+    }
     return found
   }
 

@@ -327,6 +327,9 @@ export const dict = {
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "prompt.toast.promptSendFailed.description": "Unable to retrieve session",
   "prompt.toast.abortFailed.title": "Failed to stop generation",
+  "prompt.toast.attachmentPartial.title": "Some attachments were not added",
+  "prompt.toast.attachmentPartial.description":
+    "{{failed}} of {{total}} files failed and were skipped; the rest were added.",
   "prompt.toast.draftStorageFull.title": "Draft storage full",
   "prompt.toast.draftStorageFull.description":
     "Local storage is full, so this draft cannot be saved. Free up space or send it to keep your work.",
