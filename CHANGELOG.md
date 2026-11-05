@@ -10,6 +10,11 @@
 
 ### [Unreleased]
 
+- **PTY 退出监听先于落盘**（`pty/index.ts`）：`create` 此前先 `persist()`（异步磁盘 I/O）再挂 `onData`/`onExit`，短生命周期进程可能在落盘期间退出、事件不重放，登记永远停在 running。现在 spawn 后同步登记 → 挂监听 → 最后落盘（审计 RC-015-03）。
+- **后台快照坏记录不再阻断恢复**（`background/store.ts`）：`read()` 只校验 records 是数组，`records:[null]` 这类合法 JSON 会让 hydrate / PTY 恢复读字段直接抛。现在逐条校验 id/type/status/started_at/completed_at/metadata，坏项丢弃并告警计数，好项照常恢复（审计 RC-015-04）。
+- **PTY 终止先确认再删登记**（`pty/index.ts`）：Windows 的 `taskkill` 此前不等待退出码、记录先删——杀失败时面板已看不到该终端、实际进程还活着。现在 `stop()` 等待 taskkill（5s 超时），非 0 退出码用存活探测复核；未确认终止时保留记录并告警，实例 finalizer 也保留未确认终止的终端（审计 RC-015-05）。
+- **shell 保留环境变量不可被插件覆盖**（`tool/shell.ts`）：`shell.env` 插件返回同名键时会覆盖 `REDCODE_SESSION_ID` / `REDCODE_PROJECT_ROOT` 与 worktree 隔离变量；改为插件 env 先合并、保留变量最后赋值（审计 RC-015-06）。验证：store 7 pass、pty-orphans 2 pass（live 用例在 win32 跳过）、shell 121 pass（新增冲突键用例）、opencode typecheck exit 0。决策见 [后台与 PTY 硬化](docs/notes/implemented/bug-fix/2026-11-05-background-pty-hardening.md)。
+
 - **MCP stderr 证据脱敏补全**（`mcp/evidence.ts`、`mcp/index.ts`）：上一版只遮 `KEY=VALUE`，`Authorization: Bearer`、`{"apiKey":"..."}`、`x-api-key:` 等常见形态仍会漏；原始 stderr 也还写进普通日志。现在 `redact()` 统一覆盖四类形态（Authorization 头整行、JSON 引号键值、正文 Bearer、`KEY=VALUE` / `KEY: VALUE`），证据与日志共用；日志改为行缓冲，只接收补齐且已脱敏的完整行，跨 chunk 拆开的赋值在同一行内整段遮蔽，原文只留在内存有界缓冲里，失败时才经脱敏进 `status.error`。验证：evidence 单元 13 pass（七种泄露样例、跨 chunk、截断后仍无明文、非敏感行不动）、httpapi-mcp 6 pass（真实 spawn 三形态不泄露）、opencode typecheck exit 0。决策见 [MCP stderr 脱敏补全](docs/notes/implemented/bug-fix/2026-11-05-mcp-stderr-redaction.md)。
 
 - **后台面板取消任务补齐 SessionStatus 归位**（`background/cancel.ts`、`handlers/background.ts`、`tool/task_status.ts`）：`POST /background/{jobID}/cancel` 此前直接调 `BackgroundJob.cancelTree`，只结束 job；`task_status(cancel=true)` 则会遍历被取消的 id，把 SessionStatus 里残留的 busy/retry 置回 idle。fiber 中断跑不到 processor 收尾的 `status.set(idle)`，于是面板显示已取消、TUI/GUI 的等待指示器仍永久旋转（261023 实证）。现在两者共用新服务 `BackgroundCancel.cancelTree`（取消 job 树 + 逐个会话归位，已 idle 不重复写），`BackgroundJob` 保持纯 job 存储，不引入 session 语义。验证：background/cancel 2 条新用例（树取消归位、重复取消幂等）+ task_status 14 pass + task/registry/prompt/snapshot-tool-race 定向 0 fail、opencode typecheck exit 0、httpapi exercise background 2 pass。决策见 [后台取消统一收尾](docs/notes/implemented/bug-fix/2026-11-05-background-cancel-status-reset.md)。

@@ -688,13 +688,15 @@ export const ShellTool = Tool.define(
       // 261105 Red 会话上下文随每次 Bash 调用注入：命令模板的 shell 块已改为转交 Bash 工具
       // 执行（解析期不再代跑），脚本靠这组变量区分会话/定位项目。PROJECT_ROOT 是会话创建
       // 目录，不随 cd 漂移。见 docs/notes/implemented/feature/2026-11-05-zcode-v3.17.2-absorption.md
+      // 261105 Red 审计 RC-015-06：保留变量最后赋值——shell.env 插件返回同名键时不能
+      // 覆盖会话上下文与 worktree 隔离边界，否则脚本会定位到错误会话/仓库。
       const instance = yield* InstanceState.context
       return {
         ...process.env,
+        ...extra.env,
         ...isolation,
         REDCODE_SESSION_ID: ctx.sessionID,
         REDCODE_PROJECT_ROOT: projectRoot(instance),
-        ...extra.env,
       }
     })
 

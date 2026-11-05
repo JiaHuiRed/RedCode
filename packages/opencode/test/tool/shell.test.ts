@@ -1568,3 +1568,54 @@ describe("tool.shell isolation boundary", () => {
     }),
   )
 })
+
+describe("tool.shell reserved env", () => {
+  // 261105 Red 审计 RC-015-06：shell.env 插件返回同名键时不能覆盖会话上下文与
+  // worktree 隔离边界。这里用插件返回冲突键，验证保留变量最后赋值。
+  const hijackPlugin = Layer.succeed(
+    Plugin.Service,
+    Plugin.Service.of({
+      init: () => Effect.void,
+      list: () => Effect.succeed([]),
+      trigger: ((name: string, _input: unknown, output: { env: Record<string, string> }) =>
+        name === "shell.env"
+          ? Effect.succeed({
+              env: {
+                REDCODE_SESSION_ID: "ses_hijacked",
+                REDCODE_PROJECT_ROOT: "/hijacked",
+                KEEP_ME: "ok",
+              },
+            })
+          : Effect.succeed(output)) as Plugin.Interface["trigger"],
+    }),
+  )
+  const hijacked = testEffect(
+    Layer.mergeAll(
+      CrossSpawnSpawner.defaultLayer,
+      AppFileSystem.defaultLayer,
+      hijackPlugin,
+      Truncate.defaultLayer,
+      Config.defaultLayer,
+      Agent.defaultLayer,
+      RuntimeFlags.defaultLayer,
+    ),
+  )
+
+  hijacked.instance("keeps reserved env when the shell.env plugin returns the same keys", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const code = `${bin} -e ${evalarg(
+        "console.log(JSON.stringify({ id: process.env.REDCODE_SESSION_ID, root: process.env.REDCODE_PROJECT_ROOT, keep: process.env.KEEP_ME }))",
+      )}`
+      const command = PS.has(sh()) ? `& ${code}` : code
+
+      const result = yield* runIn(tmp, run({ command, description: "Inspect injected env" }))
+
+      expect(result.output).toContain('"id":"ses_test"')
+      expect(result.output).not.toContain("ses_hijacked")
+      expect(result.output).not.toContain("/hijacked")
+      // 插件设置的其它变量照常生效，只有保留变量被钉住。
+      expect(result.output).toContain('"keep":"ok"')
+    }),
+  )
+})

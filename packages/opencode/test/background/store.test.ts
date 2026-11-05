@@ -96,6 +96,43 @@ describe("background.store", () => {
     }
   })
 
+  test("drops invalid records instead of blocking recovery", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "redcode-bg-invalid-"))
+    try {
+      await Effect.runPromise(BackgroundStore.write(dir, "/workspace/invalid", []))
+      const [name] = await readdir(dir)
+      // 合法 JSON 里的非法记录：null、字符串、缺字段、时间类型错、metadata 是数组。
+      // 261105 Red 审计 RC-015-04：单个坏记录不能阻断整个工作区的恢复。
+      await Bun.write(
+        path.join(dir, name!),
+        JSON.stringify({
+          version: 1,
+          saved_at: 1,
+          records: [
+            null,
+            "not-an-object",
+            { id: "job_ok", type: "task", status: "completed", started_at: 1 },
+            { id: "job_no_status", type: "task", started_at: 1 },
+            { id: "job_bad_time", type: "task", status: "running", started_at: "yesterday" },
+            { id: "job_bad_meta", type: "task", status: "running", started_at: 1, metadata: [] },
+          ],
+        }),
+      )
+
+      const snapshot = await Effect.runPromise(BackgroundStore.read(dir, "/workspace/invalid"))
+      expect(snapshot?.records.map((record) => record.id)).toEqual(["job_ok"])
+      expect(BackgroundStore.hydrate(snapshot).map((record) => record.id)).toEqual(["job_ok"])
+
+      // 全是坏记录时返回空列表，而不是 undefined 或抛错。
+      await Bun.write(path.join(dir, name!), JSON.stringify({ version: 1, saved_at: 1, records: [null] }))
+      const empty = await Effect.runPromise(BackgroundStore.read(dir, "/workspace/invalid"))
+      expect(empty?.records).toEqual([])
+      expect(BackgroundStore.hydrate(empty)).toEqual([])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   test("isolates namespaced snapshots from the default file", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "redcode-bg-ns-"))
     try {

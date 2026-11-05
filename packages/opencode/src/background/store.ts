@@ -33,7 +33,31 @@ const VERSION = 1
 // 与内存侧 prune 同口径：完成态至多 50 条。运行中的任务不进这个上限——它们要靠落盘
 // 在重启后提示「上次未正常结束」，按时间全量截断会把跑得最久、启动最早的任务挤掉。
 const KEEP = 50
+const STATUSES = new Set<string>(["running", "completed", "error", "cancelled"])
 const queues = new Map<string, Promise<void>>()
+
+// 261105 Red 审计 RC-015-04：只校验 records 是数组不够——`[null]` 这种合法 JSON 会让
+// hydrate / PTY 恢复读字段时直接抛，单个坏记录阻断整个工作区的恢复。边界处逐条校验，
+// 坏项丢弃并留一条告警，好项照常恢复。
+function isEntry(value: unknown): value is Entry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    typeof record.type === "string" &&
+    typeof record.status === "string" &&
+    STATUSES.has(record.status) &&
+    typeof record.started_at === "number" &&
+    Number.isFinite(record.started_at) &&
+    (record.title === undefined || typeof record.title === "string") &&
+    (record.completed_at === undefined ||
+      (typeof record.completed_at === "number" && Number.isFinite(record.completed_at))) &&
+    (record.error === undefined || typeof record.error === "string") &&
+    (record.metadata === undefined ||
+      (typeof record.metadata === "object" && record.metadata !== null && !Array.isArray(record.metadata)))
+  )
+}
 
 function serialized(target: string, task: () => Promise<void>) {
   const previous = queues.get(target) ?? Promise.resolve()
@@ -63,9 +87,14 @@ export const read = (target: string, workspace: string, namespace?: string) =>
     })
     if (!text) return undefined
     try {
-      const parsed = JSON.parse(text) as { version?: number; saved_at?: number; records?: Entry[] } | undefined
-      if (!parsed || parsed.version !== VERSION || !Array.isArray(parsed.records)) return undefined
-      return { version: VERSION, saved_at: Number(parsed.saved_at) || 0, records: parsed.records as Entry[] }
+      const parsed = JSON.parse(text) as { version?: unknown; saved_at?: unknown; records?: unknown } | undefined
+      if (!parsed || typeof parsed !== "object" || parsed.version !== VERSION || !Array.isArray(parsed.records))
+        return undefined
+      const records = parsed.records.filter(isEntry)
+      const skipped = parsed.records.length - records.length
+      if (skipped > 0)
+        console.warn(`background job state skipped ${skipped} invalid record(s): ${destination}`)
+      return { version: VERSION, saved_at: Number(parsed.saved_at) || 0, records }
     } catch (error) {
       // 手改、旧版本遗留或磁盘损坏都可能产生非法 JSON。一份坏文件不该阻断该工作区的
       // 后台服务初始化；下一次写盘会用原子替换覆盖它。

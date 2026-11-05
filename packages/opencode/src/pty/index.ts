@@ -11,7 +11,7 @@ import { Shell } from "@/shell/shell"
 import type { Proc } from "#pty"
 import * as Log from "@redcode-ai/core/util/log"
 import { PtyID } from "./schema"
-import { Effect, Layer, Context, Schema, Types } from "effect"
+import { Effect, Layer, Context, Option, Schema, Types } from "effect"
 import { NonNegativeInt, PositiveInt } from "@redcode-ai/core/schema"
 
 const log = Log.create({ service: "pty" })
@@ -48,8 +48,8 @@ function toEntry(info: Info, started_at: number): BackgroundStore.Entry {
 }
 
 function orphanFromEntry(record: BackgroundStore.Entry): Orphan | undefined {
-  // store.read 只做 JSON 解析不做 schema 校验，这里是对快照文件的唯一边界校验：
-  // 字段不齐的记录跳过，不往服务内部传未知值。
+  // store.read 已在边界处校验过 Entry 的基础字段；metadata 是各 namespace 自己的载荷，
+  // 这里继续按 PTY 的形状逐项校验，不往服务内部传未知值。
   const meta = record.metadata
   if (!meta || typeof meta !== "object") return undefined
   const { pid, command, args, cwd } = meta as Record<string, unknown>
@@ -67,6 +67,37 @@ function orphanFromEntry(record: BackgroundStore.Entry): Orphan | undefined {
     pid,
   }
   return { info, started_at: record.started_at }
+}
+
+// 261105 Red 审计 RC-015-05：taskkill 的可等待版本。退出码 0 = 成功；非 0 交给存活
+// 探测复核（进程可能已自行退出）；超时/null 也走复核，不把「没等到」当成「已结束」。
+const TEARDOWN_TIMEOUT = 5_000
+
+function taskkill(pid: number) {
+  return Effect.promise(
+    () =>
+      new Promise<number | null>((resolve) => {
+        const child = cpSpawn("taskkill", ["/pid", String(pid), "/f", "/t"], {
+          stdio: "ignore",
+          windowsHide: true,
+        })
+        child.once("error", () => resolve(null))
+        child.once("exit", (code) => resolve(code))
+      }),
+  ).pipe(
+    Effect.timeoutOption(TEARDOWN_TIMEOUT),
+    Effect.map((result) => (Option.isSome(result) ? result.value : null)),
+  )
+}
+
+function alive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM = 进程存在但无权探测；只有 ESRCH（找不到）才算结束。
+    return (error as NodeJS.ErrnoException)?.code === "EPERM"
+  }
 }
 
 type Active = {
@@ -172,20 +203,24 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const plugin = yield* Plugin.Service
 
-    // 260625 Red fix: Windows 上用 taskkill /T 杀整棵进程树，防止 shell 子进程泄漏
-    function teardown(session: Active) {
-      try {
-        const pid = session.process.pid
-        if (process.platform === "win32" && pid) {
-          cpSpawn("taskkill", ["/pid", String(pid), "/f", "/t"], {
-            stdio: "ignore",
-            windowsHide: true,
-          })
+    // 260625 Red fix: Windows 上用 taskkill /T 杀整棵进程树，防止 shell 子进程泄漏。
+    // 261105 Red 审计 RC-015-05：终止必须等到结果——返回 false 表示进程可能仍存活，
+    // 调用方不能删登记，否则面板上看不到它、实际进程还在跑。
+    const stop = Effect.fn("Pty.stop")(function* (session: Active) {
+      let stopped = true
+      if (session.info.status !== "exited") {
+        if (process.platform === "win32" && session.process.pid) {
+          const pid = session.process.pid
+          const code = yield* taskkill(pid)
+          stopped = code === 0 || !alive(pid)
+          if (!stopped) log.warn("taskkill did not confirm termination", { pid, exitCode: code })
         } else {
-          session.process.kill()
+          try {
+            session.process.kill()
+          } catch {
+            // 261015 Red 进程可能已退出或无权杀 → kill 抛错无意义，继续清理订阅者
+          }
         }
-      } catch {
-        // 261015 Red 进程可能已退出或无权杀 → kill 抛错无意义，继续清理订阅者
       }
       for (const [sub, ws] of session.subscribers.entries()) {
         try {
@@ -195,7 +230,8 @@ export const layer = Layer.effect(
         }
       }
       session.subscribers.clear()
-    }
+      return stopped
+    })
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Pty.state")(function* (ctx) {
@@ -225,11 +261,14 @@ export const layer = Layer.effect(
           Effect.gen(function* () {
             // 261105 Red teardown 杀掉全部终端后把快照一并清空：孤儿记录只在进程来不及
             // 清理（崩溃、硬杀）时出现，干净退出/状态被 LRU 回收（cap 10）不留旧记录。
+            // 261105 Red 审计 RC-015-05：终止未确认的终端保留登记，下次启动以孤儿身份
+            // 继续可见；不能因为实例被回收就把还活着的进程从记录里抹掉。
+            const remaining: BackgroundStore.Entry[] = []
             for (const session of state.sessions.values()) {
-              teardown(session)
+              if (!(yield* stop(session))) remaining.push(toEntry(session.info, session.started_at))
             }
             state.sessions.clear()
-            yield* BackgroundStore.write(store, ctx.directory, [], PTY_NAMESPACE)
+            yield* BackgroundStore.write(store, ctx.directory, remaining, PTY_NAMESPACE)
           }),
         )
 
@@ -254,11 +293,16 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       const session = s.sessions.get(id)
       if (!session) return
+      // 261105 Red 审计 RC-015-05：先确认终止再删登记。此前先删记录再发起 taskkill，
+      // 杀失败时面板已经看不到这个终端，实际进程还在跑。
+      if (!(yield* stop(session))) {
+        log.warn("terminal termination not confirmed; keeping record", { id, pid: session.info.pid })
+        return
+      }
       s.sessions.delete(id)
       // 261105 Red 终端退场即删记录：正常退出不留痕，孤儿只来自没机会走 remove 的崩溃。
       yield* persist()
       log.info("removing session", { id })
-      teardown(session)
       yield* bus.publish(Event.Deleted, { id: session.info.id })
     })
 
@@ -332,7 +376,8 @@ export const layer = Layer.effect(
         subscribers: new Map(),
       }
       s.sessions.set(id, session)
-      yield* persist()
+      // 261105 Red 审计 RC-015-03：监听必须在异步落盘之前挂好——短生命周期进程可能在
+      // persist 的磁盘 I/O 期间退出，退出事件不重放，登记就会永远停在 running。
       proc.onData((chunk) => {
         session.cursor += chunk.length
 
@@ -365,6 +410,7 @@ export const layer = Layer.effect(
         bridge.fork(bus.publish(Event.Exited, { id, exitCode }))
         bridge.fork(remove(id))
       })
+      yield* persist()
       yield* bus.publish(Event.Created, { info })
       return info
     })
