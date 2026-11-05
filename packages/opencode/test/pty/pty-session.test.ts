@@ -66,6 +66,15 @@ const waitForEvents = (events: Queue.Queue<PtyEvent>, id: PtyID, count: number) 
 }
 
 describe("pty", () => {
+  // 261105 Red 删除结果契约：不存在的 id 视为已删除（幂等），API 层据此直接返回 true。
+  // 终止失败路径需要真实进程 + taskkill 拒绝，live 用例在 win32 跳过，这里只锁幂等语义。
+  it.instance("remove returns true for unknown ids", () =>
+    Effect.gen(function* () {
+      const pty = yield* Pty.Service
+      expect(yield* pty.remove("pty_unknown" as PtyID)).toBe(true)
+    }),
+  )
+
   ptyTest(
     "publishes created, exited, deleted in order for a short-lived process",
     () =>

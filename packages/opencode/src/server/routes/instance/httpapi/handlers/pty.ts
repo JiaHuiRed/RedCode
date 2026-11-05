@@ -64,8 +64,9 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     })
 
     const remove = Effect.fn("PtyHttpApi.remove")(function* (ctx: { params: { ptyID: PtyID } }) {
-      yield* pty.remove(ctx.params.ptyID)
-      return true
+      // 261105 Red 把 PII 终止结果如实传出去：此前无条件 return true，taskkill 未确认
+      // 成功时 GUI 收不到失败信号，只能靠刷新列表自己发现终端还在。
+      return yield* pty.remove(ctx.params.ptyID)
     })
 
     const connectToken = Effect.fn("PtyHttpApi.connectToken")(function* (ctx: { params: { ptyID: PtyID } }) {

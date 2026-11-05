@@ -324,6 +324,9 @@ export const dict = {
   "dialog.background.stop.description":
     "「{{title}}」を直ちに停止します。ジョブは入れ子のサブタスクごと中断され、ターミナルはプロセスツリー全体を閉じます。",
   "dialog.background.stop.confirm": "停止",
+  "dialog.background.stop.notConfirmed": "端末の終了を確認できませんでした",
+  "dialog.background.stop.notConfirmed.description":
+    "プロセスがまだ実行中かもしれません。記録は保持されています。更新して再試行してください。",
   "prompt.background.button": "バックグラウンド",
   "prompt.background.running": "バックグラウンド {{count}}",
   "dialog.lsp.empty": "ファイルタイプから自動検出されたLSP",

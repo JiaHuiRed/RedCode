@@ -119,17 +119,32 @@ export function DialogBackground() {
         row={row}
         onDone={async () => {
           try {
-            const result =
-              row.kind === "job"
-                ? await sdk.client.background.cancel({ jobID: row.id })
-                : await sdk.client.pty.remove({ ptyID: row.id })
-            // SDK 把服务端错误放在 result.error 里，不抛异常；只 catch 会静默失败。
-            if (result.error)
-              showToast({
-                variant: "error",
-                title: language.t("common.requestFailed"),
-                description: errorMessage(result.error, language.t("error.chain.unknown")),
-              })
+            if (row.kind === "job") {
+              const result = await sdk.client.background.cancel({ jobID: row.id })
+              // SDK 把服务端错误放在 result.error 里，不抛异常；只 catch 会静默失败。
+              if (result.error)
+                showToast({
+                  variant: "error",
+                  title: language.t("common.requestFailed"),
+                  description: errorMessage(result.error, language.t("error.chain.unknown")),
+                })
+            } else {
+              const result = await sdk.client.pty.remove({ ptyID: row.id })
+              if (result.error)
+                showToast({
+                  variant: "error",
+                  title: language.t("common.requestFailed"),
+                  description: errorMessage(result.error, language.t("error.chain.unknown")),
+                })
+              // 261105 Red 终止未确认时服务端返回 false 并保留登记：必须告诉用户，
+              // 否则刷新后还能看到这条，用户分不清是没杀掉还是刷新失败。
+              else if (result.data === false)
+                showToast({
+                  variant: "error",
+                  title: language.t("dialog.background.stop.notConfirmed"),
+                  description: language.t("dialog.background.stop.notConfirmed.description"),
+                })
+            }
           } catch (error) {
             showToast({
               variant: "error",

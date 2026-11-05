@@ -359,6 +359,9 @@ export const dict = {
   "dialog.background.stop.description":
     "Stops \"{{title}}\" immediately. Jobs stop together with their nested sub-tasks; terminals close the whole process tree.",
   "dialog.background.stop.confirm": "Stop",
+  "dialog.background.stop.notConfirmed": "Terminal not terminated",
+  "dialog.background.stop.notConfirmed.description":
+    "The process may still be running and its record was kept. Refresh and try again.",
   "prompt.background.button": "Background",
   "prompt.background.running": "Background {{count}}",
   "dialog.usageExceeded.dontShowAgain": "Don't show again",

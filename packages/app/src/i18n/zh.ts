@@ -373,6 +373,8 @@ export const dict = {
   "dialog.background.stop.description":
     "「{{title}}」会立即停止。任务连同嵌套子任务一起中断，终端会关闭整棵进程树。",
   "dialog.background.stop.confirm": "终止",
+  "dialog.background.stop.notConfirmed": "终端未确认终止",
+  "dialog.background.stop.notConfirmed.description": "进程可能仍在运行，登记已保留。请刷新后重试。",
   "prompt.background.button": "后台",
   "prompt.background.running": "后台 {{count}}",
   "dialog.usageExceeded.dontShowAgain": "不再提示",

@@ -184,7 +184,8 @@ export interface Interface {
   readonly get: (id: PtyID) => Effect.Effect<Info | undefined>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info | undefined>
-  readonly remove: (id: PtyID) => Effect.Effect<void>
+  // 261105 Red 返回终止结果：false = 进程可能仍存活、登记保留，API 层如实透传。
+  readonly remove: (id: PtyID) => Effect.Effect<boolean>
   readonly resize: (id: PtyID, cols: number, rows: number) => Effect.Effect<void>
   readonly write: (id: PtyID, data: string) => Effect.Effect<void>
   readonly connect: (
@@ -217,8 +218,14 @@ export const layer = Layer.effect(
         } else {
           try {
             session.process.kill()
-          } catch {
-            // 261015 Red 进程可能已退出或无权杀 → kill 抛错无意义，继续清理订阅者
+          } catch (error) {
+            // 261105 Red kill 抛错不再当作成功：ESRCH 表示进程已经不在（目标达成），
+            // 其余（EPERM 等）保留 stopped=false，让调用方保留登记而不是谎报已终止。
+            const code = (error as NodeJS.ErrnoException)?.code
+            if (code !== "ESRCH") {
+              stopped = false
+              log.warn("process kill failed; termination not confirmed", { pid: session.process.pid, code })
+            }
           }
         }
       }
@@ -292,18 +299,20 @@ export const layer = Layer.effect(
     const remove = Effect.fn("Pty.remove")(function* (id: PtyID) {
       const s = yield* InstanceState.get(state)
       const session = s.sessions.get(id)
-      if (!session) return
+      // 261105 Red 不存在视为已删除（幂等），与旧 void 行为对调用方等价。
+      if (!session) return true
       // 261105 Red 审计 RC-015-05：先确认终止再删登记。此前先删记录再发起 taskkill，
       // 杀失败时面板已经看不到这个终端，实际进程还在跑。
       if (!(yield* stop(session))) {
         log.warn("terminal termination not confirmed; keeping record", { id, pid: session.info.pid })
-        return
+        return false
       }
       s.sessions.delete(id)
       // 261105 Red 终端退场即删记录：正常退出不留痕，孤儿只来自没机会走 remove 的崩溃。
       yield* persist()
       log.info("removing session", { id })
       yield* bus.publish(Event.Deleted, { id: session.info.id })
+      return true
     })
 
     const list = Effect.fn("Pty.list")(function* () {
