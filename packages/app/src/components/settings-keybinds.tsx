@@ -7,7 +7,7 @@ import { IconButton } from "@redcode-ai/ui/icon-button"
 import { TextField } from "@redcode-ai/ui/text-field"
 import { showToast } from "@redcode-ai/ui/toast"
 import fuzzysort from "fuzzysort"
-import { formatKeybind, parseKeybind, useCommand } from "@/context/command"
+import { formatKeybind, normalizeKey, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./settings-list"
@@ -67,12 +67,7 @@ function isModifier(key: string) {
   return key === "Shift" || key === "Control" || key === "Alt" || key === "Meta"
 }
 
-function normalizeKey(key: string) {
-  if (key === ",") return "comma"
-  if (key === "+") return "plus"
-  if (key === " ") return "space"
-  return key.toLowerCase()
-}
+// 261106 Red 本地拷贝删除，改用 command.tsx 导出的同一实现（键位规整必须单一来源）。
 
 function recordKeybind(event: KeyboardEvent) {
   if (isModifier(event.key)) return

@@ -41,7 +41,9 @@ function actionId(id: string) {
   return id.slice(SUGGESTED_PREFIX.length)
 }
 
-function normalizeKey(key: string) {
+// 261106 Red 改为导出：settings-keybinds 的录制路径要用同一套 key 规整，
+// 此前两份逐字拷贝，漂移即键位对不上（parseKeybind/formatKeybind 同理集中于此）。
+export function normalizeKey(key: string) {
   if (key === ",") return "comma"
   if (key === "+") return "plus"
   if (key === " ") return "space"

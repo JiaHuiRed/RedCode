@@ -1,9 +1,8 @@
 import { For, Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@redcode-ai/ui/button"
-import { DockTray } from "@redcode-ai/ui/dock-surface"
-import { IconButton } from "@redcode-ai/ui/icon-button"
 import { useLanguage } from "@/context/language"
+import { CollapsibleDock } from "./collapsible-dock"
 
 export function SessionFollowupDock(props: {
   items: { id: string; text: string; source: "legacy" | "server" }[]
@@ -34,141 +33,104 @@ export function SessionFollowupDock(props: {
   const preview = createMemo(() => props.items[0]?.text ?? "")
 
   return (
-    <DockTray
-      data-component="session-followup-dock"
-      style={{
+    <CollapsibleDock
+      dataComponent="session-followup-dock"
+      label={label()}
+      preview={preview()}
+      collapsed={store.collapsed}
+      onToggle={toggle}
+      ariaKeyPrefix="session.followupDock"
+      labelClass="text-13-medium"
+      previewClass="text-13-regular"
+      trayStyle={{
         "margin-bottom": "-0.875rem",
         "border-bottom-left-radius": 0,
         "border-bottom-right-radius": 0,
       }}
     >
-      <div
-        class="pl-3 pr-2 py-2 flex items-center gap-2"
-        role="button"
-        tabIndex={0}
-        onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return
-          event.preventDefault()
-          toggle()
-        }}
-      >
-        <span class="shrink-0 text-13-medium text-text-strong cursor-default">{label()}</span>
-        <Show when={store.collapsed && preview()}>
-          <span class="min-w-0 flex-1 truncate text-13-regular text-text-base cursor-default">{preview()}</span>
-        </Show>
-        <div class="ml-auto shrink-0">
-          <IconButton
-            data-collapsed={store.collapsed ? "true" : "false"}
-            icon="chevron-down"
-            size="normal"
-            variant="ghost"
-            style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
-            onMouseDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              toggle()
-            }}
-            aria-label={
-              store.collapsed ? language.t("session.followupDock.expand") : language.t("session.followupDock.collapse")
-            }
-          />
-        </div>
-      </div>
-
-      <Show when={store.collapsed}>
-        <div class="h-5" aria-hidden="true" />
-      </Show>
-
-      <Show when={!store.collapsed}>
-        <div class="px-3 pb-7 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar">
-          <For each={props.items}>
-            {(item) => (
-              <div class="flex min-w-0 items-center gap-2 py-1">
-                <Show
-                  when={store.editing === item.id}
-                  fallback={<span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>}
-                >
-                  <textarea
-                    rows={2}
-                    value={store.editText}
-                    class="min-w-0 flex-1 resize-y rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-13-regular text-text-strong outline-none focus:border-border-weak-hover"
-                    onInput={(event) => setStore("editText", event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      event.stopPropagation()
-                      if (!event.ctrlKey && !event.metaKey) return
-                      if (event.key !== "Enter") return
-                      event.preventDefault()
-                      void save(item.id)
-                    }}
-                  />
-                </Show>
-                <Show
-                  when={store.editing === item.id}
-                  fallback={
-                    <>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        class="shrink-0"
-                        disabled={props.sending === item.id || props.action === item.id}
-                        onClick={() => props.onSend(item.id)}
-                      >
-                        {language.t("session.followupDock.sendNow")}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        class="shrink-0"
-                        disabled={props.sending === item.id || props.action === item.id}
-                        onClick={() => {
-                          if (item.source === "legacy") {
-                            props.onEdit(item.id)
-                            return
-                          }
-                          setStore({ editing: item.id, editText: item.text })
-                        }}
-                      >
-                        {language.t("session.followupDock.edit")}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        class="shrink-0"
-                        disabled={props.sending === item.id || props.action === item.id}
-                        onClick={() => props.onCancel(item.id)}
-                      >
-                        {language.t("session.followupDock.cancel")}
-                      </Button>
-                    </>
-                  }
-                >
+      <For each={props.items}>
+        {(item) => (
+          <div class="flex min-w-0 items-center gap-2 py-1">
+            {/* 261106 Red 折叠外壳抽到 CollapsibleDock，此处只留条目内容（编辑/三键操作） */}
+            <Show
+              when={store.editing === item.id}
+              fallback={<span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>}
+            >
+              <textarea
+                rows={2}
+                value={store.editText}
+                class="min-w-0 flex-1 resize-y rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-13-regular text-text-strong outline-none focus:border-border-weak-hover"
+                onInput={(event) => setStore("editText", event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation()
+                  if (!event.ctrlKey && !event.metaKey) return
+                  if (event.key !== "Enter") return
+                  event.preventDefault()
+                  void save(item.id)
+                }}
+              />
+            </Show>
+            <Show
+              when={store.editing === item.id}
+              fallback={
+                <>
                   <Button
                     size="small"
                     variant="secondary"
                     class="shrink-0"
-                    disabled={props.action === item.id}
-                    onClick={() => void save(item.id)}
+                    disabled={props.sending === item.id || props.action === item.id}
+                    onClick={() => props.onSend(item.id)}
                   >
-                    {language.t("session.followupDock.save")}
+                    {language.t("session.followupDock.sendNow")}
                   </Button>
                   <Button
                     size="small"
                     variant="ghost"
                     class="shrink-0"
-                    onClick={() => setStore({ editing: undefined, editText: "" })}
+                    disabled={props.sending === item.id || props.action === item.id}
+                    onClick={() => {
+                      if (item.source === "legacy") {
+                        props.onEdit(item.id)
+                        return
+                      }
+                      setStore({ editing: item.id, editText: item.text })
+                    }}
+                  >
+                    {language.t("session.followupDock.edit")}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    class="shrink-0"
+                    disabled={props.sending === item.id || props.action === item.id}
+                    onClick={() => props.onCancel(item.id)}
                   >
                     {language.t("session.followupDock.cancel")}
                   </Button>
-                </Show>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </DockTray>
+                </>
+              }
+            >
+              <Button
+                size="small"
+                variant="secondary"
+                class="shrink-0"
+                disabled={props.action === item.id}
+                onClick={() => void save(item.id)}
+              >
+                {language.t("session.followupDock.save")}
+              </Button>
+              <Button
+                size="small"
+                variant="ghost"
+                class="shrink-0"
+                onClick={() => setStore({ editing: undefined, editText: "" })}
+              >
+                {language.t("session.followupDock.cancel")}
+              </Button>
+            </Show>
+          </div>
+        )}
+      </For>
+    </CollapsibleDock>
   )
 }

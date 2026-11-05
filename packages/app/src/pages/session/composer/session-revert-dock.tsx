@@ -1,9 +1,8 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@redcode-ai/ui/button"
-import { DockTray } from "@redcode-ai/ui/dock-surface"
-import { IconButton } from "@redcode-ai/ui/icon-button"
 import { useLanguage } from "@/context/language"
+import { CollapsibleDock } from "./collapsible-dock"
 
 export function SessionRevertDock(props: {
   items: { id: string; text: string }[]
@@ -32,68 +31,33 @@ export function SessionRevertDock(props: {
   const preview = createMemo(() => props.items[0]?.text ?? "")
 
   return (
-    <DockTray data-component="session-revert-dock">
-      <div
-        class="pl-3 pr-2 py-2 flex items-center gap-2"
-        role="button"
-        tabIndex={0}
-        onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return
-          event.preventDefault()
-          toggle()
-        }}
-      >
-        <span class="shrink-0 text-14-regular text-text-strong cursor-default">{label()}</span>
-        <Show when={store.collapsed && preview()}>
-          <span class="min-w-0 flex-1 truncate text-14-regular text-text-base cursor-default">{preview()}</span>
-        </Show>
-        <div class="ml-auto shrink-0">
-          <IconButton
-            data-collapsed={store.collapsed ? "true" : "false"}
-            icon="chevron-down"
-            size="normal"
-            variant="ghost"
-            style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
-            onMouseDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              toggle()
-            }}
-            aria-label={
-              store.collapsed ? language.t("session.revertDock.expand") : language.t("session.revertDock.collapse")
-            }
-          />
-        </div>
-      </div>
-
-      <Show when={store.collapsed}>
-        <div class="h-5" aria-hidden="true" />
-      </Show>
-
-      <Show when={!store.collapsed}>
-        <div class="px-3 pb-7 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar">
-          <For each={props.items}>
-            {(item) => (
-              <div class="flex items-center gap-2 min-w-0 py-1">
-                <span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  class="shrink-0"
-                  disabled={props.disabled || !!props.restoring}
-                  onClick={() => props.onRestore(item.id)}
-                >
-                  {language.t("session.revertDock.restore")}
-                </Button>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </DockTray>
+    <CollapsibleDock
+      dataComponent="session-revert-dock"
+      label={label()}
+      preview={preview()}
+      collapsed={store.collapsed}
+      onToggle={toggle}
+      ariaKeyPrefix="session.revertDock"
+      labelClass="text-14-regular"
+      previewClass="text-14-regular"
+    >
+      <For each={props.items}>
+        {(item) => (
+          <div class="flex items-center gap-2 min-w-0 py-1">
+            {/* 261106 Red 折叠外壳抽到 CollapsibleDock，此处只留条目内容 */}
+            <span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>
+            <Button
+              size="small"
+              variant="secondary"
+              class="shrink-0"
+              disabled={props.disabled || !!props.restoring}
+              onClick={() => props.onRestore(item.id)}
+            >
+              {language.t("session.revertDock.restore")}
+            </Button>
+          </div>
+        )}
+      </For>
+    </CollapsibleDock>
   )
 }
