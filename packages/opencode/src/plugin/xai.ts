@@ -3,6 +3,7 @@ import * as Log from "@redcode-ai/core/util/log"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { createServer } from "http"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
+import { renderAuthErrorPage, renderAuthSuccessPage } from "./auth-page"
 
 const log = Log.create({ service: "plugin.xai" })
 
@@ -306,95 +307,10 @@ export async function pollDeviceCodeToken(
   throw new Error("xAI device authorization timed out")
 }
 
-const HTML_SUCCESS = `<!doctype html>
-<html>
-  <head>
-    <title>RedCode - xAI Authorization Successful</title>
-    <style>
-      body {
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        margin: 0;
-        background: #131010;
-        color: #f1ecec;
-      }
-      .container {
-        text-align: center;
-        padding: 2rem;
-      }
-      h1 {
-        color: #f1ecec;
-        margin-bottom: 1rem;
-      }
-      p {
-        color: #b7b1b1;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Authorization Successful</h1>
-      <p>You can close this window and return to RedCode.</p>
-    </div>
-    <script>
-      setTimeout(() => window.close(), 2000)
-    </script>
-  </body>
-</html>`
-
-const HTML_ERROR = (error: string) => `<!doctype html>
-<html>
-  <head>
-    <title>RedCode - xAI Authorization Failed</title>
-    <style>
-      body {
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        margin: 0;
-        background: #131010;
-        color: #f1ecec;
-      }
-      .container {
-        text-align: center;
-        padding: 2rem;
-      }
-      h1 {
-        color: #fc533a;
-        margin-bottom: 1rem;
-      }
-      p {
-        color: #b7b1b1;
-      }
-      .error {
-        color: #ff917b;
-        font-family: monospace;
-        margin-top: 1rem;
-        padding: 1rem;
-        background: #3c140d;
-        border-radius: 0.5rem;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Authorization Failed</h1>
-      <p>An error occurred during authorization.</p>
-      <div class="error">${escapeHtml(error)}</div>
-    </div>
-  </body>
-</html>`
+// 261106 Red HTML 模板抽至 auth-page.ts 与 codex.ts 共享，本文件仅保留 title 差异与 error 转义行为
+const HTML_SUCCESS = renderAuthSuccessPage({ title: "RedCode - xAI Authorization Successful" })
+const HTML_ERROR = (error: string) =>
+  renderAuthErrorPage({ title: "RedCode - xAI Authorization Failed", errorHtml: escapeHtml(error) })
 
 // CORS allowlist for the loopback callback. The redirect_uri itself is
 // already bound to 127.0.0.1 and gated by PKCE+state, so we only accept
