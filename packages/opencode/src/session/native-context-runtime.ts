@@ -7,19 +7,21 @@ import { settlePromptCaches } from "./prompt-caches"
 import type { SessionID } from "./schema"
 
 // 261010 Red 压缩版本由持久化活跃块决定；恢复/重启不依赖插件旁路状态。
+// 261105 Red 只 hash 块 id（listIDs 不解析摘要），与 list().map(id) 结果一致。
 export function revision(sessionID: SessionID) {
-  return createHash("sha256").update(JSON.stringify(ContextCompaction.list(sessionID)
-    .map((block) => block.id))).digest("hex")
+  return createHash("sha256").update(JSON.stringify(ContextCompaction.listIDs(sessionID))).digest("hex")
 }
 
 export function settle(sessionID: SessionID, previous: string, next: string) {
   if (previous !== next) settlePromptCaches(sessionID, "native-compaction")
 }
 
-export function history(sessionID: SessionID, spec: NativeCompaction.Spec) {
-  const blocks = ContextCompaction.list(sessionID)
-  const anchors = new Set(blocks.map((block) => block.anchorID))
-  const covered = new Set(blocks.flatMap((block) => block.sourceMessageIDs))
+// 261105 Red 可选传入同一 step 的活跃块快照：history 与 project 此前各读一次，
+// 加上 revision 的 id 投影，同批块每步读库三遍。调用方不传时保持原行为。
+export function history(sessionID: SessionID, spec: NativeCompaction.Spec, blocks?: ContextCompaction.Block[]) {
+  const active = blocks ?? ContextCompaction.list(sessionID)
+  const anchors = new Set(active.map((block) => block.anchorID))
+  const covered = new Set(active.flatMap((block) => block.sourceMessageIDs))
   function* visible() {
     let count = 0
     // 261017 Red 过滤下推到分页层：被覆盖的消息连 part 都不再读（旧顺序是整页 hydrate
@@ -33,11 +35,16 @@ export function history(sessionID: SessionID, spec: NativeCompaction.Spec) {
   return MessageV2.filterCompactedOrdered(visible())
 }
 
-export function project(sessionID: SessionID, messages: MessageV2.WithParts[], spec: NativeCompaction.Spec) {
+export function project(
+  sessionID: SessionID,
+  messages: MessageV2.WithParts[],
+  spec: NativeCompaction.Spec,
+  blocks?: ContextCompaction.Block[],
+) {
   return NativeContext.annotate(
     ContextCompaction.project(
       NativeContext.cleanReferenceEchoes(NativeContext.removeArtifacts(messages)),
-      ContextCompaction.list(sessionID),
+      blocks ?? ContextCompaction.list(sessionID),
     ),
     spec.maxMessages,
   )

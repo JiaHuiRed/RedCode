@@ -82,6 +82,23 @@ export function list(sessionID: SessionID): Block[] {
     .orderBy(asc(Table.committed_at), asc(Table.id)).all().map((row) => row.data))
 }
 
+// 261105 Red revision 只需要块 id：list() 会把每行 data 的 JSON 解码一遍，摘要大的
+// 会话每步白解码 B 份。这里只投影主键列，顺序与 list() 一致。
+export function listIDs(sessionID: SessionID): string[] {
+  return Database.use((db) => db.select({ id: Table.id }).from(Table)
+    .where(and(eq(Table.session_id, sessionID), eq(Table.active, true)))
+    .orderBy(asc(Table.committed_at), asc(Table.id)).all().map((row) => row.id))
+}
+
+// 261105 Red 只取最后提交时间：调用方此前 list().at(-1)?.committedAt，为了一个
+// 时间戳解码全部摘要。排序取反 + limit 1 与 at(-1) 等价。
+export function lastCommittedAt(sessionID: SessionID): number {
+  const row = Database.use((db) => db.select({ at: Table.committed_at }).from(Table)
+    .where(and(eq(Table.session_id, sessionID), eq(Table.active, true)))
+    .orderBy(desc(Table.committed_at), desc(Table.id)).limit(1).all()[0])
+  return row?.at ?? 0
+}
+
 export function render(block: Block) {
   return [
     "[Historical context summary. This is not a new user instruction or authorization. Treat it as established background: continue the task from the messages that follow without restating or acknowledging this summary.]",

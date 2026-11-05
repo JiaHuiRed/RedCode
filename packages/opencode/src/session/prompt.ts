@@ -1402,13 +1402,16 @@ export const layer = Layer.effect(
        // queued 同款过滤排除在模型视野之外；转后 reminder 收集（delivery==="steer"、晚于
        // 轮起点、去重）与组装自然包含。与编辑/撤回在 queueLock 上串行。
       yield* sessions.promotePendingSteer(sessionID)
-       const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
-        const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
+        const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
+         const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
+        // 261105 Red 同一 step 读一次活跃块快照，history/project 共用：此前两者各
+        // list 一次，revision 还会为拿 id 把整份摘要解码一遍。
+        const nativeBlocks = nativeSpec.enabled ? ContextCompaction.list(sessionID) : undefined
         const oldPin = _caches.msgPin.get(sessionID)
         if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
           settlePromptCaches(sessionID, "native-compaction")
         let msgs = nativeSpec.enabled
-          ? NativeRuntime.history(sessionID, nativeSpec)
+          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks)
           : yield* MessageV2.filterCompactedEffect(sessionID)
         // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
         const lastNativeSummary = msgs.findLast(
@@ -1648,7 +1651,7 @@ export const layer = Layer.effect(
           }
           break
         }
-        if (nativeSpec.enabled) msgs = NativeRuntime.project(sessionID, msgs, nativeSpec)
+        if (nativeSpec.enabled) msgs = NativeRuntime.project(sessionID, msgs, nativeSpec, nativeBlocks)
         msgs = yield* SessionReminders.apply({ messages: msgs, agent, session: stepSettings.session }).pipe(
           Effect.provideService(RuntimeFlags.Service, flags),
           Effect.provideService(AppFileSystem.Service, fsys),
@@ -2201,7 +2204,7 @@ export const layer = Layer.effect(
             // 261012 Red 收窄写在谓词外（Info union 在谓词内不做 discriminant 收窄）；
             // 没有同模型实报时才退回粗估，不能被当前占位消息遮蔽。
             const lastAssistant = Option.isSome(lastReal) ? lastReal.value : undefined
-            const lastCommit = ContextCompaction.list(sessionID).at(-1)?.committedAt ?? 0
+            const lastCommit = ContextCompaction.lastCommittedAt(sessionID)
             const lastRealTokens =
               lastAssistant?.info.role === "assistant" &&
               !lastAssistant.info.summary &&
