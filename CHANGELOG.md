@@ -10,6 +10,9 @@
 
 ### [Unreleased]
 
+- **新增 ui Meter 用量条组件**（`ui/src/components/meter.tsx` 新增、`session-context-usage.tsx`、`session-context-tab.tsx`）：session-context-usage 悬浮条与 context-tab 的配额/构成/分解条共 4 处手搓同构的 track+填充 div 均无读屏语义，收编为单值（progressbar role + aria 值）/多段（aria-hidden，信息由图例承载）两种模式的共享组件；视觉零变化（同 4px/8px、同圆角、同色源）。story 补齐。验证：ui/app typecheck exit 0、token-refs 守门过、session-context-usage 5 pass。
+- **删除 22 个零使用的 v2 组件**（`ui/src/v2/components/*`，−8212 行）：v2 是 fork 初始自带的第二代组件库，5 个月从未系统性迁移——实际在役仅 7 个品牌组件（icon/icon-button/button/avatar/wordmark/chi-task-sticker/effort-slider）与 token 层（app 直接引用 --v2- token 34 处），全部保留。删除的 22 个零 import 基础件打包占用本就为零（组件 css 是模块内 side-effect import），消的是维护税：全量 token 清扫陪跑、v1↔v2 行为逻辑双份（~350 行）、新 UI 用哪套的歧义。token-refs 死类守门测试为动态扫描自动适配；迁移重启时 git 历史随时可捞。验证：ui/app/desktop typecheck exit 0、token-refs 过。
+
 - **GUI 输入框有字时按 Esc 不再误杀运行中的会话**（`app/src/components/prompt-input.tsx`）：tooltip 只在 stopping（working 且输入为空）时承诺「Esc=Stop」，261031 AUD-04 也已把打断发送收窄到非空，唯独 keydown 的 working()→abort 漏收——输入框有字时按 Esc（取消选词、IME 习惯动作）会直接终止执行轮。现在打断加 blank() 门；显式打断保留 Ctrl/Cmd+G 与清空后 Esc/Enter。
 - **发送失败报错从 toast+横幅双报收敛为横幅单通道**（`app/src/components/prompt-input/submit.ts`）：同一错误此前 toast 与 PromptErrorBanner 各报一次；横幅常驻、就在输入框旁且带 Retry，只留横幅。会话创建失败的 toast 是独立通知，保留。
 - **删除服务器/项目加二次确认，归档失败不再静默**（`app/src/components/dialog-confirm.tsx` 新增、`dialog-select-server.tsx`、`home.tsx`、`layout.tsx`、三语 i18n）：移除服务器/项目此前下拉菜单一点直接生效且不可恢复；归档/取消归档此前无 catch，layout 侧挂在 mod+shift+backspace 上即 unhandled rejection、界面零反馈。现在删除走确认框，归档失败 notifyServerError。
