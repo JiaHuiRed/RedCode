@@ -39,7 +39,6 @@ export function SessionFollowupDock(props: {
       preview={preview()}
       collapsed={store.collapsed}
       onToggle={toggle}
-      ariaKeyPrefix="session.followupDock"
       labelClass="text-13-medium"
       previewClass="text-13-regular"
       trayStyle={{

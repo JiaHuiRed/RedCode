@@ -1,13 +1,16 @@
 import { Show, type JSX } from "solid-js"
 import { DockTray } from "@redcode-ai/ui/dock-surface"
-import { IconButton } from "@redcode-ai/ui/icon-button"
-import { useLanguage } from "@/context/language"
+import { Icon } from "@redcode-ai/ui/icon"
 
 /**
  * 261106 Red 抽取 followup/revert 两个 composer dock 的可折叠外壳。
  * 头部的 collapse 状态接线 + 键盘可达按钮（Enter/Space 切换）+ 折叠占位/展开容器
  * 此前逐字重复两份（session-followup-dock / session-revert-dock），改键盘行为要记得
  * 改两处——正是「数兄弟」红线点名的形态。字号差异（13/14）由 props 保留，视觉零变化。
+ * 261106 Red 头部从 div[role=button]+内嵌 IconButton 改为单个原生 button：
+ * 原结构是交互控件嵌交互控件（audit P2-03），原生 button 自带 Enter/Space 语义，
+ * aria-expanded 暴露展开态，chevron 降级为纯视觉图标（aria-hidden）；
+ * 可访问名由按钮内容（标题+摘要）承担，ariaKeyPrefix/.expand/.collapse 不再需要。
  */
 export function CollapsibleDock(props: {
   dataComponent: string
@@ -15,64 +18,46 @@ export function CollapsibleDock(props: {
   preview: string
   collapsed: boolean
   onToggle: () => void
-  /** aria-label 的 i18n key 前缀，如 "session.followupDock" → .expand / .collapse */
-  ariaKeyPrefix: string
   labelClass: string
   previewClass: string
   trayStyle?: JSX.CSSProperties
   children: JSX.Element
 }) {
-  const language = useLanguage()
   const toggle = props.onToggle
+  const contentId = `${props.dataComponent}-content`
   return (
     <DockTray data-component={props.dataComponent} style={props.trayStyle}>
-      <div
-        class="pl-3 pr-2 py-2 flex items-center gap-2"
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
+        class="pl-3 pr-2 py-2 flex items-center gap-2 text-left w-full cursor-default"
+        aria-expanded={!props.collapsed}
+        aria-controls={contentId}
         onClick={toggle}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return
-          event.preventDefault()
-          toggle()
-        }}
+        // 与原 IconButton 的 mousedown 行为一致：点击不打走编辑器焦点
+        onMouseDown={(event) => event.preventDefault()}
       >
-        <span class={`shrink-0 ${props.labelClass} text-text-strong cursor-default`}>{props.label}</span>
+        <span class={`shrink-0 ${props.labelClass} text-text-strong`}>{props.label}</span>
         <Show when={props.collapsed && props.preview}>
-          <span class={`min-w-0 flex-1 truncate ${props.previewClass} text-text-base cursor-default`}>
-            {props.preview}
-          </span>
+          <span class={`min-w-0 flex-1 truncate ${props.previewClass} text-text-base`}>{props.preview}</span>
         </Show>
-        <div class="ml-auto shrink-0">
-          <IconButton
-            data-collapsed={props.collapsed ? "true" : "false"}
-            icon="chevron-down"
-            size="normal"
-            variant="ghost"
-            style={{ transform: `rotate(${props.collapsed ? 180 : 0}deg)` }}
-            onMouseDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              toggle()
-            }}
-            aria-label={
-              props.collapsed
-                ? language.t(`${props.ariaKeyPrefix}.expand`)
-                : language.t(`${props.ariaKeyPrefix}.collapse`)
-            }
-          />
-        </div>
-      </div>
+        <span
+          class="ml-auto shrink-0"
+          data-collapsed={props.collapsed ? "true" : "false"}
+          aria-hidden="true"
+          style={{ transform: `rotate(${props.collapsed ? 180 : 0}deg)` }}
+        >
+          <Icon name="chevron-down" size="small" />
+        </span>
+      </button>
 
       <Show when={props.collapsed}>
         <div class="h-5" aria-hidden="true" />
       </Show>
 
       <Show when={!props.collapsed}>
-        <div class="px-3 pb-7 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar">{props.children}</div>
+        <div id={contentId} class="px-3 pb-7 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar">
+          {props.children}
+        </div>
       </Show>
     </DockTray>
   )

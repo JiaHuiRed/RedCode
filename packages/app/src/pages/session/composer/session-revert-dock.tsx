@@ -37,7 +37,6 @@ export function SessionRevertDock(props: {
       preview={preview()}
       collapsed={store.collapsed}
       onToggle={toggle}
-      ariaKeyPrefix="session.revertDock"
       labelClass="text-14-regular"
       previewClass="text-14-regular"
     >
