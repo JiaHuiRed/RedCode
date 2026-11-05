@@ -88,6 +88,33 @@ describe("mcp.evidence", () => {
     expect(evidence.recent()).not.toContain("supersecret123")
   })
 
+  // 261105 Red 验收补洞：整行都被脱敏成短串时（超长 Authorization 行、始终没有
+  // 换行），切分点算不出来；旧实现一直保留原文，pending 随 chunk 无限增长。
+  test("bounds an unterminated line that is entirely redacted", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    const chunk = "Authorization: Bearer " + "A".repeat(9000)
+    const lines = [...evidence.push(chunk), ...evidence.push("A".repeat(5000))]
+    const output = [...lines, evidence.recent()].join("\n")
+    expect(output).toContain("[redacted]")
+    expect(output).not.toContain("AAAAAAAA")
+    expect(evidence.pendingSize()).toBeLessThanOrEqual(64)
+  })
+
+  test("resumes after the newline following a truncated line", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    evidence.push("Authorization: Bearer " + "A".repeat(9000))
+    expect(evidence.push("B".repeat(5000))).toEqual([])
+    expect(evidence.push("\nnext error line\n")).toEqual(["next error line"])
+  })
+
+  test("does not truncate an ordinary long line at the hard cap", () => {
+    const evidence = McpEvidence.createStderrEvidence()
+    const lines = evidence.push("x".repeat(9000))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].length).toBeLessThanOrEqual(McpEvidence.EVIDENCE_MAX_CHARS)
+    expect(evidence.pendingSize()).toBe(64)
+  })
+
   test("bounds an unterminated line without dropping the log", () => {
     const evidence = McpEvidence.createStderrEvidence()
     const lines = evidence.push("y".repeat(McpEvidence.EVIDENCE_MAX_CHARS * 2))

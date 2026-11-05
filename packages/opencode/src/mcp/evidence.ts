@@ -30,6 +30,10 @@ export const EVIDENCE_MAX_CHARS = 512
 // 261105 Red 无换行流的切分回退窗口：切点在脱敏后的文本上取，回退只是避免把
 // [redacted] 标记或普通词切成两半——泄露防护不再依赖这个窗口。
 const CUT_BACKOFF = 64
+// 261105 Red 单行原始缓冲的硬上限：整行都被脱敏规则替换成短串时（例如始终没有
+// 换行的 "Authorization: Bearer ..."），切分点算不出来，旧实现让 pending 随
+// chunk 无限增长。超过上限就吐一条脱敏截断提示，并丢弃到下一个换行。
+const MAX_PENDING = 8 * 1024
 
 // 有界尾部缓冲：只留最近 4000 字符原始 stderr。失败的根因几乎总在最后几行
 // （缺依赖的报错在进程退出前打出），头部的历史噪音可以丢。
@@ -37,9 +41,18 @@ export function createStderrEvidence() {
   let raw = ""
   // 日志 sink 按行补齐后再脱敏：跨 chunk 拆开的 KEY=值 在同一行内会被整段遮住。
   let pending = ""
+  // 261105 Red 硬上限触发后的丢弃模式：长行尾部已经被判定为纯敏感内容，直到下一个
+  // 换行前不再累积；换行后的内容照常处理。
+  let dropping = false
   return {
     // 返回本次补齐的完整行（已脱敏），供普通日志使用；未换行的尾行留到下一次。
     push(chunk: string) {
+      if (dropping) {
+        const nl = chunk.indexOf("\n")
+        if (nl === -1) return []
+        dropping = false
+        chunk = chunk.slice(nl + 1)
+      }
       pending += chunk
       const lines = pending.split(/\r?\n/)
       pending = lines.pop() ?? ""
@@ -54,6 +67,16 @@ export function createStderrEvidence() {
         if (cut > 0) {
           lines.push(masked.slice(0, cut))
           pending = masked.slice(cut)
+        } else if (pending.length > MAX_PENDING) {
+          // 261105 Red 验收补洞：整行遮完只剩几十个字符时 cut <= 0，旧实现继续留着
+          // 原文，无换行的 Authorization/Bearer 流会让缓冲区无限涨。超限后吐一次
+          // 脱敏结果并丢弃剩余内容，直到下一个换行。
+          if (masked) lines.push(`${masked} ...(line truncated)`)
+          pending = ""
+          dropping = true
+        } else {
+          // 未到硬上限：保留脱敏结果、丢掉原文，下次从脱敏串继续，不再累积长行。
+          pending = masked
         }
       }
       const output = lines.map(redactLine).filter((line) => line.trim().length > 0)
@@ -70,6 +93,8 @@ export function createStderrEvidence() {
       const merged = raw + redact(pending)
       return merged.length > RAW_KEEP ? merged.slice(merged.length - RAW_KEEP) : merged
     },
+    // 测试钩子：当前未换行尾行的字符数（验证无换行洪泛不会无限缓冲）
+    pendingSize: () => pending.length,
   }
 }
 
