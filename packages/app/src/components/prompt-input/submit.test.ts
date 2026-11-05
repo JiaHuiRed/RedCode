@@ -695,6 +695,7 @@ describe("prompt submit worktree selection", () => {
     const scope = { dir: "/repo/main", id: "session-1" }
     expect(contextRemoves).toEqual([{ key: "c1", scope }])
     expect(contextAdds.map((item) => item.scope)).toEqual([scope])
-    expect(toasts).toContain("prompt.toast.promptSendFailed.title")
+    // 261106 Red 发送失败报错通道收敛为横幅（sendError），不再同时弹 toast
+    expect(submit.sendError()).toBeTruthy()
   })
 })

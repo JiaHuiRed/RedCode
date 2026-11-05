@@ -61,7 +61,6 @@ import {
   parseFromDOM,
 } from "./prompt-input/editor-dom"
 import { findHistorySuggestion } from "./prompt-input/suggestion"
-import { createGhostSystem } from "./prompt-input/ghost"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES } from "./prompt-input/files"
 import {
@@ -558,30 +557,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     editorRef.textContent = text
   }
 
-  const ghost = createGhostSystem({
-    editorRef,
-    store: {
-      get mode() {
-        return store.mode
-      },
-      get popover() {
-        return store.popover
-      },
-      get historyIndex() {
-        return store.historyIndex
-      },
-    },
-    prompt: {
-      current: () => prompt.current(),
-      set: (parts, cursor) => prompt.set(parts, cursor),
-    },
-    composing,
-    history,
-    mirror,
-    setEditorText,
-    setCursorPosition,
-    resetHistoryNavigation,
-  })
+  // 261106 Red 删除 ghost.ts 的死调用：createGhostSystem 返回值从未被使用，
+  // 实际运行的 ghost 实现是下方 651-697 的本地闭包（与 ghost.ts 逐字相同）。
+  // 保留双份会让"改抽取件不生效"成为现成陷阱，抽走 ghost.ts 留本地实现。
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => {
@@ -1241,7 +1219,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         return
       }
 
-      if (working()) {
+      // 261106 Red Esc 打断加 blank() 门，与 tooltip 承诺（stopping 才显示 Stop+Esc）及
+      // canInterruptSend（261031 AUD-04）的收窄方向对齐：输入框有字时 Esc 不再误杀
+      // 运行中的轮次；显式打断走清空后 Esc/Enter 或 Ctrl+G。
+      if (working() && blank()) {
         void abort()
         event.preventDefault()
         event.stopPropagation()
@@ -1398,7 +1379,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const designPlaceholder = () => {
     if (store.mode === "shell") return placeholder()
-    return "Ask anything, / for commands, @ for context..."
+    return language.t("prompt.placeholder.hints")
   }
 
   // 260731 Karina GUI 输入框一直没有主 agent 切换入口 —— 工具栏只有模型和推理强度两个

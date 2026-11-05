@@ -16,10 +16,12 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { usePlatform } from "@/context/platform"
 import { DateTime } from "luxon"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { DialogConfirm } from "@/components/dialog-confirm"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { notifyServerError } from "@/utils/notify-error"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { displayName, getProjectAvatarSource, projectForSession, sortedRootSessions } from "@/utils/session-helpers"
@@ -245,12 +247,22 @@ function HomeDesign() {
     })
   }
 
-  async function removeProject(project: LocalProject) {
-    if (project.id && project.id !== "global") {
-      await globalSDK.client.project.remove({ projectID: project.id })
+  // 261106 Red 移除项目加二次确认：右键菜单一点直接 project.remove 不可恢复。
+  function removeProject(project: LocalProject) {
+    const doRemove = async () => {
+      if (project.id && project.id !== "global") {
+        await globalSDK.client.project.remove({ projectID: project.id })
+      }
+      layout.projects.close(project.worktree)
+      if (state.project === project.worktree) setState("project", undefined)
     }
-    layout.projects.close(project.worktree)
-    if (state.project === project.worktree) setState("project", undefined)
+    dialog.show(() => (
+      <DialogConfirm
+        title={language.t("dialog.confirm.removeProject.title")}
+        description={language.t("dialog.confirm.removeProject.description", { project: project.name || project.worktree })}
+        onConfirm={() => void doRemove()}
+      />
+    ))
   }
 
   // 260710 Red 归档会话：标记 archived 时间戳，isRootVisibleSession 自动过滤
@@ -271,11 +283,17 @@ function HomeDesign() {
   }
 
   async function archiveSession(session: Session) {
-    await globalSDK.client.session.update({
-      sessionID: session.id,
-      directory: session.directory,
-      time: { archived: Date.now() },
-    })
+    // 261106 Red 归档失败不再静默：此前无 catch，rejection 无人消费，界面零反馈。
+    try {
+      await globalSDK.client.session.update({
+        sessionID: session.id,
+        directory: session.directory,
+        time: { archived: Date.now() },
+      })
+    } catch (err) {
+      notifyServerError(language.t, err)
+      return
+    }
     dropFromStore(session)
   }
 
@@ -284,11 +302,17 @@ function HomeDesign() {
   //   （OpenAPI 生成器会把 payload 里的联合类型压平，null 传不过来）。
   //   取消后刷新归档列表，让它从"已归档"视图里消失。
   async function unarchiveSession(session: Session) {
-    await globalSDK.client.session.update({
-      sessionID: session.id,
-      directory: session.directory,
-      unarchive: true,
-    })
+    // 261106 Red 取消归档失败同样给出反馈（本地 store 未变，失败后列表与真实状态一致）。
+    try {
+      await globalSDK.client.session.update({
+        sessionID: session.id,
+        directory: session.directory,
+        unarchive: true,
+      })
+    } catch (err) {
+      notifyServerError(language.t, err)
+      return
+    }
     await archivedLoad.refetch()
     // 让它重新出现在正常列表里（归档时已从 store 摘掉，事件回不来就得主动拉）
     await sync.project.loadSessions(session.directory)

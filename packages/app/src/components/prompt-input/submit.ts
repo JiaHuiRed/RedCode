@@ -711,10 +711,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (sessionDirectory === projectDirectory) {
           sync.set("session_status", session.id, { type: "idle" })
         }
-        showToast({
-          title: language.t("prompt.toast.promptSendFailed.title"),
-          description: errorMessage(err),
-        })
+        // 261106 Red 同一错误此前 toast + 横幅各报一次。横幅（PromptErrorBanner）常驻、
+        // 就在输入框旁且带 Retry，是更完整的报错通道——只留横幅。
         removeOptimisticMessage()
         restoreCommentItems(commentItems, scope)
         restoreInput()

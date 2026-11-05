@@ -5,7 +5,6 @@ import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Button } from "@redcode-ai/ui/button"
 import { useTheme } from "@redcode-ai/ui/theme/context"
-import { Seal } from "@redcode-ai/ui/logo"
 import { IconButtonV2 } from "@redcode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 
@@ -27,11 +26,9 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { StatusIndicator } from "./status-indicator"
 import { SDKProvider } from "@/context/sdk"
 
-const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
 const minTitlebarZoom = 0.25
 const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
-const USE_V2_TITLEBAR = true
 
 const makeSessionHref = (b64Dir: string, sessionId: string) => `/${b64Dir}/session/${sessionId}`
 
@@ -60,7 +57,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
   const counterZoom = () => (windows() && titlebarZoom() < 1 ? 1 / titlebarZoom() : 1)
   const minHeight = () => {
-    const height = USE_V2_TITLEBAR ? v2TitlebarHeight : legacyTitlebarHeight
+    const height = v2TitlebarHeight
     if (mac()) return `${height / zoom()}px`
     if (windows()) return `${height / Math.min(titlebarZoom(), 1)}px`
     return undefined
@@ -94,7 +91,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const canBack = createMemo(() => history.index > 0)
   const canForward = createMemo(() => history.index < history.stack.length - 1)
   const hasProjects = createMemo(() => layout.projects.list().length > 0)
-  const nav = createMemo(() => true)
 
   const back = () => {
     const next = backPath(history)
@@ -131,8 +127,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     <header
       classList={{
         "shrink-0 relative z-[1] overflow-hidden flex flex-row": true,
-        "h-11 bg-v2-background-bg-deep": USE_V2_TITLEBAR,
-        "h-10 bg-background-base": !USE_V2_TITLEBAR,
+        "h-11 bg-v2-background-bg-deep": true,
         "border-b border-border-weaker-base": true,
       }}
       data-frost-surface="titlebar"
@@ -459,6 +454,7 @@ function TabNavItem(props: {
   onClose: () => void
 }) {
   const match = useMatch(() => props.href)
+  const language = useLanguage()
   const isActive = () => !!match()
   return (
     <div
@@ -494,7 +490,10 @@ function TabNavItem(props: {
         <IconButtonV2
           size="small"
           variant="ghost-muted"
-          class="opacity-0 group-hover:opacity-100 group-data-[active='true']:opacity-100 [@media(hover:none)]:opacity-100"
+          // 261106 Red 键盘可达性：非活动 tab 的关闭按钮原先纯 hover/active 才显形，
+          // Tab 聚焦时完全透明；补 group-focus-within 与 i18n aria-label。
+          class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active='true']:opacity-100 [@media(hover:none)]:opacity-100"
+          aria-label={language.t("common.closeTab")}
           onClick={props.onClose}
           icon={<IconV2 name="xmark-small" />}
         />
@@ -517,6 +516,7 @@ function ProjectTabAvatar(props: { project?: LocalProject; directory: string }) 
 }
 
 function NewSessionTabItem(props: { href: string; title: string; onClose: () => void }) {
+  const language = useLanguage()
   return (
     <div class="group relative flex h-7 max-w-[312px] flex-row items-center gap-1.5 overflow-hidden rounded-[6px] bg-[var(--v2-overlay-simple-overlay-pressed)] pl-1.5 pr-8 whitespace-nowrap focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--v2-border-border-focus)]">
       <a
@@ -543,25 +543,9 @@ function NewSessionTabItem(props: { href: string; title: string; onClose: () => 
             props.onClose()
           }}
           icon={<IconV2 name="xmark-small" />}
-          aria-label="Close tab"
+          aria-label={language.t("common.closeTab")}
         />
       </div>
     </div>
-  )
-}
-
-function ChannelIndicator() {
-  const platform = usePlatform()
-  return (
-    <Show when={platform.version}>
-      {(version) => (
-        // 260904 cc 朱印落在版本号旁：标题栏是「陌生环境里一眼认出是谁」的位置，
-        // 用品牌朱红而不是 muted 灰，这一格就是它的署名。
-        <span class="flex items-center gap-1 shrink-0 select-none">
-          <Seal class="size-3 text-[#C8322B] dark:text-[#E4534A]" />
-          <span class="text-[11px] text-v2-text-text-muted">v{version()}</span>
-        </span>
-      )}
-    </Show>
   )
 }

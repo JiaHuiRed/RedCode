@@ -28,6 +28,7 @@ import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { showToast, Toast, toaster } from "@redcode-ai/ui/toast"
+import { notifyServerError } from "@/utils/notify-error"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { clearWorkspaceTerminals, getTerminalServerScope } from "@/context/terminal"
 import {
@@ -541,11 +542,18 @@ export default function Layout(props: ParentProps) {
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
-    await globalSDK.client.session.update({
-      directory: session.directory,
-      sessionID: session.id,
-      time: { archived: Date.now() },
-    })
+    // 261106 Red 归档失败不再静默：此路径挂在全局快捷键（mod+shift+backspace）上，
+    // 无 catch 即 unhandled rejection，界面零反馈。
+    try {
+      await globalSDK.client.session.update({
+        directory: session.directory,
+        sessionID: session.id,
+        time: { archived: Date.now() },
+      })
+    } catch (err) {
+      notifyServerError(language.t, err)
+      return
+    }
 
     setStore(
       produce((draft) => {

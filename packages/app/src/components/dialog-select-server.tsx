@@ -12,10 +12,12 @@ import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createResource, onCleanup, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
+import { DialogConfirm } from "@/components/dialog-confirm"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
+import { notifyServerError } from "@/utils/notify-error"
 
 const DEFAULT_USERNAME = "redcode"
 
@@ -37,11 +39,9 @@ interface ServerFormProps {
 }
 
 function showRequestError(language: ReturnType<typeof useLanguage>, err: unknown) {
-  showToast({
-    variant: "error",
-    title: language.t("common.requestFailed"),
-    description: err instanceof Error ? err.message : String(err),
-  })
+  // 261106 Red 换用 261024 收敛的 notifyServerError：三元组同形，描述额外走
+  // formatServerError（能展开 err.data.message 等服务端结构），本文件原来裸取 .message。
+  notifyServerError(language.t, err)
 }
 
 function useDefaultServer() {
@@ -76,6 +76,9 @@ function useDefaultServer() {
 
 function useServerPreview() {
   const checkServerHealth = useCheckServerHealth()
+  // 261106 Red 健康预览竞态：每个键击都会发起 checkServerHealth，慢响应晚到会覆盖
+  // 较新输入的状态（健康灯乱闪旧结果）。代次计数，过期响应直接丢弃。
+  let generation = 0
 
   const looksComplete = (value: string) => {
     const normalized = normalizeServerUrl(value)
@@ -92,6 +95,7 @@ function useServerPreview() {
     password: string,
     setStatus: (value: boolean | undefined) => void,
   ) => {
+    const current = ++generation
     setStatus(undefined)
     if (!looksComplete(value)) return
     const normalized = normalizeServerUrl(value)
@@ -100,6 +104,7 @@ function useServerPreview() {
     if (username) http.username = username
     if (password) http.password = password
     const result = await checkServerHealth(http)
+    if (current !== generation) return
     setStatus(result.healthy)
   }
 
@@ -350,7 +355,11 @@ export function DialogSelectServer() {
   })
 
   async function select(conn: ServerConnection.Any, persist?: boolean) {
-    if (!persist && store.status[ServerConnection.key(conn)]?.healthy === false) return
+    // 261106 Red 不健康的服务器点击从静默 return 改为给出 toast：否则点灰行=界面没响应。
+    if (!persist && store.status[ServerConnection.key(conn)]?.healthy === false) {
+      showToast({ title: language.t("app.server.unreachable", { server: conn.http.url }) })
+      return
+    }
     dialog.close()
     if (persist && conn.type === "http") {
       server.add(conn)
@@ -495,11 +504,22 @@ export function DialogSelectServer() {
     resetEdit()
   })
 
+  // 261106 Red 删除服务器加二次确认：下拉菜单一点直接 remove 会丢配置且不可恢复。
   async function handleRemove(url: ServerConnection.Key) {
-    server.remove(url)
-    if ((await platform.getDefaultServer?.()) === url) {
-      void platform.setDefaultServer?.(null)
+    const doRemove = async () => {
+      server.remove(url)
+      if ((await platform.getDefaultServer?.()) === url) {
+        void platform.setDefaultServer?.(null)
+      }
     }
+    dialog.show(() => (
+      <DialogConfirm
+        title={language.t("dialog.confirm.removeServer.title")}
+        description={language.t("dialog.confirm.removeServer.description", { server: url })}
+        confirmLabel={language.t("dialog.server.action.remove")}
+        onConfirm={() => void doRemove()}
+      />
+    ))
   }
 
   return (
