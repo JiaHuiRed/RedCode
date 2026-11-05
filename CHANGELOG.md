@@ -8,6 +8,21 @@
 
 ---
 
+### [Unreleased]
+
+- **GUI 输入框有字时按 Esc 不再误杀运行中的会话**（`app/src/components/prompt-input.tsx`）：tooltip 只在 stopping（working 且输入为空）时承诺「Esc=Stop」，261031 AUD-04 也已把打断发送收窄到非空，唯独 keydown 的 working()→abort 漏收——输入框有字时按 Esc（取消选词、IME 习惯动作）会直接终止执行轮。现在打断加 blank() 门；显式打断保留 Ctrl/Cmd+G 与清空后 Esc/Enter。
+- **发送失败报错从 toast+横幅双报收敛为横幅单通道**（`app/src/components/prompt-input/submit.ts`）：同一错误此前 toast 与 PromptErrorBanner 各报一次；横幅常驻、就在输入框旁且带 Retry，只留横幅。会话创建失败的 toast 是独立通知，保留。
+- **删除服务器/项目加二次确认，归档失败不再静默**（`app/src/components/dialog-confirm.tsx` 新增、`dialog-select-server.tsx`、`home.tsx`、`layout.tsx`、三语 i18n）：移除服务器/项目此前下拉菜单一点直接生效且不可恢复；归档/取消归档此前无 catch，layout 侧挂在 mod+shift+backspace 上即 unhandled rejection、界面零反馈。现在删除走确认框，归档失败 notifyServerError。
+- **API key 输入改密文并防连点**（`app/src/components/dialog-connect-provider.tsx`）：与 settings/dialog-select-server 的 type=password 惯例对齐；Api/OAuth 两视图提交期间禁用按钮，防重复 auth.set / callback / complete。
+- **不健康服务器点击有反馈，健康预览补代次守卫**（`app/src/components/dialog-select-server.tsx`）：点灰行此前静默 return 界面像死了，现在 toast 说明；URL 输入的健康预览加代次计数，慢响应不再覆盖较新输入的状态灯。
+- **titlebar 关闭按钮键盘可达**（`app/src/components/titlebar.tsx`）：非活动 tab 的关闭按钮原先纯 hover/active 显形，键盘聚焦时完全透明且无 aria-label；补 group-focus-within 与 i18n aria-label。顺带删 USE_V2_TITLEBAR 恒真分支与零引用的 ChannelIndicator（v0.2.1 重写 titlebar 的遗骸）。
+- **settings/context-tab/home-usage 硬编码文案入三语词典**（`app/src/components/settings-general.tsx` 等 3 组件、三语 i18n 共 22+4 键）：settings 页在 en/ja 下不再整段英文，「缓存未延伸」不再在 en/ja 界面显示中文，home-usage 图例 out/in 入词典。parity 4 pass。
+- **删除静默空转的 SessionHeader 与三份孤儿文件**（`app/src/components/session/session-header.tsx` 等，−1022 行）：SessionHeader 全部输出都在 Portal 里，挂载点 #redcode-titlebar-center/right 随 v0.2.1 旧标题栏一起被删，此后整组件恒渲染空五个多月；同删 dialog-edit-project（0.4.5 只删了 import、文件本体还活着）、update-available-toast（抽取当天失联）、new-session-layout、ghost.ts 弃用工厂（createGhostSystem 抽出后从未接线，实际运行的是组件内逐字相同的本地副本）。
+- **断线重连补拉改并发分块**（`app/src/context/session-changes.ts`）：逐条串行改块 8 并发，积压 N 条时收敛从 N×RTT 降到 ~N/8×RTT；fetchMessage 侧代次守卫保证过期响应不落盘。
+- **流式热路径去重复全文扫描**（`app/src/pages/session/message-timeline.data.ts`、`message-timeline.tsx`、`ui/src/components/message-part.tsx`）：reasoning heading 按 part 记忆化（busy 期每 16ms flush 的 4 正则全文扫消除）；renderable 判定 text.trim() 改 /\S/ 短路（每 flush 的全文分配消除）；native timeline 开关改模块级懒读（滚动热路径不再每帧读 localStorage）。审计两项复核后未动：compaction marker 的扫描频率被上游 equals 守卫挡住；persist web 路径不合并是 260901 成文决策。
+- **Desktop 主进程硬化**（`desktop/src/main/*`）：五处 IPC 直达子进程调用补 timeout（list-fonts/open-path 原可永久挂起渲染层资源）；mainWindow closed 置 null + 三处回退 getAllWindows（darwin 关窗后深链/二次启动必 throw）；删 install-cli 死通道（invoke 必然 reject）与 loading-window 死 lane（260901 起被 Splash 取代）；write-attachment 50MB / diagnostics 4MB payload 硬顶（注入红线四问第 4 条）；mobile-gateway readBody 排空请求体、pair 路由 Host 校验前提（403→421）。
+- **TUI/GUI 共享代码复用收敛**（`opencode/src/plugin/auth-page.ts` 新增、`opencode/src/tool/edit.ts`、`opencode/src/acp/agent.ts`、`app/src/pages/session/composer/collapsible-dock.tsx` 新增、`app/src/context/command.tsx`）：codex/xai 逐字相同的 OAuth 回调页模板（~260 行）参数化收编（旧模板求值与新输出 byte-identical 比对）；edit.ts 三处逐字重复的行区间→偏移换算抽 sliceLines（replacer 家族红线自查无第四处）；acp sessionUpdate+catch-log 样板实收 17 处（审计报 8 处，按数兄弟红线复核出回放路径漏网 9 处）；composer 两个 dock 的折叠外壳抽 CollapsibleDock；normalizeKey 归一单一来源（键位规整漂移即录制与匹配对不上）。
+
 ### [0.15.2] - 2026-11-05
 
 - **会话热路径补 partial index**（`session/session.sql.ts`、migration `20261105035555_pending_steer_tool_part_idx`）：`promotePendingSteer`（每步开头）与 `recentToolParts`（每次工具调用 ×2）走 `session_id + json_extract(type) + parent_id JOIN`，既有 `(session_id, id)` 覆盖不到，2612 消息实测 49.99ms / 43.49ms。新增 `message_pending_steer_idx`、`part_session_tool_idx` 两个 partial index，迁移末尾补 `ANALYZE message/part`（副本实测不 ANALYZE 时优化器不选 partial index）。验证：EXPLAIN 命中新索引，steer 50ms→0.04ms、工具记录 43.49ms→0.83ms；迁移单次约 13s（3GB 库）。
