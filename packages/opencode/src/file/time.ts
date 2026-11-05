@@ -1,6 +1,7 @@
 import * as fs from "fs"
 import * as fsp from "fs/promises"
 import * as path from "path"
+import { createHash } from "node:crypto"
 import { Effect } from "effect"
 import { Global } from "@redcode-ai/core/global"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -21,13 +22,25 @@ import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evi
 // 这里按会话落 data/file-time/<sessionID>.json，冷启动后首次 record/assert 惰性加载；
 // 磁盘读失败、损坏、版本不符一律当"没读过"——fail-safe 方向必须是要求重读，不能放行。
 // 不落盘的是"读取失败/被跳过"的文件：它们本来就没进内存表，record 也不会被调用。
-const VERSION = 1
+// 261105 Red 记录格式 v2：除 mtime 外再存内容哈希。mtime 变了但字节相同（git checkout
+// 回同一内容、编辑器无改动保存、touch）时直接放行并刷新记录，不再逼模型重读大文件。
+// v1 记录无法判断内容，升级后一律当没读过（fail-safe 方向不变）。
+const VERSION = 2
 
 // 单会话记录上限。一个会话读过的文件数是路径表量级（几十到几百），上限只挡异常堆积；
 // 超出时丢最旧（Map 保插入序），被丢的文件下次覆写会要求重读，与回收语义同向。
 const MAX_FILES = 2000
 
-const state = new Map<string, Map<string, number>>()
+// 超过这个大小的文件不记哈希，退化为纯 mtime 比对：读一次 8MB 只为了比对签名的成本
+// 不值得，且这类文件本来也多半不是模型手改的对象。
+const MAX_HASH_BYTES = 8 * 1024 * 1024
+
+interface Stamp {
+  mtime: number
+  hash?: string
+}
+
+const state = new Map<string, Map<string, Stamp>>()
 
 const log = Log.create({ service: "file.time" })
 
@@ -98,9 +111,16 @@ function hydrate(sessionID: string) {
   try {
     const parsed = JSON.parse(raw) as { version?: number; files?: unknown }
     if (parsed?.version !== VERSION || typeof parsed.files !== "object" || parsed.files === null) return
-    const bucket = new Map<string, number>()
-    for (const [key, value] of Object.entries(parsed.files))
-      if (typeof value === "number" && Number.isFinite(value)) bucket.set(key, value)
+    const bucket = new Map<string, Stamp>()
+    for (const [key, value] of Object.entries(parsed.files)) {
+      if (!value || typeof value !== "object") continue
+      const record = value as { mtime?: unknown; hash?: unknown }
+      if (typeof record.mtime !== "number" || !Number.isFinite(record.mtime)) continue
+      bucket.set(
+        key,
+        typeof record.hash === "string" ? { mtime: record.mtime, hash: record.hash } : { mtime: record.mtime },
+      )
+    }
     if (bucket.size > 0) state.set(sessionID, bucket)
   } catch {
     // 损坏的记录一律弃用（fail-safe：要求重读），下次 record 会用新内容覆盖它
@@ -140,15 +160,31 @@ async function mtime(filepath: string) {
   return stat?.mtimeMs
 }
 
+// 261105 Red 内容哈希：mtime 抖动（checkout/无改动保存/touch）不该逼模型重读大文件。
+async function digest(filepath: string) {
+  const data = await fsp.readFile(filepath).catch(() => undefined)
+  return data ? createHash("sha256").update(data).digest("hex").slice(0, 32) : undefined
+}
+
+// record 用一次 stat + 一次 read 取一致快照，避免 mtime 与内容分两次读之间被改。
+async function stamp(filepath: string): Promise<Stamp | undefined> {
+  const stat = await fsp.stat(filepath).catch(() => undefined)
+  if (!stat) return undefined
+  if (stat.size > MAX_HASH_BYTES) return { mtime: stat.mtimeMs }
+  const data = await fsp.readFile(filepath).catch(() => undefined)
+  if (!data) return { mtime: stat.mtimeMs }
+  return { mtime: stat.mtimeMs, hash: createHash("sha256").update(data).digest("hex").slice(0, 32) }
+}
+
 export namespace FileTime {
   export const record = Effect.fn("FileTime.record")(function* (sessionID: string, filepath: string) {
-    const value = yield* Effect.promise(() => mtime(filepath))
+    const value = yield* Effect.promise(() => stamp(filepath))
     if (value === undefined) return
     // 先加载再写：否则新建的空表会覆盖磁盘上同会话其它文件的记录
     hydrate(sessionID)
     dropped.delete(sessionID)
     touch(sessionID)
-    const bucket = state.get(sessionID) ?? new Map<string, number>()
+    const bucket = state.get(sessionID) ?? new Map<string, Stamp>()
     bucket.set(key(filepath), value)
     while (bucket.size > MAX_FILES) {
       const oldest = bucket.keys().next()
@@ -171,16 +207,27 @@ export namespace FileTime {
     const current = yield* Effect.promise(() => mtime(filepath))
     // 文件在读后被删掉的情况交给调用方的 exists/stat 检查表达语义，这里不重复报错。
     if (current === undefined) return
+    if (current === recorded.mtime) return
 
-    if (current !== recorded) {
-      return yield* Effect.fail(
-        new Error(
-          `File ${filepath} has been modified externally since it was last read ` +
-            `(read at mtime ${new Date(recorded).toISOString()}, now ${new Date(current).toISOString()}). ` +
-            `Read the file again before writing to it.`,
-        ),
-      )
+    // 261105 Red mtime 变了、内容没变：git checkout 回同一内容、编辑器无改动保存、touch。
+    // 放行并刷新记录，不再逼模型重读大文件；真并发冲突哈希不同仍会被拦。
+    if (recorded.hash) {
+      const now = yield* Effect.promise(() => digest(filepath))
+      if (now !== undefined && now === recorded.hash) {
+        state.get(sessionID)?.set(key(filepath), { mtime: current, hash: now })
+        persist(sessionID)
+        return
+      }
     }
+
+    return yield* Effect.fail(
+      new Error(
+        `File ${filepath} has been modified externally since it was last read ` +
+          `(read at mtime ${new Date(recorded.mtime).toISOString()}, now ${new Date(current).toISOString()}). ` +
+          `Read the file again before writing to it. If you only need to change part of it, ` +
+          `an oldString replacement skips the full-file re-read.`,
+      ),
+    )
   })
 
   /** 测试钩子：当前驻留的会话数（同 edit.ts 的 fileLockCount，只给测试断言回收用） */

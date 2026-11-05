@@ -87,6 +87,32 @@ test("磁盘记录损坏按未读处理（fail-safe）", async () => {
   await expect(Effect.runPromise(FileTime.assert("ses_corrupt", file))).rejects.toThrow(/must read file/i)
 })
 
+// 261105 Red mtime 抖动放行：内容没变就不该逼模型重读整个大文件。
+test("mtime 变了但内容没变时放行并刷新记录", async () => {
+  await Effect.runPromise(FileTime.record("ses_touch", file))
+  // 模拟 git checkout 回同一内容 / 编辑器无改动保存：只推进 mtime
+  const future = new Date(Date.now() + 5000)
+  await fs.utimes(file, future, future)
+  await Effect.runPromise(FileTime.assert("ses_touch", file))
+  // 放行时已刷新记录，后续再断言同样通过
+  await Effect.runPromise(FileTime.assert("ses_touch", file))
+})
+
+test("内容真的变了仍然拦截，并引导精确替换", async () => {
+  await Effect.runPromise(FileTime.record("ses_hint", file))
+  await fs.writeFile(file, "changed externally")
+  await expect(Effect.runPromise(FileTime.assert("ses_hint", file))).rejects.toThrow(/oldString replacement/)
+})
+
+test("重启后 mtime 抖动仍能靠哈希放行", async () => {
+  await Effect.runPromise(FileTime.record("ses_persist_hash", file))
+  await FileTime.flush()
+  FileTime.reload()
+  const future = new Date(Date.now() + 5000)
+  await fs.utimes(file, future, future)
+  await Effect.runPromise(FileTime.assert("ses_persist_hash", file))
+})
+
 // 261031 Red 写删竞态：会话在写任务排队后被回收，晚到的写不能把刚删掉的文件重建出来，
 // 否则下次续接会绕过预期的重读
 test("被回收的会话不会被排队的写重新创建", async () => {
