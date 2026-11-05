@@ -73,6 +73,11 @@ async function run(cmd: string, args: string[]) {
     encoding: "buffer",
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
+    // 261106 Red 子进程超时不变量：list-fonts 是 IPC 直达路径，reg/system_profiler/fc-list
+    //   挂起时无 timeout 会让渲染层的字体下拉永久 pending
+    timeout: 10_000,
+    // 261106 Red 吞掉的是子进程的 spawn/非零退出/超时错误：字体枚举是纯展示用途，
+    //   任一命令失败就按空列表处理（macos 分支对空输出同样返回 []），无需中断设置面板
   }).catch(() => ({ stdout: Buffer.alloc(0) }))
   // 中文 Windows 上 reg.exe 按控制台代码页输出，utf8 解会出乱码
   return new TextDecoder(process.platform === "win32" ? "gbk" : "utf8").decode(stdout)

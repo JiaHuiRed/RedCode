@@ -144,7 +144,9 @@ function querySidecarProcessTree(rootPid: number): Promise<void> {
     execFile(
       "powershell",
       ["-NoProfile", "-NonInteractive", "-Command", script],
-      { windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      // 261106 Red 子进程超时不变量：metrics 采样每 15s 一次，powershell 卡住时
+      //   无 timeout 会积累并发挂起的子进程（本函数只在超时/出错路径 resolve）
+      { windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: 10_000 },
       (error, stdout) => {
         if (error) {
           writeLog("metrics", "sidecar process tree query failed", { error: error.message }, "warn")
@@ -206,8 +208,12 @@ const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
 
 const deepLinks = createDeepLinkDelivery((urls) => {
-  if (!mainWindow) return false
-  sendDeepLinks(mainWindow, urls)
+  // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口；全无时丢弃本次
+  //   投递（返回 false 让链接留在 pending，窗口重建后的 flush 会再投）——仓里没有
+  //   重建主窗的先例，不引入
+  const win = mainWindow ?? BrowserWindow.getAllWindows()[0]
+  if (!win) return false
+  sendDeepLinks(win, urls)
   return true
 })
 
@@ -499,7 +505,10 @@ const main = Effect.gen(function* () {
   // on macOS apps run in `/` which can cause issues with ripgrep
   try {
     process.chdir(homedir())
-  } catch {}
+  } catch {
+    // 261106 Red 吞掉 chdir 失败（目录不存在/权限不足）：cwd 只影响 ripgrep 等子进程的
+    //   相对路径解析，失败时保持原 cwd 也能工作，不值得让启动中断
+  }
 
   process.env.REDCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
@@ -592,9 +601,11 @@ const main = Effect.gen(function* () {
       logger.log("deep link received via second-instance", { urls })
       emitDeepLinks(urls)
     }
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
+    // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口
+    const win = mainWindow ?? BrowserWindow.getAllWindows()[0]
+    if (win) {
+      win.show()
+      win.focus()
     }
   })
 
@@ -642,7 +653,6 @@ const main = Effect.gen(function* () {
     })
   }
 
-  const loadingComplete = Deferred.makeUnsafe<void>()
   // 260901 cc sidecar 就绪信号。窗口现在早于 sidecar 创建（见下方 createMainWindow 那段），
   //   所以 awaitInitialization 不能再立刻 resolve —— 渲染层拿到 url 就会去连，连早了必然失败。
   // 260909 Red 错误通道放宽到 Error：启动失败时 serverReady 要能 fail（渲染层拿到拒绝而非干等）。
@@ -681,7 +691,6 @@ const main = Effect.gen(function* () {
     // 261021 Red 审计 RC21-07：多选时合并成一次 WSL 调用，不再对每个路径各冷启动一次。
     wslPaths: async (paths, mode) => wslPathMany(paths, mode),
     resolveAppPath: async (appName) => resolveAppPath(appName),
-    loadingWindowComplete: () => Deferred.doneUnsafe(loadingComplete, Effect.void),
     runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail, killSidecar),
     checkUpdate: async () => checkUpdate(),
     installUpdate: async () => installUpdate(killSidecar),
@@ -841,7 +850,13 @@ const main = Effect.gen(function* () {
   //      必然已经好了）；
   //   ② renderer/index.tsx 那个包住整个 UI 的 <Show> 必须补 fallback —— 它原先没有，
   //      窗口提前出现会变成「1.4 秒空白窗」，比没窗口更糟（仓里 ca2eebea 打过一次这种黑窗）。
-  mainWindow = createMainWindow()
+  const win = createMainWindow()
+  mainWindow = win
+  // 261106 Red darwin 上关窗即销毁 BrowserWindow：不从 mainWindow 清掉的话，
+  //   second-instance / 深链投递 / 菜单 trigger 会对已销毁实例调方法直接 throw
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null
+  })
   mainWindow.webContents.on("did-start-loading", () => deepLinks.reset())
   // 260929 Red close→hide：X/Alt+F4 只藏窗不退出，后台任务继续跑；真正退出收口到托盘
   //「退出」（confirmQuit）。quitting 为 true（confirmQuit/SIGINT/relaunch/启动失败）时不拦。
@@ -855,7 +870,8 @@ const main = Effect.gen(function* () {
   if (mainWindow) {
     createMenu({
       trigger: (id) => {
-        const win = BrowserWindow.getFocusedWindow() ?? mainWindow
+        // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口
+        const win = BrowserWindow.getFocusedWindow() ?? mainWindow ?? BrowserWindow.getAllWindows()[0]
         if (win) sendMenuCommand(win, id)
       },
       checkForUpdates: () => {
@@ -893,7 +909,6 @@ const main = Effect.gen(function* () {
     app.quit()
     return
   }
-  setInitStep({ phase: "done" })
   setInitStep({ phase: "done" })
   Deferred.doneUnsafe(serverReady, Effect.void)
 })

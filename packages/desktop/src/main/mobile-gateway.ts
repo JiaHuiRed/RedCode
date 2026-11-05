@@ -393,6 +393,14 @@ type MobileGatewayAccess = {
 async function handleRequest(context: RequestContext) {
   const { request, response, auth, sidecar, scope, access } = context
   const url = new URL(request.url ?? "/", "https://mobile.invalid")
+  // 261106 Red Host 校验提到所有路由之前（原先只护已注册路由，/__mobile/pair 漏掉）：
+  //   Gateway 只对 loopback/局域网接口监听，校验 Host 挡的是 DNS rebinding 把浏览器
+  //   请求伪装成合法主机名打到 Gateway 上的场景
+  const host = request.headers.host?.toLowerCase()
+  const allowedHost = host === `localhost:${request.socket.localPort}` ||
+    host === `127.0.0.1:${request.socket.localPort}` ||
+    host === `${request.socket.localAddress}:${request.socket.localPort}`
+  if (!allowedHost) return writeJson(response, 421, { error: "Unexpected Gateway host" })
   if (request.method === "POST" && url.pathname === "/__mobile/pair") {
     if (request.headers.origin || request.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
       return writeJson(response, 403, { error: "Pairing requires the native client" })
@@ -416,11 +424,6 @@ async function handleRequest(context: RequestContext) {
 
   const route = mobileGatewayRoute(request.method ?? "", url.pathname)
   if (!route) return writeJson(response, 403, { error: "This route is not available to mobile devices" })
-  const host = request.headers.host?.toLowerCase()
-  const allowedHost = host === `localhost:${request.socket.localPort}` ||
-    host === `127.0.0.1:${request.socket.localPort}` ||
-    host === `${request.socket.localAddress}:${request.socket.localPort}`
-  if (!allowedHost) return writeJson(response, 421, { error: "Unexpected Gateway host" })
 
   const token = cookie(request.headers.cookie, DEVICE_COOKIE)
   const device = auth.authenticate(token)
@@ -684,7 +687,15 @@ class RequestBodyError extends Error {
 }
 
 async function readBody(request: IncomingMessage, limit: number) {
-  if (limit === 0) return Buffer.alloc(0)
+  if (limit === 0) {
+    // 261106 Red limit=0 也要把请求体排空：直接返回会让未消费的 body 滞留在
+    //   keep-alive 连接里，被同连接的下一个请求误读。for-await 丢弃并等流自然结束，
+    //   客户端中途断开时流抛错，由调用方的 .catch 降级成 400。
+    for await (const _ of request) {
+      // drain
+    }
+    return Buffer.alloc(0)
+  }
   const declaredLength = Number(request.headers["content-length"] ?? 0)
   if (declaredLength > limit) throw new RequestBodyError(413)
   const chunks: Buffer[] = []

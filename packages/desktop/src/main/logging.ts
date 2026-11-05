@@ -256,6 +256,8 @@ function cleanup() {
       const info = statSync(file)
       if (info.mtimeMs < cutoff) rmSync(file, { recursive: true, force: true })
     } catch {
+      // 261106 Red 吞掉单个条目的 stat/rm 失败（正被占用的日志文件等）：清理是尽力而为，
+      //   一个文件删不掉不应中断其余条目的清理，也不值得为它告警
       continue
     }
   }

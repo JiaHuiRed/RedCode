@@ -175,46 +175,6 @@ export function createMainWindow() {
   return win
 }
 
-export function createLoadingWindow() {
-  const mode = tone()
-  const win = new BrowserWindow({
-    width: 640,
-    height: 480,
-    resizable: false,
-    center: true,
-    show: true,
-    autoHideMenuBar: true,
-    icon: iconPath(),
-    backgroundColor,
-    ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const } : {}),
-    ...(process.platform === "win32"
-      ? {
-          frame: false,
-          titleBarStyle: "hidden" as const,
-          titleBarOverlay: overlay({ mode }),
-        }
-      : {}),
-    webPreferences: {
-      preload: join(root, "../preload/index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // 260920 Red 窗口被完全遮挡时 Chromium 会把页面判成 hidden：停 rAF、把定时器压到 1Hz。
-      // 虚拟列表（virtua / pierre）只在 scroll/resize 时重算可视区间，离开前算出的那批行于是
-      // 一直挂在原地 —— 切回窗口看到的是整片空白，滚一下才对上。关掉节流后 Page Visibility
-      // API 恒为 visible，渲染链路不再被遮挡打断（代价是遮挡期间仍走正常帧预算，桌面端可接受）。
-      backgroundThrottling: false,
-    },
-  })
-
-  allowRendererPermissions(win.webContents.session, () => BrowserWindow.getAllWindows())
-  wireWindowRecovery(win, "loading")
-
-  loadWindow(win, "loading.html")
-
-  return win
-}
-
 export function registerRendererProtocol() {
   if (protocol.isProtocolHandled(rendererProtocol)) return
 

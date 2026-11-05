@@ -130,7 +130,10 @@ process.on("beforeExit", (code) => {
       `listener=${listener ? "alive" : "gone"} resources=${JSON.stringify(resources)}\n`
     fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
     parentPort.postMessage({ type: "error", error: serializeError(new Error(msg.trim())) })
-  } catch {}
+  } catch {
+    // 261106 Red 吞掉遗言写入失败（crash log 不可写/parentPort 已关）：这是事件循环排空后的
+    //   最后一道钩子，进程马上自然退出，此时任何兜底动作都无处安放
+  }
 })
 
 let listener: Listener | undefined

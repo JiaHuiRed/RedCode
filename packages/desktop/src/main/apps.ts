@@ -123,7 +123,8 @@ async function checkMacosApp(appName: string) {
     if (await exists(location)) return true
   }
 
-  return execFilePromise("which", [appName])
+  // 261106 Red 子进程超时不变量：check-app-exists 是 IPC 直达路径，which 挂起会让渲染层永久 pending
+  return execFilePromise("which", [appName], { timeout: 10_000, windowsHide: true })
     .then(() => true)
     .catch(() => false)
 }
@@ -131,7 +132,10 @@ async function checkMacosApp(appName: string) {
 async function resolveWindowsAppPath(appName: string): Promise<string | null> {
   let output: string
   try {
-    output = await execFilePromise("where", [appName]).then((r) => r.stdout.toString())
+    // 261106 Red 子进程超时不变量：where 挂起会让 resolve-app-path 这条 IPC 永久 pending
+    output = await execFilePromise("where", [appName], { timeout: 10_000, windowsHide: true }).then((r) =>
+      r.stdout.toString(),
+    )
   } catch {
     return null
   }

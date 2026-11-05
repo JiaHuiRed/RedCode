@@ -27,6 +27,11 @@ const pickerFilters = (ext?: string[]) => {
   return [{ name: "Files", extensions: ext }]
 }
 
+// 261106 Red IPC payload 上限（注入项必须有硬上限）：渲染层进来的东西在入口处限量，
+//   超限 throw 让 invoke reject 回渲染层，而不是写盘/落日志前才炸。
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+const MAX_GUI_DIAGNOSTICS_BYTES = 4 * 1024 * 1024
+
 type Deps = {
   killSidecar: () => Promise<void> | void
   restartSidecar: () => Promise<void> | void
@@ -43,7 +48,6 @@ type Deps = {
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
   wslPaths: (paths: string[], mode: "windows" | "linux" | null) => Promise<string[]>
   resolveAppPath: (appName: string) => Promise<string | null>
-  loadingWindowComplete: () => void
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
@@ -108,16 +112,18 @@ export function registerIpcHandlers(deps: Deps) {
     deps.wslPaths(paths, mode),
   )
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
-  ipcMain.on("loading-window-complete", () => deps.loadingWindowComplete())
   ipcMain.handle("run-updater", (_event: IpcMainInvokeEvent, alertOnFail: boolean) => deps.runUpdater(alertOnFail))
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
-  ipcMain.handle(
-    "save-gui-diagnostics",
-    (_event: IpcMainInvokeEvent, payload: string) => deps.saveGuiDiagnostics(payload) ?? null,
-  )
+  ipcMain.handle("save-gui-diagnostics", (_event: IpcMainInvokeEvent, payload: string) => {
+    // 261106 Red 4MB 顶：诊断串写日志文件，无上限会让渲染层异常把日志卷撑爆
+    const size = Buffer.byteLength(payload, "utf8")
+    if (size > MAX_GUI_DIAGNOSTICS_BYTES)
+      throw new Error(`GUI diagnostics payload too large: ${size} bytes exceeds the ${MAX_GUI_DIAGNOSTICS_BYTES} limit`)
+    return deps.saveGuiDiagnostics(payload) ?? null
+  })
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )
@@ -211,7 +217,8 @@ export function registerIpcHandlers(deps: Deps) {
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
-      execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
+      // 261106 Red 子进程超时不变量：无 timeout 时目标应用拉不起来会让这条 IPC 永久 pending
+      execFile(cmd, args, { timeout: 10_000 }, (err) => (err ? reject(err) : resolve()))
     })
   })
 
@@ -223,6 +230,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle(
     "write-attachment",
     async (_event: IpcMainInvokeEvent, sessionDir: string, filename: string, data: Uint8Array) => {
+      // 261106 Red 50MB 顶（与剪贴板大图同量级）：无上限的 Uint8Array 可把内存/磁盘打穿
+      if (data.byteLength > MAX_ATTACHMENT_BYTES)
+        throw new Error(
+          `Attachment too large: ${data.byteLength} bytes exceeds the ${MAX_ATTACHMENT_BYTES} limit`,
+        )
       const dir = resolve(sessionDir, ".attachments")
       await mkdir(dir, { recursive: true })
       const filepath = resolve(dir, filename)
