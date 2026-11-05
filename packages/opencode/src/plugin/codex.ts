@@ -267,11 +267,21 @@ async function startOAuthServer(): Promise<{ port: number; redirectUri: string }
   await new Promise<void>((resolve, reject) => {
     // 261106 Red 显式绑 loopback：不指定 host 会监听全部网络接口，局域网内其他机器
     // 也能打到本机 OAuth 回调端口。redirect_uri 仍是 localhost（上游注册如此）。
+    // 261106 Red 审计 P2-05：listen 失败（如端口被占）必须清掉 oauthServer 残引用，
+    // 否则下次 startOAuthServer 开头短路，返回指向空处的 redirect URI（对齐 xai
+    // 同款生命周期）。listen 成功后换 log-only 监听，accept/socket 错误不走
+    // Node 默认的 throw 杀进程。
+    const onError = (err: Error) => {
+      oauthServer = undefined
+      reject(err)
+    }
+    oauthServer!.once("error", onError)
     oauthServer!.listen(OAUTH_PORT, "127.0.0.1", () => {
+      oauthServer!.removeListener("error", onError)
+      oauthServer!.on("error", (err) => log.warn("codex oauth server error", { error: err }))
       log.info("codex oauth server started", { port: OAUTH_PORT })
       resolve()
     })
-    oauthServer!.on("error", reject)
   })
 
   return { port: OAUTH_PORT, redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }

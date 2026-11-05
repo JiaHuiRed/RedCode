@@ -549,6 +549,44 @@ describe("plugin.codex", () => {
       globalThis.fetch = realFetch
     }
   })
+
+  // 261106 Red 审计 P2-05 回归：listen 失败（端口被占）必须清掉 oauthServer 残引用，
+  // 释放端口后再次授权必须真正起服务（旧实现短路返回指向空处的 redirect URI）
+  test("oauth server listen failure clears the stale reference so a retry can bind", async () => {
+    const hooks = await CodexAuthPlugin({} as never)
+    const authorize = () => hooks.auth!.methods![0]!.authorize!()
+    const realFetch = globalThis.fetch
+
+    const blocker = Bun.serve({ hostname: "127.0.0.1", port: 1455, fetch: () => new Response("busy") })
+    try {
+      await expect(authorize()).rejects.toThrow()
+    } finally {
+      blocker.stop(true)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith("https://auth.openai.com/oauth/token")) {
+        return Response.json({
+          id_token: createTestJwt({ chatgpt_account_id: "acc-retry" }),
+          access_token: "access-retry",
+          refresh_token: "refresh-retry",
+          expires_in: 3600,
+        })
+      }
+      return realFetch(input, init)
+    }) as typeof fetch
+    try {
+      const started = (await authorize()) as { url: string; callback: () => Promise<unknown> }
+      const state = new URL(started.url).searchParams.get("state")!
+      const ok = await fetch(`http://127.0.0.1:1455/auth/callback?code=retry-code&state=${state}`)
+      expect(ok.status).toBe(200)
+      expect(await ok.text()).toContain("Authorization Successful")
+      expect(await started.callback()).toMatchObject({ type: "success" })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 })
 
 async function waitFor(predicate: () => boolean) {
