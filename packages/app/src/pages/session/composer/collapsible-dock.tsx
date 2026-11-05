@@ -31,7 +31,9 @@ export function CollapsibleDock(props: {
         type="button"
         class="pl-3 pr-2 py-2 flex items-center gap-2 text-left w-full cursor-default"
         aria-expanded={!props.collapsed}
-        aria-controls={contentId}
+        // 261106 Red 审计 P3：内容区只在展开时挂载，折叠态下 aria-controls 指向
+        // 不存在的元素——目标缺席时不再声明该属性
+        aria-controls={props.collapsed ? undefined : contentId}
         onClick={toggle}
         // 与原 IconButton 的 mousedown 行为一致：点击不打走编辑器焦点
         onMouseDown={(event) => event.preventDefault()}
