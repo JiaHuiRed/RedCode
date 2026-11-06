@@ -292,6 +292,28 @@ it.instance("loads config with defaults when no files exist", () =>
   }),
 )
 
+// 261106 Red 判别测试：全局配置损坏时 getGlobal 必须降级 {}（保启动），
+// 且 getGlobalError 必须带出真实解析错误——旧实现用 Effect.result 捕获，
+// 而 ConfigParse 是同步 throw（defect），两个断言都会红。
+it.instance("degrades to defaults and reports the parse error when global config is corrupt", () =>
+  Effect.gen(function* () {
+    const globalDir = yield* tmpdirScoped()
+    yield* AppFileSystem.use.writeWithDirs(path.join(globalDir, "redcode.jsonc"), '{ "model": ')
+
+    yield* withGlobalConfigDir(
+      globalDir,
+      Effect.gen(function* () {
+        const svc = yield* Config.Service
+        expect(yield* svc.getGlobal()).toEqual({})
+
+        const error = yield* svc.getGlobalError()
+        expect(Option.isSome(error)).toBe(true)
+        if (Option.isSome(error)) expect(error.value).toContain("JSONC")
+      }),
+    )
+  }),
+)
+
 it.effect("creates global jsonc config with schema when no global configs exist", () =>
   withGlobalConfig({}, ({ dir }) =>
     Effect.gen(function* () {

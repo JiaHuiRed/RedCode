@@ -123,13 +123,17 @@ export async function bootstrapGlobal(input: {
         .fetchQuery(loadProjectsQuery(input.globalSDK))
         .then((data) => input.setGlobalStore("project", data)),
   ]
-  await runAll(slow)
-  // showErrors({
-  //   errors: errors(),
-  //   title: input.requestFailedTitle,
-  //   translate: input.translate,
-  //   formatMoreCount: input.formatMoreCount,
-  // })
+  const slowErrs = errors(await runAll(slow))
+  // 261106 Red 自审计：恢复被注释的失败暴露。allSettled 把全局慢查询（config/
+  // providers/quota/path/projects）的失败整组吞掉，bootstrap 被记录为成功，前端
+  // 以为初始化完成而服务端状态不完整。实例级 bootstrap（loadInstance）失败会
+  // console.error + toast，全局级对齐同一口径；仍不升级为启动失败，保留部分可用。
+  showErrors({
+    errors: slowErrs,
+    title: input.requestFailedTitle,
+    translate: input.translate,
+    formatMoreCount: input.formatMoreCount,
+  })
 }
 
 function groupBySession<T extends { id: string; sessionID: string }>(input: T[]) {

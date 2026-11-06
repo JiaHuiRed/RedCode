@@ -324,6 +324,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
           }
         },
         "description": "Retrieve the current global RedCode configuration settings and preferences.",

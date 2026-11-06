@@ -1,11 +1,12 @@
 import { Config } from "@/config/config"
 import { emptyConsoleState } from "@/config/console-state"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 
 export function make(overrides: Partial<Config.Interface> = {}) {
   return Config.Service.of({
     get: () => Effect.succeed({}),
     getGlobal: () => Effect.succeed({}),
+    getGlobalError: () => Effect.succeed(Option.none()),
     getConsoleState: () => Effect.succeed(emptyConsoleState),
     update: () => Effect.void,
     updateGlobal: (config) => Effect.succeed({ info: config, changed: false }),

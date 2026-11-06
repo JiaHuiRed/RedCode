@@ -5149,6 +5149,10 @@ export type GlobalConfigGetErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
 }
 
 export type GlobalConfigGetError = GlobalConfigGetErrors[keyof GlobalConfigGetErrors]

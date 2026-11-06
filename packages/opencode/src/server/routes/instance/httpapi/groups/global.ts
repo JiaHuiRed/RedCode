@@ -4,6 +4,7 @@ import { SyncEvent } from "@/sync"
 import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/http-api"
+import { UnknownError } from "../errors"
 import { described } from "./metadata"
 
 const GlobalHealth = Schema.Struct({
@@ -64,6 +65,9 @@ export const GlobalApi = HttpApi.make("global").add(
       ),
       HttpApiEndpoint.get("configGet", GlobalPaths.config, {
         success: described(Config.Info, "Get global config info"),
+        // 261106 Red 自审计：全局配置加载失败（损坏/解析错误）时如实 500 携带原因，
+        // 服务端内部仍降级启动，但客户端能看到配置为什么没生效。
+        error: UnknownError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "global.config.get",

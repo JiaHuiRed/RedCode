@@ -7,11 +7,12 @@ import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import * as Log from "@redcode-ai/core/util/log"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder } from "effect/http-api"
 import * as Sse from "effect/encoding/Sse"
+import { UnknownError } from "../errors"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
 import { eventData } from "./sse-encode"
@@ -67,6 +68,11 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {
+      // 261106 Red 自审计：全局配置损坏（JSONC 语法错误等）时服务端内部降级 {} 保启动，
+      // 但 configGet 必须把失败如实暴露——前端 bootstrap 对全局慢查询失败有 toast 通道，
+      // 用户能直接看到解析错误，而不是设置静默失效。
+      const failed = yield* config.getGlobalError()
+      if (Option.isSome(failed)) return yield* Effect.fail(new UnknownError({ message: failed.value }))
       return yield* config.getGlobal()
     })
 

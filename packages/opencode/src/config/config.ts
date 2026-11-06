@@ -18,7 +18,7 @@ import { isRecord } from "@/util/record"
 import type { ConsoleState } from "./console-state"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { InstanceState } from "@/effect/instance-state"
-import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Option, Result, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { EffectFlock } from "@redcode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
@@ -455,6 +455,9 @@ type State = {
 export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
+  // 261106 Red 自审计：全局配置加载失败时 getGlobal 仍降级返回 {}（保启动），
+  // 但失败必须可被 API 出口观测——Some(错误消息)，成功为 None。
+  readonly getGlobalError: () => Effect.Effect<Option.Option<string>>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
   readonly update: (config: Info) => Effect.Effect<void>
   readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
@@ -698,16 +701,32 @@ export const layer = Layer.effect(
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
       loadGlobal().pipe(
-        Effect.tapError((error) =>
-          Effect.sync(() => log.error("failed to load global config, using defaults", { error: String(error) })),
-        ),
-        Effect.orElseSucceed((): Info => ({})),
+        // 261106 Red 配置解析是同步 throw（JsonError/InvalidError），在 Effect.gen 里记为
+        // defect——Effect.result / tapError 都捕获不到，先在这里归一成 typed error。
+        Effect.catchDefect((defect) => {
+          const error = defect instanceof Error ? defect : new Error(String(defect))
+          log.error("failed to load global config, using defaults", { error: error.message })
+          return Effect.fail(error)
+        }),
+        // 261106 Red 自审计：降级启动保留，但失败不能只留在日志里——缓存 Result，
+        // getGlobal 维持 {} 回退（服务端内部消费不受损），getGlobalError 把解析错误
+        // 暴露给 configGet 出口，客户端 bootstrap 能 toast 出真实原因。
+        Effect.result,
       ),
       Duration.infinity,
     )
 
     const getGlobal = Effect.fn("Config.getGlobal")(function* () {
-      return yield* cachedGlobal
+      const result = yield* cachedGlobal
+      // 261106 Red Effect v4：Result.getSuccess 返回 Option<A> 而非 A，用 getOrElse 保留降级语义。
+      return Result.getOrElse(result, () => ({}) as Info)
+    })
+
+    const getGlobalError = Effect.fn("Config.getGlobalError")(function* () {
+      const result = yield* cachedGlobal
+      if (Result.isSuccess(result)) return Option.none<string>()
+      // 261106 Red 同上：getFailure 返回 Option<E>，直接读收窄后的 failure 才是原始错误。
+      return Option.some(result.failure.message)
     })
 
     const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string) {
@@ -1142,6 +1161,7 @@ export const layer = Layer.effect(
     return Service.of({
       get,
       getGlobal,
+      getGlobalError,
       getConsoleState,
       update,
       updateGlobal,
