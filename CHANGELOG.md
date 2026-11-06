@@ -10,6 +10,11 @@
 
 ### [Unreleased]
 
+- **TUI 后台活动面板的空态/失败态/只读行不再被选择器吞掉**（`opencode/src/cli/cmd/tui/ui/dialog-select.tsx`、`component/dialog-background.tsx`）：通用选择器会先过滤所有 `disabled` 项，而面板把「加载失败」「没有后台活动」和已完成任务都标成 disabled，结果统一落到「未找到结果」。现在 `DialogSelect` 新增 `emptyContent`（无结果时显示真实原因）与 `readOnly` 语义（照常显示、跳过键盘导航、点击/Enter 不触发动作）；加载失败与空态走 `emptyContent`，已完成的任务和已退出终端用 `readOnly` 保留在列表里。验证：opencode typecheck exit 0；实机验收待跑。
+- **TUI Footer 的 MCP/LSP/权限数字可点击查看详情**（`opencode/src/cli/cmd/tui/routes/session/footer.tsx`）：此前只是纯文本，看到异常没有入口。点击复用已有的状态弹窗（`redcode.status`），不新增状态存储。验证：opencode typecheck exit 0；实机验收待跑。
+- **TUI 侧边栏共享链接点击复制**（`opencode/src/cli/cmd/tui/routes/session/sidebar.tsx`）：共享 URL 此前是纯文本。点击调用既有剪贴板封装并 toast「链接已复制」；鼠标正在选择文本时不触发，保留终端原生复制。验证：opencode typecheck exit 0；实机验收待跑。
+- **删除首页列表首组的重复「新建会话」按钮**（`app/src/pages/home.tsx`）：搜索栏主按钮已常驻，分组标题里的 ghost 小按钮只对首组渲染、层级低且重复。删除该入口，空列表独立 CTA 保留。验证：app typecheck exit 0。
+
 - **模型只回 `[history truncated]` 占位符时不再被当成正常收尾**（`opencode/src/session/instruction-echo.ts`）：native 压缩上下文里模型会把机读标记改写成截断占位符（`ses_ffe5e553…` 实测：output=5 tokens、finish=stop、任务未完成），用户看到一条只有占位符的消息，以为做完了。新增 `history-truncated` 剥离规则：完成时整段剥成空正文，交给现有空轮兜底（重试一次 → 可见提示），不再原样落库。验证：instruction-echo 55 pass，opencode typecheck exit 0。
 
 - **砍掉桌宠额度按钮**（`app/src/pet/pet-layer.tsx`、`pet-layer.css`、`pet-lines.ts`、`pet-lines.test.ts`）：与胶囊/模型悬停的额度展示重复，内容也不够美观。删除按钮 DOM、`data-quota-open` 样式、`petQuotaLines`/`petQuotaAvailable` 及 5 条测试；气泡回归纯台词/详情，`provider_quota` 数据源与其他入口不动。验证：app typecheck exit 0，pet-lines 24 pass。
@@ -18,7 +23,6 @@
 - **TUI 历史消息提示支持点击增量加载**（`opencode/src/cli/cmd/tui/routes/session/index.tsx`）：顶部「↑ N earlier messages」此前只是静态文案。现在点击加载更早 50 条，扩窗前记录顶部可见消息、扩窗后滚回同一位置，保留 Ctrl+Home 全量。验证：opencode typecheck exit 0；鼠标实机验收待跑。
 - **GUI 会话行状态补悬停原因**（`app/src/pages/home.tsx`、三语 i18n）：状态点只有颜色，新增 Tooltip 与 aria-label，按「运行中 > 待批准 > 执行错误 > N 条未读」的既有优先级给出文案；不新增轮询。验证：app typecheck exit 0，i18n parity 4 pass。
 
-### [0.16.1] - 2026-11-06
 ### [0.16.1] - 2026-11-06
 
 - **全局配置损坏不再拖垮启动，解析错误可从 API 观测**（`opencode/src/config/config.ts`、`server/routes/instance/httpapi/{groups,handlers}/global.ts`、`app/src/context/global-sync/bootstrap.ts`）：全局配置加载原先用 `Effect.orElseSucceed` 兜底，但 `ConfigParse` 是同步 throw（Effect 记为 defect），`orElseSucceed`/`tapError` 根本捕获不到——JSONC 语法错误或 schema 校验失败仍会让服务端起不来。现在 `catchDefect` 把 defect 归一成 typed error 并按 Result 缓存：`getGlobal` 维持 `{}` 降级保启动，新增 `getGlobalError` 把真实解析错误带到 `/global/config`（500 + message），GUI 全局 bootstrap 的慢查询失败恢复 toast（此前整组被 allSettled 吞掉）。验证：opencode/app typecheck exit 0，config 测试 100 pass（含损坏 JSONC 判别用例），httpapi global.config 两场景 PASS，OpenAPI 重新生成后 drift 一致。
