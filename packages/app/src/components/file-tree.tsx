@@ -382,8 +382,34 @@ export default function FileTree(props: {
   const [cursor, setCursor] = createSignal<string | undefined>(undefined)
   const rovingCursor = props._cursor ?? cursor
 
+  // 261106 Red 自查：filter 必须先于 allVisible 声明——solid 的 createMemo 在创建时
+  // 就同步首跑（updateComputation），不是首读才求值；allVisible 闭包读 filter，
+  // 声明顺序颠倒会让任何 FileTree 实例挂载即 TDZ 崩溃（实测整个 app 白屏报错）。
+  const filter = createMemo(() => {
+    if (props._filter) return props._filter
+
+    const allowed = props.allowed
+    if (!allowed) return
+
+    const files = new Set(allowed)
+    const dirs = new Set<string>()
+
+    for (const item of allowed) {
+      const parts = item.split("/")
+      // 260923 Red 逐段累加父路径，替代每个父级 slice+join 的 O(depth²) 字符串构造；
+      // 首段为空（绝对路径）时保持 join 语义：第二段起得到 "/foo" 而不是 "foo"
+      let dir = ""
+      for (let i = 0; i < parts.length - 1; i++) {
+        dir = i === 0 ? parts[0]! : `${dir}/${parts[i]}`
+        if (dir) dirs.add(dir)
+      }
+    }
+
+    return { files, dirs }
+  })
+
   // 261106 Red 审计 P2-03：整树可见平铺只在根实例求值（嵌套实例的 tabStop 不经过它，
-  // memo 惰性创建零成本），用于失效光标恢复判定。
+  // 嵌套实例只付 memo 创建成本），用于失效光标恢复判定。
   const allVisible = createMemo(() =>
     visibleTreeNodes({
       path: props.path,
@@ -446,29 +472,6 @@ export default function FileTree(props: {
     setCursor(next)
     rootRef?.querySelector<HTMLElement>(`[data-tree-node="${CSS.escape(next)}"]`)?.focus()
   }
-
-  const filter = createMemo(() => {
-    if (props._filter) return props._filter
-
-    const allowed = props.allowed
-    if (!allowed) return
-
-    const files = new Set(allowed)
-    const dirs = new Set<string>()
-
-    for (const item of allowed) {
-      const parts = item.split("/")
-      // 260923 Red 逐段累加父路径，替代每个父级 slice+join 的 O(depth²) 字符串构造；
-      // 首段为空（绝对路径）时保持 join 语义：第二段起得到 "/foo" 而不是 "foo"
-      let dir = ""
-      for (let i = 0; i < parts.length - 1; i++) {
-        dir = i === 0 ? parts[0]! : `${dir}/${parts[i]}`
-        if (dir) dirs.add(dir)
-      }
-    }
-
-    return { files, dirs }
-  })
 
   const marks = createMemo(() => {
     if (props._marks) return props._marks
