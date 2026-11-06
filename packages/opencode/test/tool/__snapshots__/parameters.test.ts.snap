@@ -352,7 +352,7 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "type": "string",
     },
     "isolation": {
-      "description": "When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch) so its file edits do not touch the parent workspace. Use for risky or parallel changes.",
+      "description": "When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch). Only for parallel experimental branch work intended to be discarded: the isolated child cannot write to absolute paths in the parent workspace (by design), and its changes are not merged back — integration is the caller's job. Read-only agents such as explore reject isolation.",
       "enum": [
         "worktree",
       ],

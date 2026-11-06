@@ -51,20 +51,14 @@ export function decodeTaskPacket(input: unknown): TaskPacket | undefined {
 export const ResultStatus = Schema.Literals(["ready_for_review", "blocked", "failed", "uncertain", "cancelled"])
 export type ResultStatus = Schema.Schema.Type<typeof ResultStatus>
 
+// 261107 Red D3（docs/agent-dispatch-plan.md）：删除运行时永远采集不到的占位字段
+// （changedFiles 恒 []、verification 全部伪造 not_run、toolCalls 从未上报）——落盘
+// 假数据会误导后续审计，宁可没有；未核验事实靠 uncertainties 的诚实声明与父线程复核。
 export const ResultPacketSchema = Schema.Struct({
   status: ResultStatus,
   summary: Schema.String,
   requestedScope: Schema.Array(Schema.String),
   uncertainties: Schema.Array(Schema.String),
-  changedFiles: Schema.Array(Schema.String),
-  verification: Schema.Array(
-    Schema.Struct({
-      command: Schema.String,
-      status: Schema.Literals(["passed", "failed", "timed_out", "not_run"]),
-      output: Schema.String,
-    }),
-  ),
-  toolCalls: Schema.optional(Schema.Number),
   elapsedMs: Schema.Number,
   termination: Schema.Literals(["normal", "cancelled", "timeout", "scope_denied", "persistence_failed"]),
 })
@@ -83,12 +77,6 @@ export function createChildResultPacket(input: {
     summary: input.summary,
     requestedScope: [...input.packet.scope.directories, ...input.packet.scope.files],
     uncertainties: ["Runtime did not independently execute Task Packet verification."],
-    changedFiles: [],
-    verification: input.packet.verification.map((command) => ({
-      command,
-      status: "not_run" as const,
-      output: "",
-    })),
     elapsedMs: input.elapsedMs,
     termination: input.termination,
   }
@@ -96,76 +84,18 @@ export function createChildResultPacket(input: {
 
 export const MAX_MAIN_PROJECTION_BYTES = 32 * 1024
 
-export function boundedResultProjection(result: ResultPacket): {
-  text: string
-  truncated: boolean
-  originalBytes: number
-} {
-  const original = JSON.stringify(result)
-  const originalBytes = new TextEncoder().encode(original).byteLength
-  if (originalBytes <= MAX_MAIN_PROJECTION_BYTES) {
-    return { text: original, truncated: false, originalBytes }
-  }
-
-  const compact = (summary: string) =>
-    JSON.stringify({
-      status: result.status,
-      summary,
-      requestedScope: result.requestedScope.slice(0, 16).map((item) => item.slice(0, 256)),
-      uncertainties: result.uncertainties.slice(0, 16).map((item) => item.slice(0, 256)),
-      changedFiles: result.changedFiles.slice(0, 64).map((item) => item.slice(0, 256)),
-      verification: result.verification.slice(0, 16).map((item) => ({
-        command: item.command.slice(0, 256),
-        status: item.status,
-        output: item.output.slice(0, 512),
-      })),
-      toolCalls: result.toolCalls,
-      elapsedMs: result.elapsedMs,
-      termination: result.termination,
-      truncated: true,
-      originalBytes,
-    })
-
-  let low = 0
-  let high = result.summary.length
-  let text = compact("")
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2)
-    const candidate = compact(result.summary.slice(0, middle))
-    if (new TextEncoder().encode(candidate).byteLength <= MAX_MAIN_PROJECTION_BYTES) {
-      text = candidate
-      low = middle + 1
-    } else {
-      high = middle - 1
-    }
-  }
-  if (new TextEncoder().encode(text).byteLength > MAX_MAIN_PROJECTION_BYTES) {
-    text = JSON.stringify({
-      status: result.status,
-      summary: "",
-      termination: result.termination,
-      truncated: true,
-      originalBytes,
-    })
-  }
-  return {
-    text,
-    truncated: true,
-    originalBytes,
-  }
-}
+// 261107 Red D3：explore 结果投影从「ResultPacket JSON 信封」改纯文本——信封 6 个恒空/
+// 样板字段每次派发都白付 token，报告埋在 summary 字符串里还吃转义开销；原 JSON 信封
+// 投影机（boundedResultProjection）随之删除。字节帽保留，截断走字节边界并预留尾部标注。
+const TRUNCATION_RESERVE_BYTES = 128
 
 export function boundedTaskText(text: string): string {
-  return boundedResultProjection({
-    status: "ready_for_review",
-    summary: text,
-    requestedScope: [],
-    uncertainties: [],
-    changedFiles: [],
-    verification: [],
-    elapsedMs: 0,
-    termination: "normal",
-  }).text
+  const bytes = new TextEncoder().encode(text)
+  if (bytes.byteLength <= MAX_MAIN_PROJECTION_BYTES) return text
+  let end = MAX_MAIN_PROJECTION_BYTES - TRUNCATION_RESERVE_BYTES
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--
+  const detail = `[truncated: showing first ${end} of ${bytes.byteLength} bytes]`
+  return new TextDecoder().decode(bytes.slice(0, end)) + `\n${detail}`
 }
 
 export type ChildTaskRecord = {

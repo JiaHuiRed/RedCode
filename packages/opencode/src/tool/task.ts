@@ -126,7 +126,7 @@ const BACKGROUND_DESCRIPTION = [
 
 const Isolation = Schema.optional(Schema.Literal("worktree")).annotate({
   description:
-    'When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch) so its file edits do not touch the parent workspace. Use for risky or parallel changes.',
+    'When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch). Only for parallel experimental branch work intended to be discarded: the isolated child cannot write to absolute paths in the parent workspace (by design), and its changes are not merged back — integration is the caller\'s job. Read-only agents such as explore reject isolation.',
 })
 
 const BaseParameters = Schema.Struct({
@@ -243,6 +243,17 @@ export const TaskTool = Tool.define(
         )
       }
       const isolated = params.isolation === "worktree"
+      // 261107 Red D1（docs/agent-dispatch-plan.md D1，本方案核心）：explore+isolation
+      // 参数校验直接拒绝——只读工种与文件隔离正交，唯一「效果」是读到过时代码视图；
+      // 文案写明原因防模型重试。execute+isolation 保留（并行实验分支），其边界在
+      // schema description 里声明。
+      if (params.subagent_type === "explore" && isolated) {
+        return yield* Effect.fail(
+          new Error(
+            'explore is read-only and does not accept isolation="worktree"; isolation only gates file writes and would just serve a stale code view. Re-dispatch without isolation.',
+          ),
+        )
+      }
 
       // 沿 parentID 链上溯算嵌套深度，超限直接拒绝——放在权限询问之前，别先弹窗再报错
       const parent = yield* sessions.get(ctx.sessionID)
@@ -270,7 +281,9 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error("Explore task packet is invalid and was not started"))
       }
       if (explorePacket && params.task_id) {
-        return yield* Effect.fail(new Error("Explore task resume requires its canonical task packet"))
+        // 261107 Red 文案如实：explore 续跑当前不支持（D2 缓办待观察数据），旧文案
+        // 「requires its canonical task packet」指向不存在的机制，误导排查。
+        return yield* Effect.fail(new Error("Explore tasks cannot be resumed via task_id; dispatch a new explore task instead"))
       }
 
       if (!ctx.extra?.bypassAgentCheck) {

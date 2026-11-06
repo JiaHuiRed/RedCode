@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  boundedResultProjection,
+  boundedTaskText,
   compileExploreTaskPacket,
   createChildResultPacket,
   decodeTaskPacket,
@@ -60,24 +60,21 @@ describe("child task runtime contract", () => {
     expect(decodeTaskPacket({ ...validPacket, goal: "   " })).toBeUndefined()
   })
 
-  test("keeps runtime verification facts separate from child claims", () => {
+  test("accepts an honest result without fabricated runtime fields", () => {
     const result = {
       status: "ready_for_review",
       summary: "Inspected the provider path",
       requestedScope: [],
       uncertainties: [],
-      changedFiles: [],
-      verification: [{ command: "bun dev models", status: "passed", output: "model listed" }],
-      toolCalls: 4,
       elapsedMs: 1200,
       termination: "normal",
-    } as const
+    }
 
     expect(Schema.is(ResultPacketSchema)(result)).toBe(true)
     expect(result.status).not.toBe("completed")
   })
 
-  test("creates an honest result when runtime has not run verification", () => {
+  test("creates an honest result without fabricated verification rows", () => {
     const result = createChildResultPacket({
       packet: validPacket,
       status: "ready_for_review",
@@ -86,30 +83,24 @@ describe("child task runtime contract", () => {
       termination: "normal",
     })
 
-    expect(result.toolCalls).toBeUndefined()
-    expect(result.verification).toEqual([
-      { command: "Run a read-only model listing", status: "not_run", output: "" },
-    ])
-    expect(result.uncertainties).toHaveLength(1)
+    expect(result.requestedScope).toEqual(["packages/opencode/src/provider"])
+    expect(result.uncertainties).toEqual(["Runtime did not independently execute Task Packet verification."])
+    expect("changedFiles" in result).toBe(false)
+    expect("verification" in result).toBe(false)
+    expect("toolCalls" in result).toBe(false)
   })
 
-  test("caps the Main projection and records truncation", () => {
-    const result = {
-      status: "ready_for_review",
-      summary: "x".repeat(100_000),
-      requestedScope: ["packages/opencode".repeat(100)],
-      uncertainties: [],
-      changedFiles: [],
-      verification: [{ command: "bun test", status: "passed", output: "ok" }],
-      toolCalls: 4,
-      elapsedMs: 1200,
-      termination: "normal",
-    } as const
+  test("caps the Main projection and truncates on byte boundaries", () => {
+    const big = boundedTaskText("x".repeat(100_000))
+    expect(new TextEncoder().encode(big).byteLength).toBeLessThanOrEqual(MAX_MAIN_PROJECTION_BYTES)
+    expect(big).toContain("[truncated: showing first ")
 
-    const projection = boundedResultProjection(result)
-    expect(projection.truncated).toBe(true)
-    expect(projection.originalBytes).toBeGreaterThan(MAX_MAIN_PROJECTION_BYTES)
-    expect(new TextEncoder().encode(projection.text).byteLength).toBeLessThanOrEqual(MAX_MAIN_PROJECTION_BYTES)
-    expect(JSON.parse(projection.text).truncated).toBe(true)
+    // 截断点落在 CJK 多字节字符中间：回退到字符边界，不出 U+FFFD
+    // "x"×32636 + "中"×50 = 32786 字节 > 32KB；帽沿 32640 落在第 2 个「中」的续字节上
+    const cjk = "x".repeat(32_636) + "中".repeat(50)
+    const cut = boundedTaskText(cjk)
+    expect(cut.split("中").length - 1).toBe(1)
+    expect(cut).not.toContain("\uFFFD")
+    expect(new TextEncoder().encode(cut).byteLength).toBeLessThanOrEqual(MAX_MAIN_PROJECTION_BYTES)
   })
 })
