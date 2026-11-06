@@ -8,6 +8,15 @@
 
 ---
 
+### [Unreleased]
+
+- **砍掉桌宠额度按钮**（`app/src/pet/pet-layer.tsx`、`pet-layer.css`、`pet-lines.ts`、`pet-lines.test.ts`）：与胶囊/模型悬停的额度展示重复，内容也不够美观。删除按钮 DOM、`data-quota-open` 样式、`petQuotaLines`/`petQuotaAvailable` 及 5 条测试；气泡回归纯台词/详情，`provider_quota` 数据源与其他入口不动。验证：app typecheck exit 0，pet-lines 24 pass。
+- **TUI Question 确认页支持鼠标提交**（`opencode/src/cli/cmd/tui/routes/session/question.tsx`）：多问题/多选的 Review 页此前只有 Enter 能提交，鼠标选完选项还得回键盘。Review 区新增 `[提交回答]` 点击区，与 Enter 共用 `submit()`；提交门控防双击产生两次 reply，失败复位门控并沿用既有 toast。验证：opencode typecheck exit 0；鼠标/双击实机验收待跑。
+- **GUI 首页快捷键提示改从命令系统读取**（`app/src/pages/home.tsx`）：原硬编码 10 条，命令面板还写着 `Ctrl+P`（实际默认 `mod+shift+p`）且不随自定义绑定变化。现在按命令 id 调 `command.keybind()` 取真实绑定，只显示高频 6 条，未注册/设为 none 的动作不渲染。验证：app typecheck exit 0，i18n parity 4 pass。
+- **TUI 历史消息提示支持点击增量加载**（`opencode/src/cli/cmd/tui/routes/session/index.tsx`）：顶部「↑ N earlier messages」此前只是静态文案。现在点击加载更早 50 条，扩窗前记录顶部可见消息、扩窗后滚回同一位置，保留 Ctrl+Home 全量。验证：opencode typecheck exit 0；鼠标实机验收待跑。
+- **GUI 会话行状态补悬停原因**（`app/src/pages/home.tsx`、三语 i18n）：状态点只有颜色，新增 Tooltip 与 aria-label，按「运行中 > 待批准 > 执行错误 > N 条未读」的既有优先级给出文案；不新增轮询。验证：app typecheck exit 0，i18n parity 4 pass。
+
+### [0.16.1] - 2026-11-06
 ### [0.16.1] - 2026-11-06
 
 - **全局配置损坏不再拖垮启动，解析错误可从 API 观测**（`opencode/src/config/config.ts`、`server/routes/instance/httpapi/{groups,handlers}/global.ts`、`app/src/context/global-sync/bootstrap.ts`）：全局配置加载原先用 `Effect.orElseSucceed` 兜底，但 `ConfigParse` 是同步 throw（Effect 记为 defect），`orElseSucceed`/`tapError` 根本捕获不到——JSONC 语法错误或 schema 校验失败仍会让服务端起不来。现在 `catchDefect` 把 defect 归一成 typed error 并按 Result 缓存：`getGlobal` 维持 `{}` 降级保启动，新增 `getGlobalError` 把真实解析错误带到 `/global/config`（500 + message），GUI 全局 bootstrap 的慢查询失败恢复 toast（此前整组被 allSettled 吞掉）。验证：opencode/app typecheck exit 0，config 测试 100 pass（含损坏 JSONC 判别用例），httpapi global.config 两场景 PASS，OpenAPI 重新生成后 drift 一致。
