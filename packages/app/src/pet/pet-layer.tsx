@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, onCleanup, untrack } from "solid-js"
+import { Show, createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import { useSettings } from "@/context/settings"
@@ -13,8 +13,6 @@ import {
   createPetPresentation,
   petBubblePlacement,
   petDetail,
-  petQuotaAvailable,
-  petQuotaLines,
   petStatus,
   petPositionFromOffset,
   petStroke,
@@ -72,7 +70,6 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     touch: undefined as PetTouch | undefined,
     touchUntil: undefined as number | undefined,
     dragging: false,
-    quotaOpen: false,
     viewport: { width: 0, height: 0 },
     position: { left: 0, top: 0, ready: false },
     rootSize: { width: 0, height: 0 },
@@ -313,7 +310,7 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
   })
 
   createEffect(() => {
-    const line = presentation.line || petDetail(display()) || view.quotaOpen
+    const line = presentation.line || petDetail(display())
     if (!bubble || !geometryObserver) return
     if (line) geometryObserver.observe(bubble)
     else geometryObserver.unobserve(bubble)
@@ -350,7 +347,6 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     }, directory ? pathKey(directory) : undefined)
   })
   const displayKind = createMemo(() => display().kind)
-  const quotaVisible = createMemo(() => view.quotaOpen && petQuotaAvailable(displayKind()))
   const outfit = createMemo(() => outfitFor(petState(), display().sessionID))
   const sprite = createMemo(() =>
     outfit() === DEFAULT_OUTFIT
@@ -362,10 +358,6 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     settings.general.petEnabled()
     displayKind()
     untrack(resetInteraction)
-  })
-
-  createEffect(() => {
-    if (!settings.general.petEnabled() || !petQuotaAvailable(displayKind())) setView("quotaOpen", false)
   })
 
   // 261006 Red reducer 记住姿态边沿，1s tick 只收过期台词/推进闲时动作，不反复抽词。
@@ -399,7 +391,6 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
           data-action={presentation.action}
           data-touch={view.touch}
           data-dragging={view.dragging ? "true" : "false"}
-          data-quota-open={quotaVisible() ? "true" : "false"}
           data-bubble-placement={bubbleLayout().placement}
           data-bubble-align={bubbleLayout().align}
           style={view.position.ready
@@ -407,30 +398,14 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
             : undefined}
           onPointerLeave={handlePointerLeave}
         >
-          <Show when={quotaVisible() || presentation.line || petDetail(display())}>
-              <div ref={setBubbleRef} class="pet-layer-bubble" role={quotaVisible() ? "region" : "status"} aria-label={quotaVisible() ? "订阅额度快照" : undefined} aria-live="polite"
-                style={{ left: `${bubbleLeft()}px`, right: "auto", ...(quotaVisible() ? {
-                  "max-height": `${Math.max(0, Math.min(360, Math.max(view.position.top - 60, view.viewport.height - view.position.top - view.rootSize.height - 60)))}px`,
-                } : {}) }}>
+          <Show when={presentation.line || petDetail(display())}>
+              <div ref={setBubbleRef} class="pet-layer-bubble" role="status" aria-live="polite"
+                style={{ left: `${bubbleLeft()}px`, right: "auto" }}>
                 <span class="pet-layer-bubble-label">赤</span>
-                <Show when={quotaVisible()} fallback={<span class="pet-layer-bubble-text">{presentation.line?.text}{presentation.line && petDetail(display()) ? " · " : ""}{petDetail(display())}</span>}>
-                  <div class="pet-layer-quota-title">订阅额度</div>
-                  <div class="pet-layer-quota-hint">快照不代表当前会话账号</div>
-                  <For each={petQuotaLines(sync.data.provider_quota)}>{(line) => <p class="pet-layer-quota-line">{line}</p>}</For>
-                  <button class="pet-layer-quota-dismiss" type="button" onClick={() => setView("quotaOpen", false)}>关闭</button>
-                </Show>
+                <span class="pet-layer-bubble-text">{presentation.line?.text}{presentation.line && petDetail(display()) ? " · " : ""}{petDetail(display())}</span>
               </div>
           </Show>
           <span class="pet-layer-status" role="status" aria-live="polite">{petStatus(displayKind())}</span>
-          <button
-            type="button"
-            aria-label="查看订阅额度"
-            aria-expanded={quotaVisible()}
-            disabled={!petQuotaAvailable(displayKind())}
-            title="查看订阅额度"
-            class="pet-layer-quota-toggle"
-            onClick={() => setView("quotaOpen", (open) => !open)}
-          >额度</button>
           <button
             ref={body}
             type="button"
