@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.16.2] - 2026-11-06
 
 - **TUI 后台活动面板的空态/失败态/只读行不再被选择器吞掉**（`opencode/src/cli/cmd/tui/ui/dialog-select.tsx`、`component/dialog-background.tsx`）：通用选择器会先过滤所有 `disabled` 项，而面板把「加载失败」「没有后台活动」和已完成任务都标成 disabled，结果统一落到「未找到结果」。现在 `DialogSelect` 新增 `emptyContent`（无结果时显示真实原因）与 `readOnly` 语义（照常显示、跳过键盘导航、点击/Enter 不触发动作）；加载失败与空态走 `emptyContent`，已完成的任务和已退出终端用 `readOnly` 保留在列表里。验证：opencode typecheck exit 0；实机验收待跑。
 - **TUI Footer 的 MCP/LSP/权限数字可点击查看详情**（`opencode/src/cli/cmd/tui/routes/session/footer.tsx`）：此前只是纯文本，看到异常没有入口。点击复用已有的状态弹窗（`redcode.status`），不新增状态存储。验证：opencode typecheck exit 0；实机验收待跑。
