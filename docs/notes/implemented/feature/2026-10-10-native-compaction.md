@@ -279,3 +279,11 @@ native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩�
 修法：快照只保留压缩真正消费的字段，浅拷贝数组与工具对象，活对象按引用保留并约定调用方不原地改写；不再对任意对象图做深拷贝。回归锁两条：「活对象（含函数）可安全入快照」与「快照不含 messages、不借用下一轮组装缓存」。
 
 模型可见四问：① 模型输入不变，只修前缀复用的内存表示；② 固定前缀 0 增量；③ 快照不再携带消息，压缩仍只复用 system/tools，消息段按选段重建；④ 无新增注入项。
+
+## 2026-11-06：摘要复用 provider 工具定义
+
+会话 `ses_ffe5e5153db4affecLVj0cNFq02H11` 的三次原生摘要均被 OpenAI 拒绝：`apply_patch` 的 function schema 是 string 而非 object。正常主请求发的是 `openai.custom` 工具；摘要剥离执行回调时同时丢掉 `type`、`id` 和 `args`，SDK 将剩下的 string schema 当作普通 function。失败没有提交压缩投影，后续普通请求仍可运行。
+
+摘要投影按工具种类保留 wire 定义：provider 工具保留 `type`、`id`、`args` 和 schema；普通工具沿用原字段。两者均不携带执行或输入生命周期回调，`toolChoice: "none"` 与 processor 守卫不变。测试在旧实现上先复现字段缺失；修复后使用真实 OpenAI SDK 序列化投影结果，确认 `apply_patch` 为 custom grammar、工具选择为 none。压缩文件 87 pass；不代表已经在真实供应商完成压缩。
+
+模型可见四问：① 摘要请求的 `apply_patch` 从错误的 function/string schema 恢复为主请求的 custom grammar；普通主请求、其余工具及摘要文字不变。② 普通请求固定前缀增量为 0；现场摘要首个工具定义日志从主请求的 1425 字符缩成 71 字符，恢复后增加约 1354 字符，精确 token 差未测。③ 普通请求前缀不变，摘要工具段从该工具开始恢复主请求形态，实际缓存命中取决于供应商；成功提交后的 revision 结算不变。④ 没有新增工具或独立注入项，复用既有主请求工具定义与输入预算；grammar 是代码内固定协议文本，未新增无界输入。

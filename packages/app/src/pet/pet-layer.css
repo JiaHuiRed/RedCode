@@ -318,6 +318,7 @@
   }
 }
 
+@media (pointer: coarse) {
   .pet-layer-close {
     width: 40px;
     height: 40px;

@@ -621,9 +621,11 @@ export const layer = Layer.effect(
           agent: snapshot?.agent ?? compactionAgent, sessionID: input.sessionID,
           permission: snapshot?.permission,
           parentSessionID: snapshot?.parentSessionID,
-          tools: Object.fromEntries(Object.entries(snapshot?.tools ?? {}).map(([name, tool]) => [name, {
-            description: tool.description, inputSchema: tool.inputSchema, strict: tool.strict, providerOptions: tool.providerOptions,
-          }])),
+          tools: Object.fromEntries(Object.entries(snapshot?.tools ?? {}).map(([name, tool]) => [name,
+            tool.type === "provider"
+              ? ({ type: tool.type, id: tool.id, args: tool.args, inputSchema: tool.inputSchema, providerOptions: tool.providerOptions } as unknown as typeof tool)
+              : { description: tool.description, inputSchema: tool.inputSchema, strict: tool.strict, providerOptions: tool.providerOptions },
+          ])),
           toolChoice: "none",
           system: snapshot ? [...snapshot.system] : [],
           messages, model,

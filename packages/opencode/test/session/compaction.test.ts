@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { APICallError, jsonSchema, tool } from "ai"
+import { APICallError, jsonSchema, streamText, tool } from "ai"
+import { createOpenAI } from "@ai-sdk/openai"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Bus } from "../../src/bus"
@@ -910,10 +911,21 @@ describe("session.compaction.process", () => {
             onInputDelta: () => { executed++ },
             onInputAvailable: () => { executed++ },
           })
+          const patch = {
+            type: "provider",
+            id: "openai.custom",
+            args: {
+              name: "apply_patch",
+              description: "Apply a patch",
+              format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+            },
+            inputSchema: jsonSchema({ type: "string" }),
+            execute: async () => { executed++; return "patched" },
+          } as unknown as LLM.StreamInput["tools"][string]
           PromptCaches.request.set(chat.id, {
             sessionID: chat.id, modelKey: "test/test-model",
             agent: { name: "build", mode: "primary", permission: [], options: {}, prompt: "SENT_AGENT_PROMPT" },
-            system: [reuse ? "sent-system" : "oversized-prefix ".repeat(100000)], tools: { write },
+            system: [reuse ? "sent-system" : "oversized-prefix ".repeat(100000)], tools: { write, apply_patch: patch },
           })
           yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
           const messages = yield* ssn.messages({ sessionID: chat.id })
@@ -931,6 +943,49 @@ describe("session.compaction.process", () => {
           expect(captured?.tools.write?.onInputDelta).toBeUndefined()
           expect(captured?.tools.write?.onInputAvailable).toBeUndefined()
           expect(write.execute).toBeDefined()
+          if (reuse) {
+            expect(captured?.tools.apply_patch).toMatchObject({
+              type: "provider",
+              id: "openai.custom",
+              args: {
+                name: "apply_patch",
+                description: "Apply a patch",
+                format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+              },
+            })
+            expect(captured?.tools.apply_patch?.inputSchema).toBe(patch.inputSchema)
+            expect(captured?.tools.apply_patch?.execute).toBeUndefined()
+            yield* Effect.promise(async () => {
+              let wire: { tools?: unknown[]; tool_choice?: unknown } | undefined
+              const fetch = Object.assign(
+                async (_input: Parameters<typeof globalThis.fetch>[0], init?: Parameters<typeof globalThis.fetch>[1]) => {
+                  wire = JSON.parse(String(init?.body))
+                  return new Response(
+                    `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_fixture", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } })}\n\n`,
+                    { headers: { "Content-Type": "text/event-stream" } },
+                  )
+                },
+                { preconnect: () => undefined },
+              ) satisfies typeof globalThis.fetch
+              const openai = createOpenAI({ apiKey: "test-key", fetch })
+              const result = streamText({
+                model: openai.responses("gpt-6-luna-fast"),
+                messages: [{ role: "user", content: "summarize" }],
+                tools: captured!.tools,
+                toolChoice: captured!.toolChoice,
+              })
+              for await (const _part of result.fullStream) {}
+              expect(wire?.tool_choice).toBe("none")
+              expect(wire?.tools).toContainEqual({
+                type: "custom",
+                name: "apply_patch",
+                description: "Apply a patch",
+                format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+              })
+            })
+          } else {
+            expect(captured?.tools.apply_patch).toBeUndefined()
+          }
         }).pipe(withCompaction({
           llm: responses.layer, provider: wide(),
           config: cfg({ native: { enabled: true, trigger_tokens: 60000, target_tokens: 40000, reminder_tokens: 54000, summary_max_tokens: 1000 } }),
