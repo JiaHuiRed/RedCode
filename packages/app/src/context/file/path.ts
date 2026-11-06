@@ -122,7 +122,13 @@ export function createPathHelpers(scope: () => string) {
   const normalize = (input: string) => {
     const root = scope()
 
-    let path = unquoteGitPath(decodeFilePath(stripQueryAndHash(stripFileProtocol(input))))
+    // 261106 Red 自审计：URL 解析规则只作用于 file:// URI 输入。普通文件系统路径里的
+    // #/?/% 是合法文件名字符，无条件剥查询/片段、做百分号解码会把 src/feature#1.ts
+    // 在进入读取逻辑之前就截成 src/feature（src/100%done.txt 同理）。
+    let path =
+      input.startsWith("file://")
+        ? unquoteGitPath(decodeFilePath(stripQueryAndHash(stripFileProtocol(input))))
+        : unquoteGitPath(input)
 
     // Separator-agnostic prefix stripping for Cygwin/native Windows compatibility
     // Only case-insensitive on Windows (drive letter or UNC paths)

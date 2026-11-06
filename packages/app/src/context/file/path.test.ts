@@ -61,6 +61,17 @@ describe("file path helpers", () => {
     expect(isWindowsRoot("")).toBe(false)
   })
 
+  test("treats plain paths as filesystem paths, not URIs", () => {
+    const path = createPathHelpers(() => "/repo")
+    // 自审计：#/?/% 是 POSIX 合法文件名字符，URL 解析规则只作用于 file:// 输入
+    expect(path.normalize("src/feature#1.ts")).toBe("src/feature#1.ts")
+    expect(path.normalize("src/what?next.ts")).toBe("src/what?next.ts")
+    expect(path.normalize("src/100%done.txt")).toBe("src/100%done.txt")
+    // file:// URI 仍走 URL 规则：片段/查询剥离、百分号解码、tab 往返
+    expect(path.normalize("file:///repo/src/feature%231.ts")).toBe("src/feature#1.ts")
+    expect(path.pathFromTab(path.tab("src/feature#1.ts"))).toBe("src/feature#1.ts")
+  })
+
   test("keeps query/hash stripping behavior stable", () => {
     expect(stripQueryAndHash("a/b.ts#L12?x=1")).toBe("a/b.ts")
     expect(stripQueryAndHash("a/b.ts?x=1#L12")).toBe("a/b.ts")
