@@ -240,6 +240,10 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
 // 漏掉的这两种在 exe 上整楼复述。都是我们自己的注入、有明确起止，同 A 类整块剥。
 // 引用标记：每条历史消息一个，可能连续成百行，用全局替换一次吃干净。
   ["native-history-reference", /\[(?:History|Historical) reference: [^\n]*?\]\s*/g],
+  // 261106 Red 现场（ses_ffe5e553…）：模型在 native 压缩上下文里只回复
+  // "[history truncated]"（5 tokens、finish=stop），任务实际未完成，用户看到一条
+  // 只有占位符的消息以为做完了。与引用标记同族，是模型改写出的截断占位形。
+  ["history-truncated", /\[history truncated\]\s*/gi],
 // 261024 Red 压缩块头的模仿形：冒号+单 msg ID 的混合体，引擎从不生成这个形状（见 LEAK_ANCHORS）。
 ["native-compaction-summary", /\[Historical context summary[^\n]*?\]\s*/g],
 // 上下文逼近提醒：单段无闭合标签，与 system-notice 同形，剥到空行为止。
@@ -373,6 +377,7 @@ export function detect(text: string): EchoResult {
     text.includes("<dcp-system-reminder>") ||
     text.includes("[System notice]") ||
 text.includes("[History reference: ") || // native 压缩引用标记复述（261010）
+text.includes("[history truncated]") || // 261106 模型改写出的截断占位标记
 text.includes("[Historical reference: ") || // 引用标记改写形（261028）
 text.includes("[Historical context summary") || // 压缩块头模仿形（261024，step-5-preview）
 text.includes("[Context notice, not a user request]") || // native 压缩逼近提醒复述（261010）

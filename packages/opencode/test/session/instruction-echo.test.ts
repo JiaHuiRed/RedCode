@@ -82,6 +82,20 @@ expect(r.stripped).toBe("真正的回答在这里。")
 expect(r.stripped).not.toContain("History reference")
 })
 
+// 261106 Red 现场（ses_ffe5e5537f23effeBIrCP8aKzbJ0iO）：模型在 native 压缩上下文里
+// 只输出 "[history truncated]"（5 tokens、finish=stop），任务未完成却像正常收尾。
+test("[history truncated] 占位标记被剥成空正文", () => {
+ const r = detect("[history truncated]")
+ expect(r.kinds).toContain("history-truncated")
+ expect(r.stripped).toBe("")
+})
+
+test("正文后的 [history truncated] 占位标记被剥掉，正文保留", () => {
+ const r = detect("已完成。\n[history truncated]")
+ expect(r.kinds).toContain("history-truncated")
+ expect(r.stripped).toBe("已完成。")
+})
+
 test("Historical reference 改写形连续复述时剥离，代码引用保留", () => {
   const marker = "[Historical reference: msg_001a180f87b6a001q1wE5znnZbNvqf]"
   const result = detect(`正文。${marker}${marker}后续。`)

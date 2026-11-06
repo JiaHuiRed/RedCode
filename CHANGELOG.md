@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **模型只回 `[history truncated]` 占位符时不再被当成正常收尾**（`opencode/src/session/instruction-echo.ts`）：native 压缩上下文里模型会把机读标记改写成截断占位符（`ses_ffe5e553…` 实测：output=5 tokens、finish=stop、任务未完成），用户看到一条只有占位符的消息，以为做完了。新增 `history-truncated` 剥离规则：完成时整段剥成空正文，交给现有空轮兜底（重试一次 → 可见提示），不再原样落库。验证：instruction-echo 55 pass，opencode typecheck exit 0。
+
 - **砍掉桌宠额度按钮**（`app/src/pet/pet-layer.tsx`、`pet-layer.css`、`pet-lines.ts`、`pet-lines.test.ts`）：与胶囊/模型悬停的额度展示重复，内容也不够美观。删除按钮 DOM、`data-quota-open` 样式、`petQuotaLines`/`petQuotaAvailable` 及 5 条测试；气泡回归纯台词/详情，`provider_quota` 数据源与其他入口不动。验证：app typecheck exit 0，pet-lines 24 pass。
 - **TUI Question 确认页支持鼠标提交**（`opencode/src/cli/cmd/tui/routes/session/question.tsx`）：多问题/多选的 Review 页此前只有 Enter 能提交，鼠标选完选项还得回键盘。Review 区新增 `[提交回答]` 点击区，与 Enter 共用 `submit()`；提交门控防双击产生两次 reply，失败复位门控并沿用既有 toast。验证：opencode typecheck exit 0；鼠标/双击实机验收待跑。
 - **GUI 首页快捷键提示改从命令系统读取**（`app/src/pages/home.tsx`）：原硬编码 10 条，命令面板还写着 `Ctrl+P`（实际默认 `mod+shift+p`）且不随自定义绑定变化。现在按命令 id 调 `command.keybind()` 取真实绑定，只显示高频 6 条，未注册/设为 none 的动作不渲染。验证：app typecheck exit 0，i18n parity 4 pass。
