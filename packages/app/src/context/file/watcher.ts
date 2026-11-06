@@ -8,6 +8,8 @@ type WatcherEvent = {
 
 type WatcherOps = {
   normalize: (input: string) => string
+  // 261106 Red 自审计 P2-02：树键族归一跟工作区根形态走（见 canonicalizeTreePath）
+  windows: boolean
   hasFile: (path: string) => boolean
   isOpen?: (path: string) => boolean
   loadFile: (path: string) => void
@@ -28,13 +30,18 @@ export function invalidateFromWatcher(event: WatcherEvent, ops: WatcherOps) {
   const path = ops.normalize(rawPath)
   if (!path) return
   // 261106 Red 审计：树键族查找走规范形（/，见 canonicalizeTreePath），与入库后的
-  // 树节点键对齐；内容缓存/标签键族（hasFile/isOpen/loadFile）保持 ops 原生形态不动。
-  // .git 前缀检查也必须在规范形上做，否则反斜杠事件（win32）漏拦。
-  const treePath = canonicalizeTreePath(path)
+  // 树节点键对齐；.git 前缀检查也必须在规范形上做，否则反斜杠事件（win32）漏拦。
+  const treePath = canonicalizeTreePath(path, ops.windows)
   if (treePath.startsWith(".git/")) return
 
-  if (ops.hasFile(path) || ops.isOpen?.(path)) {
-    ops.loadFile(path)
+  // 261106 Red 自审计 P2-01 收尾：内容缓存/标签键族的实际形态取决于打开入口——
+  // 标签与树点击经 pathFromTab 恒为规范形，搜索结果可能带原生反斜杠；原实现只拿
+  // 事件原生形态逐字比对，Windows 下树/标签打开的文件两侧全 miss，外部修改不再
+  // 触发强制重载。比较键统一走规范形、命中哪个键就用哪个键触发重载，不新增另一
+  // 种形态的缓存记录。
+  const contentPath = [treePath, path].find((p) => ops.hasFile(p) || ops.isOpen?.(p))
+  if (contentPath) {
+    ops.loadFile(contentPath)
   }
 
   if (kind === "change") {

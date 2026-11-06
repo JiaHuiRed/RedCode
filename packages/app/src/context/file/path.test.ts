@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createPathHelpers, stripQueryAndHash, unquoteGitPath, encodeFilePath } from "./path"
+import { canonicalizeTreePath, createPathHelpers, isWindowsRoot, stripQueryAndHash, unquoteGitPath, encodeFilePath } from "./path"
 
 describe("file path helpers", () => {
   test("normalizes file inputs against workspace root", () => {
@@ -42,6 +42,23 @@ describe("file path helpers", () => {
     const path = createPathHelpers(() => "/repo")
     expect(path.normalizeDir("literal\\name\\")).toBe("literal\\name\\")
     expect(path.normalizeDir("literal\\name/")).toBe("literal\\name")
+  })
+
+  test("canonicalizes separators only for Windows roots", () => {
+    expect(canonicalizeTreePath("src\\main.tsx", true)).toBe("src/main.tsx")
+    expect(canonicalizeTreePath("src/main.tsx", true)).toBe("src/main.tsx")
+    // 自审计 P2-02：POSIX 文件名允许字面反斜杠，非 Windows 根恒等返回
+    expect(canonicalizeTreePath("literal\\name.txt", false)).toBe("literal\\name.txt")
+    expect(canonicalizeTreePath("src/main.tsx", false)).toBe("src/main.tsx")
+  })
+
+  test("detects Windows drive-letter and UNC roots", () => {
+    expect(isWindowsRoot("C:\\repo")).toBe(true)
+    expect(isWindowsRoot("C:/repo")).toBe(true)
+    expect(isWindowsRoot("c:\\repo")).toBe(true)
+    expect(isWindowsRoot("\\\\server\\share")).toBe(true)
+    expect(isWindowsRoot("/repo")).toBe(false)
+    expect(isWindowsRoot("")).toBe(false)
   })
 
   test("keeps query/hash stripping behavior stable", () => {

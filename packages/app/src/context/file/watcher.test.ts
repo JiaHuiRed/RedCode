@@ -15,6 +15,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: (path) => path === "src/new.ts",
         loadFile: (path) => loads.push(path),
         node: () => undefined,
@@ -40,6 +41,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: () => false,
         isOpen: (path) => path === "src/open.ts",
         loadFile: (path) => loads.push(path),
@@ -71,6 +73,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: () => false,
         loadFile: () => {},
         node: () => ({ path: "src", type: "directory", name: "src", absolute: "/repo/src", ignored: false }),
@@ -89,6 +92,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: () => false,
         loadFile: () => {},
         node: () => ({
@@ -119,6 +123,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: () => true,
         loadFile: () => {
           throw new Error("should not load")
@@ -136,6 +141,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input,
+        windows: false,
         hasFile: () => false,
         loadFile: () => {},
         node: () => undefined,
@@ -166,6 +172,7 @@ describe("file watcher invalidation", () => {
         // 模拟 createPathHelpers.normalize：剥离根前缀、保留原生分隔符（正则中匹配
         // 一个字面反斜杠需要两个字符，故 BS 翻倍）
         normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        windows: true,
         hasFile: () => false,
         loadFile: (path) => loads.push(path),
         node: () => undefined,
@@ -189,6 +196,7 @@ describe("file watcher invalidation", () => {
       },
       {
         normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        windows: true,
         hasFile: () => true,
         isOpen: () => false,
         loadFile: (path) => loads.push(path),
@@ -198,5 +206,56 @@ describe("file watcher invalidation", () => {
       },
     )
     expect(loads).toEqual([])
+  })
+
+  // 261106 Red 自审计 P2-01 收尾：Windows 下树点击/标签打开的文件，内容缓存以规范形
+  // （/）为键；反斜杠事件的原生形态逐字比对两侧 miss，外部修改不再触发强制重载。
+  test("windows backslash events reload open files under their stored canonical key", () => {
+    const loads: string[] = []
+    invalidateFromWatcher(
+      {
+        type: "file.watcher.updated",
+        properties: {
+          file: `D:${BS}repo${BS}src${BS}open.ts`,
+          event: "change",
+        },
+      },
+      {
+        normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        windows: true,
+        // 只有规范形键命中（树点击/pathFromTab 产出的形态）
+        hasFile: (path) => path === "src/open.ts",
+        loadFile: (path) => loads.push(path),
+        node: () => undefined,
+        isDirLoaded: () => false,
+        refreshDir: () => {},
+      },
+    )
+    expect(loads).toEqual(["src/open.ts"])
+  })
+
+  // 反向兜底：内容缓存确实以原生反斜杠形态入库时（如搜索结果直开），仍按命中键重载，
+  // 不新建另一种形态的记录。
+  test("windows backslash events reload entries stored under the native key", () => {
+    const loads: string[] = []
+    invalidateFromWatcher(
+      {
+        type: "file.watcher.updated",
+        properties: {
+          file: `D:${BS}repo${BS}src${BS}native.ts`,
+          event: "change",
+        },
+      },
+      {
+        normalize: (input) => input.replace(new RegExp(`^D:${BS}${BS}repo${BS}${BS}`), ""),
+        windows: true,
+        hasFile: (path) => path === `src${BS}native.ts`,
+        loadFile: (path) => loads.push(path),
+        node: () => undefined,
+        isDirLoaded: () => false,
+        refreshDir: () => {},
+      },
+    )
+    expect(loads).toEqual([`src${BS}native.ts`])
   })
 })

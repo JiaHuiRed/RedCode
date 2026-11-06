@@ -8,7 +8,7 @@ import { Tooltip } from "@redcode-ai/ui/tooltip"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import FileTree from "@/components/file-tree"
 import { useFile } from "@/context/file"
-import { canonicalizeTreePath } from "@/context/file/path"
+import { canonicalizeTreePath, isWindowsRoot } from "@/context/file/path"
 import { FILE_TREE_WIDTH_MIN, useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -74,8 +74,9 @@ export function FileTreePanel(props: {
     }
     // 261106 Red 审计：kinds 键与树节点同走树键族规范形。旧写法 replaceAll("\\\\", "/")
     // 替换的是双反斜杠序列（转义笔误，单反斜杠路径漏替换）；diff.file 现为 git numstat
-    // 输出恒为 / 形，此归一为防御性对齐（见 canonicalizeTreePath）。
-    const normalize = (p: string) => canonicalizeTreePath(p).replace(/\/+$/, "")
+    // 输出恒为 / 形，此归一为防御性对齐（见 canonicalizeTreePath）。自审计 P2-02：
+    // 归一跟工作区根形态走，POSIX 字面反斜杠文件名保持原样与树键一致。
+    const normalize = (p: string) => canonicalizeTreePath(p, isWindowsRoot(directory())).replace(/\/+$/, "")
     const out = new Map<string, "add" | "del" | "mix">()
     for (const diff of diffs()) {
       const file = normalize(diff.file)

@@ -80,12 +80,21 @@ export function decodeFilePath(input: string) {
   }
 }
 
+// 261106 Red 审计：Windows 根形态判定（盘符或 UNC），createPathHelpers 与
+// canonicalizeTreePath 共用，同形判定不散落多处。
+export function isWindowsRoot(input: string): boolean {
+  return /^[A-Za-z]:/.test(input) || input.startsWith("\\\\")
+}
+
 // 261106 Red 审计：树键族规范形。服务端 file.list（path.relative）与 watcher 事件
 // 在 win32 带原生反斜杠，而 filter/kinds/active 等 git 侧数据（numstat 输出）恒为
 // / 形；树入库与树查找统一归一成 /，不归一则 Windows 下整族比对失配。
-// 内容缓存与标签键族（store.file / tabs）不走此函数，保持原生形态不变。
-export function canonicalizeTreePath(path: string): string {
-  return path.replaceAll("\\", "/")
+// 自身审计 P2-02：归一只对 Windows 根的工作区做——POSIX 文件名允许字面反斜杠
+// （literal\name.txt 是单层文件名），无条件替换会把树键拆成不存在的两级，且与
+// git 侧同样保留反斜杠的 path.test.ts 断言矛盾；POSIX 下服务端路径本来就是 / 形，
+// 恒等返回即正确。内容缓存与标签键族（store.file / tabs）不走此函数。
+export function canonicalizeTreePath(path: string, windows: boolean): string {
+  return windows ? path.replaceAll("\\", "/") : path
 }
 
 export function encodeFilePath(filepath: string): string {
@@ -117,7 +126,7 @@ export function createPathHelpers(scope: () => string) {
 
     // Separator-agnostic prefix stripping for Cygwin/native Windows compatibility
     // Only case-insensitive on Windows (drive letter or UNC paths)
-    const windows = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\")
+    const windows = isWindowsRoot(root)
     const canonRoot = windows ? root.replace(/\\/g, "/").toLowerCase() : root.replace(/\\/g, "/")
     const canonPath = windows ? path.replace(/\\/g, "/").toLowerCase() : path.replace(/\\/g, "/")
     if (
@@ -151,7 +160,7 @@ export function createPathHelpers(scope: () => string) {
   const normalizeDir = (input: string) => {
     const path = normalize(input)
     const root = scope()
-    const windows = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\")
+    const windows = isWindowsRoot(root)
     return (windows ? path.replace(/\\/g, "/") : path).replace(/\/+$/, "")
   }
 

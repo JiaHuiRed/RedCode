@@ -8,7 +8,7 @@ import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { canonicalizeTreePath, createPathHelpers } from "./file/path"
+import { canonicalizeTreePath, createPathHelpers, isWindowsRoot } from "./file/path"
 import {
   approxBytes,
   evictContentLru,
@@ -61,6 +61,8 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const scope = createMemo(() => sdk.directory)
     const path = createPathHelpers(scope)
+    // 261106 Red 自审计 P2-02：归一与否跟工作区根形态走（POSIX 文件名允许字面反斜杠）
+    const windows = createMemo(() => isWindowsRoot(scope()))
     const tabs = layout.tabs(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
 
     const inflight = new Map<string, Promise<void>>()
@@ -74,12 +76,12 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       scope,
       // 261106 Red 审计：树键族统一规范形（见 canonicalizeTreePath），否则 Windows
       // 原生反斜杠节点与 git 侧 / 形的 filter/kinds/active 整族比对失配
-      normalizeDir: (input) => canonicalizeTreePath(path.normalizeDir(input)),
+      normalizeDir: (input) => canonicalizeTreePath(path.normalizeDir(input), windows()),
       list: (dir) =>
         sdk.client.file.list({ path: dir }).then((x) =>
           (x.data ?? []).map((node) => ({
             ...node,
-            path: canonicalizeTreePath(node.path),
+            path: canonicalizeTreePath(node.path, windows()),
           })),
         ),
       onError: (message) => {
@@ -211,6 +213,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const stop = sdk.event.listen((e) => {
       invalidateFromWatcher(e.details, {
         normalize: path.normalize,
+        windows: windows(),
         hasFile: (file) => Boolean(store.file[file]),
         isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
         loadFile: (file) => {
