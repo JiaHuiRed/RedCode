@@ -313,7 +313,9 @@ export const layer = Layer.effect(
           cwd,
           include: "file",
         })
-        .pipe(Effect.catch(() => Effect.succeed<string[]>([])))
+        // 261106 Red 自审计：只把「目录不存在」当空结果——权限不足、I/O 失败等
+        // 读取异常原样上抛，不与「目录确实为空」混同。
+        .pipe(Effect.catchIf(missing, () => Effect.succeed<string[]>([])))
       return result
         .map((x) => [...prefix, ...x.slice(0, -5).split(path.sep)])
         .toSorted((a, b) => a.join("/").localeCompare(b.join("/")))
