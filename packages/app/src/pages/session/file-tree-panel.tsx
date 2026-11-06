@@ -37,7 +37,7 @@ export function FileTreePanel(props: {
   const language = useLanguage()
   const platform = usePlatform()
   const server = useServer()
-  const { params, tabs } = useSessionLayout()
+  const { params, tabs, view } = useSessionLayout()
   const [state, setState] = createStore({ opening: false })
 
   // 260930 Red 文件树直接打开当前本地工作区，复用桌面平台的系统文件管理器入口。
@@ -112,12 +112,19 @@ export function FileTreePanel(props: {
     return file.tab(tab)
   }
 
+  // 261106 Red：与聊天侧 openFileFromTranscript（session.tsx「面板关着时先打开它，
+  // 否则点了没反应」）对齐——文件树点击此前传 no-op，tab 静默开在折叠的胶囊后面，
+  // 看起来像点击没反应。
+  const openReviewPanel = () => {
+    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+  }
+
   const openTab = createOpenSessionFileTab({
     normalizeTab,
     openTab: tabs().open,
     pathFromTab: file.pathFromTab,
     loadFile: file.load,
-    openReviewPanel: () => {},
+    openReviewPanel,
     setActive: tabs().setActive,
   })
 
