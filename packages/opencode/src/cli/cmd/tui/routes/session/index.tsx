@@ -640,6 +640,20 @@ export function Session() {
     }, 50)
   }
 
+  // 261106 Red UX-04：顶部提示条改可点击增量加载。先记住当前顶部可见消息，
+  // 扩窗后滚回它——内容从上方插入而 scrollTop 不变会让视野突然下跳。
+  function loadEarlierMessages() {
+    if (hiddenMessageCount() <= 0) return
+    const anchor = scroll.getChildren().find((child) => child.y >= scroll.y)?.id
+    setMessageWindowSize((size) => size + MSG_WINDOW_STEP)
+    if (!anchor) return
+    setTimeout(() => {
+      if (!scroll || scroll.isDestroyed) return
+      const child = scroll.getChildren().find((item) => item.id === anchor)
+      if (child) scroll.scrollBy(child.y - scroll.y - 1)
+    }, 50)
+  }
+
   // 260708 Red scroll to message by ID, expanding window if target is hidden
   function scrollToMessageByID(messageID: string) {
     // check if target is in current window
@@ -1453,9 +1467,16 @@ export function Session() {
                 <box height={1} />
                 <Show when={hiddenMessageCount() > 0}>
                   <box height={1} justifyContent="center">
-                    <text fg={theme.textMuted}>
-                      {`↑ ${hiddenMessageCount()} earlier messages · Ctrl+Home to load all`}
-                    </text>
+                    <box
+                      onMouseUp={() => {
+                        if (renderer.getSelection()?.getSelectedText()) return
+                        loadEarlierMessages()
+                      }}
+                    >
+                      <text fg={theme.textMuted}>
+                        {`↑ ${hiddenMessageCount()} earlier messages · click to load ${MSG_WINDOW_STEP} more · Ctrl+Home all`}
+                      </text>
+                    </box>
                   </box>
                 </Show>
                 <For each={windowedMessages()}>
