@@ -5,6 +5,8 @@ import { useDirectory } from "../../context/directory"
 import { useConnected } from "../../component/use-connected"
 import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
+import { useDialog } from "../../ui/dialog"
+import { DialogStatus } from "../../component/dialog-status"
 
 // 260615 Red shortcut hint helper
 function Hint(props: { key: string; label: string; theme: any }) {
@@ -30,6 +32,10 @@ export function Footer() {
   })
   const directory = useDirectory()
   const connected = useConnected()
+  const dialog = useDialog()
+  // 261106 Red UX-06：Footer 的 MCP/LSP/权限数字此前只是纯文本，看到异常没有查看入口。
+  // 点击沿用已有的状态弹窗（redcode.status），不新增状态存储。
+  const openStatus = () => dialog.replace(() => <DialogStatus />)
 
   const [store, setStore] = createStore({
     welcome: false,
@@ -77,13 +83,13 @@ export function Footer() {
           </Match>
           <Match when={connected()}>
             <Show when={permissions().length > 0}>
-              <text fg={theme.warning}>
+              <text fg={theme.warning} onMouseUp={openStatus}>
                 <span style={{ fg: theme.warning }}>△</span> {`${permissions().length}`}
               </text>
             </Show>
             {/* 260615 Red compact service status + shortcut hints */}
             <Show when={mcpTotal() > 0}>
-              <text fg={theme.text}>
+              <text fg={theme.text} onMouseUp={openStatus}>
                 <span style={{ fg: mcpError() > 0 ? theme.error : theme.success }}>⊙</span>
                 {` MCP ${mcpSummary()}`}
                 <Show when={mcpError() > 0}>
@@ -92,7 +98,7 @@ export function Footer() {
               </text>
             </Show>
             <Show when={lsp().length > 0}>
-              <text fg={theme.text}>
+              <text fg={theme.text} onMouseUp={openStatus}>
                 <span style={{ fg: theme.success }}>•</span> {`${lsp().length} LSP`}
               </text>
             </Show>
