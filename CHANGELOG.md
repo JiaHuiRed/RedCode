@@ -8,6 +8,13 @@
 
 ---
 
+### [Unreleased]
+
+- **文件树点击文件与聊天侧行为对齐：胶囊关着时先展开**（`app/src/pages/session/file-tree-panel.tsx`）：`createOpenSessionFileTab` 的 `openReviewPanel` 此前传 no-op——点文件树只把 tab 静默开在折叠的胶囊后面，像点击没反应。现与聊天侧 `openFileFromTranscript`（session.tsx「面板关着时先打开它，否则点了没反应」）、命令面板、session-side-panel 同一口径：`view().reviewPanel.opened()` 为假先 `open()`。验证：app typecheck exit 0。
+- **修复 FileTree 挂载即 TDZ 崩溃——GUI 白屏级回归**（`app/src/components/file-tree.tsx`）：键盘导航 75ecf2e0 引入，Windows GUI 实景首跑即撞上（整个 app 报「Cannot access 'filter' before initialization」）。solid 的 `createMemo` 在创建时就同步首跑（`updateComputation`），并非首读才求值——`allVisible`（引用后置的 `filter`）创建即 TDZ，任何 FileTree 实例挂载即崩；此前 12 条单测只覆盖纯函数、typecheck 抓不到 TDZ，changelog「GUI 实景待人工确认」一条都没人跑过。修法：`filter` memo 上移至 `allVisible` 之前，并纠正原注释里「memo 惰性创建零成本」的错误假设。验证：app typecheck exit 0，file-tree 12 pass，Windows GUI 实景加载正常。
+- **watcher 内容重载统一比较键，修复 Windows 下已打开文件外部修改不自动刷新**（`app/src/context/file/watcher.ts`、`file.tsx`）：自身审计 P2-01 收尾。内容缓存/标签键族的实际形态取决于打开入口——树点击与标签经 `pathFromTab` 恒为规范形（/），搜索结果可能带原生反斜杠；原实现只拿事件原生形态逐字比对 `hasFile`/`isOpen`，Windows 下树/标签打开的文件两侧全 miss，外部修改不再触发强制重载。现比较键统一走规范形、命中哪个键就用哪个键触发重载（规范形优先——文件视图经 `pathFromTab` 读取的正是该形态），不新增另一种形态的缓存记录。新增 2 条反斜杠事件回归。验证：app typecheck exit 0，watcher 11 + path 40 + file-tree 12 全绿。
+- **树键族归一改按工作区根形态条件执行，POSIX 字面反斜杠文件名不再被破坏**（`app/src/context/file/path.ts`、`file.tsx`、`file/watcher.ts`、`file-tree-panel.tsx`）：自身审计 P2-02。`canonicalizeTreePath` 原无条件 `replaceAll("\\", "/")`——POSIX 文件名允许字面反斜杠（`literal\name.txt` 是单层文件名），会被拆成不存在的两级树键、与 git 侧保留反斜杠的路径失配，且与 `path.test.ts` 既有 POSIX 保留断言矛盾。现抽 `isWindowsRoot`（盘符/UNC 判定，`createPathHelpers` 内两处同形判定一并收编），归一只对 Windows 根的工作区执行；POSIX 下服务端路径本就是 / 形，恒等返回。`canonicalizeTreePath`/`isWindowsRoot` 补 2 条单测锁定。验证：app typecheck exit 0，watcher 11 + path 40 + file-tree 12 全绿。
+
 ### [0.16.0] - 2026-11-06
 
 - **文件树键盘导航三处边界**（`app/src/components/file-tree.tsx`）：第三方审计 P2-01/02/03，对新增键盘导航的收尾。父子/叶子查找抽 `parentPathOf`/`leafNameOf` 双分隔符助手——服务端 file.list 的 path.relative 在 win32 返回反斜杠，`lastIndexOf("/")` 找不到分隔符导致 ← 无法返回父目录；→ 展开目录加直系子代校验，空目录/过滤后无可见子项时下一个可见节点是兄弟、不再越级；roving tabindex 失效光标恢复：新纯函数 `resolveTreeCursor`，光标节点因过滤/折叠/刷新从可见集合消失时，根实例把唯一 Tab 停靠点让给首个可见节点，不再整树 tabindex=-1 无入口。新增 4 条单测。验证：app typecheck exit 0，file-tree 12 pass。
