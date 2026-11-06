@@ -133,9 +133,9 @@ const elog = EffectLogger.create({ service: "session.prompt" })
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
- readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
- // 261031 Red 打断发送：取消当前 Runner 后立即以本消息开新轮（单请求服务端串行）。
- readonly interruptPrompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
+  readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
+  // 261031 Red 打断发送：取消当前 Runner 后立即以本消息开新轮（单请求服务端串行）。
+  readonly interruptPrompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
   readonly loop: (input: LoopInput, onCancelled?: Effect.Effect<void>) => Effect.Effect<MessageV2.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
@@ -734,16 +734,16 @@ export const layer = Layer.effect(
       const variant =
         input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined) ?? sessionVariant
 
-     // 261031 Red 忙碌时引导落 pending_steer（待消费形态：用户仍可编辑/撤回），由 loop
-     // 组装前 promotePendingSteer 领取转 steer；idle 时引导就是普通开轮消息，不落待消费。
-     // busy 判定以服务端 Runner 为准（单一所有者），不信客户端的会话状态快照。
-     const pendingSteer = input.delivery === "steer" && (yield* state.isBusy(input.sessionID))
-     const info: MessageV2.User = {
-       id: input.messageID ?? MessageID.ascending(),
-       role: "user",
-       sessionID: input.sessionID,
-       time: { created: Date.now() },
-       delivery: input.delivery === "queue" ? "queued" : pendingSteer ? "pending_steer" : input.delivery,
+      // 261031 Red 忙碌时引导落 pending_steer（待消费形态：用户仍可编辑/撤回），由 loop
+      // 组装前 promotePendingSteer 领取转 steer；idle 时引导就是普通开轮消息，不落待消费。
+      // busy 判定以服务端 Runner 为准（单一所有者），不信客户端的会话状态快照。
+      const pendingSteer = input.delivery === "steer" && (yield* state.isBusy(input.sessionID))
+      const info: MessageV2.User = {
+        id: input.messageID ?? MessageID.ascending(),
+        role: "user",
+        sessionID: input.sessionID,
+        time: { created: Date.now() },
+        delivery: input.delivery === "queue" ? "queued" : pendingSteer ? "pending_steer" : input.delivery,
         tools: input.tools,
         agent: ag.name,
         model: {
@@ -1397,13 +1397,13 @@ export const layer = Layer.effect(
         yield* status.set(sessionID, { type: "busy" })
         yield* slog.info("loop", { step })
 
-       const nativeConfig = yield* config.get()
-       // 261031 Red 引导领取：每步组装前把全部 pending_steer 转 steer。领取前它们被下方
-       // queued 同款过滤排除在模型视野之外；转后 reminder 收集（delivery==="steer"、晚于
-       // 轮起点、去重）与组装自然包含。与编辑/撤回在 queueLock 上串行。
-      yield* sessions.promotePendingSteer(sessionID)
+        const nativeConfig = yield* config.get()
+        // 261031 Red 引导领取：每步组装前把全部 pending_steer 转 steer。领取前它们被下方
+        // queued 同款过滤排除在模型视野之外；转后 reminder 收集（delivery==="steer"、晚于
+        // 轮起点、去重）与组装自然包含。与编辑/撤回在 queueLock 上串行。
+        yield* sessions.promotePendingSteer(sessionID)
         const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
-         const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
+        const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
         // 261105 Red 同一 step 读一次活跃块快照，history/project 共用：此前两者各
         // list 一次，revision 还会为拿 id 把整份摘要解码一遍。
         const nativeBlocks = nativeSpec.enabled ? ContextCompaction.list(sessionID) : undefined
@@ -1432,12 +1432,12 @@ export const layer = Layer.effect(
           finished: lastFinished,
           tasks,
         } = MessageV2.latest(
-         msgs.filter(
-           (m) =>
-             m.info.role !== "user" ||
-             m.info.id === ownedQueuedMessageID ||
-             (m.info.delivery !== "queued" && m.info.delivery !== "pending_steer"),
-         ),
+          msgs.filter(
+            (m) =>
+              m.info.role !== "user" ||
+              m.info.id === ownedQueuedMessageID ||
+              (m.info.delivery !== "queued" && m.info.delivery !== "pending_steer"),
+          ),
         )
         const lastUser = retainedQueuedMessage?.info.role === "user" ? retainedQueuedMessage.info : latestUser
 
@@ -1795,14 +1795,14 @@ export const layer = Layer.effect(
           if (busyEnter === "steer" && step > 1) {
             const parts: string[] = []
             for (const m of msgs) {
-             if (
-               m.info.role !== "user" ||
-               m.info.delivery === "queued" ||
-               // 261031 Red 未领取的引导不进 reminder；promote 转 steer 后下一轮收集。
-               m.info.delivery === "pending_steer" ||
-               MessageV2.compareTime(m.info, turnStartUserID) <= 0
-             )
-               continue
+              if (
+                m.info.role !== "user" ||
+                m.info.delivery === "queued" ||
+                // 261031 Red 未领取的引导不进 reminder；promote 转 steer 后下一轮收集。
+                m.info.delivery === "pending_steer" ||
+                MessageV2.compareTime(m.info, turnStartUserID) <= 0
+              )
+                continue
               if (busyEnter !== "steer" && m.info.delivery !== "steer") continue
               if (remindedUserIDs.has(m.info.id)) continue
               const text = m.parts
@@ -1892,12 +1892,12 @@ export const layer = Layer.effect(
           const turnStart = turnStartUserID
           const visibleMsgs = msgs.filter((m) => {
             if (m.info.role !== "user") return true
-           if (m.info.delivery === "queued") return m.info.id === ownedQueuedMessageID
-           // 261031 Red 引导未领取（pending_steer）对模型隐藏，防止 promote 后、投影读取前
-           // 落库的窗口竞态把未领取内容漏进模型历史；领取转 steer 后按 steer 放行。
-           if (m.info.delivery === "pending_steer") return false
-           return (
-             m.info.delivery === "steer" ||
+            if (m.info.delivery === "queued") return m.info.id === ownedQueuedMessageID
+            // 261031 Red 引导未领取（pending_steer）对模型隐藏，防止 promote 后、投影读取前
+            // 落库的窗口竞态把未领取内容漏进模型历史；领取转 steer 后按 steer 放行。
+            if (m.info.delivery === "pending_steer") return false
+            return (
+              m.info.delivery === "steer" ||
               m.info.delivery === "delivered" ||
               busyEnter !== "queue" ||
               turnStart === undefined ||
@@ -1912,9 +1912,7 @@ export const layer = Layer.effect(
           //   缓存——取舍见 message-v2.ts markEvictedMedia 注释。
           const mediaEviction = (yield* config.get()).experimental?.mediaEviction
           const mediaOptions =
-            mediaEviction?.enabled === false
-              ? undefined
-              : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
+            mediaEviction?.enabled === false ? undefined : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
           const [skills, env, instructions, mcpGuide, modelMsgs, soul] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -2162,8 +2160,7 @@ export const layer = Layer.effect(
           // so it doesn't mutate cached messages yet still reaches the model on step>1.
           // 260820 cc 提出来成变量：上下文快照要记的是**真正发出去的那一份**，包含下面
           // 这三条临时注入。留在参数位上就只能记 stabilizedMsgs，差的正是每轮变动的部分。
-          const outgoing: ModelMessage[] = [
-            ...stabilizedMsgs,
+          const requestTail: ModelMessage[] = [
             ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
             // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
             ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
@@ -2172,6 +2169,7 @@ export const layer = Layer.effect(
             // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
             ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
           ]
+          const outgoing: ModelMessage[] = [...stabilizedMsgs, ...requestTail]
           // 260820 cc 上下文构成快照，供 /session/:id/context-inspect 查看。与上面两个探针
           // 的区别：它们比对「跟上一轮比变了什么」，这个回答「现在窗口里装的是什么」。
           ContextSnapshot.record({
@@ -2189,11 +2187,10 @@ export const layer = Layer.effect(
               nativeConfig.compaction?.native,
               usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }),
             )
-            // 261012 Red 触发口径补实报锚点：整表 chars/4 粗估在长会话上偏高，现场实报
-            // 369,561 就触发了 400k 兜底线（15:19 finish=context-preflight 实证），提前触发
-            // 让用户多付一轮全价。最后一条非摘要 assistant 的实报 context 已含 system/tools，
-            // 精确；只对其后的新增 wire 输入粗估。无实报锚点（首个请求）退回整表粗估，
-            // 行为同旧。与 selectAutomatic 的 currentTokens 同一口径。
+            // 261106 Red 实报锚点覆盖该 assistant 记录为止的输入（含记录内晚到补写的 parts），
+            // 其后的消息才另行估算——中断/无 usage 记录的 reasoning 由此进入预检，不再漏出。
+            // 记录内部不重新投影，保留 261013 的排除语义，避免对已实报区间重复计数。
+            // 决策见 docs/notes/implemented/bug-fix/2026-11-06-preflight-usage-boundary.md。
             const lastReal = yield* sessions
               .findMessage(
                 sessionID,
@@ -2213,14 +2210,17 @@ export const layer = Layer.effect(
               lastAssistant.info.time.created >= lastCommit
                 ? (lastAssistant.info.tokens.context ?? 0)
                 : 0
-            const wireLastAssistant = outgoing.findLastIndex((m) => m.role === "assistant")
+            const usageMessageIndex =
+              lastRealTokens > 0 && lastAssistant?.info.role === "assistant"
+                ? visibleMsgs.findIndex((m) => m.info.id === lastAssistant.info.id)
+                : -1
+            const unreported =
+              usageMessageIndex >= 0
+                ? yield* MessageV2.toModelMessagesEffect(visibleMsgs.slice(usageMessageIndex + 1), model, mediaOptions)
+                : undefined
             const plannedTokens =
-              lastRealTokens > 0
-                ? lastRealTokens +
-                  estimateModelMessages(
-                    wireLastAssistant >= 0 ? outgoing.slice(wireLastAssistant + 1) : outgoing,
-                    model,
-                  )
+              lastRealTokens > 0 && unreported
+                ? lastRealTokens + estimateModelMessages([...unreported, ...requestTail], model)
                 : estimateModelMessages(outgoing, model) +
                   Token.estimate(system.join("\n")) +
                   Token.estimate(JSON.stringify(sortedTools))
@@ -2625,24 +2625,25 @@ export const layer = Layer.effect(
       return result
     })
 
-   // 261031 Red 打断发送：单请求内「取消当前 Runner → 提交新消息 → 启动新一轮」，客户端
-   // 不再自己串 abort + prompt 两个 HTTP 请求（时序竞争）。不碰 Git 快照、不回滚工作区
-   // 文件；旧工具的中断由 cancelTree 异步收尾，UI 以 status 事件显示「正在中断」直到新
-   // busy 到来，不提前宣称新任务已开始。新 delivery 强制普通（Runner 已取消，开新轮）；
-   // 此前未领取的 pending_steer 由新轮首步 promote 一并领取，引导内容不丢。
-   const interruptPrompt = (input: PromptInput) =>
-     Effect.flatMap(state.cancel(input.sessionID), () =>
-       prompt({ ...input, delivery: undefined }).pipe(Effect.catch(Effect.die)))
+    // 261031 Red 打断发送：单请求内「取消当前 Runner → 提交新消息 → 启动新一轮」，客户端
+    // 不再自己串 abort + prompt 两个 HTTP 请求（时序竞争）。不碰 Git 快照、不回滚工作区
+    // 文件；旧工具的中断由 cancelTree 异步收尾，UI 以 status 事件显示「正在中断」直到新
+    // busy 到来，不提前宣称新任务已开始。新 delivery 强制普通（Runner 已取消，开新轮）；
+    // 此前未领取的 pending_steer 由新轮首步 promote 一并领取，引导内容不丢。
+    const interruptPrompt = (input: PromptInput) =>
+      Effect.flatMap(state.cancel(input.sessionID), () =>
+        prompt({ ...input, delivery: undefined }).pipe(Effect.catch(Effect.die)),
+      )
 
-   return Service.of({
-     cancel,
-     prompt,
-     interruptPrompt,
-     loop,
-     shell,
-     command,
-     resolvePromptParts,
-   })
+    return Service.of({
+      cancel,
+      prompt,
+      interruptPrompt,
+      loop,
+      shell,
+      command,
+      resolvePromptParts,
+    })
   }),
 )
 
@@ -2788,14 +2789,10 @@ const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
 
-
 // 261031 Red 提交方重跑判据：消息仍处在本轮未读取的待消费形态时，旧 Runner 退出后
 // 必须重跑 loop 领取。pending_steer 是 steer 的待领取形态，必须与 steer 同等重试
 // （审计 AUD-01：只认 steer 会让恰逢最后一步的引导滞留到下一次显式执行）。
-export function retryableDelivery(
-  input: "queue" | "steer",
-  current: MessageV2.User["delivery"],
-) {
+export function retryableDelivery(input: "queue" | "steer", current: MessageV2.User["delivery"]) {
   return input === "queue" ? current === "queued" : current === "pending_steer" || current === "steer"
 }
 

@@ -223,6 +223,20 @@ describe("session.retry.delay", () => {
   )
 })
 
+describe("session.retry.messagePreview", () => {
+  test("exposes expand affordance at the same boundary as the preview", () => {
+    expect(SessionRetry.messagePreview("x".repeat(80))).toEqual({
+      message: "x".repeat(80),
+      truncated: false,
+    })
+    expect(SessionRetry.messagePreview("x".repeat(81))).toEqual({
+      message: `${"x".repeat(80)}...`,
+      truncated: true,
+    })
+    expect(SessionRetry.messagePreview("x".repeat(120)).truncated).toBe(true)
+  })
+})
+
 describe("session.retry.retryable", () => {
   test("maps too_many_requests json messages", () => {
     const error = wrap(JSON.stringify({ type: "error", error: { type: "too_many_requests" } }))

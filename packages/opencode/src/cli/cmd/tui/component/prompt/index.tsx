@@ -26,6 +26,7 @@ import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui/context/editor"
 import { MessageID, PartID } from "@/session/schema"
+import { SessionRetry } from "@/session/retry"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "./history"
 import { createSubmissionController, scheduleNewSessionHandoff } from "./submission"
@@ -471,7 +472,12 @@ export function Prompt(props: PromptProps) {
     const last = contextSource(messages)
     const context = last?.tokens.context
     if (!context) return undefined
-    return { context, label: compact(context), detail: context.toLocaleString(), color: RGBA.fromHex(barColor(context)) }
+    return {
+      context,
+      label: compact(context),
+      detail: context.toLocaleString(),
+      color: RGBA.fromHex(barColor(context)),
+    }
   })
 
   const openCompactConfirm = () => {
@@ -1326,15 +1332,15 @@ export function Prompt(props: PromptProps) {
     }
     if (!sessionID) return false
 
-   // 261031 Red 忙碌默认引导（steer）：与服务端 busy_enter 默认及 GUI 对齐。服务端忙碌时
-   // 自动落 pending_steer 待消费形态（可 /pending 编辑/撤销），不再默认排队到轮末。
-   const delivery =
-     props.sessionID &&
-     submission.payload.mode === "normal" &&
-     !isCommand &&
-     (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
-       ? "steer"
-       : undefined
+    // 261031 Red 忙碌默认引导（steer）：与服务端 busy_enter 默认及 GUI 对齐。服务端忙碌时
+    // 自动落 pending_steer 待消费形态（可 /pending 编辑/撤销），不再默认排队到轮末。
+    const delivery =
+      props.sessionID &&
+      submission.payload.mode === "normal" &&
+      !isCommand &&
+      (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
+        ? "steer"
+        : undefined
 
     if (submission.payload.mode === "shell") {
       const result = await sdk.client.session.shell({
@@ -1380,7 +1386,6 @@ export function Prompt(props: PromptProps) {
         return false
       }
     }
-
 
     history.append(submission.payload.history)
     const clearPrompt = () => {
@@ -1934,13 +1939,12 @@ export function Prompt(props: PromptProps) {
                         if (!r) return
                         if (r.message.includes("exceeded your current quota") && r.message.includes("gemini"))
                           return "gemini is way too hot right now"
-                        if (r.message.length > 80) return r.message.slice(0, 80) + "..."
-                        return r.message
+                        return SessionRetry.messagePreview(r.message).message
                       })
                       const isTruncated = createMemo(() => {
                         const r = retry()
                         if (!r) return false
-                        return r.message.length > 120
+                        return SessionRetry.messagePreview(r.message).truncated
                       })
                       const [seconds, setSeconds] = createSignal(0)
                       onMount(() => {

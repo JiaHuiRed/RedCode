@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { APICallError } from "ai"
-import { parseAPICallError } from "@/provider/error"
+import { parseAPICallError, parseStreamError } from "@/provider/error"
 import { ProviderID } from "../../src/provider/schema"
 
 const parse = (message: string) =>
@@ -172,5 +172,48 @@ describe("parseAPICallError subscription usage limits", () => {
     expect(result.type).toBe("api_error")
     if (result.type !== "api_error") throw new Error("expected api_error")
     expect(result.isRetryable).toBe(false)
+  })
+})
+
+describe("parseAPICallError transient capacity refusals", () => {
+  test("classifies prefill capacity refusal separately from quota exhaustion", () => {
+    const result = parseAPICallError({
+      providerID: ProviderID.make("openai"),
+      error: new APICallError({
+        message: "Upstream request failed: [prefill_cap_refused] the cell is at capacity; retry shortly",
+        url: "https://example.com/v1/chat",
+        requestBodyValues: {},
+        statusCode: 429,
+        isRetryable: true,
+        responseBody: JSON.stringify({
+          error: {
+            code: "prefill_cap_refused",
+            message: "the cell is at capacity; retry shortly",
+          },
+        }),
+      }),
+    })
+
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.isRetryable).toBe(true)
+    expect(result.message).toBe("Upstream model prefill capacity is temporarily full.")
+    expect(result.message).not.toContain("quota")
+  })
+
+  test("preserves transient retry behavior for matching stream errors", () => {
+    const result = parseStreamError({
+      type: "error",
+      error: {
+        code: "prefill_cap_refused",
+        message: "the cell is at capacity; retry shortly",
+      },
+    })
+
+    expect(result).toMatchObject({
+      type: "api_error",
+      isRetryable: true,
+      message: "Upstream model prefill capacity is temporarily full.",
+    })
   })
 })

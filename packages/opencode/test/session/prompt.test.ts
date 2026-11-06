@@ -127,6 +127,18 @@ function userDelivery(message: MessageV2.WithParts) {
   return message.info.delivery
 }
 
+function userMessageCount(body: Record<string, unknown>, text: string) {
+  if (!Array.isArray(body.messages)) return 0
+  return body.messages.filter((message) => {
+    if (!message || typeof message !== "object") return false
+    const item = message as Record<string, unknown>
+    if (item.role !== "user") return false
+    if (item.content === text) return true
+    if (!Array.isArray(item.content)) return false
+    return item.content.some((part) => !!part && typeof part === "object" && "text" in part && part.text === text)
+  }).length
+}
+
 const mcp = Layer.succeed(
   MCP.Service,
   MCP.Service.of({
@@ -177,6 +189,39 @@ const lsp = Layer.succeed(
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
 const run = SessionRunState.layer.pipe(Layer.provide(status))
+// 261106 Red Hold after runLoop has flushed the transcript but before Runner completes, without sleeps.
+const finalFlushBarrier: {
+  sessionID?: SessionID
+  entered?: Deferred.Deferred<void>
+  release?: Deferred.Deferred<void>
+} = {}
+const finalFlushRun = Layer.effect(
+  SessionRunState.Service,
+  Effect.gen(function* () {
+    const current = yield* SessionRunState.Service
+    return SessionRunState.Service.of({
+      ...current,
+      ensureRunning: (sessionID, onInterrupt, work, onCancelled) =>
+        current.ensureRunning(
+          sessionID,
+          onInterrupt,
+          work.pipe(
+            Effect.tap(() =>
+              Effect.gen(function* () {
+                const entered = finalFlushBarrier.entered
+                const release = finalFlushBarrier.release
+                if (finalFlushBarrier.sessionID !== sessionID || !entered || !release) return
+                finalFlushBarrier.sessionID = undefined
+                yield* Deferred.succeed(entered, undefined).pipe(Effect.asVoid)
+                yield* Deferred.await(release)
+              }),
+            ),
+          ),
+          onCancelled,
+        ),
+    })
+  }),
+).pipe(Layer.provide(run))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 const processorCreateStarted: Array<() => void> = []
@@ -191,6 +236,7 @@ function makePrompt(input?: {
   processor?: "blocking"
   image?: Layer.Layer<Image.Service>
   filesystem?: Layer.Layer<AppFileSystem.Service>
+  run?: Layer.Layer<SessionRunState.Service, never, BackgroundJob.Service>
 }) {
   const filesystem = input?.filesystem ?? AppFileSystem.defaultLayer
   const deps = Layer.mergeAll(
@@ -253,7 +299,7 @@ function makePrompt(input?: {
     Layer.provide(imageLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),
-    Layer.provideMerge(run),
+    Layer.provideMerge(input?.run ?? run),
     Layer.provideMerge(compact),
     Layer.provideMerge(proc),
     Layer.provideMerge(registry),
@@ -271,6 +317,7 @@ function makeHttp(input?: {
   processor?: "blocking"
   image?: Layer.Layer<Image.Service>
   filesystem?: Layer.Layer<AppFileSystem.Service>
+  run?: Layer.Layer<SessionRunState.Service, never, BackgroundJob.Service>
 }) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
@@ -284,6 +331,7 @@ function makeHttpNoLLMServer(input?: {
 }
 
 const it = testEffect(makeHttp())
+const finalFlushIt = testEffect(makeHttp({ run: finalFlushRun }))
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const noResizerServer = testEffect(
@@ -1331,10 +1379,15 @@ it.instance("native preflight does not replace the last sent request with unsent
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
-      compaction: { native: {
-        enabled: true, trigger_tokens: 10000, target_tokens: 1000,
-        reminder_tokens: 10000, summary_max_tokens: 1000,
-      } },
+      compaction: {
+        native: {
+          enabled: true,
+          trigger_tokens: 10000,
+          target_tokens: 1000,
+          reminder_tokens: 10000,
+          summary_max_tokens: 1000,
+        },
+      },
     }))
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
@@ -1342,7 +1395,9 @@ it.instance("native preflight does not replace the last sent request with unsent
     yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
     yield* llm.text("Earlier completed implementation. ".repeat(500), { usage: { input: 100, output: 5 } })
     yield* prompt.prompt({
-      sessionID: chat.id, agent: "build", model: ref,
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
       parts: [{ type: "text", text: "FIRST_SENT_REQUEST" }],
     })
     const sent = PromptCaches.request.get(chat.id)
@@ -1350,10 +1405,14 @@ it.instance("native preflight does not replace the last sent request with unsent
     // 261104 回归：快照只存前缀字段，绝不携带消息正文（深拷贝活对象曾让每个请求失败）。
     expect("messages" in (sent ?? {})).toBe(false)
     yield* llm.push(reply().text("Partial summary").hang())
-    const running = yield* prompt.prompt({
-      sessionID: chat.id, agent: "build", model: ref,
-      parts: [{ type: "text", text: "UNSENT_PREFLIGHT_INPUT ".repeat(3000) }],
-    }).pipe(Effect.forkChild)
+    const running = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "UNSENT_PREFLIGHT_INPUT ".repeat(3000) }],
+      })
+      .pipe(Effect.forkChild)
     yield* awaitWithTimeout(llm.wait(2), "preflight summary did not start", "10 seconds")
     expect(PromptCaches.request.get(chat.id)).toBe(sent)
     expect(JSON.stringify(PromptCaches.request.get(chat.id))).not.toContain("UNSENT_PREFLIGHT_INPUT")
@@ -1421,6 +1480,68 @@ for (const sameModel of [true, false]) {
       }),
   )
 }
+
+it.instance("native preflight estimates messages after the last reported usage boundary", () =>
+  Effect.gen(function* () {
+    const native = { enabled: true, trigger_tokens: 10_000, target_tokens: 1_000, reminder_tokens: 10_000 }
+    const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), compaction: { native } }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Usage boundary with unreported reasoning" })
+    const measured = yield* seed(chat.id, { finish: "stop" })
+    yield* sessions.updateMessage({
+      ...measured.assistant,
+      tokens: { ...measured.assistant.tokens, total: 100, context: 100 },
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: measured.assistant.id,
+      type: "step-finish",
+      reason: "stop",
+      cost: 0,
+      tokens: {
+        total: 100,
+        context: 100,
+        input: 100,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0, miss: 100 },
+      },
+    })
+    for (let index = 0; index < 2; index++) {
+      const interrupted = yield* seed(chat.id)
+      yield* sessions.updateMessage({
+        ...interrupted.assistant,
+        error: new MessageV2.AbortedError({ message: "request interrupted" }).toObject(),
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: interrupted.assistant.id,
+        type: "reasoning",
+        time: { start: Date.now() },
+        text: "Unreported reasoning from an interrupted response. ".repeat(2_000),
+      })
+    }
+    yield* llm.text("Compressed context summary", { usage: { input: 50, output: 10 } })
+    yield* llm.text("Normal response after preflight", { usage: { input: 50, output: 10 } })
+
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "continue with the current task" }],
+    })
+
+    const requests = (yield* llm.inputs).map((input) => JSON.stringify(input))
+    expect(requests.some((input) => input.includes("Summarize the supplied"))).toBe(true)
+    expect(result.parts.some((part) => part.type === "text" && part.text === "Normal response after preflight")).toBe(
+      true,
+    )
+    expect(yield* llm.calls).toBe(2)
+  }),
+)
 
 it.instance("native preflight does not reuse usage measured before a committed block", () =>
   Effect.gen(function* () {
@@ -1625,222 +1746,357 @@ it.instance("queued messages can be canceled before claim and promoted for the n
   }),
 )
 
-  // 261031 Red 审计 AUD-01：提交方重跑判据本体。滞留窗口（引导恰在旧轮最后一次
-  // promote 之后落库）无法在测试里稳定注入——正常时序下旧轮自己会在下一轮开头
-  // promote 消费引导——所以这里直接锁判据：pending_steer 必须与 steer 同等重试。
-  it.effect("retryableDelivery treats pending_steer as undelivered", () =>
-    Effect.sync(() => {
-      // 引导（steer）形态
-      expect(SessionPrompt.retryableDelivery("steer", "pending_steer")).toBe(true)
-      expect(SessionPrompt.retryableDelivery("steer", "steer")).toBe(true)
-      expect(SessionPrompt.retryableDelivery("steer", "delivered")).toBe(false)
-      expect(SessionPrompt.retryableDelivery("steer", "queued")).toBe(false)
-      // 排队（queue）形态不受影响
-      expect(SessionPrompt.retryableDelivery("queue", "queued")).toBe(true)
-      expect(SessionPrompt.retryableDelivery("queue", "pending_steer")).toBe(false)
-      expect(SessionPrompt.retryableDelivery("queue", "steer")).toBe(false)
-    }),
-  )
+// 261031 Red 审计 AUD-01：提交方重跑判据本体。滞留窗口（引导恰在旧轮最后一次
+// promote 之后落库）无法在测试里稳定注入——正常时序下旧轮自己会在下一轮开头
+// promote 消费引导——所以这里直接锁判据：pending_steer 必须与 steer 同等重试。
+it.effect("retryableDelivery treats pending_steer as undelivered", () =>
+  Effect.sync(() => {
+    // 引导（steer）形态
+    expect(SessionPrompt.retryableDelivery("steer", "pending_steer")).toBe(true)
+    expect(SessionPrompt.retryableDelivery("steer", "steer")).toBe(true)
+    expect(SessionPrompt.retryableDelivery("steer", "delivered")).toBe(false)
+    expect(SessionPrompt.retryableDelivery("steer", "queued")).toBe(false)
+    // 排队（queue）形态不受影响
+    expect(SessionPrompt.retryableDelivery("queue", "queued")).toBe(true)
+    expect(SessionPrompt.retryableDelivery("queue", "pending_steer")).toBe(false)
+    expect(SessionPrompt.retryableDelivery("queue", "steer")).toBe(false)
+  }),
+)
 
-  it.instance("pending steer stays editable and cancellable until promotion, then edits conflict", () =>
-    Effect.gen(function* () {
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Pending steer lifecycle" })
-      const one = yield* user(chat.id, "normal")
-      const steer = yield* sessions.updateMessage({
-        ...one,
-        id: MessageID.ascending(),
-        delivery: "pending_steer" as const,
-      })
-      yield* sessions.updatePart({
-        id: PartID.ascending(),
-        sessionID: chat.id,
-        messageID: steer.id,
-        type: "text",
-        text: "steer pending",
-      })
+it.instance("pending steer stays editable and cancellable until promotion, then edits conflict", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pending steer lifecycle" })
+    const one = yield* user(chat.id, "normal")
+    const steer = yield* sessions.updateMessage({
+      ...one,
+      id: MessageID.ascending(),
+      delivery: "pending_steer" as const,
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: steer.id,
+      type: "text",
+      text: "steer pending",
+    })
 
-      // 待消费形态：可编辑
-      const edited = yield* sessions.editQueuedMessage({
-        sessionID: chat.id,
-        messageID: steer.id,
-        text: "edited before promote",
-      })
-      expect(edited.info.id).toBe(steer.id)
+    // 待消费形态：可编辑
+    const edited = yield* sessions.editQueuedMessage({
+      sessionID: chat.id,
+      messageID: steer.id,
+      text: "edited before promote",
+    })
+    expect(edited.info.id).toBe(steer.id)
 
-      // 领取：全部 pending_steer 转 steer，返回最后一条
-      const second = yield* sessions.updateMessage({
-        ...one,
-        id: MessageID.ascending(),
-        delivery: "pending_steer" as const,
-      })
-      yield* sessions.updatePart({
-        id: PartID.ascending(),
-        sessionID: chat.id,
-        messageID: second.id,
-        type: "text",
-        text: "second steer",
-      })
-      const promoted = yield* sessions.promotePendingSteer(chat.id)
-      expect(promoted).toBe(second.id)
-      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steer.id }))).toBe("steer")
-      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: second.id }))).toBe("steer")
+    // 领取：全部 pending_steer 转 steer，返回最后一条
+    const second = yield* sessions.updateMessage({
+      ...one,
+      id: MessageID.ascending(),
+      delivery: "pending_steer" as const,
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: second.id,
+      type: "text",
+      text: "second steer",
+    })
+    const promoted = yield* sessions.promotePendingSteer(chat.id)
+    expect(promoted).toBe(second.id)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steer.id }))).toBe("steer")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: second.id }))).toBe("steer")
 
-      // 已领取：编辑明确冲突，不悄悄改历史
-      const conflict = yield* sessions
-        .editQueuedMessage({ sessionID: chat.id, messageID: steer.id, text: "late" })
-        .pipe(Effect.flip)
-      expect(conflict).toBeInstanceOf(Session.QueuedMessageConflict)
+    // 已领取：编辑明确冲突，不悄悄改历史
+    const conflict = yield* sessions
+      .editQueuedMessage({ sessionID: chat.id, messageID: steer.id, text: "late" })
+      .pipe(Effect.flip)
+    expect(conflict).toBeInstanceOf(Session.QueuedMessageConflict)
 
-      // 无待消费时领取是无害空操作
-      expect(yield* sessions.promotePendingSteer(chat.id)).toBeUndefined()
-    }),
-  )
+    // 无待消费时领取是无害空操作
+    expect(yield* sessions.promotePendingSteer(chat.id)).toBeUndefined()
+  }),
+)
 
-  it.instance("busy steer lands as pending_steer and reaches the model only after promotion", () =>
-    Effect.gen(function* () {
-      const { dir, llm } = yield* useServerConfig(providerCfg)
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Busy steer pending" })
-      const file = path.join(dir, "busy-steer.txt")
-      yield* writeText(file, "evidence")
-      const held = defer<void>()
-      yield* llm.push(reply().wait(held.promise).tool("read", { filePath: file }).item())
-      yield* llm.text("final answer after steer")
+it.instance("busy steer lands as pending_steer and reaches the model only after promotion", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Busy steer pending" })
+    const file = path.join(dir, "busy-steer.txt")
+    yield* writeText(file, "evidence")
+    const held = defer<void>()
+    yield* llm.push(reply().wait(held.promise).tool("read", { filePath: file }).item())
+    yield* llm.text("final answer after steer")
 
-      const run = yield* prompt
-        .prompt({
-          sessionID: chat.id,
-          agent: "build",
-          parts: [{ type: "text", text: "start reading" }],
-        })
-        .pipe(Effect.forkChild)
-      yield* llm.wait(1)
-
-      // runner busy：引导落 pending_steer（可编辑的待消费形态）
-      const steerID = MessageID.ascending()
-      yield* prompt
-        .prompt({
-          sessionID: chat.id,
-          messageID: steerID,
-          agent: "build",
-          delivery: "steer",
-          parts: [{ type: "text", text: "steer mid-turn" }],
-        })
-        .pipe(Effect.forkChild)
-      yield* pollWithTimeout(
-        Effect.gen(function* () {
-          const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
-          return Option.isSome(message) && message.value.info.role === "user" && message.value.info.delivery === "pending_steer"
-            ? (true as const)
-            : undefined
-        }),
-        "steer never landed as pending_steer",
-      )
-
-      // 未领取：挂起中的请求看不到引导
-      const hidden = yield* llm.hits
-      expect(JSON.stringify(hidden[0].body)).not.toContain("steer mid-turn")
-
-      held.resolve()
-      yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
-      // 旧轮退出后提交方重跑 loop，首步 promote 把引导转 steer 注入
-      const hits = yield* llm.hits
-      expect(JSON.stringify(hits.at(-1)!.body)).toContain("steer mid-turn")
-      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
-    }),
-  )
-
-  // 261031 Red 审计 AUD-01 回归：引导恰逢旧轮最后一步（纯文本无工具）完成时，
-  // Runner 内不再有 step 领取，必须由提交方重跑 loop 消费，且恰好消费一次。
-  it.instance("steer pending at turn end is consumed by submitter retry exactly once", () =>
-    Effect.gen(function* () {
-      const { llm } = yield* useServerConfig(providerCfg)
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Steer pending at turn end" })
-      const held = defer<void>()
-      // 第一响应：纯文本 stop，无工具调用——旧 loop 第一步即退出，无后续 step 领取
-      yield* llm.push(reply().wait(held.promise).text("first answer").stop().item())
-      yield* llm.text("answer after retry")
-
-      const run = yield* prompt
-        .prompt({
-          sessionID: chat.id,
-          agent: "build",
-          parts: [{ type: "text", text: "start" }],
-        })
-        .pipe(Effect.forkChild)
-      yield* llm.wait(1)
-
-      const steerID = MessageID.ascending()
-      const steerFiber = yield* prompt
-        .prompt({
-          sessionID: chat.id,
-          messageID: steerID,
-          agent: "build",
-          delivery: "steer",
-          parts: [{ type: "text", text: "steer at the very end" }],
-        })
-        .pipe(Effect.forkChild)
-      yield* pollWithTimeout(
-        Effect.gen(function* () {
-          const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
-         return Option.isSome(message) && message.value.info.role === "user" && message.value.info.delivery === "pending_steer"
-           ? (true as const)
-           : undefined
-        }),
-        "steer never landed as pending_steer",
-      )
-
-      held.resolve()
-      yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
-      yield* Fiber.join(steerFiber).pipe(Effect.timeout("10 seconds"))
-      // 修复点：旧轮退出后提交方重跑 loop 消费引导——恰好 2 次请求，引导只进一次
-      const hits = yield* llm.hits
-      expect(hits.length).toBe(2)
-      expect(JSON.stringify(hits[0].body)).not.toContain("steer at the very end")
-      expect(JSON.stringify(hits[1].body)).toContain("steer at the very end")
-      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
-    }),
-  )
-
-  it.instance("interruptPrompt cancels the running turn and executes the new message once", () =>
-    Effect.gen(function* () {
-      const { llm } = yield* useServerConfig(providerCfg)
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Interrupt prompt" })
-      const held = defer<void>()
-      yield* llm.push(reply().wait(held.promise).text("stale answer").stop().item())
-      yield* llm.text("fresh answer")
-
-      yield* prompt
-        .prompt({
-          sessionID: chat.id,
-          agent: "build",
-          parts: [{ type: "text", text: "old task" }],
-        })
-        .pipe(Effect.forkChild)
-      yield* llm.wait(1)
-
-      yield* prompt.interruptPrompt({
+    const run = yield* prompt
+      .prompt({
         sessionID: chat.id,
         agent: "build",
-        parts: [{ type: "text", text: "new task" }],
+        parts: [{ type: "text", text: "start reading" }],
       })
-      // interruptPrompt 返回时旧 Runner 已取消、新轮已提交并启动。旧响应被丢弃（held 不
-      // resolve 也不影响新轮），新指令恰好执行一次。
-      yield* awaitWithTimeout(llm.wait(2), "interrupted turn never ran the new message", "5 seconds")
-      const hits = yield* llm.hits
-      expect(hits).toHaveLength(2)
-      expect(JSON.stringify(hits[1].body)).toContain("new task")
-      const stale = yield* sessions.findMessage(chat.id, (item) => item.info.role === "assistant")
-      expect(Option.isSome(stale)).toBe(true)
-    }),
-  )
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
 
+    // runner busy：引导落 pending_steer（可编辑的待消费形态）
+    const steerID = MessageID.ascending()
+    yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: steerID,
+        agent: "build",
+        delivery: "steer",
+        parts: [{ type: "text", text: "steer mid-turn" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+        return Option.isSome(message) &&
+          message.value.info.role === "user" &&
+          message.value.info.delivery === "pending_steer"
+          ? (true as const)
+          : undefined
+      }),
+      "steer never landed as pending_steer",
+    )
+
+    // 未领取：挂起中的请求看不到引导
+    const hidden = yield* llm.hits
+    expect(JSON.stringify(hidden[0].body)).not.toContain("steer mid-turn")
+
+    held.resolve()
+    yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
+    // 旧轮退出后提交方重跑 loop，首步 promote 把引导转 steer 注入
+    const hits = yield* llm.hits
+    expect(JSON.stringify(hits.at(-1)!.body)).toContain("steer mid-turn")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+  }),
+)
+
+// 261031 Red 审计 AUD-01 回归：引导恰逢旧轮最后一步（纯文本无工具）完成时，
+// Runner 内不再有 step 领取，必须由提交方重跑 loop 消费，且恰好消费一次。
+it.instance("steer pending at turn end is consumed by submitter retry exactly once", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Steer pending at turn end" })
+    const held = defer<void>()
+    // 第一响应：纯文本 stop，无工具调用——旧 loop 第一步即退出，无后续 step 领取
+    yield* llm.push(reply().wait(held.promise).text("first answer").stop().item())
+    yield* llm.text("answer after retry")
+
+    const run = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "start" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+
+    const steerID = MessageID.ascending()
+    const steerFiber = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: steerID,
+        agent: "build",
+        delivery: "steer",
+        parts: [{ type: "text", text: "steer at the very end" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+        return Option.isSome(message) &&
+          message.value.info.role === "user" &&
+          message.value.info.delivery === "pending_steer"
+          ? (true as const)
+          : undefined
+      }),
+      "steer never landed as pending_steer",
+    )
+
+    held.resolve()
+    yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
+    yield* Fiber.join(steerFiber).pipe(Effect.timeout("10 seconds"))
+    // 修复点：旧轮退出后提交方重跑 loop 消费引导——恰好 2 次请求，引导只进一次
+    const hits = yield* llm.hits
+    expect(hits.length).toBe(2)
+    expect(JSON.stringify(hits[0].body)).not.toContain("steer at the very end")
+    expect(JSON.stringify(hits[1].body)).toContain("steer at the very end")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+  }),
+)
+
+it.instance("steer accepted during native compaction reaches the next request once", () =>
+  Effect.gen(function* () {
+    const native = { enabled: true, trigger_tokens: 10_000, target_tokens: 1_000, reminder_tokens: 10_000 }
+    const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), compaction: { native } }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Steer across native compaction" })
+    const history = yield* seed(chat.id, { finish: "stop" })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: history.assistant.id,
+      type: "text",
+      text: "Historical unprotected context. ".repeat(4_000),
+    })
+    const held = defer<void>()
+    yield* Effect.addFinalizer(() => Effect.sync(() => held.resolve()))
+    yield* llm.push(reply().wait(held.promise).text("Compressed summary").stop().item())
+    yield* llm.text("Answer after compaction", { usage: { input: 50, output: 10 } })
+
+    const running = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "continue the historical work" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(llm.wait(1), "native compaction summary did not start", "10 seconds")
+
+    const steerID = MessageID.ascending()
+    const steerFiber = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: steerID,
+        agent: "build",
+        delivery: "steer",
+        parts: [{ type: "text", text: "include the late steer" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+        return Option.isSome(message) &&
+          message.value.info.role === "user" &&
+          message.value.info.delivery === "pending_steer"
+          ? (true as const)
+          : undefined
+      }),
+      "steer never became pending during compaction",
+    )
+    const summary = JSON.stringify((yield* llm.hits)[0].body)
+    expect(summary).toContain("Summarize the supplied")
+    expect(summary).not.toContain("include the late steer")
+
+    held.resolve()
+    yield* Fiber.join(running).pipe(Effect.timeout("10 seconds"))
+    yield* Fiber.join(steerFiber).pipe(Effect.timeout("10 seconds"))
+
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    expect(userMessageCount(hits[1].body, "include the late steer")).toBe(1)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+  }),
+)
+
+finalFlushIt.instance("steer accepted after transcript flush is retried exactly once", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const runState = yield* SessionRunState.Service
+    const chat = yield* sessions.create({ title: "Steer during final transcript flush" })
+    const entered = yield* Deferred.make<void>()
+    const release = yield* Deferred.make<void>()
+    finalFlushBarrier.sessionID = chat.id
+    finalFlushBarrier.entered = entered
+    finalFlushBarrier.release = release
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        finalFlushBarrier.sessionID = undefined
+        finalFlushBarrier.entered = undefined
+        finalFlushBarrier.release = undefined
+        yield* Deferred.succeed(release, undefined).pipe(Effect.asVoid)
+      }),
+    )
+    yield* llm.text("First completed answer")
+    yield* llm.text("Answer after final-flush steer")
+
+    const running = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "finish the first task" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* awaitWithTimeout(Deferred.await(entered), "run did not reach final transcript barrier", "5 seconds")
+    expect(yield* runState.isBusy(chat.id)).toBe(true)
+
+    const steerID = MessageID.ascending()
+    const steerFiber = yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        messageID: steerID,
+        agent: "build",
+        delivery: "steer",
+        parts: [{ type: "text", text: "arrived after transcript flush" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const message = yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }).pipe(Effect.option)
+        return Option.isSome(message) &&
+          message.value.info.role === "user" &&
+          message.value.info.delivery === "pending_steer"
+          ? (true as const)
+          : undefined
+      }),
+      "final-flush steer never became pending",
+    )
+    expect(JSON.stringify((yield* llm.hits)[0].body)).not.toContain("arrived after transcript flush")
+
+    yield* Deferred.succeed(release, undefined)
+    yield* Fiber.join(running).pipe(Effect.timeout("10 seconds"))
+    yield* Fiber.join(steerFiber).pipe(Effect.timeout("10 seconds"))
+
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    expect(userMessageCount(hits[1].body, "arrived after transcript flush")).toBe(1)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: steerID }))).toBe("delivered")
+  }),
+)
+
+it.instance("interruptPrompt cancels the running turn and executes the new message once", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Interrupt prompt" })
+    const held = defer<void>()
+    yield* llm.push(reply().wait(held.promise).text("stale answer").stop().item())
+    yield* llm.text("fresh answer")
+
+    yield* prompt
+      .prompt({
+        sessionID: chat.id,
+        agent: "build",
+        parts: [{ type: "text", text: "old task" }],
+      })
+      .pipe(Effect.forkChild)
+    yield* llm.wait(1)
+
+    yield* prompt.interruptPrompt({
+      sessionID: chat.id,
+      agent: "build",
+      parts: [{ type: "text", text: "new task" }],
+    })
+    // interruptPrompt 返回时旧 Runner 已取消、新轮已提交并启动。旧响应被丢弃（held 不
+    // resolve 也不影响新轮），新指令恰好执行一次。
+    yield* awaitWithTimeout(llm.wait(2), "interrupted turn never ran the new message", "5 seconds")
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(2)
+    expect(JSON.stringify(hits[1].body)).toContain("new task")
+    const stale = yield* sessions.findMessage(chat.id, (item) => item.info.role === "assistant")
+    expect(Option.isSome(stale)).toBe(true)
+  }),
+)
 
 it.instance("marks explicitly steered messages delivered after the provider response", () =>
   Effect.gen(function* () {
@@ -1990,13 +2246,13 @@ for (const isolated of [false, true]) {
           const messageID = receipt.metadata.message_id
           if (!messageID) return yield* Effect.die("Missing steering receipt")
           const persisted = yield* MessageV2.get({ sessionID: child.id, messageID })
-         // 261031 Red 忙碌引导落 pending_steer（待消费形态，可撤回），promote 后转 steer。
-         expect(persisted.info).toMatchObject({
-           role: "user",
-           agent: originalUser.agent,
-           model: originalUser.model,
-           delivery: "pending_steer",
-         })
+          // 261031 Red 忙碌引导落 pending_steer（待消费形态，可撤回），promote 后转 steer。
+          expect(persisted.info).toMatchObject({
+            role: "user",
+            agent: originalUser.agent,
+            model: originalUser.model,
+            delivery: "pending_steer",
+          })
           expect(persisted.parts).toHaveLength(1)
           if (cancelled) {
             yield* jobs.cancel(child.id)

@@ -32,6 +32,15 @@ export const RETRY_MAX_DELAY = 600_000
 // 260811 cc audit Y1：重试原先无次数上限——5xx 无条件可重试叠加请求体自身问题导致的
 // 稳定 500，就是永不放弃的死循环，用户只能看 attempt 往上爬。
 export const RETRY_MAX_ATTEMPTS = 10
+const MESSAGE_PREVIEW_LENGTH = 80
+
+export function messagePreview(message: string) {
+  const truncated = message.length > MESSAGE_PREVIEW_LENGTH
+  return {
+    message: truncated ? `${message.slice(0, MESSAGE_PREVIEW_LENGTH)}...` : message,
+    truncated,
+  }
+}
 
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)

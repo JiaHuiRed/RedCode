@@ -10,6 +10,9 @@
 
 ### [Unreleased]
 
+- **429 容量拒绝提示与额度错误分开**（`opencode/src/provider/error.ts`、TUI prompt）：`prefill_cap_refused` 显示为上游预填充容量暂满，仍按瞬时故障重试，不再与套餐额度耗尽混淆；同时修正重试预览超过 80 字符时截断但没有展开入口的问题。详见 `docs/notes/implemented/bug-fix/2026-11-03-subscription-usage-limit-terminal.md`。
+- **原生压缩预检不再漏算实报锚点之外的中断输出**（`opencode/src/session/prompt.ts`）：同模型实报 assistant 记录整体作为已报边界，其后的消息进入预检估算；此前按出站消息里最后一条 assistant 之后切片，零 usage 的中断记录会占据切片边界、漏算其中的 reasoning。补上压缩中 steer 与最终 transcript flush 期间 steer 的确定性送达回归。详见 `docs/notes/implemented/bug-fix/2026-11-06-preflight-usage-boundary.md`。
+
 - **修复复用工具前缀时原生压缩被 OpenAI 拒绝**（`opencode/src/session/compaction.ts`）：摘要工具快照遗漏 provider 工具的类型、标识与参数，导致 `apply_patch` 被误发为参数类型为字符串的普通函数。现在保留 provider 工具的 wire 定义，仍剥离执行及输入回调；详见 `docs/notes/implemented/feature/2026-10-10-native-compaction.md`。
 - **修复桌宠样式导致 GUI 无法加载**（`app/src/pet/pet-layer.css`）：删除额度按钮时误删触屏样式的 `@media` 开头，导致 Vite CSS 解析失败；恢复触屏条件，保留触屏关闭按钮的尺寸。
 

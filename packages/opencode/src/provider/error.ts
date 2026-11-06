@@ -83,6 +83,19 @@ const USAGE_LIMIT_CODES = new Set([
   "1321", // 7 天上限 + 月消费上限（企业档）
 ])
 
+// 261106 Red This transient refusal is upstream capacity, not plan quota; keep it retryable.
+// Decision: docs/notes/implemented/bug-fix/2026-11-03-subscription-usage-limit-terminal.md.
+const PREFILL_CAPACITY_MESSAGE = "Upstream model prefill capacity is temporarily full."
+
+function isPrefillCapacityRefusal(error: unknown, message: string) {
+  const detail = isRecord(error) ? error : undefined
+  return (
+    detail?.code === "prefill_cap_refused" ||
+    detail?.type === "prefill_cap_refused" ||
+    /prefill_cap_refused|the cell is at capacity/i.test(message)
+  )
+}
+
 function number(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
@@ -275,6 +288,15 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
     }
   }
 
+  if (isPrefillCapacityRefusal(body?.error, typeof body?.error?.message === "string" ? body.error.message : "")) {
+    return {
+      type: "api_error",
+      message: PREFILL_CAPACITY_MESSAGE,
+      isRetryable: true,
+      responseBody,
+    }
+  }
+
   switch (body?.error?.code) {
     case "context_length_exceeded":
       return {
@@ -360,6 +382,17 @@ export function parseAPICallError(input: { providerID: ProviderID; error: APICal
       message: usage,
       statusCode: input.error.statusCode,
       isRetryable: false,
+      responseHeaders: input.error.responseHeaders,
+      responseBody: input.error.responseBody,
+      metadata: input.error.url ? { url: input.error.url } : undefined,
+    }
+  }
+  if (isPrefillCapacityRefusal(isRecord(body?.error) ? body.error : body, m)) {
+    return {
+      type: "api_error",
+      message: PREFILL_CAPACITY_MESSAGE,
+      statusCode: input.error.statusCode,
+      isRetryable: true,
       responseHeaders: input.error.responseHeaders,
       responseBody: input.error.responseBody,
       metadata: input.error.url ? { url: input.error.url } : undefined,
