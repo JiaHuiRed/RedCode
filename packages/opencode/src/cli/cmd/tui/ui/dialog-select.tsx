@@ -31,6 +31,8 @@ export interface DialogSelectProps<T> {
   onSelect?: (option: DialogSelectOption<T>) => void
   skipFilter?: boolean
   renderFilter?: boolean
+  // 261106 Red UX-02：无结果时替换默认「未找到结果」，用于承载加载失败/空态等真实原因。
+  emptyContent?: string
   actions?: {
     command: string
     title: string
@@ -55,6 +57,8 @@ export interface DialogSelectOption<T = any> {
   category?: string
   categoryView?: JSX.Element
   disabled?: boolean
+  // 261106 Red UX-02：只读行——照常显示，但不参与选择/动作（已完成任务的状态展示）。
+  readOnly?: boolean
   bg?: RGBA
   gutter?: () => JSX.Element
   margin?: JSX.Element
@@ -115,11 +119,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   const filtered = createMemo(() => {
-    if (props.skipFilter || props.renderFilter === false) return props.options.filter((x) => x.disabled !== true)
+    if (props.skipFilter || props.renderFilter === false)
+      return props.options.filter((x) => x.disabled !== true || x.readOnly === true)
     const needle = store.filter.toLowerCase()
     const options = pipe(
       props.options,
-      filter((x) => x.disabled !== true),
+      filter((x) => x.disabled !== true || x.readOnly === true),
     )
     if (!needle) return options
 
@@ -192,10 +197,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   )
 
   function move(direction: number) {
-    if (flat().length === 0) return
-    let next = store.selected + direction
-    if (next < 0) next = flat().length - 1
-    if (next >= flat().length) next = 0
+    const list = flat()
+    if (list.length === 0) return
+    let next = store.selected
+    // 261106 Red UX-02：只读/禁用行照常展示，但键盘导航跳过，Enter 不会落到它们身上。
+    for (let i = 0; i < list.length; i++) {
+      next = (next + direction + list.length) % list.length
+      if (!list[next]?.disabled && !list[next]?.readOnly) break
+    }
     moveTo(next, true)
   }
 
@@ -228,7 +237,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   function submit() {
     setStore("input", "keyboard")
     const option = selected()
-    if (!option) return
+    if (!option || option.disabled || option.readOnly) return
     option.onSelect?.(dialog)
     props.onSelect?.(option)
   }
@@ -394,7 +403,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         when={grouped().length > 0}
         fallback={
           <box paddingLeft={4} paddingRight={4} paddingTop={1}>
-            <text fg={theme.textMuted}>未找到结果</text>
+            <text fg={theme.textMuted}>{props.emptyContent ?? "未找到结果"}</text>
           </box>
         }
       >
@@ -436,6 +445,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           setStore("input", "mouse")
                         }}
                         onMouseUp={() => {
+                          if (option.disabled || option.readOnly) return
                           option.onSelect?.(dialog)
                           props.onSelect?.(option)
                         }}

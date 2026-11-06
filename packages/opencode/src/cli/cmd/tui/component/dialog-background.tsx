@@ -28,7 +28,7 @@ type Terminal = {
   pid: number
 }
 
-type Item = { kind: "job"; job: Job } | { kind: "terminal"; pty: Terminal } | { kind: "empty" }
+type Item = { kind: "job"; job: Job } | { kind: "terminal"; pty: Terminal }
 
 const JOB_STATUS: Record<Job["status"], string> = {
   running: "运行中",
@@ -94,16 +94,15 @@ export function DialogBackground() {
     return job.error ? `${base} · ${job.error}` : base
   }
 
+  // 261106 Red UX-02：加载失败/空态走 emptyContent，不再伪装成 disabled 行——
+  // 通用选择器会过滤 disabled 项，那样两者都只剩一句「未找到结果」。
+  const emptyContent = createMemo(() => {
+    if (data.error) return `加载失败：${errorMessage(data.error)}`
+    if (!data()) return "加载中…"
+    return "没有后台活动"
+  })
+
   const options = createMemo<DialogSelectOption<Item>[]>(() => {
-    if (data.error)
-      return [
-        {
-          title: "加载失败",
-          description: errorMessage(data.error),
-          value: { kind: "empty" as const },
-          disabled: true,
-        },
-      ]
     const current = data()
     if (!current) return []
     const now = Date.now()
@@ -120,6 +119,7 @@ export function DialogBackground() {
       category: "后台任务",
       description: describeJob(job, now),
       disabled: !running(job),
+      readOnly: !running(job),
       onSelect: () => void cancelJob(job),
     }))
     for (const pty of terminals) {
@@ -130,11 +130,9 @@ export function DialogBackground() {
         category: "终端",
         description: `PID ${pty.pid} · ${status} · ${pty.cwd}`,
         disabled: pty.status !== "running",
+        readOnly: pty.status !== "running",
         onSelect: () => void killTerminal(pty),
       })
-    }
-    if (items.length === 0) {
-      return [{ title: "没有后台活动", value: { kind: "empty" as const }, disabled: true }]
     }
     return items
   })
@@ -144,6 +142,7 @@ export function DialogBackground() {
       title="后台活动"
       placeholder="搜索任务或终端..."
       options={options()}
+      emptyContent={emptyContent()}
       footerHints={[{ title: "刷新", label: "每 2 秒" }]}
     />
   )
