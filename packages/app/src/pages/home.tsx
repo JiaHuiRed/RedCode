@@ -21,6 +21,8 @@ import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { useCommand } from "@/context/command"
+import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { notifyServerError } from "@/utils/notify-error"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
@@ -521,20 +523,22 @@ function HomeDesign() {
 //   与快捷键条重复这件事从根上不存在了，那段代码没了存在理由。
 function HomeShortcutBar() {
   const language = useLanguage()
-  const isMac = navigator.platform.includes("Mac")
-  const mod = isMac ? "⌘" : "Ctrl"
+  const command = useCommand()
+  // 261106 Red UX-03：提示条改从命令系统读取真实绑定（含用户自定义），
+  // 只保留高频 6 条，未注册/被设为 none 的动作不渲染，避免展示过期快捷键。
   const shortcuts = [
-    { keys: `${mod}+K`, label: language.t("home.shortcuts.search") },
-    { keys: `${mod}+N`, label: language.t("home.shortcuts.newSession") },
-    { keys: `Alt+↑↓`, label: language.t("home.shortcuts.switchSession") },
-    { keys: `${mod}+Alt+↑↓`, label: language.t("home.shortcuts.switchProject") },
-    { keys: `${mod}+O`, label: language.t("home.shortcuts.openProject") },
-    { keys: `${mod}+\\`, label: language.t("home.shortcuts.fileTree") },
-    { keys: `${mod}+,`, label: language.t("home.shortcuts.settings") },
-    { keys: `${mod}+P`, label: language.t("home.shortcuts.commandPalette") },
-    { keys: `${mod}+Shift+T`, label: language.t("home.shortcuts.cycleTheme") },
-    { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
+    { id: "command.palette", label: language.t("home.shortcuts.commandPalette") },
+    { id: "session.new", label: language.t("home.shortcuts.newSession") },
+    { id: "project.open", label: language.t("home.shortcuts.openProject") },
+    { id: "session.previous", label: language.t("home.shortcuts.switchSession") },
+    { id: "project.previous", label: language.t("home.shortcuts.switchProject") },
+    { id: "settings.open", label: language.t("home.shortcuts.settings") },
   ]
+  const items = () =>
+    shortcuts.flatMap((item) => {
+      const keys = command.keybind(item.id)
+      return keys ? [{ keys, label: item.label }] : []
+    })
   // 进页面抽一次。用 createSignal 不用 createMemo —— 理由见 utils/greeting.ts。
   const [greetingKey] = createSignal(pickGreetingKey(new Date().getHours()))
   const tip = () => language.t(greetingKey())
@@ -546,7 +550,7 @@ function HomeShortcutBar() {
     <div class="col-span-full lg:col-start-2 flex flex-col items-center gap-1.5 px-4 pt-3 pb-5">
       <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">{tip()}</span>
       <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[13px] [font-weight:440] text-v2-state-fg-success">
-        <For each={shortcuts}>
+        <For each={items()}>
           {(item) => (
             <span class="flex items-center gap-1">
               <span class="text-[12px] [font-weight:530]">{item.keys}</span>
@@ -819,6 +823,15 @@ function HomeSessionRow(props: {
   })
   const tint = createMemo(() => messageAgentColor(sessionStore.message[props.record.session.id], sessionStore.agent))
   const showStatus = createMemo(() => isWorking() || hasPermissions() || hasError() || unseenCount() > 0)
+  // 261106 Red UX-05：状态点只给颜色，把已有状态解释成文案，供悬停与读屏使用；
+  // 优先级与上方 Switch 的渲染顺序一致，不额外请求后端。
+  const statusLabel = createMemo(() => {
+    if (isWorking()) return language.t("home.session.status.working")
+    if (hasPermissions()) return language.t("home.session.status.permission")
+    if (hasError()) return language.t("home.session.status.error")
+    if (unseenCount() > 0) return language.t("home.session.status.unseen", { count: unseenCount() })
+    return undefined
+  })
 
   return (
     // 260710 Red 会话右键菜单：归档
@@ -831,25 +844,29 @@ function HomeSessionRow(props: {
         onClick={() => props.openSession(props.record.session)}
       >
         <Show when={showStatus()}>
-          <div
-            class="flex size-4 shrink-0 items-center justify-center"
-            style={{ color: tint() ?? "var(--icon-interactive-base)" }}
-          >
-            <Switch>
-              <Match when={isWorking()}>
-                <Spinner class="size-[15px]" />
-              </Match>
-              <Match when={hasPermissions()}>
-                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
-              </Match>
-              <Match when={hasError()}>
-                <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
-              </Match>
-              <Match when={unseenCount() > 0}>
-                <div class="size-1.5 rounded-full bg-text-interactive-base" />
-              </Match>
-            </Switch>
-          </div>
+          <Tooltip placement="top" value={statusLabel() ?? ""}>
+            <div
+              class="flex size-4 shrink-0 items-center justify-center"
+              style={{ color: tint() ?? "var(--icon-interactive-base)" }}
+              role="img"
+              aria-label={statusLabel()}
+            >
+              <Switch>
+                <Match when={isWorking()}>
+                  <Spinner class="size-[15px]" />
+                </Match>
+                <Match when={hasPermissions()}>
+                  <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+                </Match>
+                <Match when={hasError()}>
+                  <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
+                </Match>
+                <Match when={unseenCount() > 0}>
+                  <div class="size-1.5 rounded-full bg-text-interactive-base" />
+                </Match>
+              </Switch>
+            </div>
+          </Tooltip>
         </Show>
         <span
           class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] ${props.record.projectName ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
