@@ -476,10 +476,7 @@ function HomeDesign() {
                       <For each={groups()}>
                         {(group, index) => (
                           <div class="flex min-w-0 flex-col gap-4">
-                            <HomeSessionGroupHeader
-                              title={group.title}
-                              onNewSession={index() === 0 ? openNewSession : undefined}
-                            />
+                            <HomeSessionGroupHeader title={group.title} />
                             <div class="flex min-w-0 flex-col gap-px">
                               <For each={group.sessions}>
                                 {(record) => (
@@ -774,25 +771,12 @@ function HomeSessionSearch(props: {
   )
 }
 
-function HomeSessionGroupHeader(props: { title: string; onNewSession?: () => void }) {
-  const language = useLanguage()
+// 261106 Red UX-10：分组标题的 ghost「新建」按钮与搜索栏主按钮重复，只有首组会渲染，
+// 层级低且在同屏已有显式入口；空列表的独立 CTA 保留，删的只是这一处重复。
+function HomeSessionGroupHeader(props: { title: string }) {
   return (
     <div class="flex h-7 min-w-0 items-center justify-between px-4">
       <div class={HOME_SECTION_LABEL}>{props.title}</div>
-      <Show when={props.onNewSession}>
-        {(onNewSession) => (
-          <ButtonV2
-            data-action="home-new-session"
-            variant="ghost"
-            size="normal"
-            icon="edit"
-            class="h-7 px-2 text-v2-text-text-muted [font-weight:530]"
-            onClick={onNewSession()}
-          >
-            {language.t("command.session.new")}
-          </ButtonV2>
-        )}
-      </Show>
     </div>
   )
 }
