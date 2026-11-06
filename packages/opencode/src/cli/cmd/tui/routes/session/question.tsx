@@ -17,7 +17,12 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   // 260904 cc 同 permission.tsx：回复失败不能静默。见那边 send() 的完整因由。
   const toast = useToast()
   const sendRequest = (request: Promise<unknown>) => void request.catch((err) => toast.error(err))
-  const send = (input: Parameters<typeof sdk.client.question.reply>[0]) => sendRequest(sdk.client.question.reply(input))
+  // 261106 Red UX-01：多问题/多选的确认页此前只有 Enter 能提交，鼠标选完选项还得回键盘。
+  // send 改为返回 Promise 供 submit 复位提交门控，失败仍走同一条 toast。
+  const send = (input: Parameters<typeof sdk.client.question.reply>[0]) =>
+    sdk.client.question.reply(input).catch((err) => {
+      toast.error(err)
+    })
   const sync = useSync()
   const project = useProject()
   const { theme } = useTheme()
@@ -32,6 +37,9 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
   const tabs = createMemo(() => (single() ? 1 : questions().length + 1)) // questions + confirm tab (no confirm for single select)
   const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null)
+  // 261106 Red UX-01：确认页鼠标提交的悬停态与提交门控（请求在途时忽略重复点击/Enter）。
+  const [submitHover, setSubmitHover] = createSignal(false)
+  const [submitting, setSubmitting] = createSignal(false)
   const [store, setStore] = createStore({
     tab: 0,
     answers: [] as QuestionAnswer[],
@@ -56,12 +64,15 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   })
 
   function submit() {
+    // 261106 Red UX-01：Enter 与鼠标提交共用此入口，门控防止双击产生两次 reply。
+    if (submitting()) return
+    setSubmitting(true)
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    send({
+    void send({
       requestID: props.request.id,
       answers,
       workspace: workspace(),
-    })
+    }).finally(() => setSubmitting(false))
   }
 
   function reject() {
@@ -482,6 +493,23 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
               )
             }}
           </For>
+          <box paddingLeft={1} paddingTop={1}>
+            <box
+              paddingLeft={1}
+              paddingRight={1}
+              backgroundColor={submitHover() ? theme.backgroundElement : theme.backgroundPanel}
+              onMouseOver={() => setSubmitHover(true)}
+              onMouseOut={() => setSubmitHover(false)}
+              onMouseUp={() => {
+                if (renderer.getSelection()?.getSelectedText()) return
+                submit()
+              }}
+            >
+              <text fg={submitting() ? theme.textMuted : theme.secondary}>
+                {submitting() ? "提交中…" : "[提交回答]"}
+              </text>
+            </box>
+          </box>
         </Show>
       </box>
       <box
