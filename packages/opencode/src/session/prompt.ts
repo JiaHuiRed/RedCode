@@ -1505,7 +1505,12 @@ export const layer = Layer.effect(
             .join("\n")
           const outputLoss = lastAssistant.summary
             ? undefined
-            : OutputLoss.detect({ outputTokens: lastAssistant.tokens.output, text: visibleText })
+            : OutputLoss.detect({
+                outputTokens: lastAssistant.tokens.output,
+                text: visibleText,
+                finish: lastAssistant.finish,
+                parts: lastAssistantMsg?.parts ?? [],
+              })
           const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
           // 260808 Red：上面那条只兜「有思考、没正文」。还有更空的一种——**连思考都没有**，
           // 分片只剩 step-start → text(长度 0) → step-finish，finish 却是 "stop"、无报错，
@@ -1525,8 +1530,7 @@ export const layer = Layer.effect(
             loopRecoveryPrompt = XmlToolCall.EMPTY_TURN_PROMPT
             yield* slog.warn("empty.turn", { step, model: lastUser.model.modelID })
           } else if (outputLoss && !outputLossRetried) {
-            // 261106 Red 模型说完「这次真的动手，先落到 xxx：」就停——上游把随后的 tool call
-            // 吞了（见 output-loss.ts）。给一次明确的续跑机会；只此一次，仍丢就落可见说明。
+            // 261106 Red 冒号收尾可能是工具调用丢失，也可能是正常结束；只续跑一次。
             outputLossRetried = true
             loopRecoveryPrompt = OutputLoss.RECOVERY_PROMPT
             yield* slog.warn("output.loss.recover", {
@@ -1567,7 +1571,7 @@ export const layer = Layer.effect(
               yield* appendNotice({
                 sessionID,
                 messageID: lastAssistant.id,
-                text: OutputLoss.notice(outputLoss.missingTokens),
+                text: OutputLoss.notice(),
               })
             }
             const next = yield* sessions.claimQueuedMessage(sessionID)
