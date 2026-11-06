@@ -25,7 +25,7 @@ import { Schema } from "effect"
 import z from "zod"
 import { Plugin } from "../plugin"
 import { installSdkModule } from "../plugin/sdk-shim"
-import { errorMessage } from "@/util/error"
+import { errorFormat } from "@/util/error"
 import { Provider } from "@/provider/provider"
 import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
@@ -274,10 +274,15 @@ export const layer = Layer.effect(
           // 260915 Red 单文件失败只弃该文件：原为 Effect.promise，rejection 变 defect 直接
           // 打断整张工具表的构建 → prompt 一起死，UI 永远停在"等待模型响应"且 token 全 0
           // （实测 260914 ses_fr8o…，sqlite.ts 的 ResolveMessage 连累全部内建工具）。
-          const mod = yield* Effect.tryPromise(() => import(pathToFileURL(match).href)).pipe(
+          const mod = yield* Effect.tryPromise({
+            try: () => import(pathToFileURL(match).href),
+            // 261106 Red 默认 catcher 会把真实错误包成 UnknownError("An error occurred in
+            // Effect.tryPromise")，日志只剩这句废话。identity 透传，日志记完整栈。
+            catch: (error) => error,
+          }).pipe(
             Effect.catch((error) =>
               Effect.sync(() => {
-                log.error("custom tool file failed to load, skipping", { file: match, error: errorMessage(error) })
+                log.error("custom tool file failed to load, skipping", { file: match, error: errorFormat(error) })
                 return null
               }),
             ),

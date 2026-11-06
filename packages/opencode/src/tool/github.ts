@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process"
+import { Readable } from "node:stream"
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { InstanceState } from "@/effect/instance-state"
@@ -186,6 +188,9 @@ export async function readBounded(
 // 261024 Red RC-A02 spawnSync→异步：同步子进程会卡死整个后端事件循环（gh 撞上慢网络
 // 时 30s 内所有并发请求一起冻结）。异步 spawn + stdout/stderr 并发读取（防管道写满
 // 死锁）+ 超时 kill。bin/timeout 可注入仅为单测，生产路径恒为 gh / 30s。
+// 261106 Red Bun.spawn → node:child_process：GUI sidecar 是 Node，没有 Bun 全局，
+// 原实现在界面上恒被 catch 成「gh CLI 未安装」。child_process 两个运行时都有，
+// 同时避免为同一功能维护两套进程 API。
 export async function runGh(
   args: string[],
   cwd: string,
@@ -193,12 +198,20 @@ export async function runGh(
 ): Promise<{ ok: true; stdout: string; truncated?: boolean } | { ok: false; error: string }> {
   const bin = opts.bin ?? "gh"
   const timeoutMs = opts.timeoutMs ?? GH_TIMEOUT_MS
-  let proc: Bun.Subprocess<"ignore", "pipe", "pipe">
+  let proc: ReturnType<typeof spawn>
   try {
-    proc = Bun.spawn([bin, ...args], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+    proc = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true })
   } catch {
     return { ok: false, error: "gh CLI 未安装或不在 PATH（安装后跑 gh auth login）" }
   }
+  // ENOENT 只有异步事件，spawn 本身不抛：不在 'spawn' 前抓就会把「没装」拖成超时。
+  const spawnError = await new Promise<Error | undefined>((resolve) => {
+    proc.once("spawn", () => resolve(undefined))
+    proc.once("error", (error) => resolve(error))
+  })
+  if (spawnError) return { ok: false, error: "gh CLI 未安装或不在 PATH（安装后跑 gh auth login）" }
+  // close 在 stdio 排空后才触发；先挂监听再读流，避免读完时 close 已经错过。
+  const closed = new Promise<number | null>((resolve) => proc.once("close", (code) => resolve(code)))
   let timedOut = false
   const timer = setTimeout(() => {
     timedOut = true
@@ -212,16 +225,23 @@ export async function runGh(
   let stderr: { text: string; truncated: boolean }
   try {
     ;[stdout, stderr] = await Promise.all([
-      readBounded(proc.stdout, READ_MAX_BYTES),
-      readBounded(proc.stderr, STDERR_MAX_BYTES),
+      readBounded(
+        proc.stdout ? (Readable.toWeb(proc.stdout) as unknown as ReadableStream<Uint8Array>) : undefined,
+        READ_MAX_BYTES,
+      ),
+      readBounded(
+        proc.stderr ? (Readable.toWeb(proc.stderr) as unknown as ReadableStream<Uint8Array>) : undefined,
+        STDERR_MAX_BYTES,
+      ),
     ])
-    await proc.exited
+    await closed
   } finally {
     clearTimeout(timer)
   }
-  if (timedOut || proc.exitCode === null)
+  const exitCode = proc.exitCode
+  if (timedOut || exitCode === null)
     return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 超时（${Math.round(timeoutMs / 1000)}s），已终止子进程` }
-  if (proc.exitCode !== 0 && !stdout.truncated) {
+  if (exitCode !== 0 && !stdout.truncated) {
     // gh pr checks 在检查未全绿时也用非零退出码，但 stdout 就是状态表——有输出即视为成功。
     if (args[0] === "pr" && args[1] === "checks" && stdout.text.trim().length > 0) return { ok: true, stdout: stdout.text }
     const hint = /auth/i.test(stderr.text)
@@ -229,7 +249,7 @@ export async function runGh(
       : /no git remotes|not a git repository|could not determine/i.test(stderr.text)
         ? "（当前目录不是 GitHub 仓库）"
         : ""
-    return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 失败 (exit ${proc.exitCode}): ${capText((stderr.text || stdout.text).trim(), 400)}${hint}` }
+    return { ok: false, error: `gh ${args.slice(0, 2).join(" ")} 失败 (exit ${exitCode}): ${capText((stderr.text || stdout.text).trim(), 400)}${hint}` }
   }
   // 261024 Red RC-A02 stdout 被我们主动截断时，子进程随后因管道关闭吃 EPIPE 非零退出
   // 是截断的副作用而非 gh 失败——按截断上报，不按错误上报。

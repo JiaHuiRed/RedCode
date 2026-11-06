@@ -1,6 +1,7 @@
 import * as nodeModule from "node:module"
 import * as PluginSdk from "@redcode-ai/plugin"
 import * as Log from "@redcode-ai/core/util/log"
+import { z } from "zod"
 
 const log = Log.create({ service: "plugin.sdk-shim" })
 
@@ -9,12 +10,18 @@ const SDK_SPECIFIER = "@redcode-ai/plugin"
 /**
  * Node 侧（desktop sidecar = Electron utilityProcess，跑 Node 24 而非 Bun）拿不到二进制内
  * 打包的模块对象，只能以自包含源码落地一个最小 shim。语义对齐 packages/plugin/src/tool.ts
- * 的 `tool`（透传）；`tool.schema`（zod 转发）不提供——seed 工具只用 `tool()`，这样 shim
- * 零依赖，data: URL 即可加载，不用操心 zod 的解析起点。tool.ts 若增加运行时导出，这里要跟。
+ * 的 `tool`（透传）与 `tool.schema`（zod 转发）；data: 模块没有 node_modules 起点，
+ * schema 只能由宿主经 globalThis 桥接注入——必须是同一个 zod 实例，否则 registry 的
+ * `z.object(args)` 认不出 shim 造的 schema。tool.ts 若增加运行时导出，这里要跟。
  */
-const NODE_SHIM_SOURCE = ["function tool(input) { return input }", "export { tool };", "export default { tool };"].join(
-  "\n",
-)
+const SDK_BRIDGE = Symbol.for("redcode.plugin.sdk")
+const NODE_SHIM_SOURCE = [
+  `const schema = globalThis[Symbol.for("redcode.plugin.sdk")].schema`,
+  "function tool(input) { return input }",
+  "tool.schema = schema",
+  "export { tool };",
+  "export default { tool };",
+].join("\n")
 const NODE_SHIM_URL = `data:text/javascript;base64,${Buffer.from(NODE_SHIM_SOURCE).toString("base64")}`
 
 type ResolveResult = { url: string; shortCircuit?: boolean }
@@ -65,6 +72,9 @@ export function installSdkModule() {
     log.error("cannot register @redcode-ai/plugin shim on this runtime, seeded tools importing it will fail to load")
     return
   }
+  // 261106 Red data: 模块解析不到裸 specifier，schema 只能通过 globalThis 交给它。
+  // 用 z 的本体而不是自己包一层：registry 的 z.object() 要求同一实例。
+  ;(globalThis as unknown as Record<symbol, unknown>)[SDK_BRIDGE] = { schema: z }
   registerHooks({
     resolve(specifier, context, nextResolve) {
       if (specifier === SDK_SPECIFIER) return { url: NODE_SHIM_URL, shortCircuit: true }

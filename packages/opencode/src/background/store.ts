@@ -1,5 +1,6 @@
 import path from "path"
 import { Cause, Context, Effect } from "effect"
+import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"
@@ -71,8 +72,11 @@ function serialized(target: string, task: () => Promise<void>) {
 
 // 261105 Red namespace 隔离快照文件：PTY 终端复用同一套落盘但单列一份
 // （<hash>.pty.json），两个服务各自整写自己的文件，互不覆盖。
+// 261106 Red 用 node:crypto 而不是 Bun.hash：GUI 的 sidecar 是 Node（没有 Bun 全局），
+// Bun.hash 会让 BackgroundJob 的 InstanceState 初始化成 defect——后台面板和「停止生成」
+// 一起 500。测试跑在 Bun 上永远发现不了，只能用双运行时都有的实现。
 function file(target: string, workspace: string, namespace?: string) {
-  const name = Bun.hash(workspace).toString(36)
+  const name = createHash("sha1").update(workspace).digest("hex").slice(0, 16)
   return path.join(target, namespace ? `${name}.${namespace}.json` : `${name}.json`)
 }
 

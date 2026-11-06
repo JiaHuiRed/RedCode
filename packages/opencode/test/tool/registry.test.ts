@@ -765,6 +765,9 @@ describe("tool.registry", () => {
   // 260915 Red：seed/tool/sqlite.ts import "@redcode-ai/plugin"——该包只在 repo workspace，
   // home 的 node_modules 解析不到，由引擎的进程内虚拟模块兜底（plugin/sdk-shim.ts），
   // 用户工具文件从此不依赖 npm 安装或 home package.json 声明。
+  // 261106 Red 夹具带上 tool.schema：seed 工具真的在用（sqlite.ts 的 dbPath/sql），
+  // Node 分支的 shim 曾经只给 tool 不给 schema，加载即 TypeError。本用例跑在 Bun 上
+  // 覆盖的是 Bun 分支契约，Node 分支需桌面 sidecar 冒烟验证。
   it.instance("resolves @redcode-ai/plugin imports in custom tool files via the in-process shim", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
@@ -777,7 +780,7 @@ describe("tool.registry", () => {
             'import { tool } from "@redcode-ai/plugin"',
             "export default tool({",
             "  description: 'sdk-backed tool',",
-            "  args: {},",
+            "  args: { query: tool.schema.string().describe('q') },",
             "  execute: async () => 'ok',",
             "})",
             "",
