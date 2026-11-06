@@ -8,12 +8,15 @@
 
 ---
 
-### [Unreleased]
+### [0.16.1] - 2026-11-06
 
+- **全局配置损坏不再拖垮启动，解析错误可从 API 观测**（`opencode/src/config/config.ts`、`server/routes/instance/httpapi/{groups,handlers}/global.ts`、`app/src/context/global-sync/bootstrap.ts`）：全局配置加载原先用 `Effect.orElseSucceed` 兜底，但 `ConfigParse` 是同步 throw（Effect 记为 defect），`orElseSucceed`/`tapError` 根本捕获不到——JSONC 语法错误或 schema 校验失败仍会让服务端起不来。现在 `catchDefect` 把 defect 归一成 typed error 并按 Result 缓存：`getGlobal` 维持 `{}` 降级保启动，新增 `getGlobalError` 把真实解析错误带到 `/global/config`（500 + message），GUI 全局 bootstrap 的慢查询失败恢复 toast（此前整组被 allSettled 吞掉）。验证：opencode/app typecheck exit 0，config 测试 100 pass（含损坏 JSONC 判别用例），httpapi global.config 两场景 PASS，OpenAPI 重新生成后 drift 一致。
 - **文件树点击文件与聊天侧行为对齐：胶囊关着时先展开**（`app/src/pages/session/file-tree-panel.tsx`）：`createOpenSessionFileTab` 的 `openReviewPanel` 此前传 no-op——点文件树只把 tab 静默开在折叠的胶囊后面，像点击没反应。现与聊天侧 `openFileFromTranscript`（session.tsx「面板关着时先打开它，否则点了没反应」）、命令面板、session-side-panel 同一口径：`view().reviewPanel.opened()` 为假先 `open()`。验证：app typecheck exit 0。
 - **修复 FileTree 挂载即 TDZ 崩溃——GUI 白屏级回归**（`app/src/components/file-tree.tsx`）：键盘导航 75ecf2e0 引入，Windows GUI 实景首跑即撞上（整个 app 报「Cannot access 'filter' before initialization」）。solid 的 `createMemo` 在创建时就同步首跑（`updateComputation`），并非首读才求值——`allVisible`（引用后置的 `filter`）创建即 TDZ，任何 FileTree 实例挂载即崩；此前 12 条单测只覆盖纯函数、typecheck 抓不到 TDZ，changelog「GUI 实景待人工确认」一条都没人跑过。修法：`filter` memo 上移至 `allVisible` 之前，并纠正原注释里「memo 惰性创建零成本」的错误假设。验证：app typecheck exit 0，file-tree 12 pass，Windows GUI 实景加载正常。
 - **watcher 内容重载统一比较键，修复 Windows 下已打开文件外部修改不自动刷新**（`app/src/context/file/watcher.ts`、`file.tsx`）：自身审计 P2-01 收尾。内容缓存/标签键族的实际形态取决于打开入口——树点击与标签经 `pathFromTab` 恒为规范形（/），搜索结果可能带原生反斜杠；原实现只拿事件原生形态逐字比对 `hasFile`/`isOpen`，Windows 下树/标签打开的文件两侧全 miss，外部修改不再触发强制重载。现比较键统一走规范形、命中哪个键就用哪个键触发重载（规范形优先——文件视图经 `pathFromTab` 读取的正是该形态），不新增另一种形态的缓存记录。新增 2 条反斜杠事件回归。验证：app typecheck exit 0，watcher 11 + path 40 + file-tree 12 全绿。
 - **树键族归一改按工作区根形态条件执行，POSIX 字面反斜杠文件名不再被破坏**（`app/src/context/file/path.ts`、`file.tsx`、`file/watcher.ts`、`file-tree-panel.tsx`）：自身审计 P2-02。`canonicalizeTreePath` 原无条件 `replaceAll("\\", "/")`——POSIX 文件名允许字面反斜杠（`literal\name.txt` 是单层文件名），会被拆成不存在的两级树键、与 git 侧保留反斜杠的路径失配，且与 `path.test.ts` 既有 POSIX 保留断言矛盾。现抽 `isWindowsRoot`（盘符/UNC 判定，`createPathHelpers` 内两处同形判定一并收编），归一只对 Windows 根的工作区执行；POSIX 下服务端路径本就是 / 形，恒等返回。`canonicalizeTreePath`/`isWindowsRoot` 补 2 条单测锁定。验证：app typecheck exit 0，watcher 11 + path 40 + file-tree 12 全绿。
+- **readDir 只把「目录不存在」当空结果**（`opencode/src/storage/storage.ts`）：目录枚举原先对任何读取错误一律 `catch` 成空数组——权限不足、I/O 失败与「目录确实为空」混同，上层会把读取失败静默当作没有会话/文件。现在只吞 missing 分支，其余错误原样上抛。验证：storage 14 pass，opencode typecheck exit 0。
+- **普通文件系统路径不再按 URI 规则解析**（`app/src/context/file/path.ts`）：`normalize` 此前无条件剥查询/片段并做百分号解码——`src/feature#1.ts`、`src/what?next.ts`、`src/100%done.txt` 在进入读取逻辑前就被截断/改写（`#`/`?`/`%` 在 POSIX 文件名里合法）。现在 URL 规则只作用于 `file://` 输入，普通路径只做 unquote。补 4 条断言（含 `file://` 往返）。验证：app typecheck exit 0，path 44 pass。
 
 ### [0.16.0] - 2026-11-06
 
