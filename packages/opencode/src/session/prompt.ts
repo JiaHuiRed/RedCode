@@ -82,6 +82,7 @@ import * as ContextCompaction from "./context-compaction"
 import { usable as usableContext } from "./overflow"
 import { estimateModelMessages } from "./image-tokens"
 import { Token } from "@/util/token"
+import { OutputLoss } from "./output-loss"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1351,6 +1352,9 @@ export const layer = Layer.effect(
       // 两者都必须封顶：模型可能一轮接一轮地重犯，无上限就是死循环。
       let forceContinue = false
       let reasoningOnlyRetried = false
+      // 261106 Red 上游把 tool call 吞掉时（见 output-loss.ts）只续跑一次：同一上游可能连续
+      // 五轮都丢，无上限就是替供应商烧额度；续跑一次仍丢就落可见说明并正常退出。
+      let outputLossRetried = false
       // 260808 Red：整轮**什么都没产出**（连思考都没有）时纠正一次，同样只纠正一次防死循环
       let emptyTurnRetried = false
       let salvageRecoveries = 0
@@ -1381,6 +1385,7 @@ export const layer = Layer.effect(
         reasoningOnlyRetried = false
         emptyTurnRetried = false
         salvageRecoveries = 0
+        outputLossRetried = false
         turnStartUserID = undefined
         remindedUserIDs.clear()
       }
@@ -1491,6 +1496,16 @@ export const layer = Layer.effect(
           const hasVisibleText = (lastAssistantMsg?.parts ?? []).some(
             (part) => part.type === "text" && part.text.trim().length > 0,
           )
+          // 261106 Red 上游丢 tool call 的判据见 output-loss.ts：只认「正文以冒号结尾 +
+          // 零工具 + finish=stop」这一形态（token 差额各 provider 口径不一，不能当门槛）。
+          // 空正文不在这里判——交给下面的 reasoningOnly / producedNothing 兜底。
+          const visibleText = (lastAssistantMsg?.parts ?? [])
+            .filter((part): part is MessageV2.TextPart => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+          const outputLoss = lastAssistant.summary
+            ? undefined
+            : OutputLoss.detect({ outputTokens: lastAssistant.tokens.output, text: visibleText })
           const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
           // 260808 Red：上面那条只兜「有思考、没正文」。还有更空的一种——**连思考都没有**，
           // 分片只剩 step-start → text(长度 0) → step-finish，finish 却是 "stop"、无报错，
@@ -1509,6 +1524,16 @@ export const layer = Layer.effect(
             emptyTurnRetried = true
             loopRecoveryPrompt = XmlToolCall.EMPTY_TURN_PROMPT
             yield* slog.warn("empty.turn", { step, model: lastUser.model.modelID })
+          } else if (outputLoss && !outputLossRetried) {
+            // 261106 Red 模型说完「这次真的动手，先落到 xxx：」就停——上游把随后的 tool call
+            // 吞了（见 output-loss.ts）。给一次明确的续跑机会；只此一次，仍丢就落可见说明。
+            outputLossRetried = true
+            loopRecoveryPrompt = OutputLoss.RECOVERY_PROMPT
+            yield* slog.warn("output.loss.recover", {
+              step,
+              model: lastUser.model.modelID,
+              missingTokens: outputLoss.missingTokens,
+            })
           } else {
             if (reasoningOnly) {
               // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
@@ -1519,7 +1544,7 @@ export const layer = Layer.effect(
                 messageID: lastAssistant.id,
                 text: reasoning.map((part) => part.text).join("\n\n"),
               })
-            } else if (producedNothing) {
+            } else if (producedNothing && !outputLoss) {
               // 260808 Red：纠正过一次还是彻底空转。这里没有思考可提升，但**不能就这么静默退出** ——
               // 那正是"莫名其妙停下来"的观感来源。写一句可见说明，让用户知道是模型空回复、
               // 可以直接重发，而不是去猜自己是不是被打断了。
@@ -1528,6 +1553,21 @@ export const layer = Layer.effect(
                 sessionID,
                 messageID: lastAssistant.id,
                 text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
+              })
+            }
+            // 261106 Red 上游丢输出的可见说明：不能静默退出，否则用户只看到「说到一半停了」。
+            // 与空转文案互斥——output 有量说明模型确实产出了东西，不该说「没有返回内容」。
+            if (outputLoss) {
+              yield* slog.warn("output.loss.dropped", {
+                step,
+                model: lastUser.model.modelID,
+                missingTokens: outputLoss.missingTokens,
+                retried: outputLossRetried,
+              })
+              yield* appendNotice({
+                sessionID,
+                messageID: lastAssistant.id,
+                text: OutputLoss.notice(outputLoss.missingTokens),
               })
             }
             const next = yield* sessions.claimQueuedMessage(sessionID)
