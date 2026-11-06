@@ -8,12 +8,17 @@ import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"
+import * as Clipboard from "@tui/util/clipboard"
+import { useToast } from "@tui/ui/toast"
+import { useRenderer } from "@opentui/solid"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const project = useProject()
   const sync = useSync()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
+  const renderer = useRenderer()
+  const toast = useToast()
   const session = createMemo(() => sync.session.get(props.sessionID))
   const workspace = () => {
     const workspaceID = session()?.workspaceID
@@ -82,7 +87,21 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                   </text>
                 </Show>
                 <Show when={session()!.share?.url}>
-                  <text fg={theme.textMuted}>{session()!.share!.url}</text>
+                  {/* 261106 Red UX-08：共享 URL 此前只是纯文本，点击复制沿用 TUI 剪贴板封装；
+                      鼠标正在选择文本时不触发，保留终端原生复制行为。 */}
+                  <text
+                    fg={theme.textMuted}
+                    onMouseUp={() => {
+                      if (renderer.getSelection()?.getSelectedText()) return
+                      const url = session()!.share?.url
+                      if (!url) return
+                      void Clipboard.copy(url)
+                        .then(() => toast.show({ message: "链接已复制", variant: "success" }))
+                        .catch((error) => toast.show({ message: `复制失败：${String(error)}`, variant: "error" }))
+                    }}
+                  >
+                    {session()!.share!.url}
+                  </text>
                 </Show>
               </box>
             </TuiPluginRuntime.Slot>
