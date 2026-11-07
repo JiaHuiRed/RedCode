@@ -97,10 +97,15 @@ describe("applyGlobalEvent", () => {
       client.setQueryData([null, "agents"], [{ name: "explore", model: "step" }])
       client.setQueryData(["project", "agents"], [{ name: "explore", model: "step" }])
       client.setQueryData(["project", "mcp"], {})
+      // 261108 Red RC 审计合并：refresh 断言收进本用例（两种事件走同一分支），
+      // 删除后面两份重复的独立测试。
+      let refreshCount = 0
       const input = {
         event: { type },
         project: [],
-        refresh() {},
+        refresh() {
+          refreshCount += 1
+        },
         refreshAgents() {
           void client.invalidateQueries({ predicate: (query) => query.queryKey[1] === "agents" })
         },
@@ -112,6 +117,7 @@ describe("applyGlobalEvent", () => {
       expect(client.getQueryState([null, "agents"])?.isInvalidated).toBe(true)
       expect(client.getQueryState(["project", "agents"])?.isInvalidated).toBe(true)
       expect(client.getQueryState(["project", "mcp"])?.isInvalidated).toBe(false)
+      expect(refreshCount).toBe(1)
       client.clear()
     },
   )
@@ -132,34 +138,6 @@ describe("applyGlobalEvent", () => {
 
     expect(project.map((x) => x.id)).toEqual(["a", "b", "c"])
     expect(refreshCount).toBe(0)
-  })
-
-  test("handles global.disposed by triggering refresh", () => {
-    let refreshCount = 0
-    applyGlobalEvent({
-      event: { type: "global.disposed" },
-      project: [],
-      refresh: () => {
-        refreshCount += 1
-      },
-      setGlobalProject() {},
-    })
-
-    expect(refreshCount).toBe(1)
-  })
-
-  test("handles server.connected by triggering refresh", () => {
-    let refreshCount = 0
-    applyGlobalEvent({
-      event: { type: "server.connected" },
-      project: [],
-      refresh: () => {
-        refreshCount += 1
-      },
-      setGlobalProject() {},
-    })
-
-    expect(refreshCount).toBe(1)
   })
 })
 
@@ -225,23 +203,9 @@ describe("applyDirectoryEvent", () => {
 
  // 261021 Red RC-A05：孤儿洪泛且无 session 事件时的有界性。阈值内保持懒语义（等
  // session 事件消费），超过阈值就地清理，任意时刻孤儿键数有上界。
- test("keeps orphan inserts lazy below the cleanup threshold", () => {
-   const [store, setStore] = createStore(baseState())
-   const feed = (id: string, sessionID: string) =>
-     applyDirectoryEvent({
-       event: { type: "message.updated", properties: { info: userMessage(id, sessionID) } },
-       store,
-       setStore,
-       push() {},
-       directory: "/tmp/orphan-lazy",
-       loadLsp() {},
-     })
-   for (let i = 0; i < 32; i++) feed(`msg_lazy_${i}`, `ses_orphan_lazy_${i}`)
-
-   expect(Object.keys(store.message).filter((key) => key.startsWith("ses_orphan_lazy_"))).toHaveLength(32)
- })
-
- test("cleans orphan caches in place once inserts exceed the threshold", () => {
+ // 261108 Red RC 审计合并：懒语义与越界清理合成一个连续场景——先 32 条验懒，
+ // 再补 38 条跨过 64 阈值验就地清理，两段行为共用同一 store 与 feed。
+ test("orphan inserts stay lazy below the threshold and clean in place beyond it", () => {
    const [store, setStore] = createStore(baseState())
    const feed = (id: string, sessionID: string) =>
      applyDirectoryEvent({
@@ -252,11 +216,14 @@ describe("applyDirectoryEvent", () => {
        directory: "/tmp/orphan-flood",
        loadLsp() {},
      })
-   for (let i = 0; i < 70; i++) feed(`msg_flood_${i}`, `ses_orphan_flood_${i}`)
+   const orphanKeys = () => Object.keys(store.message).filter((key) => key.startsWith("ses_orphan_"))
 
+   for (let i = 0; i < 32; i++) feed(`msg_orphan_${i}`, `ses_orphan_${i}`)
+   expect(orphanKeys()).toHaveLength(32)
+
+   for (let i = 32; i < 70; i++) feed(`msg_orphan_${i}`, `ses_orphan_${i}`)
    // 第 64 次插入触发就地清理（清掉此前积累），其后 6 次重新积累——键数远小于 70
-   const keys = Object.keys(store.message).filter((key) => key.startsWith("ses_orphan_flood_"))
-   expect(keys.length).toBeLessThanOrEqual(8)
+   expect(orphanKeys().length).toBeLessThanOrEqual(8)
  })
 
   test("inserts root sessions in sorted order and updates sessionTotal", () => {

@@ -4786,8 +4786,10 @@ noLLMServer.instance(
 
 // Agent / command resolution errors
 
+// 261108 Red RC 审计合并：两个用例跑的是同一次 prompt 请求，断言收进一处——
+// 类型化错误（非 TypeError）+ 报错含原始 agent 名 + 含可用 agent 清单。
 noLLMServer.instance(
-  "unknown agent throws typed error",
+  "unknown agent throws typed error with available agent names",
   () =>
     Effect.gen(function* () {
       const prompt = yield* SessionPrompt.Service
@@ -4809,33 +4811,6 @@ noLLMServer.instance(
         expect(NamedError.Unknown.isInstance(err)).toBe(true)
         if (NamedError.Unknown.isInstance(err)) {
           expect(err.data.message).toContain('Agent not found: "nonexistent-agent-xyz"')
-        }
-      }
-    }),
-  30_000,
-)
-
-noLLMServer.instance(
-  "unknown agent error includes available agent names",
-  () =>
-    Effect.gen(function* () {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const session = yield* sessions.create({})
-      const exit = yield* prompt
-        .prompt({
-          sessionID: session.id,
-          agent: "nonexistent-agent-xyz",
-          noReply: true,
-          parts: [{ type: "text", text: "hello" }],
-        })
-        .pipe(Effect.exit)
-
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit)) {
-        const err = Cause.squash(exit.cause)
-        expect(NamedError.Unknown.isInstance(err)).toBe(true)
-        if (NamedError.Unknown.isInstance(err)) {
           expect(err.data.message).toContain("redmind")
         }
       }
