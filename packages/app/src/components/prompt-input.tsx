@@ -1415,7 +1415,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               }
             }}
             class="capitalize max-w-[160px] text-text-base"
-            valueClass="truncate text-13-regular"
+            valueClass="truncate text-14-regular"
             triggerStyle={control()}
             triggerProps={{ "data-action": "prompt-agent" }}
             variant="ghost"
@@ -1617,7 +1617,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         data-component={newSession() ? "session-new-composer" : "session-composer"}
         onSubmit={handleSubmit}
         classList={{
-          "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+          "group/prompt-input min-h-[101px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
           "border-icon-info-active border-dashed": store.draggingType !== null,
           [props.class ?? ""]: !!props.class,
         }}
@@ -1652,7 +1652,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           removeLabel={language.t("prompt.attachment.remove")}
         />
         <div
-          class="relative min-h-[52px]"
+          class="relative min-h-[55px]"
           onMouseDown={(e) => {
             const target = e.target
             if (!(target instanceof HTMLElement)) return
@@ -1685,7 +1685,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onKeyDown={handleKeyDown}
               classList={{
                 "select-text": true,
-                "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+                "min-h-[55px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-[21px] text-[14px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
@@ -1693,14 +1693,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
             <div
               data-component={newSession() ? "session-new-design-text" : "session-composer-text"}
-              class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
+              class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-[21px] text-[14px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
               classList={{ "font-mono!": store.mode === "shell", hidden: prompt.dirty() }}
             >
               {designPlaceholder()}
             </div>
           </div>
         </div>
-        <div class="flex h-11 items-center px-2">
+        <div class="flex h-[46px] items-center px-2">
           <div class="flex min-w-0 flex-1 items-center gap-0">
             {fileAttachmentInput()}
             <TooltipKeybind
@@ -1736,7 +1736,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     restoreFocus()
                   }}
                   class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
-                  valueClass="truncate pl-5 text-[13px] font-[440] leading-4 text-v2-text-text-faint"
+                  valueClass="truncate pl-5 text-[14px] font-[440] leading-[18px] text-v2-text-text-faint"
                   triggerStyle={control()}
                   triggerProps={{ "data-action": "prompt-workspace" }}
                   variant="ghost"
@@ -1758,7 +1758,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               type="button"
               variant="ghost"
               size="small"
-              class="max-w-32 shrink-0 truncate text-12-medium text-v2-text-text-faint"
+              class="max-w-32 shrink-0 truncate text-13-medium text-v2-text-text-faint"
               aria-pressed={store.delivery === "steer"}
               onClick={() => setStore("delivery", store.delivery === "queue" ? "steer" : "queue")}
             >
