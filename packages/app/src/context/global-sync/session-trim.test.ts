@@ -78,3 +78,23 @@ describe("trimSessions", () => {
     expect(result.map((x) => x.id)).toEqual(["a", "child-viewed", "viewed"])
   })
 })
+
+// 261107 Red RC-02 边界：前台子会话被救援时，其父链必须一起保——否则 child() 查不到
+// 父级判假，子会话失去返回父会话入口（父子导航丢失）。审计建议的边界用例。
+test("rescuing a foreground child keeps its parent chain", () => {
+  const now = 1_000_000
+  const list = [
+    session({ id: "fresh-root", created: now - 500 }),
+    session({ id: "old-root", created: now - 30_000_000 }),
+    session({ id: "old-child", parentID: "old-root", created: now - 29_000_000 }),
+  ]
+
+  const result = trimSessions(list, {
+    limit: 1,
+    permission: {},
+    now,
+    protect: (id) => id === "old-child",
+  })
+
+  expect(result.map((x) => x.id).sort()).toEqual(["fresh-root", "old-child", "old-root"])
+})

@@ -66,5 +66,20 @@ export function trimSessions(
   if (!protect) return kept.sort((a, b) => cmp(a.id, b.id))
   const keptIDs = new Set(kept.map((s) => s.id))
   const rescued = all.filter((s) => !keptIDs.has(s.id) && protect(s.id))
+  // 261107 Red RC-02 边界：救援的父链要跟着走——前台子会话被救回而父会话被裁，
+  // child() 查不到父级判假，子会话变成可输入且失去返回父会话入口（父子导航丢失）。
+  // 沿 parentID 向上补齐到已保留的祖先为止；归档父级不在 all 里，原地停住。
+  const byID = new Map(all.map((s) => [s.id, s]))
+  const rescuedIDs = new Set(rescued.map((s) => s.id))
+  for (const item of rescued) {
+    let cursor = item.parentID
+    while (cursor && !keptIDs.has(cursor) && !rescuedIDs.has(cursor)) {
+      const parent = byID.get(cursor)
+      if (!parent) break
+      rescuedIDs.add(cursor)
+      rescued.push(parent)
+      cursor = parent.parentID
+    }
+  }
   return [...kept, ...rescued].sort((a, b) => cmp(a.id, b.id))
 }

@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **闪屏修复再补一刀：trim 救援带上父链**（`app/src/context/global-sync/session-trim.ts`）：RC-02 审计建议的边界用例坐实了残余缺口——前台**子会话**被 `protect` 救回列表时，其父会话若已被裁，`child()` 查不到父级判假，子会话变成可输入且失去返回父会话入口（父子导航丢失）。`trimSessions` 救援现在沿 `parentID` 向上补齐到已保留祖先为止（归档父级不在列表，原地停住）。验证：app typecheck exit 0；session-trim/event-reducer 34 pass（新增边界回归，改前失败）。
 - **重试退避定版：首 3s、封顶 15s，retry-after 钳制上限 10 分钟→5 分钟**（`opencode/src/session/retry.ts`）：次数越多等越久反直觉——预填容量满这类瞬时拒绝应当快快重试。无 retry-after 头的指数退避改为 3→6→12→15→15…（原 2s×2ⁿ 封顶 30s）；上游 retry-after 头仍按指示值走，但钳制上限从 10 分钟收紧到 5 分钟（真要等那么久用户会自己看到并介入，静默长等无意义）。验证：opencode typecheck exit 0，session/retry 37 pass（退避序列与钳制断言同步更新）。
 - **输入框放大 5%、字号上调一级**（`app/src/components/prompt-input.tsx`、`pages/session/composer/session-composer-region.tsx`）：GUI 会话输入区在 4K 屏上偏小——外壳 min-h 96→101px、编辑区 52→55px、按钮行 44→46px，正文 13→14px（行高 20→21px）、placeholder 同步、模型名/工作区选择 12/13→13/14px；容器上限 720→756px（inline）、md 800→840px、2xl 1400→1470px。验证：app typecheck exit 0。
 - **闪屏修复收尾：前台会话的 trim 路径补齐，缓存与列表项一起保**（`app/src/context/global-sync/event-reducer.ts`、`global-sync/session-trim.ts`、`context/server-sync.tsx`）：闪屏根因修复只接入了 `loadSessions` 的两处清理，而 `cleanupDroppedSessionCaches` 共 5 个调用点——`session.created`/`session.updated` 的 trim 与孤儿清理仍会把正在查看的会话当作「已删除」清掉；另外只保缓存不够，`getSession` 只查 `store.session`，会话被裁出列表后页面取不到它（子会话 `child()` 判假 → 变成可输入、失去返回父会话入口）。现在 `trimSessions` 增加 `protect` 谓词把前台会话补回列表，三条事件路径与两处 `loadSessions` 全部接入 `hasForeground`。验证：app typecheck exit 0；session-trim 3 pass、event-reducer 30 pass（新增两条事件路径回归）。
