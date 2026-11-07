@@ -55,7 +55,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 - [single-sentence task summary]
 
 ## Constraints & Preferences
-- [user constraints, preferences, specs, or "(none)"]
+- [session-specific constraints that add to or override the standing instructions, or "(none)"; write "only touch the parser", not "ask before pushing"]
 
 ## Progress
 ### Done
@@ -87,7 +87,8 @@ Rules:
 - Do not mention the summary process or that context was compacted.
 - If the conversation already contains a prior checkpoint summary, merge it instead of copying it forward: keep facts that are still true, drop stale ones, and fold newer information into one consolidated summary.
 - Completed work is a handoff, not a changelog: record outcomes and commit hashes only. Do not restate diffs, line counts, or per-file edits.
-- Relevant Files lists only files a successor must open to continue. Never list always-on context files (AGENTS.md, .redcode/MEMORY.md) — they are already in every request.`
+- Relevant Files lists only files a successor must open to continue.
+- Standing instructions (system prompt, AGENTS.md, .redcode/MEMORY.md, soul) accompany every request. Never restate them in any section and never list them under Relevant Files; record only what this session adds, tightens, or overrides.`
 type Turn = {
   start: number
   end: number
