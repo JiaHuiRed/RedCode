@@ -1,8 +1,8 @@
 # 边界
 
-**只写"RedCode 这个仓库长什么样"**：目录路由、构建/验证命令、代码风格、版本清单、分支与 commit scope、本仓特有的红线。
+**只写"RedCode长什么样"**：目录路由、构建/验证命令、代码风格、版本清单、分支与 commit scope、本仓红线。
 
-**"我该怎么干活"一律在全局 `~/.redcode/AGENTS.md`**：记忆系统、收工流程、跨项目规则、质量门禁、报告标准、compress 用法、协作模式、通用工作方法。两份**同时注入同一个 system prompt**（`session/instruction.ts:120-138`），这里重复一遍不会更"保险"，只会：① 每轮多付一份 token；② 两边各自演化后发出互相矛盾的指令。
+**"我该怎么干活"一律在全局 `~/.redcode/AGENTS.md`**。
 
 ---
 
@@ -56,7 +56,7 @@
 | 逐文件 profiler | `bun run profile:test` | 定位慢测试候选（`TEST_PROFILE_GLOB` 过滤） |
 | 性能预算 | `bun run bench:budget` | `filterCompactedEffect` 预算门禁（隔离临时 DB），开机先跑正负控制自检，门禁逻辑坏了直接拒跑 |
 
-# 本仓红线（通用红线见全局 AGENTS.md）
+# 本仓红线
 
 - **改到函数家族时，先数同形状兄弟。** 无法解释的不对称通常意味着漏了一次抽取，而本仓这件事**已经发生三次**：`edit.ts` 的 replacer 家族，07-22 修了 `fuzzyFindBestMatch`，07-24 号称"补齐其余 5 个"实际漏掉 `BlockAnchorReplacer`，08-19 审计才发现。**"补齐了"这个说法本身要复核——数一遍函数，别信上一次的收尾结论。** 来源：deepseek-harness 的 _unexplained asymmetry usually signals a missed extraction_。
 - **误配置要响。** 自包含的在加载时响，否则在最早能解析的时刻响；**永远不要静默跳过一个解析不到的引用**。0.10.0 修过插件加载的三条静默失败路径（包解析到了但没有 server 入口只有 log.warn、整体超时把所有外置插件一起吞成空数组、`applyPlugin` 抛错处事件被注释掉只剩日志），当时是逐条补，没有立成规矩。
@@ -64,21 +64,21 @@
 
 # 版本与文档
 
-- **单一版本线**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
-- **升版 checklist 不在本文件**（261024 迁出：升版是低频过程内容，不该占每轮固定前缀）——完整清单在 bump-version skill 的「项目专属清单：RedCode」节；无该 skill 时按 CHANGELOG 顶部说明 + `script/check-version-consistency.ts` 的断言执行。核心纪律一句话：**升版 = 收编 `[Unreleased]` 并用 `git log <上一版 bump>..HEAD` 逐条对照**（0.12.20 曾漏收编 5 条、漏记 6 条、段序倒挂，0.13.0 补录修正）；本地 annotated tag `v<版本号>`，不 push。
+- **单一版本线**：全仓一个版本号，历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
+- **升版 checklist** 完整清单在 bump-version skill 的「项目专属清单：RedCode」节；无该 skill 时按 CHANGELOG 顶部说明 + `script/check-version-consistency.ts` 的断言执行。核心纪律一句话：**升版 = 收编 `[Unreleased]` 并用 `git log <上一版 bump>..HEAD` 逐条对照**；本地 annotated tag `v<版本号>`，不 push。
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好。
 - **决策记录 `docs/notes/`，写完必须回链**（规则与模板见其 README；注入项硬上限与模型可见四问见下方专条）。
-  - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，查库：实际读取 0 次、跑了一个月零命中，已删。那个动作没有触发点，别加回来。）
+  - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，实际读取 0 次，没有触发点，已删除。）
   - **读**：notes 不进上下文，只有两个可靠触发点——① 读代码撞见回链时（回链就是为这个存在的，撞见就读）；② 写新 note 前 `ls docs/notes/*/` 查同主题旧决策，前后矛盾的决策比没有决策更坏。
 - **模型可见改动的四问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
   1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
   2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
   3. **KV cache 影响**——从哪一段起前缀作废，还是完全不动。**这条最容易漏、代价最大**。
-  4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷不是待办**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段；新增段落同理，**追加到文件末尾，别插在中间**。
+  4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段；新增段落同理，**追加到文件末尾，别插在中间**。
 
 # 项目指令
 
-- Commit scope（types 与前缀规则见全局 AGENTS.md；非穷举，按改动所在的包或领域取）：`core` `redcode` `tui` `app` `desktop` `ui` `sdk` `plugin` `seed` `notes` `agent` `skill` `mcp` `config` `prompt` `session` `tool` `provider` `script` `ci` `changelog` `version`
+- Commit scope（非穷举，按改动所在的包或领域取）：`core` `redcode` `tui` `app` `desktop` `ui` `sdk` `plugin` `seed` `notes` `agent` `skill` `mcp` `config` `prompt` `session` `tool` `provider` `script` `ci` `changelog` `version`
 - **重新生成 SDK 是两条命令，只跑第一条会漏掉 `packages/sdk/openapi.json`**：
 
   ```bash
@@ -91,7 +91,7 @@
 
 # 代码规范
 
-- **不为推测性防御买单**（261026 取自 anomalyco/opencode style guide，治过度工程）：给推测性的、或几乎不会发生的竞态/安全边界加复杂度前，先讲清具体失败模式、发生概率和复杂度成本，征得同意再加，不为理论健壮性悄悄扩范围。同理，未知值只在拥有它的边界校验一次、向内传类型值，不对 schema/构造器/内部类型已保证的值重复防御检查。
+- **不为推测性防御买单**：给推测性的、或几乎不会发生的竞态/安全边界加复杂度前，先讲清具体失败模式、发生概率和复杂度成本，征得同意再加，不为理论健壮性悄悄扩范围。同理，未知值只在拥有它的边界校验一次、向内传类型值，不对 schema/构造器/内部类型已保证的值重复防御检查。
 - 尽量避免 `try`/`catch` 和 `any`
 - **`catch` 要么处理要么说明**：空 `catch` 必须用一行注释写清它吞掉的是什么、以及为什么别的错误到不了这里；`try` 只包会抛的那一条语句。（`packages/opencode/src` 现有 97 处空的或无说明的 catch，不要求一次清完，新写的必须带说明。）
 - 优先用类型推断、Bun API、函数式数组（`flatMap`、`filter`、`map`）
@@ -99,4 +99,4 @@
 - 值只用一次就内联，减少变量
 - 主函数读 happy path，细节抽 helper 放下面
 - 测试测实际实现，避免 mock，从 package 目录跑
-- **注释格式** — 改动处加注释统一用 `// YYMMDD Red xxx`（6 位日期 + Red 标签 + 说明）。
+- **注释格式** — 改动处统一用 `// YYMMDD Red xxx`（6 位日期 + Red + 说明）。
