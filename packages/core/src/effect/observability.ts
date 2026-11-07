@@ -2,6 +2,7 @@ import { Effect, Layer, Logger } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { OtlpExporter, OtlpLogger, OtlpSerialization } from "effect/observability"
 import * as EffectLogger from "./logger"
+import { createFileSpanProcessor, traceFileEnabled } from "./trace-file"
 import { Flag } from "../flag/flag"
 import { InstallationChannel, InstallationVersion } from "../installation/version"
 import { ensureProcessMetadata } from "../util/redcode-process"
@@ -84,19 +85,45 @@ const traces = async () => {
   mgr.enable()
   context.setGlobalContextManager(mgr)
 
+  // 261107 Red 探针与 OTLP 并行：文件处理器追加本地 JSONL，不影响远端导出。
+  const fileProcessor = traceFileEnabled() ? createFileSpanProcessor() : undefined
+
   return NodeSdk.layer(() => ({
     resource: resource(),
-    spanProcessor: new SdkBase.BatchSpanProcessor(
-      new OTLP.OTLPTraceExporter({
-        url: `${base}/v1/traces`,
-        headers,
-      }),
-    ),
+    spanProcessor: fileProcessor
+      ? [
+          new SdkBase.BatchSpanProcessor(
+            new OTLP.OTLPTraceExporter({
+              url: `${base}/v1/traces`,
+              headers,
+            }),
+          ),
+          fileProcessor,
+        ]
+      : new SdkBase.BatchSpanProcessor(
+          new OTLP.OTLPTraceExporter({
+            url: `${base}/v1/traces`,
+            headers,
+          }),
+        ),
   }))
 }
 
 const signals = !base
-  ? EffectLogger.layer
+  ? Layer.unwrap(
+      Effect.gen(function* () {
+        // 261107 Red 无 OTLP 端点时的本地探针分支：span 落 JSONL 文件（trace-file.ts），
+        // 未启用则维持原有的纯本地日志。
+        if (traceFileEnabled()) {
+          const NodeSdk = yield* Effect.promise(() => import("@effect/opentelemetry/NodeSdk"))
+          return NodeSdk.layer(() => ({
+            resource: resource(),
+            spanProcessor: createFileSpanProcessor(),
+          }))
+        }
+        return EffectLogger.layer
+      }),
+    )
   : Layer.unwrap(
       Effect.gen(function* () {
         const trace = yield* Effect.promise(traces)
