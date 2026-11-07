@@ -1545,7 +1545,12 @@ it.instance("native preflight estimates messages after the last reported usage b
 
 it.instance("native preflight does not reuse usage measured before a committed block", () =>
   Effect.gen(function* () {
-    const native = { enabled: true, trigger_tokens: 10000, target_tokens: 1000, reminder_tokens: 10000 }
+    // 261107 Red trigger 必须远高于粗估而不是贴着：lastRealTokens=0 时本用例走粗估路径
+    // （system + 全量工具表 JSON ≈ 9.9k tok，其中工具表 ~9.1k），trigger 10,000 只剩 ~91 tok
+    // 余量——27ac5a8f 给 task isolation description 加的 140B 就把 CI 推过了线（preflight
+    // 误触发，本轮零 LLM 调用、parts 空手而归，CI 连挂两次而本地不复现）。50,000 留 ~40k
+    // 余量；stale 的 1M 实报仍远超触发线，本用例守护的回归照常被抓。
+    const native = { enabled: true, trigger_tokens: 50000, target_tokens: 1000, reminder_tokens: 10000 }
     const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), compaction: { native } }))
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
