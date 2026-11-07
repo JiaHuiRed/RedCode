@@ -266,23 +266,14 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
   })
 
-  test("retries plain text rate limit errors from Alibaba", () => {
-    const msg =
-      "Upstream error from Alibaba: Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time."
-    const error = wrap(msg)
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
-  })
-
-  test("retries plain text rate limit errors", () => {
-    const msg = "Rate limit exceeded, please try again later"
-    const error = wrap(msg)
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
-  })
-
-  test("retries too many requests in plain text", () => {
-    const msg = "Too many requests, please slow down"
-    const error = wrap(msg)
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  // 261108 Red RC 审计合并：三条明文限流用例形状全同（各自命中不同匹配分支），
+  // test.each 一次覆盖三条分支。
+  test.each([
+    ["alibaba", "Upstream error from Alibaba: Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time."],
+    ["generic rate limit", "Rate limit exceeded, please try again later"],
+    ["too many requests", "Too many requests, please slow down"],
+  ])("retries plain text rate limit errors (%s)", (_name, msg) => {
+    expect(SessionRetry.retryable(wrap(msg), retryProvider)).toEqual({ message: msg })
   })
 
   test("does not retry context overflow errors", () => {
