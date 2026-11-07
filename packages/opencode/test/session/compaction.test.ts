@@ -1937,12 +1937,15 @@ describe("session.compaction.process", () => {
         yield* Deferred.await(ready).pipe(Effect.timeout("1 second"))
         const start = Date.now()
         yield* Fiber.interrupt(fiber)
-        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
+        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("1 second"))
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-          expect(Date.now() - start).toBeLessThan(250)
+          // 261108 Red 语义是「中断不等 retry backoff（本用例 retry-after 10s）」，不是
+          // 「收尾零延迟」：halt 写库/发事件 + cleanup 本机实测 263–372ms，原 250ms 紧贴
+          // 实测中位数，Windows 上必然擦线。放宽到 1s 仍只有 backoff 的 1/10。
+          expect(Date.now() - start).toBeLessThan(1000)
         }
       }).pipe(withCompaction({ llm: stub.layer }))
     },
