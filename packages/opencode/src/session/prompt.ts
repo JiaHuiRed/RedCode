@@ -1589,11 +1589,20 @@ export const layer = Layer.effect(
         // 260910 Red Codex step settings（决策见 docs/notes/implemented/feature/2026-09-10-codex-step-settings.md）：
         // 每个 step 固定同一组 session/agent/model/user，避免 turn 中途的权限或模型切换让
         // prompt、工具和执行策略各读到不同版本。
+        // 261107 Red 入队时合法、晋升时已失效（config 删了 agent）的消息，此前
+        // agent=undefined 一路深入下游才炸成 defect，UI 只看到一个莫名的失败。这里当场
+        // 响：与 createUserMessage / 命令入口同一份 agentNotFound（发布 Session.Event.Error，
+        // 带可用 agent 清单），消息保持 queued 等用户修正后显式重跑——与「preparation
+        // failure releases a queued reservation」锁定的恢复舞步一致。
+        const agentInfo = yield* agents.get(lastUser.agent)
+        if (!agentInfo) {
+          throw yield* agentNotFound({ sessionID, name: lastUser.agent })
+        }
         const stepSettings = {
           user: lastUser,
           session: yield* sessions.get(sessionID).pipe(Effect.orDie),
           model: yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID),
-          agent: yield* agents.get(lastUser.agent),
+          agent: agentInfo,
         }
         const model = stepSettings.model
         if (step === 1)

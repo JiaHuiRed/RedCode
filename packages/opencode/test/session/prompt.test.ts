@@ -1606,6 +1606,11 @@ it.instance("preparation failure releases a queued reservation for later deliver
 
     const failed = yield* Effect.exit(prompt.loop({ sessionID: chat.id }))
     expect(Exit.isFailure(failed)).toBe(true)
+    // 261107 Red 失败要带着可行动的报错当场响，不是下游 defect。
+    if (Exit.isFailure(failed)) {
+      const squashed = Cause.squash(failed.cause) as { message?: string }
+      expect(String(squashed.message ?? "")).toContain('Agent not found: "missing-agent"')
+    }
     expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
     yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "ready to retry" })
     const edited = yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id })
