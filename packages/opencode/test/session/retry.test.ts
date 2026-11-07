@@ -32,10 +32,11 @@ function wrap(message: unknown): ReturnType<NamedError["toObject"]> {
 }
 
 describe("session.retry.delay", () => {
-  test("caps delay at 30 seconds when headers missing", () => {
+  // 261107 Red 退避定版：首 3s、封顶 15s——瞬时容量拒绝快快重试，不再越等越久。
+  test("caps delay at 15 seconds when headers missing", () => {
     const error = apiError()
     const delays = Array.from({ length: 10 }, (_, index) => SessionRetry.delay(index + 1, error))
-    expect(delays).toStrictEqual([2000, 4000, 8000, 16000, 30000, 30000, 30000, 30000, 30000, 30000])
+    expect(delays).toStrictEqual([3000, 6000, 12000, 15000, 15000, 15000, 15000, 15000, 15000, 15000])
   })
 
   test("prefers retry-after-ms when shorter than exponential", () => {
@@ -58,23 +59,24 @@ describe("session.retry.delay", () => {
 
   test("ignores invalid retry hints", () => {
     const error = apiError({ "retry-after": "not-a-number" })
-    expect(SessionRetry.delay(1, error)).toBe(2000)
+    expect(SessionRetry.delay(1, error)).toBe(3000)
   })
 
   test("ignores malformed date retry hints", () => {
     const error = apiError({ "retry-after": "Invalid Date String" })
-    expect(SessionRetry.delay(1, error)).toBe(2000)
+    expect(SessionRetry.delay(1, error)).toBe(3000)
   })
 
   test("ignores past date retry hints", () => {
     const pastDate = new Date(Date.now() - 5000).toUTCString()
     const error = apiError({ "retry-after": pastDate })
-    expect(SessionRetry.delay(1, error)).toBe(2000)
+    expect(SessionRetry.delay(1, error)).toBe(3000)
   })
 
   // 260811 cc audit Y1：行为变更——retry-after 不再照单全收。此前上限是 2^31-1
   // （≈24.8 天），retry-after: 604800 会让会话静默睡一周；现在一律钳到
-  // RETRY_MAX_DELAY（10 分钟），更长的等待交给 RETRY_MAX_ATTEMPTS 尽早放弃。
+  // RETRY_MAX_DELAY（5 分钟，261107 Red 从 10 分钟收紧），更长的等待交给
+  // RETRY_MAX_ATTEMPTS 尽早放弃。
   test("honors retry-after below the cap, clamps above it", () => {
     const error = apiError({ "retry-after": "50" })
     expect(SessionRetry.delay(1, error)).toBe(50000)
