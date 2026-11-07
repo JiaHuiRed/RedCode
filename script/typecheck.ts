@@ -12,13 +12,16 @@
 // 都要先等 tsgo 跑到崩溃再回退，纯白等。按**总**物理内存门控而不是可用内存——总内存是
 // 机器属性不会波动，行为确定；可用内存会导致同一次改动有时试 tsgo 有时不试。32GB 以下
 // 直接用 TS5，32GB 及以上保留 tsgo 快路径（OOM 仍有回退兜底）。
+// 261108 Red 32GB 机器 os.totalmem() 报 31.8GB（固件/集显硬件保留），精确字节比较把它判成
+// 小内存。物理内存按 4GB 粒度装，先取整到标称容量再比。
 import { spawnSync } from "child_process"
 import { existsSync, readdirSync } from "fs"
 import os from "os"
 import path from "path"
 
 const CRASH = /panic\(|runtime\.goexit|MemoryExhaustion|out of memory|fatal error: /i
-const TSGO_MIN_TOTAL_MEM = 32 * 1024 ** 3
+const TSGO_MIN_TOTAL_MEM_GB = 32
+const totalMemGb = Math.ceil(os.totalmem() / 1024 ** 3 / 4) * 4
 
 function repoRoot(start: string) {
   let dir = start
@@ -34,10 +37,10 @@ const root = repoRoot(process.cwd())
 const exe = process.platform === "win32" ? ".exe" : ""
 const args = ["--noEmit", "--pretty", "false", ...process.argv.slice(2)]
 
-const skipPrimary = os.totalmem() < TSGO_MIN_TOTAL_MEM
+const skipPrimary = totalMemGb < TSGO_MIN_TOTAL_MEM_GB
 if (skipPrimary) {
   console.warn(
-    `[typecheck] 物理内存 ${(os.totalmem() / 1024 ** 3).toFixed(1)}GB < 32GB，tsgo 已知必 OOM（261031 实测），直接用 TypeScript 5.x`,
+    `[typecheck] 标称物理内存 ${totalMemGb}GB（os 报 ${(os.totalmem() / 1024 ** 3).toFixed(1)}GB）< ${TSGO_MIN_TOTAL_MEM_GB}GB，tsgo 在小机器上已知必 OOM（261031 实测），直接用 TypeScript 5.x`,
   )
 }
 
