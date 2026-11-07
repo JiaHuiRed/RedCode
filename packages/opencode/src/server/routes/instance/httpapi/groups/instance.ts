@@ -1,11 +1,12 @@
 import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
 import { Format } from "@/format"
+import { Instruction } from "@/session/instruction"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiError, HttpApiSchema, OpenApi } from "effect/http-api"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -50,6 +51,7 @@ export const InstancePaths = {
   command: "/command",
   agent: "/agent",
   skill: "/skill",
+  instructions: "/instructions",
   lsp: "/lsp",
   formatter: "/formatter",
 } as const
@@ -163,6 +165,18 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.skills",
             summary: "List skills",
             description: "Get a list of all available skills in the RedCode system.",
+          }),
+        ),
+        HttpApiEndpoint.get("instructions", InstancePaths.instructions, {
+          query: WorkspaceRoutingQuery,
+          success: described(Instruction.Inventory, "Instruction injection inventory"),
+          error: HttpApiError.InternalServerError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "app.instructions",
+            summary: "List injected instructions",
+            description:
+              "Report which instruction sources are injected into the system prompt, their sizes, and which were skipped or dropped by instruction_budget.",
           }),
         ),
         HttpApiEndpoint.get("lsp", InstancePaths.lsp, {

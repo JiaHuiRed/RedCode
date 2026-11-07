@@ -4,11 +4,12 @@ import { resolveTemplate } from "@/command/template"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { Global } from "@redcode-ai/core/global"
+import { Instruction } from "@/session/instruction"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
@@ -18,6 +19,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const agent = yield* Agent.Service
     const command = yield* Command.Service
     const format = yield* Format.Service
+    const instruction = yield* Instruction.Service
     const lsp = yield* LSP.Service
     const skill = yield* Skill.Service
     const vcs = yield* Vcs.Service
@@ -93,6 +95,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* skill.all()
     })
 
+    const getInstructions = Effect.fn("InstanceHttpApi.instructions")(function* () {
+      // fs 错误（指令文件读挂）映射 500：注入清单是只读观测面，不另立错误 schema。
+      return yield* instruction.describe().pipe(
+        Effect.catch(() => Effect.fail(new HttpApiError.InternalServerError({}))),
+      )
+    })
+
     const getLsp = Effect.fn("InstanceHttpApi.lsp")(function* () {
       return yield* lsp.status()
     })
@@ -112,6 +121,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("command", getCommand)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
+      .handle("instructions", getInstructions)
       .handle("lsp", getLsp)
       .handle("formatter", getFormatter)
   }),

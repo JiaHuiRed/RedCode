@@ -584,3 +584,46 @@ describe("Instruction.system max_total_bytes", () => {
     ),
   )
 })
+
+// 261107 Red describe() 与 system() 共用 evaluate() 预算管线；这里断言的是清单投影的
+// 命运语义。与上面同理，只按路径断言「该在的在、命运对」，不数总数。
+describe("Instruction.describe", () => {
+  it.live("reports injected sources with raw and effective bytes", () =>
+    withFiles({ "AGENTS.md": "# Project rules" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const inv = yield* svc.describe()
+        const source = inv.sources.find((s) => s.path === path.join(dir, "AGENTS.md"))
+        expect(source).toBeDefined()
+        expect(source!.status).toBe("injected")
+        expect(source!.kind).toBe("agents")
+        expect(source!.bytes).toBe(Buffer.byteLength("# Project rules"))
+        expect(source!.effectiveBytes).toBe(
+          Buffer.byteLength(`Instructions from: ${path.join(dir, "AGENTS.md")}\n# Project rules`),
+        )
+        expect(inv.totalBytes).toBeGreaterThanOrEqual(source!.effectiveBytes!)
+        expect(inv.budget.maxSourceBytes).toBe(1024 * 1024)
+      }),
+    ),
+  )
+
+  it.live("marks dropped and truncated fates under max_total_bytes", () =>
+    withFiles(
+      { "AGENTS.md": "# Project rules here", "MEMORY.md": "# Memory lessons here" },
+      (dir) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const inv = yield* svc.describe()
+          const byPath = new Map(inv.sources.map((s) => [s.path, s]))
+          // RETENTION：memory(1) 比 agents(0) 先被丢；独苗超总预算时截断（marker 追加在
+          // 预算之后，最终字节允许超 maxTotalBytes——system() 的既有行为，清单如实反映）。
+          expect(byPath.get(path.join(dir, "MEMORY.md"))?.status).toBe("dropped")
+          const agents = byPath.get(path.join(dir, "AGENTS.md"))
+          expect(agents?.status).toBe("truncated")
+          expect(agents?.effectiveBytes).toBeDefined()
+          expect(inv.budget.maxTotalBytes).toBe(20)
+        }),
+      { instruction_budget: { max_total_bytes: 20 } },
+    ),
+  )
+})

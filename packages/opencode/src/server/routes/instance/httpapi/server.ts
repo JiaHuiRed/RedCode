@@ -23,6 +23,7 @@ import { File } from "@/file"
 import { FileWatcher } from "@/file/watcher"
 import { Ripgrep } from "@/file/ripgrep"
 import { Format } from "@/format"
+import { Instruction } from "@/session/instruction"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
@@ -247,6 +248,7 @@ export function createRoutes(
       File.defaultLayer,
       FileWatcher.defaultLayer,
       Format.defaultLayer,
+      Instruction.defaultLayer,
       LSP.defaultLayer,
       Installation.defaultLayer,
       MCP.defaultLayer,

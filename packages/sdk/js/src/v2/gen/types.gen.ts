@@ -1229,6 +1229,23 @@ export type LspStatus = {
   status: "connected" | "error"
 }
 
+export type InstructionInventory = {
+  sources: Array<InstructionSource>
+  totalBytes: number | "Infinity" | "-Infinity" | "NaN"
+  budget: {
+    maxSourceBytes: number | "Infinity" | "-Infinity" | "NaN"
+    maxTotalBytes: number | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type InstructionSource = {
+  path: string
+  kind: "agents" | "memory" | "config"
+  bytes: number | "Infinity" | "-Infinity" | "NaN"
+  status: "injected" | "skipped" | "dropped" | "truncated" | "missing" | "empty"
+  effectiveBytes?: number | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type Agent = {
   name: string
   displayName?: string
@@ -6206,6 +6223,38 @@ export type AppSkillsResponses = {
 }
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
+
+export type AppInstructionsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/instructions"
+}
+
+export type AppInstructionsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * InternalServerError
+   */
+  500: EffectHttpApiErrorInternalServerError
+}
+
+export type AppInstructionsError = AppInstructionsErrors[keyof AppInstructionsErrors]
+
+export type AppInstructionsResponses = {
+  /**
+   * Instruction injection inventory
+   */
+  200: InstructionInventory
+}
+
+export type AppInstructionsResponse = AppInstructionsResponses[keyof AppInstructionsResponses]
 
 export type LspStatusData = {
   body?: never

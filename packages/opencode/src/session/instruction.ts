@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -37,6 +37,28 @@ const bytes = (content: string) => new TextEncoder().encode(content).byteLength
 //   2 config.instructions——用户显式配置的额外指令，丢了可在配置里复看
 const RETENTION = { agents: 0, memory: 1, config: 2 } as const
 type SourceKind = keyof typeof RETENTION
+
+// 261107 Red 注入清单的对外形状：describe() 返回、/instructions HTTP 面与 TUI 对话框
+// 共用。只描述「谁被注入、各占多少、谁被预算丢了」，不携带内容本身——内容进上下文有
+// 四问约束，清单是给人看的观测面。
+export const SourceInfo = Schema.Struct({
+  path: Schema.String,
+  kind: Schema.Literals(["agents", "memory", "config"]),
+  bytes: Schema.Number,
+  status: Schema.Literals(["injected", "skipped", "dropped", "truncated", "missing", "empty"]),
+  // 注入/被丢/被截断时的最终格式化字节（含 "Instructions from:" 前缀）；missing/empty 无。
+  effectiveBytes: Schema.optional(Schema.Number),
+}).annotate({ identifier: "InstructionSource" })
+
+export const Inventory = Schema.Struct({
+  sources: Schema.Array(SourceInfo),
+  totalBytes: Schema.Number,
+  budget: Schema.Struct({
+    maxSourceBytes: Schema.Number,
+    maxTotalBytes: Schema.Number,
+  }),
+}).annotate({ identifier: "InstructionInventory" })
+export type Inventory = Schema.Schema.Type<typeof Inventory>
 
 // 260929 Red 声明行自己也要有硬上限。dropped 的来源名可能来自 config.instructions，
 // 而那是 Schema.Array(String)、没有长度上限——一条足够长的 glob 就能让声明行本身
@@ -108,6 +130,7 @@ export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
   readonly system: () => Effect.Effect<string[], AppFileSystem.Error>
+  readonly describe: () => Effect.Effect<Inventory, AppFileSystem.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, AppFileSystem.Error>
   readonly resolve: (
     messages: MessageV2.WithParts[],
@@ -268,7 +291,10 @@ export const layer: Layer.Layer<
       return new Set(found.map((item) => item.path))
     })
 
-    const system = Effect.fn("Instruction.system")(function* () {
+    // 261107 Red 预算管线只有一份：system()（注入文本，每轮热路径）与 describe()（注入
+    // 清单，给 /instructions 与 HTTP 面）共用 evaluate()，防止两处各自演算预算语义后漂移。
+    // evaluate 返回的 parts 与抽取前 system() 逐字节一致；report 是各来源命运的投影。
+    const evaluate = Effect.fn("Instruction.evaluate")(function* () {
       const config = yield* cfg.get()
       const maxSourceBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
       const maxTotalBytes = config.instruction_budget?.max_total_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxTotalBytes
@@ -287,41 +313,64 @@ export const layer: Layer.Layer<
       // 260913 Red 单来源硬上限：超限整份跳过，既不注入半截指令，也不无声吞掉。
       // 上限可配置（instruction_budget.max_source_bytes），默认 1MiB 足够宽松。
       const skipped: string[] = []
-      // order 是注入次序（决定输出与缓存断点），priority 是保留优先级（决定谁先被丢）。
-      const sources = [
-        ...discovered.flatMap((item, i) => {
+      // 261107 Red 每个发现来源的命运：skipped（单源超限）/ dropped（总量超限）/
+      // truncated（独苗截断）/ missing（发现时存在、读取时消失）/ empty（零字节）。
+      // describe() 原样上报；system() 不消费。
+      type Entry = {
+        source: string
+        kind: SourceKind
+        order: number
+        priority: number
+        rawBytes: number
+        text?: string
+        status: "injected" | "skipped" | "dropped" | "truncated" | "missing" | "empty"
+      }
+      const entries: Entry[] = [
+        ...discovered.flatMap((item, i): Entry[] => {
           const content = files[i]
-          if (!content) return []
+          const entry: Entry = {
+            source: item.path,
+            kind: item.kind,
+            order: i,
+            priority: RETENTION[item.kind],
+            rawBytes: content ? bytes(content) : 0,
+            status: content === undefined ? "missing" : "empty",
+          }
+          if (!content) return [entry]
           if (bytes(content) > maxSourceBytes) {
             skipped.push(`${bytes(content)} bytes: ${item.path}`)
-            return []
+            entry.status = "skipped"
+            return [entry]
           }
-          return [
-            {
-              source: item.path,
-              text: `Instructions from: ${item.path}\n${content}`,
-              order: i,
-              priority: RETENTION[item.kind],
-            },
-          ]
+          entry.text = `Instructions from: ${item.path}\n${content}`
+          entry.status = "injected"
+          return [entry]
         }),
-        ...urls.flatMap((item, i) => {
+        ...urls.flatMap((item, i): Entry[] => {
           const content = remote[i]
-          if (!content) return []
+          const entry: Entry = {
+            source: item,
+            kind: "config",
+            order: discovered.length + i,
+            priority: RETENTION.config,
+            rawBytes: content ? bytes(content) : 0,
+            status: content === undefined ? "missing" : "empty",
+          }
+          if (!content) return [entry]
           if (bytes(content) > maxSourceBytes) {
             skipped.push(`${bytes(content)} bytes: ${item}`)
-            return []
+            entry.status = "skipped"
+            return [entry]
           }
-          return [
-            {
-              source: item,
-              text: `Instructions from: ${item}\n${content}`,
-              order: discovered.length + i,
-              priority: RETENTION.config,
-            },
-          ]
+          entry.text = `Instructions from: ${item}\n${content}`
+          entry.status = "injected"
+          return [entry]
         }),
       ]
+      // order 是注入次序（决定输出与缓存断点），priority 是保留优先级（决定谁先被丢）。
+      const sources = entries
+        .filter((entry) => entry.status === "injected")
+        .map((entry) => ({ source: entry.source, text: entry.text!, order: entry.order, priority: entry.priority, entry }))
       for (const item of skipped) {
         Log.Default.warn(
           `Instruction source skipped, over instruction_budget.max_source_bytes (${maxSourceBytes}): ${item}`,
@@ -352,6 +401,7 @@ export const layer: Layer.Layer<
           }
         }
         const removed = sources.splice(worst, 1)[0]
+        removed.entry.status = "dropped"
         total -= bytes(removed.text)
         dropped.push(removed.source)
       }
@@ -364,6 +414,7 @@ export const layer: Layer.Layer<
         const only = sources[0]
         only.text = `${truncateToBytes(only.text, maxTotalBytes)}\n[instruction budget] truncated at ${maxTotalBytes} bytes (instruction_budget.max_total_bytes); the tail of ${only.source} was cut. Raise the limit in config if a rule you need is missing.`
         total = bytes(only.text)
+        only.entry.status = "truncated"
         Log.Default.warn(
           `Instruction source truncated to instruction_budget.max_total_bytes (${maxTotalBytes}): ${only.source}`,
         )
@@ -386,7 +437,26 @@ export const layer: Layer.Layer<
         const capped = truncateToBytes(marker, MAX_BUDGET_MARKER_BYTES - CUT_MARKER.length)
         parts.push(capped === marker ? marker : capped + CUT_MARKER)
       }
+      const report = entries.map((entry) => ({
+        path: entry.source,
+        kind: entry.kind,
+        bytes: entry.rawBytes,
+        status: entry.status,
+        ...(entry.text !== undefined ? { effectiveBytes: bytes(entry.text) } : {}),
+      }))
+      return { parts, report, total, maxSourceBytes, maxTotalBytes }
+    })
+
+    const system = Effect.fn("Instruction.system")(function* () {
+      const { parts } = yield* evaluate()
       return parts
+    })
+
+    // 261107 Red 注入清单：谁被注入、各占多少字节、谁被预算丢弃。只给用户/HTTP 面，
+    // 不进模型上下文。
+    const describe = Effect.fn("Instruction.describe")(function* () {
+      const { report, total, maxSourceBytes, maxTotalBytes } = yield* evaluate()
+      return { sources: report, totalBytes: total, budget: { maxSourceBytes, maxTotalBytes } }
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {
@@ -459,7 +529,7 @@ export const layer: Layer.Layer<
       return results
     })
 
-    return Service.of({ clear, systemPaths, system, find, resolve })
+    return Service.of({ clear, systemPaths, system, describe, find, resolve })
   }),
 )
 

@@ -6,6 +6,8 @@ import type {
   AgentPartInput,
   AppAgentsErrors,
   AppAgentsResponses,
+  AppInstructionsErrors,
+  AppInstructionsResponses,
   AppLogErrors,
   AppLogResponses,
   AppSkillsErrors,
@@ -528,6 +530,36 @@ export class App extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<AppSkillsResponses, AppSkillsErrors, ThrowOnError>({
       url: "/skill",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List injected instructions
+   *
+   * Report which instruction sources are injected into the system prompt, their sizes, and which were skipped or dropped by instruction_budget.
+   */
+  public instructions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<AppInstructionsResponses, AppInstructionsErrors, ThrowOnError>({
+      url: "/instructions",
       ...options,
       ...params,
     })

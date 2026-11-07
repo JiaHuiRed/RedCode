@@ -35,6 +35,7 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
 import { useConnected } from "@tui/component/use-connected"
+import { DialogInstructions } from "@tui/component/dialog-instructions"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
 import { DialogThemeList } from "@tui/component/dialog-theme-list"
@@ -566,6 +567,15 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "mcps",
         run: () => {
           dialog.replace(() => <DialogMcp />)
+        },
+      },
+      {
+        name: "instruction.list",
+        title: "查看注入清单",
+        category: "System",
+        slashName: "instructions",
+        run: () => {
+          dialog.replace(() => <DialogInstructions />)
         },
       },
       {

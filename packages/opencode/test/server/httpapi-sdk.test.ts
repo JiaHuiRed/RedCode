@@ -501,6 +501,7 @@ describe("HttpApi SDK", () => {
         const findText = yield* capture(() => sdk.find.text({ pattern: "sdk-parity" }))
         const agents = yield* capture(() => sdk.app.agents())
         const skills = yield* capture(() => sdk.app.skills())
+        const instructions = yield* capture(() => sdk.app.instructions())
         const tools = yield* capture(() => sdk.tool.ids())
         const vcs = yield* capture(() => sdk.vcs.get())
         const formatter = yield* capture(() => sdk.formatter.status())
@@ -520,6 +521,7 @@ describe("HttpApi SDK", () => {
             findText,
             agents,
             skills,
+            instructions,
             tools,
             vcs,
             formatter,
