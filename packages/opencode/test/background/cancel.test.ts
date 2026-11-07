@@ -119,3 +119,56 @@ describe("background.cancel", () => {
     }),
   )
 })
+
+// 261107 Red RC-01 审计建议的深层回归：三层任务树（父 → 子×2 → 孙）同树取消——
+// 不只验 UI 状态归位，要验每一层的 work fiber 都真正收到中断，不能留继续写文件的
+// 孤儿执行体。
+it.instance("cancels a three-level tree: every runner interrupted, every state settled", () =>
+  Effect.gen(function* () {
+    const jobs = yield* BackgroundJob.Service
+    const runState = yield* SessionRunState.Service
+    const status = yield* SessionStatus.Service
+    const cancel = yield* BackgroundCancel.Service
+    const tree = [
+      { id: SessionID.make("ses_bg_cancel3_parent"), parent: undefined as string | undefined },
+      { id: SessionID.make("ses_bg_cancel3_child1"), parent: "ses_bg_cancel3_parent" },
+      { id: SessionID.make("ses_bg_cancel3_child2"), parent: "ses_bg_cancel3_parent" },
+      { id: SessionID.make("ses_bg_cancel3_gc1"), parent: "ses_bg_cancel3_child1" },
+      { id: SessionID.make("ses_bg_cancel3_gc2"), parent: "ses_bg_cancel3_child2" },
+    ]
+    const interrupts = new Map<string, Deferred.Deferred<void>>()
+
+    for (const node of tree) {
+      const done = yield* Deferred.make<void>()
+      interrupts.set(node.id, done)
+      yield* jobs.start({
+        id: node.id,
+        type: "task",
+        metadata: node.parent ? { parentSessionId: node.parent } : undefined,
+        run: Effect.gen(function* () {
+          yield* runState.ensureRunning(
+            node.id,
+            Effect.succeed(undefined as unknown as MessageV2.WithParts),
+            Effect.never.pipe(Effect.onInterrupt(() => Deferred.succeed(done, undefined).pipe(Effect.asVoid))),
+          )
+          return ""
+        }),
+      })
+      yield* status.set(node.id, { type: "busy" })
+    }
+    yield* pollWithTimeout(
+      Effect.succeed(tree.every((node) => runState.isBusy(node.id)) ? true : undefined),
+      "tree runners never became busy",
+    )
+
+    const cancelled = yield* cancel.cancelTree(tree[0]!.id)
+
+    expect(cancelled.toSorted()).toEqual(tree.map((node) => node.id).toSorted())
+    for (const node of tree) {
+      expect(yield* Deferred.isDone(interrupts.get(node.id)!)).toBe(true)
+      expect(yield* runState.isBusy(node.id)).toBe(false)
+      expect((yield* status.get(node.id)).type).toBe("idle")
+      expect((yield* jobs.get(node.id))?.status).toBe("cancelled")
+    }
+  }),
+)

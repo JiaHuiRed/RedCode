@@ -627,3 +627,65 @@ describe("Instruction.describe", () => {
     ),
   )
 })
+
+// 261107 Red RC-04 审计要求的重点验证：远程 instructions + 多份 AGENTS.md + MEMORY.md
+// 同时触发预算淘汰时，describe() 清单必须与真正发给模型的内容逐项一致——否则这个
+// 功能就是「看起来准确、实际上误导人」的诊断面板。断言全部走互证：注入集合相等、
+// 淘汰集合不出现在注入文本、淘汰名单完整出现在预算标记行、totalBytes 与注入文本
+// 字节和相等。文件尺寸刻意留出余量，断言不依赖 tmpdir 路径长度。
+describe("Instruction.describe 与 system 逐项一致（RC-04）", () => {
+  it.live("预算淘汰下清单与注入文本互证", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global rules", "MEMORY.md": "# Memory lessons" })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": "# Project rules" })
+      const server = Bun.serve({ port: 0, fetch: () => new Response("# Remote rules from afar") })
+      const url = `http://127.0.0.1:${server.port}/rules`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const parts = yield* svc.system()
+          const inv = yield* svc.describe()
+          const prefix = "Instructions from: "
+          const injectedFromParts = parts
+            .filter((p) => p.startsWith(prefix))
+            .map((p) => p.slice(prefix.length, p.indexOf("\n")))
+          const injectedFromDescribe = inv.sources.filter((s) => s.status === "injected").map((s) => s.path)
+          const droppedFromDescribe = inv.sources.filter((s) => s.status === "dropped").map((s) => s.path)
+
+          // 淘汰必须真的发生，否则这条测试没在验证它声称的场景。
+          expect(droppedFromDescribe.length).toBeGreaterThan(0)
+          // 互证 1：注入集合与顺序逐项相等。
+          expect(injectedFromDescribe).toEqual(injectedFromParts)
+          // 互证 2：淘汰的来源绝不出现在注入文本。
+          for (const dropped of droppedFromDescribe) {
+            expect(injectedFromParts).not.toContain(dropped)
+          }
+          // 互证 3：每一条淘汰都在模型可见的预算标记行里报过名字。
+          const marker = parts.find((p) => p.startsWith("[instruction budget]"))
+          expect(marker).toBeDefined()
+          for (const dropped of droppedFromDescribe) {
+            expect(marker!).toContain(dropped)
+          }
+          // 互证 4：清单的 totalBytes 与注入文本的字节和相等。
+          const injectedBytes = parts
+            .filter((p) => p.startsWith(prefix))
+            .reduce((sum, p) => sum + Buffer.byteLength(p), 0)
+          expect(inv.totalBytes).toBe(injectedBytes)
+          // kind 归属正确：URL 是 config，AGENTS.md 是 agents，MEMORY.md 是 memory。
+          const byPath = new Map(inv.sources.map((s) => [s.path, s]))
+          expect(byPath.get(url)?.kind).toBe("config")
+          expect(byPath.get(path.join(globalTmp, "AGENTS.md"))?.kind).toBe("agents")
+          expect(byPath.get(path.join(globalTmp, "MEMORY.md"))?.kind).toBe("memory")
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+            instruction_budget: { max_total_bytes: 260 },
+            instructions: [url],
+          }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+})
