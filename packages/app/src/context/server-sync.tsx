@@ -428,7 +428,11 @@ export function createServerSyncContext() {
       })
       if (next.length !== store.session.length) {
         setStore("session", reconcile(next, { key: "id" }))
-        cleanupDroppedSessionCaches(store, setStore, next, setSessionTodo)
+        // 261107 Red 裁剪 ≠ 删除：trim 出列表的会话缓存不清——前台会话被清会让
+        // messagesReady 翻假（整块空白 wallpaper + 打字断，三个月闪屏根因）。
+        cleanupDroppedSessionCaches(store, setStore, next, setSessionTodo, (id) =>
+          sessionCacheLedger.hasForeground(key, id),
+        )
       }
       children.unpin(key)
       return
@@ -466,7 +470,10 @@ export function createServerSyncContext() {
                   }),
                 )
                 setStore("session", reconcile(sessions, { key: "id" }))
-                cleanupDroppedSessionCaches(store, setStore, sessions, setSessionTodo)
+                // 261107 Red 同上：trim ≠ 删除，前台会话缓存受保护（闪屏根因）。
+                cleanupDroppedSessionCaches(store, setStore, sessions, setSessionTodo, (id) =>
+                  sessionCacheLedger.hasForeground(key, id),
+                )
               })
               sessionMeta.set(key, { limit })
             })

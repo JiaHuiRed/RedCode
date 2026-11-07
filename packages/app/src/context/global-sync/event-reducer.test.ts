@@ -452,6 +452,27 @@ describe("applyDirectoryEvent", () => {
     expect(store.part.msg_1).toBeUndefined()
   })
 
+  // 261107 Red 闪屏根因回归：next 是 trim 后列表时，"不在列表里"≠"已删除"——
+  // 前台（正在查看）会话的缓存必须保留，否则 messagesReady 翻假 → 中心区空白 + 打字断。
+  test("cleanupDroppedSessionCaches keeps foreground sessions' caches", () => {
+    const viewed = rootSession({ id: "ses_viewed" })
+    const background = rootSession({ id: "ses_background" })
+    const [store, setStore] = createStore(
+      baseState({
+        session: [viewed, background],
+        message: {
+          [viewed.id]: [userMessage("msg_v", viewed.id)],
+          [background.id]: [userMessage("msg_b", background.id)],
+        },
+      }),
+    )
+
+    cleanupDroppedSessionCaches(store, setStore, [], undefined, (id) => id === viewed.id)
+
+    expect(store.message[viewed.id]).toHaveLength(1)
+    expect(store.message[background.id]).toBeUndefined()
+  })
+
   test("upserts and removes messages while clearing orphaned parts", () => {
     const sessionID = "ses_1"
     const [store, setStore] = createStore(

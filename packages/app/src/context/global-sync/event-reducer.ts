@@ -132,6 +132,7 @@ export function cleanupDroppedSessionCaches(
   setStore: SetStoreFunction<State>,
   next: Session[],
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void,
+  protect?: (sessionID: string) => boolean,
 ) {
   const keep = new Set(next.map((item) => item.id))
   const stale = [
@@ -145,13 +146,17 @@ export function cleanupDroppedSessionCaches(
       .map((parts) => parts?.find((part) => !!part?.sessionID)?.sessionID)
       .filter((sessionID): sessionID is string => !!sessionID),
   ].filter((sessionID, index, list) => !keep.has(sessionID) && list.indexOf(sessionID) === index)
-  if (stale.length === 0) return
-  for (const sessionID of stale) {
+  // 261107 Red foreground 保护：调用方传入的 next 可能是 trim 后的列表（loadSessions），
+  // "不在列表里" ≠ "已删除"——被裁掉的前台会话若缓存被清，messagesReady 翻假，中心区
+  // 整块空白 wallpaper、composer ready 翻假打断输入（三个月闪屏根因）。
+  const dropped = protect ? stale.filter((sessionID) => !protect(sessionID)) : stale
+  if (dropped.length === 0) return
+  for (const sessionID of dropped) {
     setSessionTodo?.(sessionID, undefined)
   }
   setStore(
     produce((draft) => {
-      dropSessionCaches(draft, stale)
+      dropSessionCaches(draft, dropped)
     }),
   )
 }
