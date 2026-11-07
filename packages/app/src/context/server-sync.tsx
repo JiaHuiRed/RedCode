@@ -425,6 +425,7 @@ export function createServerSyncContext() {
       const next = trimSessions(store.session, {
         limit: store.limit,
         permission: store.permission,
+        protect: (id) => sessionCacheLedger.hasForeground(key, id),
       })
       if (next.length !== store.session.length) {
         setStore("session", reconcile(next, { key: "id" }))
@@ -459,6 +460,7 @@ export function createServerSyncContext() {
               const sessions = trimSessions([...nonArchived, ...childSessions], {
                 limit,
                 permission: store.permission,
+                protect: (id) => sessionCacheLedger.hasForeground(key, id),
               })
               batch(() => {
                 setStore(
@@ -547,6 +549,7 @@ export function createServerSyncContext() {
                 vcsCache: cache,
                 loadLsp: () => {},
                 isPinned: children.pinned(key),
+                protectSessionCache: (id) => sessionCacheLedger.hasForeground(key, id),
               })
             }
           },
@@ -647,6 +650,9 @@ export function createServerSyncContext() {
       },
       // 260706 Red server.instance.disposed 只对当前 pinned 目录重新 bootstrap，见 event-reducer.ts 注释
       isPinned: children.pinned(key),
+      // 261107 Red trim 路径的前台会话保护：Karina 只接了 loadSessions 的两处，
+      // session.created/updated 的 trim 与孤儿清理走的是同一个函数，必须一起认 foreground。
+      protectSessionCache: (id) => sessionCacheLedger.hasForeground(key, id),
     })
 
     // 260922 Red 轮次目录的失效通道。bootstrap.ts 的 loadSessionOutlineQuery 注释写着

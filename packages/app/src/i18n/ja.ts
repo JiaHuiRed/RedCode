@@ -1131,6 +1131,7 @@ export const dict = {
   "command.project.index": "プロジェクト {{index}} に切り替え",
   "command.settings.open.exportLogs": "ログをエクスポート",
   "session.child.promptDisabled": "サブエージェントのセッションには入力できません。",
+  "session.child.stop": "サブエージェントを停止。",
   "session.child.backToParent": "メインセッションに戻る。",
   "dialog.mcp.toggleFailed": "MCP の切り替えに失敗しました",
   "dialog.usageExceeded.dontShowAgain": "今後表示しない",

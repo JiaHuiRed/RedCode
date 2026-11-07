@@ -265,6 +265,7 @@ export const dict = {
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "esc to exit",
   "session.child.promptDisabled": "Subagent sessions cannot be prompted.",
+  "session.child.stop": "Stop subagent.",
   "session.child.backToParent": "Back to main session.",
 
   "prompt.example.1": "Fix a TODO in the codebase",

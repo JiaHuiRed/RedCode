@@ -473,6 +473,63 @@ describe("applyDirectoryEvent", () => {
     expect(store.message[background.id]).toBeUndefined()
   })
 
+  // 261107 Red 闪屏收尾：trim 路径不止 loadSessions 的两处——session.created 的 trim
+  // 与它共用 cleanupDroppedSessionCaches，前台保护不往这条路径传，事件驱动的裁剪
+  // 仍然会清掉正在看的会话缓存（messagesReady 翻假 → 整块空白 wallpaper）。
+  test("session.created trim keeps the foreground session cache", () => {
+    const viewed = rootSession({ id: "ses_b_viewed" })
+    const created = rootSession({ id: "ses_a_created" })
+    const message = userMessage("msg_viewed", viewed.id)
+    const [store, setStore] = createStore(
+      baseState({
+        limit: 1,
+        session: [viewed],
+        message: { [viewed.id]: [message] },
+        part: { [message.id]: [textPart("prt_viewed", viewed.id, message.id)] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "session.created", properties: { info: created } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+      protectSessionCache: (id) => id === viewed.id,
+    })
+
+    expect(store.session.map((x) => x.id)).toEqual([created.id, viewed.id])
+    expect(store.message[viewed.id]).toHaveLength(1)
+    expect(store.part[message.id]).toHaveLength(1)
+  })
+
+  test("session.updated trim keeps the foreground session cache", () => {
+    const viewed = rootSession({ id: "ses_b_viewed" })
+    const updated = rootSession({ id: "ses_a_updated" })
+    const message = userMessage("msg_viewed", viewed.id)
+    const [store, setStore] = createStore(
+      baseState({
+        limit: 1,
+        session: [viewed],
+        message: { [viewed.id]: [message] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "session.updated", properties: { info: updated } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+      protectSessionCache: (id) => id === viewed.id,
+    })
+
+    expect(store.session.map((x) => x.id)).toEqual([updated.id, viewed.id])
+    expect(store.message[viewed.id]).toHaveLength(1)
+  })
+
   test("upserts and removes messages while clearing orphaned parts", () => {
     const sessionID = "ses_1"
     const [store, setStore] = createStore(

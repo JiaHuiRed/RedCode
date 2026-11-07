@@ -32,7 +32,12 @@ export function takeRecentSessions(sessions: Session[], limit: number, cutoff: n
 
 export function trimSessions(
   input: Session[],
-  options: { limit: number; permission: Record<string, PermissionRequest[]>; now?: number },
+  options: {
+    limit: number
+    permission: Record<string, PermissionRequest[]>
+    now?: number
+    protect?: (sessionID: string) => boolean
+  },
 ) {
   const limit = Math.max(0, options.limit)
   const cutoff = (options.now ?? Date.now()) - SESSION_RECENT_WINDOW
@@ -53,5 +58,13 @@ export function trimSessions(
     if (perms.length > 0) return true
     return sessionUpdatedAt(s) > cutoff
   })
-  return [...keepRoots, ...keepChildren].sort((a, b) => cmp(a.id, b.id))
+  const kept = [...keepRoots, ...keepChildren]
+  // 261107 Red 前台会话的列表项也要保，不只是缓存：getSession 只查 store.session，
+  // 被裁出列表后页面取不到会话（child() 判假、子会话变成可输入且失去返回入口）。
+  // 补回最多多 1-2 条，远超被误判成「已删除」的代价。
+  const protect = options.protect
+  if (!protect) return kept.sort((a, b) => cmp(a.id, b.id))
+  const keptIDs = new Set(kept.map((s) => s.id))
+  const rescued = all.filter((s) => !keptIDs.has(s.id) && protect(s.id))
+  return [...kept, ...rescued].sort((a, b) => cmp(a.id, b.id))
 }

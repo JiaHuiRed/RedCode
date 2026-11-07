@@ -28,6 +28,8 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/SessionRunState") {}
 
+type RunnerFrame = { runner: Runner.Runner<MessageV2.WithParts>; cancelled: boolean }
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -37,7 +39,7 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
-        const runners = new Map<SessionID, { runner: Runner.Runner<MessageV2.WithParts>; cancelled: boolean }>()
+        const runners = new Map<SessionID, RunnerFrame>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             for (const frame of runners.values()) frame.cancelled = true
@@ -84,16 +86,24 @@ export const layer = Layer.effect(
       if (existing?.runner.busy) yield* busyError(sessionID)
     })
 
-    const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      const data = yield* InstanceState.get(state)
-      const existing = data.runners.get(sessionID)
+    // 261107 Red 取消必须落到执行层：后台 job 只是等 Deferred 的外壳，真正的模型循环
+    // fork 在 runner scope 里，中断 job 带不走它。job id 即会话 id，按 id 逐个停 runner，
+    // 面板上的「已取消」才等于执行真的停下（261107 实测：cancelled 后子会话仍在写文件）。
+    const stopRunner = Effect.fnUntraced(function* (runners: Map<SessionID, RunnerFrame>, sessionID: SessionID) {
+      const existing = runners.get(sessionID)
       if (existing?.runner.busy) existing.cancelled = true
-      yield* background.cancelTree(sessionID)
       if (!existing || !existing.runner.busy) {
         yield* status.set(sessionID, { type: "idle" })
         return
       }
       yield* existing.runner.cancel
+    })
+
+    const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(state)
+      const cancelled = yield* background.cancelTree(sessionID)
+      yield* Effect.forEach(cancelled, (jobID) => stopRunner(data.runners, jobID as SessionID), { discard: true })
+      yield* stopRunner(data.runners, sessionID)
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (

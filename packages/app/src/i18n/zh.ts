@@ -1295,6 +1295,7 @@ export const dict = {
   "settings.general.row.shell.autoDefault": "自动（默认）",
   "settings.general.row.shell.title": "终端 Shell",
   "session.child.promptDisabled": "子智能体会话不可直接提示。",
+  "session.child.stop": "停止子代理。",
   "settings.general.row.pinchZoom.title": "触控板缩放",
   "sidebar.empty.description": "打开一个项目以开始使用",
   "error.page.action.exportLogs": "导出日志",

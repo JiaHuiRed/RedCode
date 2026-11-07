@@ -56,4 +56,25 @@ describe("trimSessions", () => {
       "root-2",
     ])
   })
+
+  // 261107 Red 前台会话补回列表：只保缓存不够——getSession 只查 store.session，
+  // 被裁出列表后页面取不到会话（child() 判假、子会话变可输入且失去返回入口）。
+  test("rescues protected sessions the limit would trim", () => {
+    const now = 1_000_000
+    const list = [
+      session({ id: "a", created: now - 1_000 }),
+      session({ id: "b", created: now - 30_000_000 }),
+      session({ id: "viewed", created: now - 30_000_000 }),
+      session({ id: "child-viewed", parentID: "z-root", created: now - 30_000_000 }),
+    ]
+
+    const result = trimSessions(list, {
+      limit: 1,
+      permission: {},
+      now,
+      protect: (id) => id === "viewed" || id === "child-viewed",
+    })
+
+    expect(result.map((x) => x.id)).toEqual(["a", "child-viewed", "viewed"])
+  })
 })

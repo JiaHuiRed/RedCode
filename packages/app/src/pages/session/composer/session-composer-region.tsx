@@ -6,6 +6,7 @@ import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { useSync } from "@/context/sync"
+import { useSDK } from "@/context/sdk"
 import { getSessionHandoff, setSessionHandoff } from "@/utils/session-handoff"
 import { useSessionKey } from "@/context/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
@@ -53,6 +54,7 @@ export function SessionComposerRegion(props: {
   const language = useLanguage()
   const route = useSessionKey()
   const sync = useSync()
+  const sdk = useSDK()
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
@@ -139,6 +141,14 @@ export function SessionComposerRegion(props: {
     const id = parentID()
     if (!id) return
     navigate(`/${route.params.dir}/session/${id}`)
+  }
+
+  // 261107 Red 子会话此前只有「返回主会话」，没有停止入口——子代理卡住时用户无处下手。
+  // 停止走子会话自己的 session.abort（SessionRunState.cancel），同时级联取消它的后台 job。
+  const stopChild = () => {
+    const id = route.params.id
+    if (!id) return
+    void sdk.client.session.abort({ sessionID: id }).catch(() => {})
   }
 
   return (
@@ -290,6 +300,15 @@ export function SessionComposerRegion(props: {
                 class="w-full rounded-lg border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
               >
                 <span>{language.t("session.child.promptDisabled")} </span>
+                <Show when={status() === "busy" || status() === "retry"}>
+                  <button
+                    type="button"
+                    class="text-text-base transition-colors hover:text-text-strong"
+                    onClick={stopChild}
+                  >
+                    {language.t("session.child.stop")}{" "}
+                  </button>
+                </Show>
                 <Show when={parentID()}>
                   <button
                     type="button"

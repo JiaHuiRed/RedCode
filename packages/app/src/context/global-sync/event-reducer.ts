@@ -166,12 +166,21 @@ function markOrphanInsert(input: {
   store: Store<State>
   setStore: SetStoreFunction<State>
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
+  protectSessionCache?: (sessionID: string) => boolean
 }) {
   pendingOrphanCleanup.add(input.store)
   const count = (orphanInserts.get(input.store) ?? 0) + 1
   orphanInserts.set(input.store, count)
   if (count < ORPHAN_CLEANUP_THRESHOLD) return
-  cleanupDroppedSessionCaches(input.store, input.setStore, input.store.session, input.setSessionTodo)
+  // 261107 Red 孤儿清理同样要认 foreground：被 trim 出列表的前台会话正落在
+  // 「有缓存、不在 session 列表」这个形状里，不保护就会被当成孤儿清掉（闪屏）。
+  cleanupDroppedSessionCaches(
+    input.store,
+    input.setStore,
+    input.store.session,
+    input.setSessionTodo,
+    input.protectSessionCache,
+  )
   pendingOrphanCleanup.delete(input.store)
   orphanInserts.set(input.store, 0)
 }
@@ -185,6 +194,9 @@ export function applyDirectoryEvent(input: {
   vcsCache?: VcsCache
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
   isPinned?: boolean
+  // 261107 Red trim 与孤儿清理都会调 cleanupDroppedSessionCaches；这里一并把前台会话
+  // 保护传进去，否则 session.created/updated 触发的 trim 仍会清掉正在查看的会话缓存。
+  protectSessionCache?: (sessionID: string) => boolean
 }) {
   const event = input.event
   switch (event.type) {
@@ -211,12 +223,22 @@ export function applyDirectoryEvent(input: {
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
-      const trimmed = trimSessions(next, { limit: input.store.limit, permission: input.store.permission })
+      const trimmed = trimSessions(next, {
+        limit: input.store.limit,
+        permission: input.store.permission,
+        protect: input.protectSessionCache,
+      })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
       // 260801 Red 0.7.12 懒化：trim 未删 session（next.length === trimmed.length）且该 store 无孤儿消息打点时，
       //   cleanupDroppedSessionCaches 必然无事可做，跳过其全 parts 扫描（40-session × 千条消息 = 数万条目/事件）
       if (next.length !== trimmed.length || pendingOrphanCleanup.has(input.store)) {
-        cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+        cleanupDroppedSessionCaches(
+          input.store,
+          input.setStore,
+          trimmed,
+          input.setSessionTodo,
+          input.protectSessionCache,
+        )
         pendingOrphanCleanup.delete(input.store)
         orphanInserts.delete(input.store)
       }
@@ -247,11 +269,21 @@ export function applyDirectoryEvent(input: {
       }
       const next = input.store.session.slice()
       next.splice(result.index, 0, info)
-      const trimmed = trimSessions(next, { limit: input.store.limit, permission: input.store.permission })
+      const trimmed = trimSessions(next, {
+        limit: input.store.limit,
+        permission: input.store.permission,
+        protect: input.protectSessionCache,
+      })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
       // 260801 Red 0.7.12 懒化（同 session.created，见上）
       if (next.length !== trimmed.length || pendingOrphanCleanup.has(input.store)) {
-        cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+        cleanupDroppedSessionCaches(
+          input.store,
+          input.setStore,
+          trimmed,
+          input.setSessionTodo,
+          input.protectSessionCache,
+        )
         pendingOrphanCleanup.delete(input.store)
         orphanInserts.delete(input.store)
       }
