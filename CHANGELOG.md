@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.17.0] - 2026-11-07
 
 - **闪屏修复再补一刀：trim 救援带上父链**（`app/src/context/global-sync/session-trim.ts`）：RC-02 审计建议的边界用例坐实了残余缺口——前台**子会话**被 `protect` 救回列表时，其父会话若已被裁，`child()` 查不到父级判假，子会话变成可输入且失去返回父会话入口（父子导航丢失）。`trimSessions` 救援现在沿 `parentID` 向上补齐到已保留祖先为止（归档父级不在列表，原地停住）。验证：app typecheck exit 0；session-trim/event-reducer 34 pass（新增边界回归，改前失败）。
 - **重试退避定版：首 3s、封顶 15s，retry-after 钳制上限 10 分钟→5 分钟**（`opencode/src/session/retry.ts`）：次数越多等越久反直觉——预填容量满这类瞬时拒绝应当快快重试。无 retry-after 头的指数退避改为 3→6→12→15→15…（原 2s×2ⁿ 封顶 30s）；上游 retry-after 头仍按指示值走，但钳制上限从 10 分钟收紧到 5 分钟（真要等那么久用户会自己看到并介入，静默长等无意义）。验证：opencode typecheck exit 0，session/retry 37 pass（退避序列与钳制断言同步更新）。
