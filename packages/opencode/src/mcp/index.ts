@@ -1208,8 +1208,15 @@ export const layer = Layer.effect(
       timeout?: number,
     ) {
       const bridge = yield* EffectBridge.make()
+      // 261107 Red failed → connected 的恢复迁移补一行 INFO：重连成功路径全静默，
+      // "到底连上没"此前只能靠界面板指认（261107 fff 事件：19:13 握手瞬时死亡后无日志自证）。
+      // 只记恢复不记首次连接——首次没有"之前挂过"的语境，打了是噪音。
+      const previous = s.status[name]
       yield* closeClient(s, name)
       s.status[name] = { status: "connected" }
+      if (previous?.status === "failed") {
+        log.info("mcp reconnected after failure", { key: name, previousError: previous.error, phase: "startup" })
+      }
       s.clients[name] = client
       s.defs[name] = listed
       const rawReconnect = client.getInstructions()?.trim()
