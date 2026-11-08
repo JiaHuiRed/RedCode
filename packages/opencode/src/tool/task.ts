@@ -467,6 +467,17 @@ export const TaskTool = Tool.define(
             parts,
             }),
           )
+          // 261108 Red 子代理失败必须传播（审计 RC-P1-02）：此前只取最后一段文本，
+          // 子代理以 API 错误 / 工具熔断 / 中断收尾时同样返回空串，父代理把它当成功继续。
+          // 空文本本身不算失败（合法无输出），只有消息自带 error 才算。
+          const info = result.info
+          if (info.role === "assistant" && info.error) {
+            const reason =
+              ("data" in info.error && info.error.data && typeof info.error.data === "object"
+                ? (info.error.data as { message?: string }).message
+                : undefined) ?? info.error.name
+            return yield* Effect.fail(new Error(`子代理 ${next.name} 执行失败：${reason}`))
+          }
           const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
           yield* plugin
             .trigger(

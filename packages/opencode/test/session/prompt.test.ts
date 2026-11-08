@@ -2523,6 +2523,55 @@ it.instance("refreshes session permissions at the start of each step", () =>
   }),
 )
 
+// 261108 Red 审计 RC-P1-01：tools 开关只能收紧，不能把继承来的 deny 提升为 allow。
+// 旧实现整体替换 session.permission，而 evaluate 用 findLast（后写优先），于是
+// { edit: true } 会让 edit:deny 变成 allow，子代理能力超过父级。
+it.instance("tool switches cannot widen an inherited deny", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const chat = yield* sessions.create({
+      title: "Denied edit",
+      permission: [{ permission: "edit", pattern: "*", action: "deny" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      tools: { edit: true },
+      noReply: true,
+      parts: [{ type: "text", text: "enable edit" }],
+    })
+
+    const after = yield* sessions.get(chat.id)
+    expect(Permission.evaluate("edit", "*", after.permission ?? []).action).toBe("deny")
+  }),
+)
+
+it.instance("tool switches can still narrow an inherited allow", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const prompt = yield* SessionPrompt.Service
+    const chat = yield* sessions.create({
+      title: "Allowed edit",
+      permission: [{ permission: "edit", pattern: "*", action: "allow" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      tools: { edit: false },
+      noReply: true,
+      parts: [{ type: "text", text: "disable edit" }],
+    })
+
+    const after = yield* sessions.get(chat.id)
+    expect(Permission.evaluate("edit", "*", after.permission ?? []).action).toBe("deny")
+  }),
+)
+
 it.instance("loop continues when finish is tool-calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

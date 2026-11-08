@@ -726,7 +726,11 @@ export const {
     async function loadSessionSnapshot(sessionID: string) {
       const [session, messages, todo, diff, goal] = await Promise.all([
         sdk.client.session.get({ sessionID }, { throwOnError: true }),
-        sdk.client.session.messages({ sessionID, limit: 100 }),
+        // 261108 Red 审计 RC-P1-03：此前没传 throwOnError，请求失败时 data 是 undefined，
+        // 被下面的 `?? []` 当成合法空历史整体替换，已有消息在界面里凭空消失；而 sync()
+        // 只在 await 不抛时才推进 fullSyncedSessions，所以「失败也标已加载」是假象 ——
+        // 真正的原因是失败被这里吞成了空数组。抛出后调用方不标记、下次仍会重试。
+        sdk.client.session.messages({ sessionID, limit: 100 }, { throwOnError: true }),
         sdk.client.session.todo({ sessionID }),
         // 260904 cc 只拉元数据（patch=false），Files 侧栏只要文件名与增删数。260903 因为带正文的那份
         // 能到 33MB、卡 23s 把这条 fetch 删了；此后侧栏只靠 session.diff 事件填充，服务端为此
