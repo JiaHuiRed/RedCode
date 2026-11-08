@@ -134,6 +134,19 @@ const scenarios: Scenario[] = [
   http.protected.get("/command", "command.list").json(200, array, "status"),
   http.protected.get("/agent", "app.agents").json(200, array, "status"),
   http.protected.get("/skill", "app.skills").json(200, array, "status"),
+  // 261108 Red 0.17.0 新增的诊断接口：路由与 SDK 一致性测试都进来了，唯独 exerciser
+  // 漏了场景，Windows Nightly 的 coverage 门禁报 missing。只钉响应形状（只读观测面，
+  // 空目录下 sources 通常为空），预算淘汰/来源优先级/字节数的行为由 instruction.test.ts 覆盖。
+  http.protected
+    .get("/instructions", "app.instructions")
+    .json(200, (body) => {
+      object(body)
+      array(body.sources)
+      check(typeof body.totalBytes === "number", "instructions inventory should include total bytes")
+      object(body.budget)
+      check(typeof body.budget.maxSourceBytes === "number", "budget should include per-source cap")
+      check(typeof body.budget.maxTotalBytes === "number", "budget should include total cap")
+    }),
   http.protected.get("/lsp", "lsp.status").json(200, array),
   http.protected.get("/formatter", "formatter.status").json(200, array),
   http.protected.get("/config", "config.get").json(200, undefined, "status"),
