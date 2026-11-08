@@ -8,6 +8,15 @@
 
 ---
 
+### [0.17.1] - 2026-11-08
+
+- **压缩摘要不再复述常驻指令**（`opencode/src/session/compaction.ts` 摘要模板、`native-context.ts` summaryPrompt）：摘要落库后每轮作为历史消息重发，而 AGENTS/MEMORY/soul 的常驻规则本就随每个请求到达，摘要在 Constraints & Preferences 里再写一遍是双份成本（现场该节几乎全是常驻规则复述）。模板收窄为只记本次会话**新增、收紧或覆盖**的约束（附一句对比判据），Rules 新增「常驻指令不在任何段落复述、也不列进 Relevant Files」；native compaction 的 summaryPrompt 同步改为 session-specific。模型可见：模板固定文本在压缩请求内约 +25 token（每次压缩一次），摘要输出每轮省数百 token，方向净省；模板不在主请求固定前缀，KV 缓存布局不动。验证：opencode typecheck exit 0；native-context 21 pass、compaction 86 pass。
+- **重试退避补漏网分支：有响应头无 retry-after 也走 15s 封顶**（`opencode/src/session/retry.ts`）：0.17.0 定版的 3→6→12→15→15… 快退避只接在无响应头分支上，带响应头但无有效 retry-after（如只有 content-type / x-request-id）的兜底 return 仍是裸指数——只受 5 分钟钳制，第 4 次起 24s/48s/… 翻倍，恰好违背定版目的。改为复用无响应头快退避。验证：opencode typecheck exit 0；retry 套件 38 pass（新增带响应头无 retry-after 的封顶回归）。
+- **Nightly 全量 lane 治理：130 → 6 failed**（`opencode/package.json` test:ci、`nightly.yml`、exerciser 场景、8 个测试文件）：opencode 包 4629 测试原本单进程跑，同进程跨文件污染让 118 个 fake-LLM 轮次测试确定性 FirstEventTimeout（请求发给进程内 localhost mock 后首事件 75s 零到达；同 runner 同 bun 的 smoke lane 每文件独立进程全绿；本地全量单进程 136 fail 画像复现互证）。test:ci 加 `--parallel=2`（worker 进程互不共享 global，蕴含 isolate，2 匹配 4 核 runner）。顺带收编：exerciser 补 GET /instructions 场景消 coverage 门禁 missing=1（0.17.0 新接口漏了 exerciser 面）；写前已读守卫用例跟上 261105 内容哈希容差（touch/无改动保存本就该放行）、GBK 用例 locale 无关化（CI 英文镜像 ACP≠GBK；导出 SYSTEM_ENCODING 供分流，检测行为零变化）、压缩夹具预算重标定 (300,1600)→(400,1680)（框架语义渲染增长后 token/字节双闸卡死，「新存旧汰」语义失锚）、摘要默认 12k 跟 1ec702bb、task 输出契约跟 66a45fc2、中断时效断言放宽 1s。验证：nightly dispatch 42438984383 failed 130→6，coverage+auth 两道门禁转绿（missing=0）；四修复项单独验证 165/64/2 pass。
+- **span 探针容量检查计入待写缓冲**（`core/src/effect/trace-file.ts`）：bytesWritten 只在 flush 后更新，8MiB 容量判断漏算 buffer 里未落盘的字节（一批缓冲落盘后实际文件可越过封顶），且触顶置 capped 后 flush 会跳过已缓冲的行、丢最后一批 span。新增 pendingBytes 计数纳入判断（每条入 buffer 的行都带着 pending 过闸，落盘后必然 ≤ MAX）；触顶分支先 flush 再落 trace.capped 标记。验证：core typecheck exit 0。
+- **Meter 用量条补 corner-shape: round 成对声明**（`ui/src/components/meter.css`）：24c15bca 写了 border-radius: 9999px 没配对 corner-shape，超椭圆通配把胶囊两头削方——corner-shape 门禁本地与 CI 同挂，此前「本地全过」的结论只覆盖了部分包。按 scroll-view 惯例补上。验证：ui typecheck exit 0，corner-shape 套件 2 pass。
+- **typecheck 内存门控按标称容量取整**（`script/typecheck.ts`）：32GB 机器 os.totalmem() 报 31.8GB（固件与集显硬件保留），精确字节比较判成小内存直接回退 TypeScript 5.x，tsgo 快路径永远用不上。物理内存按 4GB 粒度安装，报告值 ceil 到标称容量再比较（31.8→32 走 tsgo，16GB 机器照旧跳过），警告同时打印实测与标称值。验证：本机 typecheck 12s、exit 0、无回退警告。
+
 ### [0.17.0] - 2026-11-07
 
 - **闪屏修复再补一刀：trim 救援带上父链**（`app/src/context/global-sync/session-trim.ts`）：RC-02 审计建议的边界用例坐实了残余缺口——前台**子会话**被 `protect` 救回列表时，其父会话若已被裁，`child()` 查不到父级判假，子会话变成可输入且失去返回父会话入口（父子导航丢失）。`trimSessions` 救援现在沿 `parentID` 向上补齐到已保留祖先为止（归档父级不在列表，原地停住）。验证：app typecheck exit 0；session-trim/event-reducer 34 pass（新增边界回归，改前失败）。
