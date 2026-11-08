@@ -74,6 +74,9 @@ export function createFileSpanProcessor(): SpanProcessor {
   })()
   let capped = false
   let buffer: string[] = []
+  // 261108 Red buffer 里未落盘字节的计数：bytesWritten 只在 flush 后更新，容量判断
+  // 若漏掉这笔，一批缓冲数据落盘后就会突破 8MiB 封顶。
+  let pendingBytes = 0
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const flush = () => {
@@ -81,9 +84,12 @@ export function createFileSpanProcessor(): SpanProcessor {
       clearTimeout(timer)
       timer = undefined
     }
-    if (capped || buffer.length === 0) return
+    // capped 不在此处拦截：触顶瞬间 onEnd 会先冲刷已缓冲的 span 再落标记，之后
+    // buffer 恒空且不再收行，走到这里的 flush 只会是 no-op。
+    if (buffer.length === 0) return
     const lines = buffer.splice(0)
     const payload = lines.join("\n") + "\n"
+    pendingBytes = 0
     try {
       appendFileSync(TRACE_FILE, payload)
       bytesWritten += Buffer.byteLength(payload)
@@ -115,7 +121,11 @@ export function createFileSpanProcessor(): SpanProcessor {
         status: span.status.code,
         attributes: sanitizeAttributes(span.attributes),
       })
-      if (bytesWritten + Buffer.byteLength(line) + 1 > MAX_FILE_BYTES) {
+      if (bytesWritten + pendingBytes + Buffer.byteLength(line) + 1 > MAX_FILE_BYTES) {
+        // 261108 Red 先落盘已缓冲的 span：capped 一旦置位 flush 不会再写它们，
+        // 不冲刷就丢最后一批。缓冲行收下时都带着 pendingBytes 过了容量判断，
+        // 落盘后文件仍 ≤ MAX（trace.capped 标记那一行是唯一允许的小幅越过）。
+        flush()
         capped = true
         try {
           appendFileSync(TRACE_FILE, JSON.stringify({ at: Date.now(), name: "trace.capped" }) + "\n")
@@ -125,6 +135,7 @@ export function createFileSpanProcessor(): SpanProcessor {
         return
       }
       buffer.push(line)
+      pendingBytes += Buffer.byteLength(line) + 1
       if (buffer.length >= FLUSH_THRESHOLD_LINES) flush()
       else scheduleFlush()
     },
