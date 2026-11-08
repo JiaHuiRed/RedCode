@@ -16,6 +16,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
   let settleTimer: ReturnType<typeof setTimeout> | undefined
   let autoTimer: ReturnType<typeof setTimeout> | undefined
   let auto: { top: number; time: number } | undefined
+  let followFrame: number | undefined
 
   const threshold = () => options.bottomThreshold ?? 10
 
@@ -183,10 +184,16 @@ export function createAutoScroll(options: AutoScrollOptions) {
       // 261108 Red 组合期不追底：ResizeObserver 由输入区/内容区高度变化触发，
       // 中文候选框展开会让它抢帧，与 message-timeline 的 imeComposing 门禁保持同一语义。
       if (imeComposing()) return
-      // ResizeObserver fires after layout, before paint.
-      // Keep the bottom locked in the same frame to avoid visible
-      // "jump up then catch up" artifacts while streaming content.
-      scrollToBottom(false)
+      // 261108 Red 滚动延到下一帧：RO 回调里同步写 scrollTop 会让 virtua 重测量，
+      // 同一帧再次改变内容高度 → 观察-布局循环（Electron renderer.log 里 911 条
+      // ResizeObserver loop 警告的主要来源）。代价是最多多等一帧，流式下一帧仍会追。
+      if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+      followFrame = requestAnimationFrame(() => {
+        followFrame = undefined
+        if (!active()) return
+        if (store.userScrolled) return
+        scrollToBottom(false)
+      })
     },
   )
 
@@ -222,6 +229,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
   onCleanup(() => {
     if (settleTimer) clearTimeout(settleTimer)
     if (autoTimer) clearTimeout(autoTimer)
+    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+    followFrame = undefined
   })
 
   return {
@@ -242,6 +251,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
       if (autoTimer) clearTimeout(autoTimer)
       autoTimer = undefined
       auto = undefined
+      if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+      followFrame = undefined
       if (store.userScrolled) setStore("userScrolled", false)
     },
     scrollToBottom: () => scrollToBottom(false),
