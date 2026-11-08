@@ -8,6 +8,9 @@
 const NGRAM_WINDOW = 80 // 每个 gram 的字符长度
 const NGRAM_REPEAT_THRESHOLD = 3 // 同一 gram 出现 N 次判定重复
 const NGRAM_CHECK_INTERVAL = 200 // 每累积 N 字符检测一次（降低开销）
+// 261108 Red 审计 RC-P2-09：check() 只读尾部这么多字符，buffer 却一直 += 累积。
+// 1 MiB 输出下每来一个 delta 都要整段拷贝，累积成 O(n²)（实测 434ms vs 31ms）。
+const NGRAM_TAIL_LIMIT = NGRAM_WINDOW * NGRAM_REPEAT_THRESHOLD * 3
 
 export class NgramDetector {
   private buffer = ""
@@ -21,6 +24,9 @@ export class NgramDetector {
   /** 喂入 delta 文本，返回 true 表示检测到重复 */
   feed(delta: string): boolean {
     this.buffer += delta
+    // 只保留 check() 实际会读的尾部：语义完全不变（它本来就 slice 这一段），
+    // 但内存与每次拼接的成本变成有界。
+    if (this.buffer.length > NGRAM_TAIL_LIMIT) this.buffer = this.buffer.slice(-NGRAM_TAIL_LIMIT)
     this.sinceLastCheck += delta.length
     if (this.sinceLastCheck < NGRAM_CHECK_INTERVAL) return false
     this.sinceLastCheck = 0
@@ -30,7 +36,7 @@ export class NgramDetector {
   private check(): boolean {
     if (this.buffer.length < NGRAM_WINDOW * NGRAM_REPEAT_THRESHOLD) return false
     // 从尾部取最近的文本做检测，避免扫全文
-    const tail = this.buffer.slice(-(NGRAM_WINDOW * NGRAM_REPEAT_THRESHOLD * 3))
+    const tail = this.buffer.slice(-NGRAM_TAIL_LIMIT)
     const counts = new Map<string, number>()
     // 步长 = 半窗口，平衡精度与性能
     const step = Math.max(1, Math.floor(NGRAM_WINDOW / 2))
