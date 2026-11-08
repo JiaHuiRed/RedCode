@@ -50,6 +50,15 @@ export function createSessionCacheLedger(normalizeDirectory: (directory: string)
     hasForeground(directory: string, sessionID: string) {
       return foreground.get(normalizeDirectory(directory))?.has(sessionID) ?? false
     },
+    // 261108 Red 最近一次前台访问的会话（Set 插入序末尾）。列表重建时候选集合只有分页结果
+    // 加旧子会话，正在查看的根会话落在分页之外就会整条消失——用它在 trim 前找回。
+    latestForeground(directory: string) {
+      const ids = foreground.get(normalizeDirectory(directory))
+      if (!ids || ids.size === 0) return undefined
+      let latest: string | undefined
+      for (const id of ids) latest = id
+      return latest
+    },
     forget(directory: string, sessionID: string) {
       const key = normalizeDirectory(directory)
       foreground.get(key)?.delete(sessionID)

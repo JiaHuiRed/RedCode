@@ -62,6 +62,18 @@ describe("app session cache", () => {
     expect(ledger.foreground("dir", "ses_40")).toEqual(["ses_0"])
   })
 
+  test("tracks the most recent foreground session for list rebuilds", () => {
+    const ledger = createSessionCacheLedger()
+    expect(ledger.latestForeground("dir")).toBeUndefined()
+    ledger.foreground("dir", "ses_a")
+    ledger.foreground("dir", "ses_b")
+    expect(ledger.latestForeground("dir")).toBe("ses_b")
+    ledger.foreground("dir", "ses_a")
+    expect(ledger.latestForeground("dir")).toBe("ses_a")
+    ledger.forget("dir", "ses_a")
+    expect(ledger.latestForeground("dir")).toBe("ses_b")
+  })
+
   test("forgets all directory ownership when the directory is disposed", () => {
     const ledger = createSessionCacheLedger()
     ledger.foreground("dir", "foreground")

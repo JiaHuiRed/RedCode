@@ -457,7 +457,21 @@ export function createServerSyncContext() {
                 .sort((a, b) => compareTime(a, b))
               const limit = store.limit
               const childSessions = store.session.filter((s) => !!s.parentID)
-              const sessions = trimSessions([...nonArchived, ...childSessions], {
+              // 261108 Red 分页结果不是完整实体集合：正在查看的根会话若落在分页之外，
+              // 只合并子会话会让它连同标题/分享/回退过滤一起从 store 消失。
+              // 只补「最近前台会话 + 父链」，不把全部旧会话永久保留。
+              const known = new Set([...nonArchived, ...childSessions].map((s) => s.id))
+              const seen = new Set<string>()
+              const foreground: typeof childSessions = []
+              let next = sessionCacheLedger.latestForeground(key)
+              while (next && !seen.has(next)) {
+                seen.add(next)
+                const item = store.session.find((s) => s.id === next)
+                if (!item) break
+                if (!known.has(item.id)) foreground.push(item)
+                next = item.parentID
+              }
+              const sessions = trimSessions([...nonArchived, ...foreground, ...childSessions], {
                 limit,
                 permission: store.permission,
                 protect: (id) => sessionCacheLedger.hasForeground(key, id),
