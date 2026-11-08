@@ -1287,36 +1287,45 @@ export const layer = Layer.effect(
         )
 
         const interruptedText = "Tool execution aborted"
-        for (const toolCallID of Object.keys(ctx.toolcalls)) {
-          const match = yield* readToolCall(toolCallID)
-          if (!match) continue
-          const part = match.part
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          // 261108 Red 中断也计入失败预算：这条 cleanup 原本裸写 part，绕过 failToolCall，
-          // 于是「同工具同错」计数从不累加 —— 一个卡死的调用能把同一轮回针到步数硬顶
-          // （实测 18 步 × 5 分钟）。计数按 session + parent + 核心签名查库，跨 step 累加。
-          const coreSignature = ToolFailureGuard.coreSignature(part.tool, interruptedText)
-          const count =
+        const interrupted = Object.keys(ctx.toolcalls)
+        if (interrupted.length > 0) {
+          // 261108 Red 审计 RC-P2-05：预算单位是「连续中断的 step」，不是工具调用数。
+          // 此前每个 part 各查一次库、边写边累加，同一步六个并行中断会一路涨到 6，
+          // 一步就耗完五步预算；且 count > limit 要到第 6 次才停。现在整步只取一次计数、
+          // 所有中断 part 共用，count >= limit 即停，和「连续 5 步停止」的契约一致。
+          // 固定签名与普通失败预算隔离；parentID 限定当前用户轮，新用户消息自然重置。
+          const interruptSignature = ToolFailureGuard.coreSignature("*", interruptedText)
+          const interruptCount =
             ToolFailureGuard.count({
               sessionID: ctx.sessionID,
               parentID: ctx.assistantMessage.parentID,
-              coreSignature,
+              coreSignature: interruptSignature,
             }) + 1
-          if (count > interruptLimit) ctx.toolFailureStopped = true
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error:
-                count > interruptLimit
-                  ? interruptedText
-                  : `${interruptedText}（第 ${count}/${interruptLimit} 次中断；达到上限将停止本轮自动续跑）`,
-              metadata: { ...metadata, interrupted: true, failureGuard: { coreSignature, count } },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
+          const stopped = interruptCount >= interruptLimit
+          if (stopped) ctx.toolFailureStopped = true
+          for (const toolCallID of interrupted) {
+            const match = yield* readToolCall(toolCallID)
+            if (!match) continue
+            const part = match.part
+            const end = Date.now()
+            const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+            yield* session.updatePart({
+              ...part,
+              state: {
+                ...part.state,
+                status: "error",
+                error: stopped
+                  ? `${interruptedText}（第 ${interruptCount}/${interruptLimit} 次中断；达到上限，停止本轮自动续跑）`
+                  : `${interruptedText}（第 ${interruptCount}/${interruptLimit} 次中断；达到上限将停止本轮自动续跑）`,
+                metadata: {
+                  ...metadata,
+                  interrupted: true,
+                  failureGuard: { coreSignature: interruptSignature, count: interruptCount },
+                },
+                time: { start: "time" in part.state ? part.state.time.start : end, end },
+              },
+            })
+          }
         }
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()

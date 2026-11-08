@@ -91,7 +91,7 @@ import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 // 261101 Red 写长文档渐进预览：从未完成的 args JSON 里容错抽取已流式到达的字段
-import { extractPartialJsonString, PartialJsonStringReader } from "../../util/partial-json-string"
+import { PartialJsonStringReader } from "../../util/partial-json-string"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
@@ -108,6 +108,20 @@ const GO_UPSELL_ACCOUNT_RATE_LIMIT_LAST_SEEN_AT = "go_upsell_account_rate_limit_
 const GO_UPSELL_ACCOUNT_RATE_LIMIT_DONT_SHOW = "go_upsell_account_rate_limit_dont_show"
 const GO_UPSELL_WINDOW = 86_400_000 // 24 hrs
 const GO_UPSELL_PROVIDERS = new Set(["redcode", "redcode-go"])
+
+// 261108 Red 审计 RC-P2-04：默认导出名只取 sessionID 前 8 位（`ses_` + 4 位随机），
+// 不同会话撞名后 Filesystem.write 直接覆盖，前一份导出记录静默消失。默认改用完整 ID，
+// 且目标已存在时追加 -2/-3，任何情况下都不静默覆盖用户已有文件。
+async function uniqueExportFilename(dir: string, filename: string): Promise<string> {
+  if (!(await Filesystem.exists(path.join(dir, filename)))) return filename
+  const ext = path.extname(filename)
+  const stem = filename.slice(0, filename.length - ext.length)
+  for (let i = 2; i < 1000; i++) {
+    const next = `${stem}-${i}${ext}`
+    if (!(await Filesystem.exists(path.join(dir, next)))) return next
+  }
+  return `${stem}-${Date.now()}${ext}`
+}
 
 function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
   if (!action) return
@@ -343,13 +357,15 @@ export function Session() {
   const sdk = useSDK()
   const editor = useEditorContext()
 
-  const queuedText = (messageID: string) =>
+  // 261108 Red 审计 RC-P2-03：列表摘要会压缩空白，编辑框必须用原文——此前编辑待发送
+  // 消息复用摘要，打开不改直接确认就把多行代码压成一行、字符串里的连续空格也被改写。
+  const queuedRawText = (messageID: string) =>
     (sync.data.part[messageID] ?? [])
       .filter((part) => part.type === "text" && !part.synthetic && !part.ignored)
       .map((part) => (part.type === "text" ? part.text : ""))
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim() || "[attachment]"
+      .join("") || "[attachment]"
+
+  const queuedText = (messageID: string) => queuedRawText(messageID).replace(/\s+/g, " ").trim() || "[attachment]"
 
   const reportQueueError = (error: unknown) => toast.show({ message: errorMessage(error), variant: "error" })
 
@@ -423,7 +439,7 @@ export function Session() {
           value: "edit",
           description: "修改待发送消息",
           onSelect: (ctx) => {
-            void DialogPrompt.show(ctx, "编辑待发送消息", { value: text }).then((updated) => {
+            void DialogPrompt.show(ctx, "编辑待发送消息", { value: queuedRawText(messageID) }).then((updated) => {
               if (updated === null) {
                 ctx.replace(() => pendingActions(sessionID, messageID))
                 return
@@ -901,18 +917,24 @@ export function Session() {
         )
         // 261105 Red 先确认撤销成功再覆盖输入框：此前 void revert 后立即 prompt.set，
         // 请求失败时撤销没生效、未发送草稿已被历史消息替换且没有任何提示。
+        // 261108 Red 审计 RC-P2-02：SDK 默认不抛错，HTTP 500 会以 { error } 解析成功返回，
+        // 只挂 .then/.catch 仍会覆盖草稿；必须显式检查 result.error。
         await sdk.client.session
           .revert({
             sessionID: route.sessionID,
             messageID: message.id,
           })
-          .then(() => {
+          .then((result) => {
+            if (result.error) {
+              toast.show({ message: errorMessage(result.error), variant: "error" })
+              return
+            }
             toBottom()
             prompt?.set(draft)
           })
           .catch((error) => {
             toast.show({
-              message: error instanceof Error ? error.message : "撤销失败",
+              message: errorMessage(error),
               variant: "error",
             })
           })
@@ -936,16 +958,23 @@ export function Session() {
         const message = revertMsg ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0) : undefined
         const failed = (error: unknown) =>
           toast.show({
-            message: error instanceof Error ? error.message : "重做失败",
+            message: errorMessage(error),
             variant: "error",
           })
         if (!message) {
           // 261105 Red 恢复成功后才清空输入框：unrevert 失败时保留用户现有草稿。
+          // 261108 Red 审计 RC-P2-02：同 undo，SDK 的 HTTP 错误是 { error } 而非抛错。
           await sdk.client.session
             .unrevert({
               sessionID: route.sessionID,
             })
-            .then(() => prompt?.set({ input: "", parts: [] }))
+            .then((result) => {
+              if (result.error) {
+                failed(result.error)
+                return
+              }
+              prompt?.set({ input: "", parts: [] })
+            })
             .catch(failed)
           return
         }
@@ -953,6 +982,9 @@ export function Session() {
           .revert({
             sessionID: route.sessionID,
             messageID: message.id,
+          })
+          .then((result) => {
+            if (result.error) failed(result.error)
           })
           .catch(failed)
       },
@@ -1263,7 +1295,7 @@ export function Session() {
           )
           const sessionMessages = full.data ?? []
 
-          const defaultFilename = `session-${sessionData.id.slice(0, 8)}.md`
+          const defaultFilename = `session-${sessionData.id}.md`
 
           const options = await DialogExportOptions.show(
             dialog,
@@ -1293,7 +1325,7 @@ export function Session() {
             await Editor.open({ value: transcript, renderer })
           } else {
             const exportDir = process.cwd()
-            const filename = options.filename.trim()
+            const filename = await uniqueExportFilename(exportDir, options.filename.trim())
             const filepath = path.join(exportDir, filename)
 
             await Filesystem.write(filepath, transcript)
@@ -2693,15 +2725,21 @@ function Write(props: ToolProps<typeof WriteTool>) {
   // 整段 raw 单次要几十毫秒、累计 7.76 秒。这里用可复用解析状态，只消费新增字符；
   // value 只留尾部窗口，切行不再扫全文。part 换了就重置状态，避免串到别的工具调用。
   const contentReader = new PartialJsonStringReader("content", PREVIEW_TAIL_CHARS)
-  let contentReaderPart: string | undefined
+  // 261108 Red 审计 RC-P2-09：filePath 此前每个 delta 都从头扫整段 raw；与 content 共用
+  // 同一个 part 生命周期，各自增量消费，路径解析不再随累计长度增长。
+  const pathReader = new PartialJsonStringReader("filePath", 1024)
+  let readerPart: string | undefined
+  const prepareReaders = () => {
+    if (readerPart === props.part.id) return
+    contentReader.reset()
+    pathReader.reset()
+    readerPart = props.part.id
+  }
   const streaming = createMemo(() => {
     if (props.part.state.status !== "pending") return undefined
     const raw = props.part.state.raw
     if (!raw) return undefined
-    if (contentReaderPart !== props.part.id) {
-      contentReader.reset()
-      contentReaderPart = props.part.id
-    }
+    prepareReaders()
     const parsed = contentReader.read(raw)
     if (!parsed || !parsed.value) return undefined
     const lines = parsed.value.split("\n")
@@ -2713,7 +2751,10 @@ function Write(props: ToolProps<typeof WriteTool>) {
   })
   const streamingPath = createMemo(() => {
     if (props.part.state.status !== "pending") return undefined
-    return extractPartialJsonString(props.part.state.raw, "filePath")?.value
+    const raw = props.part.state.raw
+    if (!raw) return undefined
+    prepareReaders()
+    return pathReader.read(raw)?.value
   })
 
   return (

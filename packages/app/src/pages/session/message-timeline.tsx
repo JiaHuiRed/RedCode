@@ -1198,7 +1198,10 @@ export function MessageTimeline(props: {
   }
 
   const bindContentRoot = (root: HTMLDivElement) => {
-    const child = root.firstElementChild
+    // 261108 Red 审计 RC-P2-06：带内嵌标题的 Web/mobile 页面里 firstElementChild 是标题
+    // （64px），正文从 1200 长到 1600 也不会触发通知。正文始终是 ScrollView 的最后一个
+    // 直接子元素（标题在前，native/virtual 内容在后）；没有标题时 last === first。
+    const child = root.lastElementChild
     attachContent(child instanceof HTMLDivElement ? child : root)
   }
 

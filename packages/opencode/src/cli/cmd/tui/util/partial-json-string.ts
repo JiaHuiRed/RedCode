@@ -114,17 +114,26 @@ export class PartialJsonStringReader {
         this.at = raw.length
         return { value: this.value, complete: true }
       }
-      this.push(ch)
-      this.at++
+      // 261108 Red 审计 RC-P2-09：普通字符按段消费。逐字符 push 在 4MiB 文档上是
+      // 400 万次字符串拼接（实测中位 1844ms）；用原生 indexOf 找下一个引号/反斜杠，
+      // 一次 slice 追加，成本从「字符数」降到「转义与引号数」。
+      const quote = raw.indexOf('"', this.at)
+      const escape = raw.indexOf("\\", this.at)
+      const end = quote < 0 ? (escape < 0 ? raw.length : escape) : escape < 0 ? quote : Math.min(quote, escape)
+      this.pushChunk(raw.slice(this.at, end))
+      this.at = end
     }
     return { value: this.value, complete: false }
   }
 
   private push(ch: string) {
-    this.value += ch
-    if (ch === "\n") this.lineCount++
+    this.pushChunk(ch)
+  }
+
+  private pushChunk(chunk: string) {
+    this.value += chunk
+    for (let i = chunk.indexOf("\n"); i >= 0; i = chunk.indexOf("\n", i + 1)) this.lineCount++
     // 超过两倍窗口才裁一次，均摊 O(1)；预览只要尾部，裁掉的前缀不再需要
     if (this.value.length > this.tailChars * 2) this.value = this.value.slice(-this.tailChars)
   }
 }
-

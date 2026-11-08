@@ -1041,8 +1041,10 @@ export const layer = Layer.effect(
         // 260813 Red 回填 compaction 前后 token，供 UI 分割线展示对比。
         // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
         if (compactionPart) {
-          const after = yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-          const tokensAfter = yield* estimate({ messages: MessageV2.filterCompacted(after), model })
+          // 261108 Red 审计 RC-P2-07：filterCompactedEffect 从最新一页往回扫，命中本次
+          // 压缩边界就停；此前先 session.messages() 全量载入再过滤，1 万条会话要读 200 页。
+          const after = yield* MessageV2.filterCompactedEffect(input.sessionID)
+          const tokensAfter = yield* estimate({ messages: after, model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({
               ...compactionPart,
