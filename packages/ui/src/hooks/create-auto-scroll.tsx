@@ -2,6 +2,7 @@ import { createEffect, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { imeComposing } from "./ime"
 
 export interface AutoScrollOptions {
   working: () => boolean
@@ -179,6 +180,9 @@ export function createAutoScroll(options: AutoScrollOptions) {
       }
       if (!active()) return
       if (store.userScrolled) return
+      // 261108 Red 组合期不追底：ResizeObserver 由输入区/内容区高度变化触发，
+      // 中文候选框展开会让它抢帧，与 message-timeline 的 imeComposing 门禁保持同一语义。
+      if (imeComposing()) return
       // ResizeObserver fires after layout, before paint.
       // Keep the bottom locked in the same frame to avoid visible
       // "jump up then catch up" artifacts while streaming content.

@@ -25,7 +25,7 @@ import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange
 import { createStore } from "solid-js/store"
 import { Select } from "@redcode-ai/ui/select"
 import { Tabs } from "@redcode-ai/ui/tabs"
-import { createAutoScroll } from "@redcode-ai/ui/hooks"
+import { createAutoScroll, imeComposing } from "@redcode-ai/ui/hooks"
 import { previewSelectedLines } from "@redcode-ai/ui/pierre/selection-bridge"
 import { Button } from "@redcode-ai/ui/button"
 import { showToast } from "@redcode-ai/ui/toast"
@@ -1745,7 +1745,9 @@ export default function Page() {
 
       dockHeight = next
 
-      if (stick) autoScroll.forceScrollToBottom()
+      // 261108 Red 组合期输入区变高（候选框/多行）不是「用户想看最新消息」，
+      // 强制追底会和虚拟列表重测量挤帧，把组合打断。
+      if (stick && !imeComposing()) autoScroll.forceScrollToBottom()
 
       if (el) scheduleScrollState(el)
       fill()
