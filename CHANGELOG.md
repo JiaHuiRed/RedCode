@@ -8,6 +8,14 @@
 
 ---
 
+### [0.17.2] - 2026-11-08
+
+- **ResizeObserver 布局循环清零：内容高度改由时间线上报，滚动决策收敛为状态机**（`ui/src/hooks/create-auto-scroll.tsx`、新增 `ui/src/hooks/auto-scroll-machine.ts`、`app/src/pages/session/message-timeline.tsx`、`session.tsx`）：content 元素此前同时被会话与 auto-scroll 两处 RO 观察，而虚拟列表行尺寸提交也在同一帧，Chrome 把每次交付报成 `ResizeObserver loop completed with undelivered notifications`（Electron renderer.log 单晚 911 条）。现在时间线在行集合/宽度/流式版本变化时 rAF 读一次高度、值变了才回调；滚动决策移植上游 #61588 的状态机（idle/following/settling/paused/detached + flight），所有入口只 dispatch，是否写 scrollTop 由 reducer 产出的 effect 决定。验证：dev 实测进入会话 4-6→0、连续滚动 1-2→0、顶部加载历史 4→0；滚动上后不被拉回、回底 resize 保持底部；状态机单测 14 条；ui/app typecheck exit 0。
+- **后台提问不再抢输入焦点，IME 组合期不误触提交与拒绝**（`app/src/pages/session/composer/session-question-dock.tsx`、`session-permission-dock.tsx`、`terminal-panel.tsx`）：提问卡片挂载时只在用户没在别处输入时才自动聚焦；答案框 Enter 与权限面板全局 Escape 在 `isComposing`/`keyCode 229` 时忽略；终端 120/240ms 延迟聚焦前检查焦点是否已被用户移走。验证：app typecheck exit 0。
+- **会话列表重建补回最近前台会话与父链**（`app/src/context/global-sync/session-cache.ts`、`context/server-sync.tsx`）：分页结果不是完整实体集合，正在查看的根会话落在分页之外会整条消失（标题/分享/回退过滤跳变）；新增 `latestForeground`，重建候选集合时沿 parentID 补齐该链，不把全部旧会话永久保留。验证：app typecheck exit 0；session-cache 9 pass（新增 latestForeground 用例）、session-trim 4 pass。
+- **窄屏关闭态文件树不再占满高度，浮窗随视口重约束**（`app/src/pages/session/file-tree-panel.tsx`、`session-side-panel.tsx`）：外层 `h-full` 改 `md:h-full` + 打开态才全高，窄屏关闭时不再把聊天区挤成 0 高；浮动工作台的视口尺寸进响应式信号，resize 时用现有 clamp 重新约束。验证：dev 实测 700px 下文件树高 0、聊天区 698px；1280px 下高度 746px 保持。
+- **spinner 动画转入合成器，提交响应不再拽回底部**（`ui/src/components/spinner.tsx`/`.css`、`app/src/pages/session.tsx`）：合成器跑不了 SVG 内部 `<rect>` 的 opacity 动画，16 个点同框时每帧重绘整张 spinner；拆成每点一层绝对定位 `<svg>`、动画挂到 svg 元素上（上游 #61562 同款）。用户已滚上去读历史时，提交响应不再 `resumeScroll` 拽回底部（上游 #61769）。验证：ui/app typecheck exit 0；spinner 布局实测容器 18x18、内部 svg 铺满；切回会话 tab 只发 4 个轻量请求、无消息分页（确认「回 tab 重载历史」在本仓不存在）。
+
 ### [0.17.1] - 2026-11-08
 
 - **压缩摘要不再复述常驻指令**（`opencode/src/session/compaction.ts` 摘要模板、`native-context.ts` summaryPrompt）：摘要落库后每轮作为历史消息重发，而 AGENTS/MEMORY/soul 的常驻规则本就随每个请求到达，摘要在 Constraints & Preferences 里再写一遍是双份成本（现场该节几乎全是常驻规则复述）。模板收窄为只记本次会话**新增、收紧或覆盖**的约束（附一句对比判据），Rules 新增「常驻指令不在任何段落复述、也不列进 Relevant Files」；native compaction 的 summaryPrompt 同步改为 session-specific。模型可见：模板固定文本在压缩请求内约 +25 token（每次压缩一次），摘要输出每轮省数百 token，方向净省；模板不在主请求固定前缀，KV 缓存布局不动。验证：opencode typecheck exit 0；native-context 21 pass、compaction 86 pass。
