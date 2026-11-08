@@ -1,8 +1,19 @@
-import { createEffect, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { imeComposing } from "./ime"
+import {
+  createAutoScrollState,
+  END_EPSILON,
+  SETTLE_MS,
+  selectOverflowAnchor,
+  selectPausesOnSelection,
+  selectUserScrolled,
+  transitionAutoScroll,
+  type AutoScrollEffect,
+  type AutoScrollEvent,
+} from "./auto-scroll-machine"
 
 export interface AutoScrollOptions {
   working: () => boolean
@@ -14,105 +25,66 @@ export interface AutoScrollOptions {
   observeContent?: boolean
 }
 
+const BOTTOM = { type: "scroll.bottom", force: false } as const
+
+const FORCE_BOTTOM = { type: "scroll.bottom", force: true } as const
+
+const DISPOSE = { type: "disposed" } as const
+
+// 261108 Red 滚动决策收敛成状态机（移植上游 #61588）：所有入口只 dispatch，
+// 是否写 scrollTop 由 reducer 产出的 effect 决定。RO/滚动/尺寸回调不再各自判断。
 export function createAutoScroll(options: AutoScrollOptions) {
-  let settling = false
+  const [state, setState] = createSignal(createAutoScrollState(untrack(options.working)))
+  const [refs, setRefs] = createStore<{ scroll?: HTMLElement; content?: HTMLElement }>({})
+  let attempts = 0
   let settleTimer: ReturnType<typeof setTimeout> | undefined
-  let autoTimer: ReturnType<typeof setTimeout> | undefined
-  let auto: { top: number; time: number } | undefined
-  let followFrame: number | undefined
 
-  const threshold = () => options.bottomThreshold ?? 10
+  // scroll/resize 在流式期间每帧都来；复用事件对象，热路径不分配。
+  const resizeEvent = { type: "resize" as const, overflow: false }
+  const scrollEvent = { type: "scroll" as const, overflow: false, scrollTop: 0, maxScroll: 0, threshold: 0 }
+  const pauseEvent = { type: "pause" as const, overflow: false }
+  const flightEvent = { type: "flight.started" as const, top: 0 }
 
-  const [store, setStore] = createStore({
-    contentRef: undefined as HTMLElement | undefined,
-    scrollRef: undefined as HTMLElement | undefined,
-    userScrolled: false,
-  })
-
-  const active = () => options.working() || settling
-
-  const distanceFromBottom = (el: HTMLElement) => {
-    return el.scrollHeight - el.clientHeight - el.scrollTop
+  const dispatch = (event: AutoScrollEvent) => {
+    const result = transitionAutoScroll(untrack(state), event)
+    setState(result.state)
+    result.effects.forEach(run)
   }
 
-  const canScroll = (el: HTMLElement) => {
-    return el.scrollHeight - el.clientHeight > 1
+  const run = (effect: AutoScrollEffect) => {
+    if (effect.type === "pin.bottom") return pin()
+    if (effect.type === "notify.interacted") return options.onUserInteracted?.()
+    clearTimeout(settleTimer)
+
+    if (effect.type === "settle.stop") return
+
+    const attempt = effect.attempt
+    settleTimer = setTimeout(() => dispatch({ type: "settle.elapsed", attempt }), SETTLE_MS)
   }
 
-  // Browsers can dispatch scroll events asynchronously. If new content arrives
-  // between us calling `scrollTo()` and the subsequent `scroll` event firing,
-  // the handler can see a non-zero `distanceFromBottom` and incorrectly assume
-  // the user scrolled.
-  const markAuto = (el: HTMLElement) => {
-    auto = {
-      top: Math.max(0, el.scrollHeight - el.clientHeight),
-      time: Date.now(),
-    }
+  const pin = () => {
+    const el = refs.scroll
 
-    if (autoTimer) clearTimeout(autoTimer)
-    autoTimer = setTimeout(() => {
-      auto = undefined
-      autoTimer = undefined
-    }, 1500)
-  }
+    if (!el || !el.isConnected) return
+    const before = el.scrollTop
 
-  const isAuto = (el: HTMLElement) => {
-    const a = auto
-    if (!a) return false
-
-    if (Date.now() - a.time > 1500) {
-      auto = undefined
-      return false
-    }
-
-    return Math.abs(el.scrollTop - a.top) < 2
-  }
-
-  const scrollToBottomNow = (behavior: ScrollBehavior) => {
-    const el = store.scrollRef
-    if (!el) return
-    markAuto(el)
-    if (behavior === "smooth") {
-      el.scrollTo({ top: el.scrollHeight, behavior })
-      return
-    }
-
+    if (el.scrollHeight - el.clientHeight - before <= END_EPSILON) return
     // `scrollTop` assignment bypasses any CSS `scroll-behavior: smooth`.
     el.scrollTop = el.scrollHeight
+    const after = el.scrollTop
+
+    // The browser queues a `scroll` event only when the position actually moved.
+    if (Math.abs(after - before) <= END_EPSILON) return
+    flightEvent.top = after
+    dispatch(flightEvent)
   }
 
-  const scrollToBottom = (force: boolean) => {
-    if (!force && !active()) return
+  const pause = () => {
+    const el = refs.scroll
 
-    if (force && store.userScrolled) setStore("userScrolled", false)
-
-    const el = store.scrollRef
-    if (!el) return
-
-    if (!force && store.userScrolled) return
-
-    const distance = distanceFromBottom(el)
-    if (distance < 2) {
-      markAuto(el)
-      return
-    }
-
-    // For auto-following content we prefer immediate updates to avoid
-    // visible "catch up" animations while content is still settling.
-    scrollToBottomNow("auto")
-  }
-
-  const stop = () => {
-    const el = store.scrollRef
-    if (!el) return
-    if (!canScroll(el)) {
-      if (store.userScrolled) setStore("userScrolled", false)
-      return
-    }
-    if (store.userScrolled) return
-
-    setStore("userScrolled", true)
-    options.onUserInteracted?.()
+    if (!el || !el.isConnected) return
+    pauseEvent.overflow = canScroll(el)
+    dispatch(pauseEvent)
   }
 
   const handleWheel = (e: WheelEvent) => {
@@ -120,150 +92,98 @@ export function createAutoScroll(options: AutoScrollOptions) {
     // If the user is scrolling within a nested scrollable region (tool output,
     // code block, etc), don't treat it as leaving the "follow bottom" mode.
     // Those regions opt in via `data-scrollable`.
-    const el = store.scrollRef
     const target = e.target instanceof Element ? e.target : undefined
     const nested = target?.closest("[data-scrollable]")
+    const el = refs.scroll
+
     if (el && nested && nested !== el) return
-    stop()
+    pause()
   }
 
   const handleScroll = () => {
-    const el = store.scrollRef
-    if (!el) return
+    const el = refs.scroll
 
-    if (!canScroll(el)) {
-      if (store.userScrolled) setStore("userScrolled", false)
-      return
-    }
-
-    if (distanceFromBottom(el) < threshold()) {
-      if (store.userScrolled) setStore("userScrolled", false)
-      return
-    }
-
-    // Ignore scroll events triggered by our own scrollToBottom calls.
-    if (!store.userScrolled && isAuto(el)) {
-      scrollToBottom(false)
-      return
-    }
-
-    stop()
+    if (!el || !el.isConnected) return
+    scrollEvent.maxScroll = el.scrollHeight - el.clientHeight
+    scrollEvent.overflow = canScroll(el)
+    scrollEvent.scrollTop = el.scrollTop
+    scrollEvent.threshold = options.bottomThreshold ?? 10
+    dispatch(scrollEvent)
   }
 
   const handleInteraction = () => {
-    if (!active()) return
+    if (!selectPausesOnSelection(untrack(state))) return
     const selection = window.getSelection()
-    if (selection && selection.toString().length > 0) {
-      stop()
-    }
+
+    if (!selection || selection.isCollapsed || selection.toString().length === 0) return
+    pause()
   }
 
-  const updateOverflowAnchor = (el: HTMLElement) => {
-    const mode = options.overflowAnchor ?? "dynamic"
-
-    if (mode === "none") {
-      el.style.overflowAnchor = "none"
-      return
-    }
-
-    if (mode === "auto") {
-      el.style.overflowAnchor = "auto"
-      return
-    }
-
-    el.style.overflowAnchor = store.userScrolled ? "auto" : "none"
-  }
-
+  // 261108 Red 内容高度变化入口：observeContent 为真时由 RO 触发，否则调用方上报。
   const contentChanged = () => {
-    const el = store.scrollRef
-    if (el && !canScroll(el)) {
-      if (store.userScrolled) setStore("userScrolled", false)
-      return
-    }
-    if (!active()) return
-    if (store.userScrolled) return
-    // 261108 Red 组合期不追底：ResizeObserver 由输入区/内容区高度变化触发，
-    // 中文候选框展开会让它抢帧，与 message-timeline 的 imeComposing 门禁保持同一语义。
+    const el = refs.scroll
+
+    if (!el || !el.isConnected) return
+    // 组合期不追底：中文候选框展开会让它抢帧，与 message-timeline 的门禁同一语义。
     if (imeComposing()) return
-    // 261108 Red 滚动延到下一帧：RO 回调里同步写 scrollTop 会让 virtua 重测量，
-    // 同一帧再次改变内容高度 → 观察-布局循环（Electron renderer.log 里 911 条
-    // ResizeObserver loop 警告的主要来源）。代价是最多多等一帧，流式下一帧仍会追。
-    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
-    followFrame = requestAnimationFrame(() => {
-      followFrame = undefined
-      if (!active()) return
-      if (store.userScrolled) return
-      scrollToBottom(false)
-    })
+    resizeEvent.overflow = canScroll(el)
+    dispatch(resizeEvent)
   }
 
   createResizeObserver(
-    () => (options.observeContent === false ? undefined : store.contentRef),
+    () => (options.observeContent === false ? undefined : refs.content),
     contentChanged,
   )
 
+  const userScrolled = createMemo(() => selectUserScrolled(state()))
+  const overflowAnchor = createMemo(() => selectOverflowAnchor(state(), options.overflowAnchor))
+
+  createEffect(() => {
+    const el = refs.scroll
+
+    if (!el) return
+    el.style.overflowAnchor = overflowAnchor()
+  })
+
+  createEventListener(() => refs.scroll, "wheel", handleWheel, { passive: true })
+
   createEffect(
-    on(options.working, (working: boolean) => {
-      settling = false
-      if (settleTimer) clearTimeout(settleTimer)
-      settleTimer = undefined
-
-      if (working) {
-        if (!store.userScrolled) scrollToBottom(true)
-        return
-      }
-
-      settling = true
-      settleTimer = setTimeout(() => {
-        settling = false
-      }, 300)
+    on(options.working, (working) => {
+      if (!working) attempts += 1
+      dispatch({ type: "working.changed", working, attempt: attempts })
     }),
   )
 
-  createEffect(() => {
-    // Track `userScrolled` even before `scrollRef` is attached, so we can
-    // update overflow anchoring once the element exists.
-    store.userScrolled
-    const el = store.scrollRef
-    if (!el) return
-    updateOverflowAnchor(el)
-  })
-
-  createEventListener(() => store.scrollRef, "wheel", handleWheel, { passive: true })
-
   onCleanup(() => {
-    if (settleTimer) clearTimeout(settleTimer)
-    if (autoTimer) clearTimeout(autoTimer)
-    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
-    followFrame = undefined
+    clearTimeout(settleTimer)
+    dispatch(DISPOSE)
   })
 
   return {
-    scrollRef: (el: HTMLElement | undefined) => setStore("scrollRef", el),
-    contentRef: (el: HTMLElement | undefined) => setStore("contentRef", el),
+    scrollRef: (el: HTMLElement | undefined) => {
+      if (el === untrack(() => refs.scroll)) return
+      setRefs("scroll", el)
+      dispatch({ type: "scroller.changed", overflow: !!el && el.isConnected && canScroll(el) })
+    },
+    contentRef: (el: HTMLElement | undefined) => setRefs("content", el),
     handleScroll,
     handleInteraction,
-    pause: stop,
-    resume: () => {
-      if (store.userScrolled) setStore("userScrolled", false)
-      scrollToBottom(true)
-    },
-    // 260923 Red session 切换时只清交互状态、不主动滚动：userScrolled 是「用户正在看
-    //   历史」的单会话状态，Page() 级别的 autoScroll 实例跨会话复用会把它带给下一个会话，
-    //   shouldAnchorBottom() 随之恒假、入场不锚底。auto 记录一并清掉，避免旧元素的
-    //   scrollTop 被拿去和新会话比对。是否重新到底交给调用方的 hash / pendingMessage 链路。
-    reset: () => {
-      if (autoTimer) clearTimeout(autoTimer)
-      autoTimer = undefined
-      auto = undefined
-      if (followFrame !== undefined) cancelAnimationFrame(followFrame)
-      followFrame = undefined
-      if (store.userScrolled) setStore("userScrolled", false)
-    },
-    scrollToBottom: () => scrollToBottom(false),
-    forceScrollToBottom: () => scrollToBottom(true),
+    pause,
+    resume: () => dispatch(FORCE_BOTTOM),
+    scrollToBottom: () => dispatch(BOTTOM),
+    forceScrollToBottom: () => dispatch(FORCE_BOTTOM),
     // 261108 Red observeContent=false 时由调用方驱动的「内容高度变了」入口。
     contentChanged,
-    userScrolled: () => store.userScrolled,
+    userScrolled,
+    // 260923 Red 会话切换：清交互状态与在途 settle，不主动滚动。
+    reset: () => {
+      clearTimeout(settleTimer)
+      settleTimer = undefined
+      setState(createAutoScrollState(untrack(options.working)))
+    },
   }
+}
+
+function canScroll(el: HTMLElement) {
+  return el.scrollHeight - el.clientHeight > 1
 }
