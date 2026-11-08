@@ -1,4 +1,5 @@
-> 本包 = **GUI**（`packages/desktop`），对应人格 **GUI 助手**。在此工作即 GUI 的主场。
+> 本包 = **GUI**（`packages/desktop`）：Electron main/renderer、sidecar 与打包入口。
+> 人格/身份由会话绑定的 Soul 决定，不按客户端或目录指定。
 
 # Desktop package notes
 

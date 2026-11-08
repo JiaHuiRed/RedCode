@@ -79,9 +79,9 @@
 
 | 批 | 内容 | 风险 | 状态 |
 | --- | --- | --- | --- |
-| B1 | explore.md：索引刷新指引 + git 只读白名单 + 三处「没有 bash」旧说明同步；execute.md：worktree 隔离场景说明；task.ts guard 同步摘 bash（260929 假门票教训：guard 与白名单必须同批摘/加）；agent.test.ts 正测 14 断言 | 低（提示词 + 权限白名单，各自独立可回退） | **已做 2026-10-11**（未 commit） |
-| B2 | task.ts：explore+isolation 拒绝、explore resume 放开 + 2 次上限；task-runtime.ts：删占位假字段；task.md schema description 同步 | 中（动 task 工具，需要定向测试） | 待批 |
-| B3 | 本文件与底本互回链；全局记忆沉淀调用方守则 | 零 | 随 B1/B2 |
+| B1 | explore.md：索引刷新指引 + git 只读白名单 + 三处「没有 bash」旧说明同步；execute.md：worktree 隔离场景说明；task.ts guard 同步摘 bash（260929 假门票教训：guard 与白名单必须同批摘/加）；agent.test.ts 正测 14 断言 | 低（提示词 + 权限白名单，各自独立可回退） | **已落地**（261011 提交） |
+| B2 | task.ts：explore+isolation 拒绝、explore resume 放开 + 2 次上限；task-runtime.ts：删占位假字段；task.md schema description 同步 | 中（动 task 工具，需要定向测试） | **部分落地**：explore+isolation 拒绝已做（261107）；结果投影改纯文本已做（261107）；explore 续跑 **缓办**（`task_id` 仍明确拒绝，等观察数据） |
+| B3 | 本文件与底本互回链；全局记忆沉淀调用方守则 | 零 | 已随 B1/B2 回链 |
 
 `$(...)` 验证项已有答案，无需新测试：shell.test.ts:491-501（bash）与 :547-557（PowerShell）已断言命令替换内层是**独立授权节点**（`cat "file"` / `Get-Content …` 单独成 pattern）——explore 白名单下 `git log $(cat x)` 的内层 `cat x` 不命中即 deny，结构性安全成立。
 

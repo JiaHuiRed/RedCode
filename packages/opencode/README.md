@@ -1,15 +1,30 @@
-# js
+# RedCode TUI 核心
 
-To install dependencies:
+本包是 RedCode 的 TUI / 服务端核心（CLI、plugin、MCP、Effect、session）。
+
+## 依赖
+
+从仓库根目录安装：
 
 ```bash
 bun install
 ```
 
-To run:
+## 开发
 
 ```bash
-bun run index.ts
+# 交互式 TUI（Windows 下用 mcp-process-mgmt 或后台进程跑，不要阻塞前台）
+bun run dev
+
+# headless 服务端（GUI / Web UI 的开发后端）
+bun run --conditions=browser ./src/index.ts serve --port 4097
 ```
 
-This project was created using `bun init` in bun v1.2.12. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+`bun run index.ts` 不存在——入口在 `src/index.ts`，且必须带 `--conditions=browser`。
+
+## 验证
+
+```bash
+bun run typecheck
+bun run test:smoke
+```

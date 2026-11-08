@@ -502,7 +502,7 @@ token、缓存读写与命中率、花费。
 | `/goal done`       | 标为完成，自动归档教训                                                                              |
 | `/soul [ID]`       | 打开 Soul 选择器，或按 ID 直接选择（TUI）；只影响后续新会话，见 [5.2](#52-选择-soul)                |
 | `/recall <关键词>` | 按关键词从记忆库（含 supermemory.db）语义召回历史教训                                               |
-| `/subtask <任务>`  | 派后台子任务，上下文隔离不污染当前会话                                                              |
+| `/subtask <任务>`  | 在隔离子会话中执行子任务，上下文隔离不污染当前会话（父流程等待结果）                                |
 | `/commit`          | 按 conventional commit 格式提交代码                                                                 |
 | `/changelog`       | 生成 CHANGELOG.md 条目                                                                              |
 | `/issues`          | 查看或创建 GitHub issues                                                                            |
@@ -521,7 +521,9 @@ token、缓存读写与命中率、花费。
 ### 8.1 钉住的目标：钉了之后在哪看
 
 目标不是纯 prompt 引导，是落库状态——钉住之后每轮都会注入系统提示，直到 `/goal done` 或
-`/goal clear`。
+`/goal clear`。落库依赖 `goal_set` / `goal_done` / `goal_clear` 三个工具，而它们默认关闭：
+需要环境变量 `REDCODE_ENABLE_GOAL_TOOLS=true`（不是配置文件项）。工具没开时 `/goal`
+仍会把目标写进本轮提示词，但不会持久化，换会话/重启就丢。
 
 | 界面 | 位置                     | 显示什么                           |
 | ---- | ------------------------ | ---------------------------------- |

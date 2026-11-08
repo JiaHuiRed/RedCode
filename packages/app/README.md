@@ -1,37 +1,34 @@
-## Usage
+# RedCode Web UI
 
-Dependencies for these templates are managed with [pnpm](https://pnpm.io) using `pnpm up -Lri`.
+本包是 RedCode 的 SolidJS Web UI。它既可以被 Electron GUI 复用，也可以在浏览器里单独开发。
 
-This is the reason you see a `pnpm-lock.yaml`. That said, any package manager will work. This file can safely be removed once you clone a template.
+## 开发（全栈一键启动）
 
 ```bash
-$ npm install # or pnpm install or yarn install
+cd packages/app
+bun run dev
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+`script/dev.ts` 会同时启动：
 
-## Available Scripts
+- 后端：`packages/opencode` 的 headless 服务端，默认 `http://localhost:4097`
+- 前端：Vite dev server，默认 `http://localhost:5173`
 
-In the project directory, you can run:
+端口可用 `RC_SERVER_PORT` / `RC_VITE_PORT` 覆盖。只启动 Vite（`bun run start` 或
+`bunx vite`）不会拉起后端，页面需要另开一个 4097 的后端，否则请求会失败。
 
-### `npm run dev` or `npm start`
+## 构建
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+```bash
+bun run build
+```
 
-The page will reload if you make edits.<br>
+产物在 `dist/`，供 GUI 打包或静态托管使用。
 
-### `npm run build`
+## E2E 测试
 
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## E2E Testing
-
-Playwright starts the Vite dev server automatically via `webServer`, and UI tests expect an opencode backend at `localhost:4096` by default.
+Playwright 会自行拉起 Vite dev server。E2E 有独立的端口默认值（与 `bun run dev` 不同）：
+Vite `3000`、后端 `4096`，都可用环境变量覆盖。
 
 ```bash
 bunx playwright install chromium
@@ -39,12 +36,8 @@ bun run test:e2e:local
 bun run test:e2e:local -- --grep "settings"
 ```
 
-Environment options:
+环境选项：
 
-- `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT` (backend address, default: `localhost:4096`)
-- `PLAYWRIGHT_PORT` (Vite dev server port, default: `3000`)
-- `PLAYWRIGHT_BASE_URL` (override base URL, default: `http://localhost:<PLAYWRIGHT_PORT>`)
-
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
+- `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT`（后端地址，默认 `localhost:4096`）
+- `PLAYWRIGHT_PORT`（Vite dev server 端口，默认 `3000`）
+- `PLAYWRIGHT_BASE_URL`（覆盖 base URL，默认 `http://localhost:<PLAYWRIGHT_PORT>`）
