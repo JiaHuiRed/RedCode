@@ -91,7 +91,7 @@ import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
 // 261101 Red 写长文档渐进预览：从未完成的 args JSON 里容错抽取已流式到达的字段
-import { extractPartialJsonString } from "../../util/partial-json-string"
+import { extractPartialJsonString, PartialJsonStringReader } from "../../util/partial-json-string"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
@@ -2688,14 +2688,28 @@ function Write(props: ToolProps<typeof WriteTool>) {
   // content 的已到达部分，长文档生成期间给「正在写 + 行数 + 尾部预览」的活反馈，
   // 完成后仍走下面的全量渲染视图。
   const PREVIEW_TAIL_LINES = 8
+  const PREVIEW_TAIL_CHARS = 4096
+  // 261108 Red 审计 RC-P2-08：预览每来一个 delta 都会重算，而 1 MiB 文档下从头解析
+  // 整段 raw 单次要几十毫秒、累计 7.76 秒。这里用可复用解析状态，只消费新增字符；
+  // value 只留尾部窗口，切行不再扫全文。part 换了就重置状态，避免串到别的工具调用。
+  const contentReader = new PartialJsonStringReader("content", PREVIEW_TAIL_CHARS)
+  let contentReaderPart: string | undefined
   const streaming = createMemo(() => {
     if (props.part.state.status !== "pending") return undefined
     const raw = props.part.state.raw
     if (!raw) return undefined
-    const parsed = extractPartialJsonString(raw, "content")
+    if (contentReaderPart !== props.part.id) {
+      contentReader.reset()
+      contentReaderPart = props.part.id
+    }
+    const parsed = contentReader.read(raw)
     if (!parsed || !parsed.value) return undefined
     const lines = parsed.value.split("\n")
-    return { lineCount: lines.length, tail: lines.slice(-PREVIEW_TAIL_LINES).join("\n"), complete: parsed.complete }
+    return {
+      lineCount: contentReader.lines,
+      tail: lines.slice(-PREVIEW_TAIL_LINES).join("\n"),
+      complete: parsed.complete,
+    }
   })
   const streamingPath = createMemo(() => {
     if (props.part.state.status !== "pending") return undefined
