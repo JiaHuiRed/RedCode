@@ -1811,7 +1811,12 @@ export default function Page() {
         comments.clear()
         resumeScroll()
       }}
-      onResponseSubmit={resumeScroll}
+      onResponseSubmit={() => {
+        // 261108 Red 上游 #61769：用户滚上去读历史时，提交响应不把他拽回底部；
+        // 本来就在跟底才继续跟随，「回到底部」按钮仍在。
+        if (autoScroll.userScrolled()) return
+        resumeScroll()
+      }}
       followup={
         params.id && !isChildSession()
           ? {

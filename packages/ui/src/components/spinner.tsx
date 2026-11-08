@@ -12,30 +12,28 @@ const squares = Array.from({ length: 16 }, (_, i) => ({
   corner: cornerIndices.has(i),
 }))
 
+// 261108 Red 每个点单独一层 <svg>（照搬上游 #61562）：合成器能跑 <svg> 元素本身的
+// opacity 动画，跑不了 svg 内部 <rect> 的——以前 16 个 rect 同框，每帧重绘整张
+// spinner；拆开后动画走合成器，不再触发重排/重绘。
 export function Spinner(props: {
   class?: string
   classList?: ComponentProps<"div">["classList"]
   style?: ComponentProps<"div">["style"]
 }) {
   return (
-    <svg
+    <span
       {...props}
-      viewBox="0 0 15 15"
       data-component="spinner"
       classList={{
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}
-      fill="currentColor"
     >
       <For each={squares}>
         {(square) => (
-          <rect
-            x={square.x}
-            y={square.y}
-            width="3"
-            height="3"
-            rx="1"
+          <svg
+            viewBox="0 0 15 15"
+            fill="currentColor"
             style={{
               opacity: square.corner ? 0 : undefined,
               animation: square.corner
@@ -44,9 +42,11 @@ export function Spinner(props: {
               "animation-fill-mode": square.corner ? undefined : "both",
               "animation-delay": square.corner ? undefined : `${square.delay}s`,
             }}
-          />
+          >
+            <rect x={square.x} y={square.y} width="3" height="3" rx="1" />
+          </svg>
         )}
       </For>
-    </svg>
+    </span>
   )
 }
