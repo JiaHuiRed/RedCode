@@ -40,7 +40,6 @@ import { SessionProcessor } from "./processor"
 import * as PrefixShape from "./prefix-shape"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
-import { Wildcard } from "@redcode-ai/core/util/wildcard"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -1272,31 +1271,11 @@ export const layer = Layer.effect(
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
 
-      // 261108 Red 工具开关只能收紧权限，不得放宽（审计 RC-P1-01）。此前这里是整体替换：
-      // 传 { edit: true } 就把继承来的 edit:deny 换成 allow —— evaluate 用 findLast，后写
-      // 规则覆盖先写，等于子代理能力可以超过父级。现在保留继承规则，只替换同权限名的项，
-      // 且显式 deny 的工具连 enabled=true 也不提升。
-      const switches = input.tools ?? {}
-      const inherited = session.permission ?? []
-      // 继承规则全部保留，工具开关只做两件事：
-      // ① enabled=false 追加一条 deny 覆盖（evaluate 用 findLast，后写优先）—— 收紧永远合法；
-      // ② enabled=true 仅在该工具完全没有既有规则时补 allow。
-      // 这样父级 deny（含 edit:"src/**" 这类窄 pattern）不会被任何开关提升，父级 ask 也保持 ask。
-      const permissions: Permission.Rule[] = [...inherited]
-      for (const [tool, enabled] of Object.entries(switches)) {
-        if (!enabled) {
-          if (permissions.some((rule) => rule.permission === tool && rule.action === "deny" && rule.pattern === "*"))
-            continue
-          permissions.push({ permission: tool, action: "deny", pattern: "*" })
-          continue
-        }
-        if (permissions.some((rule) => Wildcard.match(tool, rule.permission))) continue
-        permissions.push({ permission: tool, action: "allow", pattern: "*" })
-      }
-      if (permissions.length > 0) {
-        session.permission = permissions
-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
-      }
+      // 261108 Red 审计 RC-NEW-01：tools 开关不再写回 session.permission。
+      // 旧实现把 enabled=false 转成持久 deny，之后 enabled=true 因为「已有同名规则」被跳过，
+      // findLast 仍命中旧 deny —— 工具开关成了只能关不能开的单向开关。
+      // 开关是「本次请求」的临时收紧，由 loop 每步用 Permission.applySwitches 现算；
+      // 继承规则本身保持不可放宽（见 applySwitches：deny/ask 永不被 enabled=true 提升）。
 
       if (input.noReply === true) return message
 
@@ -1616,9 +1595,23 @@ export const layer = Layer.effect(
         if (!agentInfo) {
           throw yield* agentNotFound({ sessionID, name: lastUser.agent })
         }
+        const sessionInfo = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        // 261108 Red 审计 RC-NEW-01：tools 开关只在本次用户轮生效，不落库。每步现算，
+        // 下一轮没有开关就回到继承规则；enabled=true 不会提升任何继承的 deny/ask。
+        const switches = lastUser.tools ?? {}
         const stepSettings = {
           user: lastUser,
-          session: yield* sessions.get(sessionID).pipe(Effect.orDie),
+          session:
+            Object.keys(switches).length > 0
+              ? {
+                  ...sessionInfo,
+                  permission: Permission.applySwitches(
+                    sessionInfo.permission ?? [],
+                    switches,
+                    agentInfo.permission ?? [],
+                  ),
+                }
+              : sessionInfo,
           model: yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID),
           agent: agentInfo,
         }

@@ -384,6 +384,24 @@ export function merge(...rulesets: Ruleset[]): Rule[] {
   return [...PermissionV2.merge(...rulesets)]
 }
 
+// 261108 Red 审计 RC-NEW-01：tools 开关是「本次请求」的临时收紧，不写回 session.permission。
+// enabled=false 追加 deny 覆盖（收紧永远合法）；enabled=true 只在继承规则（含 agent 级）里
+// 完全没有同名规则时补 allow，继承的 deny/ask 永远不会被提升。调用方每轮现算，会话因此可逆——
+// 同一会话从允许 → 临时禁用 → 重新启用能回到原状态，不会变成只能关不能开的单向开关。
+export function applySwitches(ruleset: Ruleset, switches: Record<string, boolean>, prior: Ruleset = []): Rule[] {
+  const rules = [...ruleset]
+  for (const [tool, enabled] of Object.entries(switches)) {
+    if (!enabled) {
+      if (rules.some((rule) => rule.permission === tool && rule.action === "deny" && rule.pattern === "*")) continue
+      rules.push({ permission: tool, action: "deny", pattern: "*" })
+      continue
+    }
+    if ([...prior, ...rules].some((rule) => Wildcard.match(tool, rule.permission))) continue
+    rules.push({ permission: tool, action: "allow", pattern: "*" })
+  }
+  return rules
+}
+
 export function disabled(tools: string[], ruleset: Ruleset): Set<string> {
   return PermissionV2.disabled(tools, ruleset)
 }

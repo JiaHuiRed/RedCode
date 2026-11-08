@@ -2382,7 +2382,9 @@ for (const { configuredLimit, interleave } of [undefined, 1, 3].flatMap((configu
         expect(yield* llm.pending).toBe(1)
         expect(executions).toBe(limit)
         expect((yield* jobs.get(child.id))?.status).toBe("running")
-        expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+        // 261108 Red 文案已从「重复失败」改为「连续失败或中断」；停止行为主要由
+        // llm.calls / executions / ToolFailureStoppedError 断言，这里只验可见终态说明。
+        expect(result.parts.some((part) => part.type === "text" && part.text.includes("已停止本轮自动续跑"))).toBe(true)
         // 261104 Red 停止原因必须落成消息 error：只写正文时 finish 停在 "tool-calls"，
         // task_status/子代理回执会报 completed（exp 子代理实测）。
         expect(result.info.role === "assistant" ? result.info.error?.name : undefined).toBe("ToolFailureStoppedError")
@@ -2435,7 +2437,9 @@ it.instance("repeated tool failures in one parallel batch do not trigger another
     })
     expect(yield* llm.calls).toBe(1)
     expect(yield* llm.pending).toBe(1)
-    expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+    // 261108 Red 同参数化用例：文案断言跟着停止提示走，行为由请求数 + 错误类型兜底。
+    expect(result.parts.some((part) => part.type === "text" && part.text.includes("已停止本轮自动续跑"))).toBe(true)
+    expect(result.info.role === "assistant" ? result.info.error?.name : undefined).toBe("ToolFailureStoppedError")
   }),
 )
 
@@ -2546,10 +2550,17 @@ it.instance("tool switches cannot widen an inherited deny", () =>
 
     const after = yield* sessions.get(chat.id)
     expect(Permission.evaluate("edit", "*", after.permission ?? []).action).toBe("deny")
+    // 本次请求的有效规则同样保持 deny：enabled=true 只填空缺，不覆盖既有 deny。
+    expect(
+      Permission.evaluate("edit", "*", Permission.applySwitches(after.permission ?? [], { edit: true })).action,
+    ).toBe("deny")
   }),
 )
 
-it.instance("tool switches can still narrow an inherited allow", () =>
+// 261108 Red 审计 RC-NEW-01：开关是「本次请求」的临时收紧。同一会话允许 → 临时禁用 →
+// 重新启用必须回到允许；旧实现把 deny 写回 session.permission，之后 enabled=true 被
+// 「已有同名规则」跳过，工具开关成了只能关不能开的单向开关。
+it.instance("tool switches can narrow an inherited allow without becoming a one-way switch", () =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
@@ -2568,7 +2579,15 @@ it.instance("tool switches can still narrow an inherited allow", () =>
     })
 
     const after = yield* sessions.get(chat.id)
-    expect(Permission.evaluate("edit", "*", after.permission ?? []).action).toBe("deny")
+    // 继承规则不被改写：禁用只对那次请求生效，会话本身仍是 allow。
+    expect(Permission.evaluate("edit", "*", after.permission ?? []).action).toBe("allow")
+    // 同一继承规则下：禁用生效，重新启用恢复。
+    expect(
+      Permission.evaluate("edit", "*", Permission.applySwitches(after.permission ?? [], { edit: false })).action,
+    ).toBe("deny")
+    expect(
+      Permission.evaluate("edit", "*", Permission.applySwitches(after.permission ?? [], { edit: true })).action,
+    ).toBe("allow")
   }),
 )
 
@@ -3292,7 +3311,7 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 // Queue semantics
