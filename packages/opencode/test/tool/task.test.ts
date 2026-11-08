@@ -368,7 +368,10 @@ describe("tool.task", () => {
       expect(record.result?.status).toBe("ready_for_review")
       expect(record.result?.summary).toBe("evidence")
       expect(record.result?.toolCalls).toBeUndefined()
-      expect(result.output).toContain("ready_for_review")
+      // 261108 Red 输出契约跟 66a45fc2 后的形状：status 字样不再进 output，
+      // 改为 task_id 续接提示 + <task_result> 摘要块；语义由上面 record 三断言钉住
+      expect(result.output).toContain("task_id:")
+      expect(result.output).toContain("<task_result>")
     }),
   )
 

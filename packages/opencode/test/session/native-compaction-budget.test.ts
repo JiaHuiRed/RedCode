@@ -45,7 +45,9 @@ describe("NativeCompaction.resolve 默认值", () => {
       reminderTokens: 220_000,
       softRatio: 0.8,
       pruneRatio: 0.9,
-      summaryMaxTokens: 16_000,
+      // 261108 Red 默认值跟 1ec702bb（审查反馈：摘要预算 12k）——resolve(undefined)
+      // 的期望字面量钉的是默认档，此前漏跟
+      summaryMaxTokens: 12_000,
       summaryMaxBytes: 98_304,
       retainedMaxTokens: 20_000,
       activeMaxTokens: 80_000,

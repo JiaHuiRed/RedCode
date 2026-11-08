@@ -452,7 +452,11 @@ describe("native compression ledger", () => {
     const latest = yield* f.session.updateMessage({ ...f.user, id: MessageID.ascending(), time: { created: 5 } })
     yield* f.session.updatePart({ id: PartID.ascending(), messageID: latest.id, sessionID: f.chat.id, type: "text", text: "Current request." })
     const messages = yield* f.session.messages({ sessionID: f.chat.id })
-    const tight = { ...limits, activeMaxTokens: 300, activeMaxBytes: 1600 }
+    // 261108 Red 重标定 (300,1600)→(400,1680)：e966792a 给块渲染补框架语义后基座
+    // 长到 ~716 字符，旧预算两条闸都卡死——一条工具记录 302 tok / 699B，300 卡 token
+    // 闸、1600 卡字节闸（差 8 字节），「新存旧汰」的优先级语义失锚。新预算恰一条
+    // （302 tok / 1608B）存活、两条（~2300B）仍被汰，原意图保持。
+    const tight = { ...limits, activeMaxTokens: 400, activeMaxBytes: 1680 }
     const input = {
       sessionID: f.chat.id, messages, limits: tight, mode: "auto" as const, requestID: "global-fresh",
       ranges: [
