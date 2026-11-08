@@ -168,8 +168,11 @@ export function FileTreePanel(props: {
       id="file-tree-panel"
       aria-hidden={!fileOpen()}
       inert={!fileOpen()}
-      class="relative min-w-0 h-full shrink-0 overflow-hidden"
+      class="relative min-w-0 shrink-0 overflow-hidden md:h-full"
       classList={{
+        // 261108 Red 窄屏（flex-col）关闭时不能带 h-full：宽度虽为 0，高度仍吃满父容器，
+        // 把聊天区挤成 0 高。桌面行布局靠 md:h-full 保持全高。
+        "h-full": fileOpen(),
         "pointer-events-none": !fileOpen(),
         "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
           !props.size.active(),

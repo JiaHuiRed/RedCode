@@ -1,4 +1,4 @@
-import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, type JSX } from "solid-js"
+import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
@@ -85,16 +85,28 @@ export function SessionSidePanel(props: {
   const [gesture, setGesture] = createStore({
     preview: undefined as { x: number; y: number; width: number; height: number } | undefined,
   })
-  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight })
+  // 261108 Red 视口尺寸进响应式依赖：浮窗位置原来只在其它状态变化时重算，
+  // 窗口缩小且不跨断点就一直停在屏幕外。resize 触发重渲染，既有 clamp 会重新约束。
+  const [viewportSize, setViewportSize] = createSignal({
+    width: typeof window === "undefined" ? 0 : window.innerWidth,
+    height: typeof window === "undefined" ? 0 : window.innerHeight,
+  })
+  onMount(() => {
+    if (typeof window === "undefined") return
+    const sync = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener("resize", sync)
+    onCleanup(() => window.removeEventListener("resize", sync))
+  })
+  const viewport = () => viewportSize()
   const floatingRect = () => {
-    const width = Math.min(600, window.innerWidth - 24)
+    const width = Math.min(600, viewport().width - 24)
     return clampWorkbenchFloat(
       gesture.preview ??
         view().workbench.floating() ?? {
-          x: window.innerWidth - width - 24,
+          x: viewport().width - width - 24,
           y: 80,
           width,
-          height: Math.min(720, window.innerHeight - 104),
+          height: Math.min(720, viewport().height - 104),
         },
       viewport(),
     )
