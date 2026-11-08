@@ -425,6 +425,10 @@ export const {
         }
         case "message.removed": {
           const messages = store.message[event.properties.sessionID]
+          // 261108 Red 审计 RC-P2-02：其他客户端同步过来的删除可能命中未加载会话，
+          // store 里没有这个 key 时直接 findIndex 会 TypeError。没有缓存就是已经没了，
+          // 幂等跳过；不要顺手建空数组，那会把「未加载」伪装成「空会话」。
+          if (!messages) break
           // 260814 Red 线性定位（数组 ≤100）：二分只对排序键成立，而数组按 created 排
           const index = messages.findIndex((m) => m.id === event.properties.messageID)
           if (index >= 0) {
@@ -493,6 +497,8 @@ export const {
 
         case "message.part.removed": {
           const parts = store.part[event.properties.messageID]
+          // 261108 Red 审计 RC-P2-02：同 message.removed，未缓存消息的 part 删除同样要幂等跳过。
+          if (!parts) break
           const result = Binary.search(parts, event.properties.partID, (p) => p.id)
           if (result.found) {
             setStore(

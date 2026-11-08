@@ -422,14 +422,28 @@ function ApiMethod(props: ApiMethodProps) {
       }
       onConfirm={async (value) => {
         if (!value) return
-        await sdk.client.auth.set({
-          providerID: props.providerID,
-          auth: {
-            type: "api",
-            key: value,
-            ...(props.metadata ? { metadata: props.metadata } : {}),
-          },
-        })
+        // 261108 Red 审计 RC-P2-10：auth.set 没传 throwOnError，HTTP/网络失败时只是一份
+        // { error } 返回值，流程照样往下走，最后弹「已保存」并进模型选择 —— 假的成功。
+        // 失败必须停在当前对话框、给出错误并保留输入。
+        try {
+          await sdk.client.auth.set(
+            {
+              providerID: props.providerID,
+              auth: {
+                type: "api",
+                key: value,
+                ...(props.metadata ? { metadata: props.metadata } : {}),
+              },
+            },
+            { throwOnError: true },
+          )
+        } catch (error) {
+          toast.show({
+            variant: "error",
+            message: `保存凭据失败：${error instanceof Error ? error.message : String(error)}`,
+          })
+          return
+        }
         await sdk.client.instance.dispose()
         await sync.bootstrap()
         // 261022 Red 目录懒加载：先等目录就位再判重，否则「还没回来」会被误判成「未配置」。

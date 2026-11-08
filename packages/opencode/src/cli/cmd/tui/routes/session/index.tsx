@@ -1218,10 +1218,17 @@ export function Session() {
         try {
           const sessionData = session()
           if (!sessionData) return
-          const sessionMessages = messages()
+          // 261108 Red 审计 RC-P2-01：此前取 sync 的 100 条窗口，长会话导出的记录会被
+          // 静默截断（150 条只导 100 条）。服务端 limit:0 表示全量（handlers/session.ts
+          // messages），失败则抛错走 catch，不给用户一份看起来完整的残缺记录。
+          const full = await sdk.client.session.messages(
+            { sessionID: sessionData.id, limit: 0 },
+            { throwOnError: true },
+          )
+          const sessionMessages = full.data ?? []
           const transcript = formatTranscript(
             sessionData,
-            sessionMessages.map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+            sessionMessages as Parameters<typeof formatTranscript>[1],
             {
               thinking: show思考中(),
               toolDetails: showDetails(),
@@ -1249,7 +1256,12 @@ export function Session() {
         try {
           const sessionData = session()
           if (!sessionData) return
-          const sessionMessages = messages()
+          // 261108 Red 审计 RC-P2-01：同 /copy，导出必须取全量而不是 100 条窗口。
+          const full = await sdk.client.session.messages(
+            { sessionID: sessionData.id, limit: 0 },
+            { throwOnError: true },
+          )
+          const sessionMessages = full.data ?? []
 
           const defaultFilename = `session-${sessionData.id.slice(0, 8)}.md`
 
@@ -1266,7 +1278,7 @@ export function Session() {
 
           const transcript = formatTranscript(
             sessionData,
-            sessionMessages.map((msg) => ({ info: msg, parts: sync.data.part[msg.id] ?? [] })),
+            sessionMessages as Parameters<typeof formatTranscript>[1],
             {
               thinking: options.thinking,
               toolDetails: options.toolDetails,

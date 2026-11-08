@@ -253,16 +253,21 @@ export const TaskStatusTool = Tool.define(
           ? yield* jobs.wait({ id: params.task_id, timeout: params.timeout_ms ?? DEFAULT_TIMEOUT })
           : { info: yield* jobs.get(params.task_id), timedOut: false }
       const info = waited.info
-      const inspected = info
-        ? {
-            result: {
-              state: info.status,
-              text: yield* jobText(params.task_id, info),
-            },
-            timedOut: waited.timedOut,
-          }
-        : params.wait === true
-          ? yield* waitForTerminal(params.task_id, params.timeout_ms ?? DEFAULT_TIMEOUT, warnMs)
+      // 261108 Red 审计 RC-P2-03：此前只要 jobs.get 拿得到 info 就直接用 jobText，
+      // 把 inspect 里的重试/停滞诊断整段绕过去了 —— 后台任务跑 27 分钟也只回一句
+      // "Task is still running."。非 wait 分支统一走 inspect：它自己会取 job，并在
+      // busy/retry 时补 stallWarning；wait 分支已在等终态，不需要再判停滞。
+      const inspected =
+        params.wait === true
+          ? info
+            ? {
+                result: {
+                  state: info.status,
+                  text: yield* jobText(params.task_id, info),
+                },
+                timedOut: waited.timedOut,
+              }
+            : yield* waitForTerminal(params.task_id, params.timeout_ms ?? DEFAULT_TIMEOUT, warnMs)
           : { result: yield* inspect(params.task_id, warnMs), timedOut: false }
       const text = inspected.timedOut
         ? `Timed out after ${params.timeout_ms ?? DEFAULT_TIMEOUT}ms while waiting for task completion.`
