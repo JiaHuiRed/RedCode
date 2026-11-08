@@ -23,7 +23,9 @@ export function join(text: string, bom: boolean) {
 // 实测 20000 样本里 5 个汉字往上、GBK 字节凑成合法 UTF-8 的次数为 0；反过来「GBK
 // 解码成功 → 就是 GBK」毫无价值，GBK 太宽松，8 个汉字的 UTF-8 字节流有 31% 能被它
 // 照单全收。所以顺序固定：BOM → 严格 UTF-8 → 才退系统代码页。
-const SYSTEM_ENCODING = (() => {
+// 261108 Red 导出供测试分支用：编码护栏测试的期望值依赖这里猜中的遗留代码页
+// （zh locale → gb18030，en → windows-1252），断言要按它分流。
+export const SYSTEM_ENCODING = (() => {
   // 退到哪个遗留代码页只能靠猜，按 locale 挑一个最可能的。猜错了也不会毁文件 ——
   // 非 UTF-8 的原文一律禁止写回（见 detectEncodingChange），最坏情况只是读出来是花的。
   const locale = (() => {

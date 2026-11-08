@@ -732,7 +732,7 @@ describe("tool.read 编码检测", () => {
     0xa3, 0xba, 0xcf, 0xee, 0xc4, 0xbf, 0xb1, 0xa8, 0xb1, 0xed, 0x0a,
   ])
 
-  it.instance("GBK 文件按 GBK 解，不再满屏 U+FFFD", () =>
+  it.instance("GBK 文件按检测出的遗留编码解，不再满屏 U+FFFD", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const filepath = path.join(test.directory, "gbk.txt")
@@ -740,8 +740,11 @@ describe("tool.read 编码检测", () => {
 
       const result = yield* run({ filePath: filepath })
 
-      expect(result.output).toContain("中文测试内容")
-      expect(result.output).toContain("第二行：项目报表")
+      // 261108 Red 期望文本从同一条检测链解出：SYSTEM_ENCODING 随 ICU locale 变
+      // （dev 机 zh→gb18030，CI en-US→windows-1252），read 产出必须与它一致，不能硬编码中文
+      for (const line of Bom.decode(GBK).text.split("\n").filter(Boolean)) {
+        expect(result.output).toContain(line)
+      }
       expect(result.output).not.toContain("�")
     }),
   )

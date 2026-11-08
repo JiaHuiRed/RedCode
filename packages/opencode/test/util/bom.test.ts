@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { decode, detectCrBloat, detectEncodingChange, detectGarbled, sniff, SNIFF_BYTES } from "@/util/bom"
+import { decode, detectCrBloat, detectEncodingChange, detectGarbled, sniff, SNIFF_BYTES, SYSTEM_ENCODING } from "@/util/bom"
 
 // 260616 Red 回归测试：乱码护栏。今天 SKILL.md 被 GBK 错解 UTF-8 写成 72 个 PUA，
 // 这套测试锁住"正常放行 / 乱码拦截 / 不误伤图标"的阈值行为，防以后阈值漂移。
@@ -109,10 +109,18 @@ describe("sniff / decode (读取侧编码检测)", () => {
     expect(decode(new Uint8Array()).text).toBe("")
   })
 
-  test("真 GBK 不认成 utf-8，且能解出正确中文", () => {
+  test("真 GBK 不认成 utf-8，遗留编码侧解出什么由 locale 决定", () => {
+    // 261108 Red 「解出正确中文」只在猜中 gb18030（zh locale）时成立；CI（en-US→
+    // windows-1252）解出的是拉丁乱码。locale 无关要锁的是：不误判 utf-8、解码不抛、
+    // 单字节代码页 1 字节 ↔ 1 码元（本串字节不落 windows-1252 的未定义槽位）。
+    // 中文正确性由 zh 环境走 gb18030 分支守着。
     expect(sniff(GBK)).not.toBe("utf-8")
-    expect(decode(GBK).text).toBe("中文测试内容\n第二行：项目报表\n")
-    expect(decode(GBK).text).not.toContain("�")
+    if (SYSTEM_ENCODING === "gb18030") {
+      expect(decode(GBK).text).toBe("中文测试内容\n第二行：项目报表\n")
+      expect(decode(GBK).text).not.toContain("�")
+    } else {
+      expect(decode(GBK).text.length).toBe(GBK.length)
+    }
   })
 
   test("UTF-16LE BOM 认得出来，BOM 被 TextDecoder 吃掉", () => {

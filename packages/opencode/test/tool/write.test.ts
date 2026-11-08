@@ -277,6 +277,9 @@ describe("tool.write", () => {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "stale.txt")
         yield* seed(filepath, "original")
+        // 261108 Red 同 edit 侧：261105 v2 哈希容差会放行「mtime 变、内容同」，
+        // 外部改动必须真改字节；writeFile 后拨 mtime 保证与记录值不等（不赌时钟粒度）
+        yield* Effect.promise(() => fs.writeFile(filepath, "tampered", "utf-8"))
         const past = new Date(Date.now() - 5000)
         yield* Effect.promise(() => fs.utimes(filepath, past, past))
 
@@ -284,7 +287,7 @@ describe("tool.write", () => {
         expect(exit._tag).toBe("Failure")
 
         const content = yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))
-        expect(content).toBe("original")
+        expect(content).toBe("tampered")
       }),
     )
 

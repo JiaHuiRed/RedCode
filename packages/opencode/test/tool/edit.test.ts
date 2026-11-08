@@ -127,14 +127,17 @@ describe("tool.edit", () => {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "stale.txt")
         yield* put(filepath, "original")
-        // 模拟外部改动：mtime 拨到过去，保证与记录值不等（不依赖时钟精度，
-        // 也不在磁盘上留未来时间戳）
+        // 261108 Red 261105 v2 记录带内容哈希：mtime 变、字节相同（touch/无改动保存）
+        // 会被哈希容差放行——外部改动的模拟必须真改字节，只拨 mtime 在哪都会漏
+        yield* Effect.promise(() => fs.writeFile(filepath, "tampered", "utf-8"))
+        // writeFile 的 mtime 可能与记录值同 tick（Windows 计时器粒度 15.6ms），
+        // 拨到过去保证与记录值不等；内容已不同，哈希容差不会再放行
         const past = new Date(Date.now() - 5000)
         yield* Effect.promise(() => fs.utimes(filepath, past, past))
 
-        const err = yield* fail({ filePath: filepath, oldString: "original", newString: "changed" })
+        const err = yield* fail({ filePath: filepath, oldString: "tampered", newString: "changed" })
         expect(err.message).toContain("modified externally")
-        expect(yield* load(filepath)).toBe("original")
+        expect(yield* load(filepath)).toBe("tampered")
       }),
     )
 
@@ -876,7 +879,11 @@ describe("tool.edit", () => {
         const filepath = path.join(test.directory, "gbk.txt")
         yield* putBytes(filepath, GBK)
 
-        const err = yield* fail({ filePath: filepath, oldString: "中文测试内容", newString: "改过的内容" })
+        // 261108 Red oldString 不能硬编码中文：SYSTEM_ENCODING 按 ICU locale 猜
+        // （dev 机 zh→gb18030 解出中文，CI en-US→windows-1252 解出拉丁乱码），
+        // 从同一条检测链解出的文本里取，任何 locale 下都能命中 oldString、走到编码护栏
+        const oldString = Bom.decode(GBK).text.split("\n")[0]
+        const err = yield* fail({ filePath: filepath, oldString, newString: "改过的内容" })
 
         expect(err.message).toContain("不是 UTF-8")
         const after = yield* Effect.promise(() => fs.readFile(filepath))
