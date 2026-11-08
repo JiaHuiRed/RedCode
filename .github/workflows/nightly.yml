@@ -60,6 +60,11 @@ jobs:
       - name: Run full unit tests
         # 30s 超时是刻意保留的卡死信号；抬高到 60s 实测把 106 个超时拖成 2h7m，
         # 已经回退。这里的红是实验室数据，不是 push 门槛。
+        # 261108 Red opencode 包 4629 测试原本单进程跑：118 个 fake-LLM 轮次测试
+        # 确定性 FirstEventTimeout（首事件 75s 零到达），同 runner 同 bun 1.4.2 的
+        # smoke lane（每文件独立进程）却全绿——同进程跨文件污染（261103 smoke
+        # 注释已记录）。test:ci 加 --parallel=2：worker 进程互不共享 global
+        # （蕴含 --isolate），2 匹配 4 核 runner 留余量给各文件自起的 server。
         run: bun turbo test:ci --concurrency=1 --continue=always
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
