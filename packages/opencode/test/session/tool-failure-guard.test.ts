@@ -20,6 +20,24 @@ test("failure fingerprints ignore object key order without merging tools or arra
   expect(first).toHaveLength(64)
 })
 
+test("interrupt budget defaults to five steps and validates like the failure budget", () => {
+  expect(ConfigToolFailure.resolveInterrupt()).toBe(5)
+  expect(ConfigToolFailure.resolveInterrupt(3)).toBe(3)
+  for (const invalid of [0, -1, 21, 1.5]) {
+    expect(() => ConfigToolFailure.resolveInterrupt(invalid)).toThrow()
+  }
+  expect(Schema.decodeUnknownSync(ConfigToolFailure.InterruptLimit)(20)).toBe(20)
+})
+
+// 261108 Red 中断与工具失败共用 coreSignature 但错误文本不同，两条预算不能互相污染：
+// 一个反复卡死的 bash 不该被算成「工具执行失败」，反之亦然。
+test("interrupt signature is isolated from ordinary tool failures", () => {
+  const interrupted = ToolFailureGuard.coreSignature("bash", "Tool execution aborted")
+  expect(interrupted).toHaveLength(64)
+  expect(interrupted).not.toBe(ToolFailureGuard.coreSignature("bash", "Command failed with exit code 1"))
+  expect(interrupted).not.toBe(ToolFailureGuard.coreSignature("read", "Tool execution aborted"))
+})
+
 test("failure notice has a fixed byte bound independent of tool arguments", () => {
   expect(Buffer.byteLength(ToolFailureGuard.reminder(20), "utf8")).toBeLessThan(1024)
 })

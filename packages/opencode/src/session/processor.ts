@@ -210,6 +210,8 @@ export const layer = Layer.effect(
       const initialSnapshot = yield* snapshot.track()
       const cfg = yield* config.get()
       const failureLimit = ConfigToolFailure.resolve(cfg.experimental?.repeated_tool_failure_limit)
+      // 261108 Red 中断预算独立于失败预算：默认 5 步。见 ConfigToolFailure.InterruptLimit。
+      const interruptLimit = ConfigToolFailure.resolveInterrupt(cfg.experimental?.repeated_tool_interrupt_limit)
       // 261020 Red 纯思考兜底阈值：静默时长 + 字符兜底，均由配置拥有方解析（见 config/reasoning-stall.ts）。
       const stall = ConfigReasoningStall.resolve(cfg.experimental?.reasoningStall)
       const compactionTiming: CompactionTiming | undefined = input.assistantMessage.summary
@@ -1284,19 +1286,34 @@ export const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
+        const interruptedText = "Tool execution aborted"
         for (const toolCallID of Object.keys(ctx.toolcalls)) {
           const match = yield* readToolCall(toolCallID)
           if (!match) continue
           const part = match.part
           const end = Date.now()
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+          // 261108 Red 中断也计入失败预算：这条 cleanup 原本裸写 part，绕过 failToolCall，
+          // 于是「同工具同错」计数从不累加 —— 一个卡死的调用能把同一轮回针到步数硬顶
+          // （实测 18 步 × 5 分钟）。计数按 session + parent + 核心签名查库，跨 step 累加。
+          const coreSignature = ToolFailureGuard.coreSignature(part.tool, interruptedText)
+          const count =
+            ToolFailureGuard.count({
+              sessionID: ctx.sessionID,
+              parentID: ctx.assistantMessage.parentID,
+              coreSignature,
+            }) + 1
+          if (count > interruptLimit) ctx.toolFailureStopped = true
           yield* session.updatePart({
             ...part,
             state: {
               ...part.state,
               status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
+              error:
+                count > interruptLimit
+                  ? interruptedText
+                  : `${interruptedText}（第 ${count}/${interruptLimit} 次中断；达到上限将停止本轮自动续跑）`,
+              metadata: { ...metadata, interrupted: true, failureGuard: { coreSignature, count } },
               time: { start: "time" in part.state ? part.state.time.start : end, end },
             },
           })

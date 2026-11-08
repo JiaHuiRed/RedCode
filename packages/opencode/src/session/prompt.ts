@@ -2343,14 +2343,14 @@ export const layer = Layer.effect(
             yield* appendNotice({
               sessionID,
               messageID: handle.message.id,
-              text: "[RedCode] 同一工具调用重复失败，已停止本轮自动续跑以避免继续消耗额度。会话记录和后台任务保留。",
+              text: "[RedCode] 工具调用连续失败或中断，已停止本轮自动续跑以避免继续消耗额度。会话记录和后台任务保留。",
             })
             // 261104 Red 停止原因必须成为消息状态：只写正文时 finish 仍停在 "tool-calls"，
             // finished 判定把它当正常完成，task_status/子代理回执因此报 completed
             // （实测 explore 子代理重复工具失败后，父代理收到 state: completed）。
             // 标记 error 后 task 结果、TUI 与通知都能看到失败；loop 已 break，不会据此重试。
             handle.message.error = new MessageV2.ToolFailureStoppedError({
-              message: "同一工具调用重复失败，已停止本轮自动续跑",
+              message: "工具调用连续失败或中断，已停止本轮自动续跑",
             }).toObject()
             yield* sessions.updateMessage(handle.message)
             yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })

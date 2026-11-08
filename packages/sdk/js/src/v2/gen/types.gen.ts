@@ -2090,6 +2090,10 @@ export type Config = {
      */
     repeated_tool_failure_limit?: number
     /**
+     * Consecutive interrupted tool steps before automatic continuation stops (default: 5; maximum: 20).
+     */
+    repeated_tool_interrupt_limit?: number
+    /**
      * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
      */
     requestEvidence?: {

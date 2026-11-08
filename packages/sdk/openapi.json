@@ -18002,6 +18002,12 @@
                 "maximum": 20,
                 "description": "Identical tool failures before one final correction opportunity (default: 2; maximum: 20)."
               },
+              "repeated_tool_interrupt_limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "Consecutive interrupted tool steps before automatic continuation stops (default: 5; maximum: 20)."
+              },
               "requestEvidence": {
                 "type": "object",
                 "properties": {

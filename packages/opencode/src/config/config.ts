@@ -398,6 +398,7 @@ export const Info = Schema.Struct({
         description: "Continue the agent loop when a tool call is denied",
       }),
       repeated_tool_failure_limit: Schema.optional(ConfigToolFailure.Limit),
+      repeated_tool_interrupt_limit: Schema.optional(ConfigToolFailure.InterruptLimit),
       requestEvidence: Schema.optional(ConfigRequestEvidence.Info).annotate({
         description: "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.",
       }),
