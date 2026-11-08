@@ -156,9 +156,11 @@ export const Parameters = Schema.Struct({
   isolation: Isolation,
 })
 
-function output(sessionID: SessionID, text: string) {
+function output(sessionID: SessionID, text: string, resumable = true) {
   return [
-    `task_id: ${sessionID} (for resuming to continue this task if needed)`,
+    resumable
+      ? `task_id: ${sessionID} (for resuming to continue this task if needed)`
+      : `task_id: ${sessionID} (explore tasks cannot be resumed; dispatch a new explore task instead)`,
     "",
     "<task_result>",
     text,
@@ -702,7 +704,7 @@ export const TaskTool = Tool.define(
             return {
               title: params.description,
               metadata,
-              output: output(nextSession.id, projectResult(text)),
+              output: output(nextSession.id, projectResult(text), next.name !== "explore"),
             }
           }),
         (_, exit) =>

@@ -8,6 +8,11 @@ Pin a session goal. Use it when the work is multi-step and you don't want the co
 
 When the user types `/goal <text>`, the text after `/goal` is the **active session goal** — persist it with the `goal_set` tool immediately.
 
+**Tool availability:** `goal_set` / `goal_done` / `goal_clear` are gated behind the environment variable
+`REDCODE_ENABLE_GOAL_TOOLS=true` and are **off by default**. If they are not in your tool table, do not
+pretend to persist the goal: say the goal tools are disabled, and treat the goal as prompt-only guidance
+for this turn (it will not survive a new session or restart).
+
 Behavior:
 
 1. **Call `goal_set` with the goal text** — this persists the goal to the session database and activates it. Acknowledge briefly in your soul's voice ("好嘞，钉住了" — match your persona).

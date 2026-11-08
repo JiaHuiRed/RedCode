@@ -27,13 +27,13 @@ Goal: Gain a comprehensive understanding of the user's request by reading throug
 
 Goal: Design an implementation approach.
 
-Launch general agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
+Launch explore agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
 
 You can launch up to 1 agent(s) in parallel.
 
 **Guidelines:**
 
-- **Default**: Launch at least 1 Plan agent for most tasks - it helps validate your understanding and consider alternatives
+- **Default**: Launch at least 1 explore agent for most tasks - it helps validate your understanding and consider alternatives
 - **Skip agents**: Only for truly trivial tasks (typo fixes, single-line changes, simple renames)
 
 Examples of when to use multiple agents:

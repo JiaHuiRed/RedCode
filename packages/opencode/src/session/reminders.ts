@@ -22,7 +22,10 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
   if (!userMessage) return input.messages
 
-  if (!flags.experimentalPlanMode) {
+  // 261108 Red 审计 RC-P3-04：plan_exit 只在 CLI 注册（registry.ts 按 flags.client 过滤），
+  // 桌面端却会收到要求调用它的 plan-mode 提示词。客户端不是 CLI 时退回非实验路径，
+  // 让引导与真实工具表一致。
+  if (!flags.experimentalPlanMode || flags.client !== "cli") {
     if (input.agent.name === "plan") {
       userMessage.parts.push({
         id: PartID.ascending(),
