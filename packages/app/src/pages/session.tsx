@@ -135,6 +135,9 @@ export default function Page() {
   const autoScroll = createAutoScroll({
     working: () => !params.id || !sync.session.history.newer(params.id),
     overflowAnchor: "dynamic",
+    // 261108 Red 内容高度由时间线主动上报（见 onContentResize）：content 上再挂
+    // ResizeObserver 会和 virtua 行尺寸的提交挤在同一帧，Chrome 报 ResizeObserver loop。
+    observeContent: false,
   })
 
   let resumeScroll = () => {}
@@ -508,7 +511,6 @@ export default function Page() {
   let promptDock: HTMLDivElement | undefined
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
-  let content: HTMLDivElement | undefined
   let revealMessage = (_id: string) => {}
   const scrollGestureWindowMs = 250
 
@@ -1239,15 +1241,6 @@ export default function Page() {
   }
 
   const markUserScroll = nav.markScroll
-
-  createResizeObserver(
-    () => content,
-    () => {
-      const el = scroller
-      if (el) scheduleScrollState(el)
-      fill()
-    },
-  )
 
   let retainViewport = () => () => {}
   const historyLoader = createSessionHistoryLoader({
@@ -1996,11 +1989,18 @@ export default function Page() {
                       }
                       centered={centered()}
                       setContentRef={(el) => {
-                        content = el
                         autoScroll.contentRef(el)
 
                         const root = scroller
                         if (root) scheduleScrollState(root)
+                      }}
+                      // 261108 Red 时间线在内容高度变化时上报（rAF 节流 + 同值跳过），
+                      // 取代原先对 content 的 ResizeObserver。
+                      onContentResize={() => {
+                        autoScroll.contentChanged()
+                        const root = scroller
+                        if (root) scheduleScrollState(root)
+                        fill()
                       }}
                       historyShift={historyLoader.shift()}
                       userMessages={historyLoader.userMessages()}

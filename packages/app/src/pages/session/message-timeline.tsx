@@ -332,6 +332,8 @@ export function MessageTimeline(props: {
   shouldAnchorBottom: () => boolean
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
+  /** 261108 Red 内容区高度变化上报：替代外层对 content 的 ResizeObserver。 */
+  onContentResize?: () => void
   historyShift: boolean
   userMessages: UserMessage[]
   anchor: (id: string) => string
@@ -1145,10 +1147,45 @@ export function MessageTimeline(props: {
     bottomAnchorFrame = requestAnimationFrame(tick)
   }
 
+  let contentEl: HTMLDivElement | undefined
+  let reportedContentHeight = 0
+  let contentReportFrame: number | undefined
+
   const bindContentRoot = (root: HTMLDivElement) => {
     const child = root.firstElementChild
-    props.setContentRef(child instanceof HTMLDivElement ? child : root)
+    contentEl = child instanceof HTMLDivElement ? child : root
+    props.setContentRef(contentEl)
+    reportContentHeight()
   }
+
+  // 261108 Red 内容高度由时间线自己上报：外层再对 content 挂 ResizeObserver，
+  // 会和行自身尺寸的提交挤在同一帧，Chrome 报 ResizeObserver loop（上游 #60481 同款修法）。
+  // 依赖行集合/宽度/流式版本，rAF 里读一次高度，值变了才通知。
+  const reportContentHeight = () => {
+    const el = contentEl
+    if (!el) return
+    const height = el.clientHeight
+    if (height === reportedContentHeight) return
+    reportedContentHeight = height
+    props.onContentResize?.()
+  }
+
+  createEffect(
+    on(
+      [timelineRowKeys, listWidth, activeAssistantContentVersion],
+      () => {
+        if (contentReportFrame !== undefined) cancelAnimationFrame(contentReportFrame)
+        contentReportFrame = requestAnimationFrame(() => {
+          contentReportFrame = undefined
+          reportContentHeight()
+        })
+      },
+      { defer: true },
+    ),
+  )
+  onCleanup(() => {
+    if (contentReportFrame !== undefined) cancelAnimationFrame(contentReportFrame)
+  })
 
   const scheduleContentRoot = (root: HTMLDivElement) => {
     if (contentFrame !== undefined) cancelAnimationFrame(contentFrame)

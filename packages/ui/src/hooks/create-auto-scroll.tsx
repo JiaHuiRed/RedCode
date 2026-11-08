@@ -9,6 +9,9 @@ export interface AutoScrollOptions {
   onUserInteracted?: () => void
   overflowAnchor?: "none" | "auto" | "dynamic"
   bottomThreshold?: number
+  /** 261108 Red false = 不观察 content 尺寸，由调用方在内容变化时调 contentChanged()。
+   *  虚拟列表的 content 高度由行自身测量决定，外层再挂 RO 会和行尺寸提交挤在同一帧。 */
+  observeContent?: boolean
 }
 
 export function createAutoScroll(options: AutoScrollOptions) {
@@ -171,30 +174,32 @@ export function createAutoScroll(options: AutoScrollOptions) {
     el.style.overflowAnchor = store.userScrolled ? "auto" : "none"
   }
 
-  createResizeObserver(
-    () => store.contentRef,
-    () => {
-      const el = store.scrollRef
-      if (el && !canScroll(el)) {
-        if (store.userScrolled) setStore("userScrolled", false)
-        return
-      }
+  const contentChanged = () => {
+    const el = store.scrollRef
+    if (el && !canScroll(el)) {
+      if (store.userScrolled) setStore("userScrolled", false)
+      return
+    }
+    if (!active()) return
+    if (store.userScrolled) return
+    // 261108 Red 组合期不追底：ResizeObserver 由输入区/内容区高度变化触发，
+    // 中文候选框展开会让它抢帧，与 message-timeline 的 imeComposing 门禁保持同一语义。
+    if (imeComposing()) return
+    // 261108 Red 滚动延到下一帧：RO 回调里同步写 scrollTop 会让 virtua 重测量，
+    // 同一帧再次改变内容高度 → 观察-布局循环（Electron renderer.log 里 911 条
+    // ResizeObserver loop 警告的主要来源）。代价是最多多等一帧，流式下一帧仍会追。
+    if (followFrame !== undefined) cancelAnimationFrame(followFrame)
+    followFrame = requestAnimationFrame(() => {
+      followFrame = undefined
       if (!active()) return
       if (store.userScrolled) return
-      // 261108 Red 组合期不追底：ResizeObserver 由输入区/内容区高度变化触发，
-      // 中文候选框展开会让它抢帧，与 message-timeline 的 imeComposing 门禁保持同一语义。
-      if (imeComposing()) return
-      // 261108 Red 滚动延到下一帧：RO 回调里同步写 scrollTop 会让 virtua 重测量，
-      // 同一帧再次改变内容高度 → 观察-布局循环（Electron renderer.log 里 911 条
-      // ResizeObserver loop 警告的主要来源）。代价是最多多等一帧，流式下一帧仍会追。
-      if (followFrame !== undefined) cancelAnimationFrame(followFrame)
-      followFrame = requestAnimationFrame(() => {
-        followFrame = undefined
-        if (!active()) return
-        if (store.userScrolled) return
-        scrollToBottom(false)
-      })
-    },
+      scrollToBottom(false)
+    })
+  }
+
+  createResizeObserver(
+    () => (options.observeContent === false ? undefined : store.contentRef),
+    contentChanged,
   )
 
   createEffect(
@@ -257,6 +262,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
     },
     scrollToBottom: () => scrollToBottom(false),
     forceScrollToBottom: () => scrollToBottom(true),
+    // 261108 Red observeContent=false 时由调用方驱动的「内容高度变了」入口。
+    contentChanged,
     userScrolled: () => store.userScrolled,
   }
 }
