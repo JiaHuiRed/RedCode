@@ -1150,13 +1150,7 @@ export function MessageTimeline(props: {
   let contentEl: HTMLDivElement | undefined
   let reportedContentHeight = 0
   let contentReportFrame: number | undefined
-
-  const bindContentRoot = (root: HTMLDivElement) => {
-    const child = root.firstElementChild
-    contentEl = child instanceof HTMLDivElement ? child : root
-    props.setContentRef(contentEl)
-    reportContentHeight()
-  }
+  let contentObserver: ResizeObserver | undefined
 
   // 261108 Red 内容高度由时间线自己上报：外层再对 content 挂 ResizeObserver，
   // 会和行自身尺寸的提交挤在同一帧，Chrome 报 ResizeObserver loop（上游 #60481 同款修法）。
@@ -1170,21 +1164,53 @@ export function MessageTimeline(props: {
     props.onContentResize?.()
   }
 
+  const scheduleReportContentHeight = () => {
+    if (contentReportFrame !== undefined) return
+    contentReportFrame = requestAnimationFrame(() => {
+      contentReportFrame = undefined
+      reportContentHeight()
+    })
+  }
+
+  // 261108 Red 上面三个信号覆盖不到异步高度变化：历史消息里的图片 load 完成、
+  // 已存在的工具卡片展开/收起，都只改 DOM 高度，最终由虚拟列表把总量写回 content 的
+  // inline style.height。观察这个属性比再挂一个 ResizeObserver 安全 —— RO 回调会进入
+  // 交付阶段，和 virtua 自己的行尺寸提交撞在同一帧就会报 loop（A/B 实测 2 条 vs 0 条）。
+  // native 模式没有 virtua 写高度，退回 RO：它没有行测量，不会产生这类竞争。
+  let heightWatcher: MutationObserver | undefined
+
+  const attachContent = (el: HTMLDivElement | undefined) => {
+    contentObserver?.disconnect()
+    contentObserver = undefined
+    heightWatcher?.disconnect()
+    heightWatcher = undefined
+    contentEl = el
+    if (!el) return
+    props.setContentRef(el)
+    if (nativeTimelineEnabled()) {
+      contentObserver = new ResizeObserver(scheduleReportContentHeight)
+      contentObserver.observe(el)
+    } else {
+      heightWatcher = new MutationObserver(scheduleReportContentHeight)
+      heightWatcher.observe(el, { attributes: true, attributeFilter: ["style"] })
+    }
+    reportContentHeight()
+  }
+
+  const bindContentRoot = (root: HTMLDivElement) => {
+    const child = root.firstElementChild
+    attachContent(child instanceof HTMLDivElement ? child : root)
+  }
+
   createEffect(
-    on(
-      [timelineRowKeys, listWidth, activeAssistantContentVersion],
-      () => {
-        if (contentReportFrame !== undefined) cancelAnimationFrame(contentReportFrame)
-        contentReportFrame = requestAnimationFrame(() => {
-          contentReportFrame = undefined
-          reportContentHeight()
-        })
-      },
-      { defer: true },
-    ),
+    on([timelineRowKeys, listWidth, activeAssistantContentVersion], scheduleReportContentHeight, { defer: true }),
   )
   onCleanup(() => {
     if (contentReportFrame !== undefined) cancelAnimationFrame(contentReportFrame)
+    contentObserver?.disconnect()
+    contentObserver = undefined
+    heightWatcher?.disconnect()
+    heightWatcher = undefined
   })
 
   const scheduleContentRoot = (root: HTMLDivElement) => {
@@ -2360,11 +2386,12 @@ export function MessageTimeline(props: {
         {/* 260921 Red native 渲染路径（审计回信 P1 的 A/B 对照）：行全部真实挂在 DOM 里，
             seek 的 getElementById 天然命中，viewportSize / virtual range / measurement cache
             那一整类「测量失败就整片空白」的失败模式整体不存在。contentRef 仍要绑定 ——
-            createAutoScroll 靠它的 ResizeObserver 在流式内容变高时锁底。 */}
+            261108 Red 自动追底不再观察 content（observeContent:false），高度必须由这条路自己
+            上报，否则原生模式彻底失去尺寸来源。 */}
         <Show
           when={!nativeTimelineEnabled()}
           fallback={
-            <div ref={(el) => props.setContentRef(el)} data-component="timeline-native">
+            <div ref={(el) => attachContent(el)} data-component="timeline-native">
               <For each={timelineRows()}>{(row) => <TimelineRowView row={row} />}</For>
             </div>
           }
