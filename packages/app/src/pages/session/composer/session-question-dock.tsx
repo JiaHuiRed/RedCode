@@ -313,6 +313,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const nav = (event: KeyboardEvent) => {
     if (event.defaultPrevented) return
+    // 261108 Red 组合期按键归输入法：子 textarea 的门禁只是不进自己的分支，
+    // 事件照样冒泡到容器；这里不挡的话候选框的 Esc 会 reject()、Ctrl/Cmd+Enter 会 next()。
+    if (event.isComposing || event.keyCode === 229) return
 
     if (event.key === "Escape") {
       event.preventDefault()
