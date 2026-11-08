@@ -39,6 +39,15 @@ describe("session.retry.delay", () => {
     expect(delays).toStrictEqual([3000, 6000, 12000, 15000, 15000, 15000, 15000, 15000, 15000, 15000])
   })
 
+  // 261108 Red 回归：上游返回了响应头但没有有效 retry-after（如只有 content-type）时，
+  // 该分支此前漏了 15s 封顶，第 4 次起 24s/48s/… 无限翻倍，恰好违背退避定版。
+  // 应与无响应头分支同形：复用快退避。
+  test("caps delay at 15 seconds when headers lack a valid retry hint", () => {
+    const error = apiError({ "content-type": "application/json", "x-request-id": "req_test" })
+    const delays = Array.from({ length: 8 }, (_, index) => SessionRetry.delay(index + 1, error))
+    expect(delays).toStrictEqual([3000, 6000, 12000, 15000, 15000, 15000, 15000, 15000])
+  })
+
   test("prefers retry-after-ms when shorter than exponential", () => {
     const error = apiError({ "retry-after-ms": "1500" })
     expect(SessionRetry.delay(4, error)).toBe(1500)

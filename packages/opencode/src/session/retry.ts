@@ -76,7 +76,9 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
         }
       }
 
-      return cap(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1))
+      // 261108 Red 有响应头但没有有效 retry-after 时，走无响应头的快退避（15s 封顶），
+      // 不要回到无封顶指数增长——之前这里漏了 RETRY_MAX_DELAY_NO_HEADERS，attempt 4 起就 24s/48s/… 往上翻。
+      return delay(attempt)
     }
   }
 
