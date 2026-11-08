@@ -140,6 +140,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     root.style.setProperty("--question-prompt-max-height", `${max}px`)
   }
 
+  // 261108 Red 只认「用户在别处输入」：焦点在 body 或本卡片内时仍自动聚焦，保留快速作答。
+  const typingOutside = () => {
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement)) return false
+    if (root?.contains(active)) return false
+    return active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+  }
+
   const clamp = (i: number) => Math.max(0, Math.min(count() - 1, i))
 
   const pickFocus = (tab: number = store.tab) => {
@@ -185,7 +193,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       if (raf !== undefined) cancelAnimationFrame(raf)
     })
 
-    focus(pickFocus())
+    // 261108 Red 后台提问不抢焦点：卡片挂载时用户可能正在编辑框里打字，
+    // 无条件聚焦会把焦点从编辑器拽到选项上，中文组合直接断掉。
+    if (!typingOutside()) focus(pickFocus())
   })
 
   onCleanup(() => {
@@ -545,6 +555,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 rows={1}
                 disabled={sending()}
                 onKeyDown={(e) => {
+                  // 261108 Red 组合期按键归输入法：候选框的 Enter/Escape 此时是确认/取消候选，
+                  // 当成 next()/退出编辑会把半截中文直接提交成答案。
+                  if (e.isComposing || e.keyCode === 229) return
                   if (e.key === "Escape") {
                     e.preventDefault()
                     setStore("editing", false)

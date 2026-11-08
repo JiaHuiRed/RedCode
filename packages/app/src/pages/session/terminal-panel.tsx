@@ -78,12 +78,21 @@ export function TerminalPanel() {
     ),
   )
 
+  // 261108 Red 用户把焦点移走后不再重试：120/240ms 的重试会从输入框手里把焦点抢回来。
+  const focusMoved = () => {
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement)) return false
+    if (root?.contains(active)) return false
+    return active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+  }
+
   const focus = (id: string) => {
     focusTerminalById(id)
 
     const frame = requestAnimationFrame(() => {
       if (!opened()) return
       if (terminal.active() !== id) return
+      if (focusMoved()) return
       focusTerminalById(id)
     })
 
@@ -91,6 +100,7 @@ export function TerminalPanel() {
       window.setTimeout(() => {
         if (!opened()) return
         if (terminal.active() !== id) return
+        if (focusMoved()) return
         focusTerminalById(id)
       }, ms),
     )

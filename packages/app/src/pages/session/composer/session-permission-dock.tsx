@@ -25,6 +25,8 @@ export function SessionPermissionDock(props: {
     if (platform.mobileCompanion) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (props.responding) return
+      // 261108 Red 组合期按键归输入法：中文候选框的 Escape 会把权限请求直接拒掉。
+      if (event.isComposing || event.keyCode === 229) return
       const mod = event.ctrlKey || event.metaKey
       if (event.key === "Escape") {
         event.preventDefault()
