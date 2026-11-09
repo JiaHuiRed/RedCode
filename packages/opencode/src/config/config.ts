@@ -311,6 +311,10 @@ export const Info = Schema.Struct({
         description:
           "Run a delivery verification report at the end of a turn that changed files (default: true)",
       }),
+      notice: Schema.optional(Schema.Literals(["failure", "always", "off"])).annotate({
+        description:
+          'When to show the report as a visible message: "failure" only when a check fails or a protected path changed (default), "always" every changed turn, "off" never (checks still run)',
+      }),
       timeout_ms: Schema.optional(PositiveInt).annotate({
         description: "Timeout for one verification command (default: 120000)",
       }),

@@ -259,7 +259,54 @@ describe("SessionVerification", () => {
     }).pipe(Effect.provide(provideVerification({}))),
   )
 
-  // 261109 Karina 报告正文进模型上下文，必须有确定字节上界：10 条超长路径
+  // 261109 Wonyoung 默认只在真出问题时显示报告：passing 回合不挂会话正文。
+  it.live("hides a passing report unless notice is always", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      yield* writeFiles(dir, {
+        "package.json": packageJson("bun pass.js"),
+        "bun.lock": "",
+        "pass.js": "process.exit(0)\n",
+        "src/a.ts": "export const a = 1\n",
+      })
+      const run = (config: Config.Info) =>
+        Effect.gen(function* () {
+          const svc = yield* SessionVerification.Service
+          const value = yield* svc.report({
+            sessionID: SessionID.make("ses_verification_test"),
+            worktree: dir,
+            ruleset: [],
+            changed: ["src/a.ts"],
+          })
+          return yield* svc.notice(value)
+        }).pipe(Effect.provide(provideVerification(config)))
+
+      expect(yield* run({})).toBeUndefined()
+      expect(yield* run({ verification: { notice: "always" } })).toContain("交付验证：passed")
+    }),
+  )
+
+  it.live("shows a failing report by default", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      yield* writeFiles(dir, {
+        "package.json": packageJson("bun fail.js"),
+        "bun.lock": "",
+        "fail.js": "console.error('boom'); process.exit(1)\n",
+        "src/a.ts": "export const a = 1\n",
+      })
+      const svc = yield* SessionVerification.Service
+      const value = yield* svc.report({
+        sessionID: SessionID.make("ses_verification_test"),
+        worktree: dir,
+        ruleset: [],
+        changed: ["src/a.ts"],
+      })
+      expect(yield* svc.notice(value)).toContain("交付验证：failed")
+    }).pipe(Effect.provide(provideVerification({}))),
+  )
+
+  // 261109 Karina 报告正文一旦显示就会进模型上下文，必须有确定字节上界：10 条超长路径
   // 靠列举截断是挡不住的。
   it.live("caps the rendered report at a fixed byte budget", () =>
     Effect.gen(function* () {

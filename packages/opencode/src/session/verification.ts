@@ -44,11 +44,24 @@ export const Report = Schema.Struct({
 }).annotate({ identifier: "VerificationReport" })
 export type Report = Schema.Schema.Type<typeof Report>
 
+// 261109 Wonyoung 报告默认不进会话正文：通过、跳过、没匹配到检查都是正常结果，
+// 每轮挂一段「交付验证：…」会把正常收尾读成异常。只有真失败、或用户显式标为
+// 受保护的路径被改动时才值得打断阅读；verification.notice 可改回 always/off。
+export type NoticeMode = "failure" | "always" | "off"
+export const DEFAULT_NOTICE_MODE: NoticeMode = "failure"
+
+export function shouldNotice(value: Report, mode: NoticeMode) {
+  if (mode === "always") return true
+  if (mode === "off") return false
+  return value.status === "failed" || value.unrelated_change_warning.length > 0
+}
+
 const DEFAULT_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_CHECKS = 3
 const MAX_REASON_CHARS = 300
 const MAX_LISTED_FILES = 10
-// 报告正文进入模型上下文（appendNotice 会作为 assistant text 落库），必须有确定字节上界。
+// 报告正文一旦显示就会进入模型上下文（appendNotice 作为 assistant text 落库），
+// 必须有确定字节上界。
 // 10 条文件路径 × 任意长度、配置里的检查名同样没有长度约束，靠列举截断不够。
 const MAX_REPORT_BYTES = 4096
 
@@ -88,6 +101,8 @@ export interface Interface {
     signal?: AbortSignal
   }) => Effect.Effect<Report>
   readonly render: (report: Report) => string
+  // 返回 undefined 表示这轮不值得显示；检查本身照常执行并写日志。
+  readonly notice: (value: Report) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/Verification") {}
@@ -345,7 +360,12 @@ export const layer: Layer.Layer<
       return capBytes(lines.join("\n"), MAX_REPORT_BYTES)
     }
 
-    return Service.of({ report, render })
+    const notice = Effect.fn("Verification.notice")(function* (value: Report) {
+      const mode = (yield* config.get()).verification?.notice ?? DEFAULT_NOTICE_MODE
+      return shouldNotice(value, mode) ? render(value) : undefined
+    })
+
+    return Service.of({ report, render, notice })
   }),
 )
 

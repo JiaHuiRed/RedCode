@@ -1996,6 +1996,10 @@ export type Config = {
      */
     enabled?: boolean
     /**
+     * When to show the report as a visible message: "failure" only when a check fails or a protected path changed (default), "always" every changed turn, "off" never (checks still run)
+     */
+    notice?: "failure" | "always" | "off"
+    /**
      * Timeout for one verification command (default: 120000)
      */
     timeout_ms?: number

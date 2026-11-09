@@ -15,9 +15,10 @@ Agent 最常见的失败不是「改不动代码」，而是**结论先于证据
 - **检查选择保持窄**：默认只自动选受影响包（向上找最近的 `package.json`）的 `typecheck` 脚本；`lint` 会扫全仓、`test` 需要项目专属过滤参数，自动跑只会制造假失败。其他检查用 `verification.commands` 显式声明（空格分词、不经 shell）。包管理器按锁文件判断（bun/pnpm/yarn/npm）。
 - **权限**：每条命令先走 `Permission.ask`，ruleset 取当前 agent 与 session 的并集；`deny`/`reject` 记为 `skipped`，不绕过、不降级为直接执行。
 - **执行**：`AppProcess.run`，显式 `timeout`（默认 120s）、输出各 32KB 上限、串行执行；超时记为 `failed` 且原因写明 `timed out after Nms`，不静默。
-- **报告**：作为 assistant 的可见 `text` part 落库（与 `appendNotice` 同路径），结构化结果挂在 `metadata.verification`。正文有 4KB 字节硬上限（10 条文件 + 300 字符原因 + 字节截断），因为它会进入下一轮模型上下文。
+- **报告与显示分离**：检查结果始终计算并写 `session.prompt` 日志；是否落成可见 `text` part 由 `verification.notice` 决定（261109 Wonyoung 追加）——`failure`（默认，仅 `failed` 或受保护路径被改动时显示）/ `always` / `off`。通过回合不再往正文追加「交付验证：…」，避免把正常收尾读成异常。
+- **正文形状**：显示时作为 assistant 的可见 `text` part 落库（与 `appendNotice` 同路径），结构化结果挂在 `metadata.verification`。正文有 4KB 字节硬上限（10 条文件 + 300 字符原因 + 字节截断），因为它会进入下一轮模型上下文。
 - **状态**：全通过 `passed`；任一失败 `failed`；全部跳过 `partial`；没有可跑项 `not_run` 并写原因。绝不把跳过汇总成通过。
-- 配置：`verification.{enabled,timeout_ms,max_checks,disabled_scripts,commands,protected_paths}`，默认开启（`enabled === false` 才关）。
+- 配置：`verification.{enabled,notice,timeout_ms,max_checks,disabled_scripts,commands,protected_paths}`，默认开启（`enabled === false` 才关；`notice` 默认 `failure`）。
 
 ## 备选与否决理由
 
@@ -28,7 +29,7 @@ Agent 最常见的失败不是「改不动代码」，而是**结论先于证据
 
 ## 后果
 
-- 回合末尾多一次 `typecheck` 级检查（本仓约 12s）；不需要的用户可 `verification.enabled: false`。
-- 报告文本会进入下一轮上下文，token 有界（≤ 4KB，实测普通回合 100-300 tokens）。
+- 回合末尾多一次 `typecheck` 级检查（本仓约 12s）；不需要的用户可 `verification.enabled: false`。默认不占会话正文。
+- 显示时报告文本会进入下一轮上下文，token 有界（≤ 4KB，实测普通回合 100-300 tokens）；不显示时只进日志。
 - 已知缺口：`bash` 内改文件不会进 `changed_files`；`protected_paths` 是前缀匹配、不是 glob；子会话不跑（避免每个子代理收尾都验证）。
-- 识别签名：回合有 `write`/`edit` 成功且包内有 `typecheck` 时，最终 assistant 消息应出现 `metadata.verification`；若没有，先查 `verification.enabled`、包目录定位与 `disabled_scripts`。
+- 识别签名：默认 `notice=failure` 时，只有检查失败或受保护路径被改动才在最终 assistant 消息出现 `metadata.verification`；「这轮验了什么」统一查 `session.prompt` 服务的 `verification` 日志（status / changed_files / checks / not_run_reason）。若正常回合连检查都没跑，先查 `verification.enabled`、包目录定位与 `disabled_scripts`。

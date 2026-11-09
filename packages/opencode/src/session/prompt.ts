@@ -370,12 +370,24 @@ export const layer = Layer.effect(
         changed,
         hash: patches.at(-1)?.hash,
       })
-      yield* appendNotice({
-        sessionID: input.sessionID,
-        messageID: input.messageID,
-        text: verification.render(report),
-        metadata: { verification: report },
+      // 261109 Wonyoung 报告默认不作为可见正文（verification.notice），但日志必须
+      // 无条件留一份：事后要能重建「这轮到底验了什么、为什么没跑」。
+      log.info("verification", {
+        session: input.sessionID,
+        status: report.status,
+        changed_files: report.changed_files,
+        checks: report.checks.map((check) => `${check.name}:${check.status}`),
+        not_run_reason: report.not_run_reason,
       })
+      const notice = yield* verification.notice(report)
+      if (notice) {
+        yield* appendNotice({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          text: notice,
+          metadata: { verification: report },
+        })
+      }
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {

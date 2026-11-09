@@ -4923,7 +4923,10 @@ it.instance(
   "appends a verification report after a turn that changed files",
   () =>
     Effect.gen(function* () {
-      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        verification: { notice: "always" },
+      }))
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const chat = yield* sessions.create({
