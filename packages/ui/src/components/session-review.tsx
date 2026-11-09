@@ -115,6 +115,10 @@ export interface SessionReviewProps {
   actions?: JSX.Element
   diffs: RawReviewDiff[]
   onViewFile?: (file: string) => void
+  // 261109 Karina UX-04：已审查标记（只表示看过，不代表暂存/测试通过）。
+  // 指纹由调用方维护，diff 变化后旧标记自动不在列表里。
+  reviewed?: string[]
+  onToggleReviewed?: (file: string) => void
   readFile?: (path: string) => Promise<FileContent | undefined>
   lineCommentMention?: LineCommentEditorProps["mention"]
 }
@@ -200,6 +204,19 @@ export const SessionReview = (props: SessionReviewProps) => {
   })
   const diffStyle = () => props.diffStyle ?? (props.split ? "split" : "unified")
   const hasDiffs = () => files().length > 0
+  const reviewedSet = createMemo(() => new Set(props.reviewed ?? []))
+
+  // 上一/下一文件：按文件列表顺序移动，展开目标并滚到它的顶部。
+  const step = (delta: number) => {
+    const all = files()
+    if (all.length === 0) return
+    const current = props.focusedFile ? all.indexOf(props.focusedFile) : -1
+    const next = current === -1 ? (delta > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, current + delta))
+    const file = all[next]
+    const openFiles = open()
+    if (!openFiles.includes(file)) handleChange([...openFiles, file])
+    requestAnimationFrame(() => anchors.get(file)?.scrollIntoView({ block: "start" }))
+  }
 
   const syncVisible = () => {
     frame = undefined
@@ -343,6 +360,27 @@ export const SessionReview = (props: SessionReviewProps) => {
           {props.title === undefined ? i18n.t("ui.sessionReview.title") : props.title}
         </div>
         <div data-slot="session-review-actions">
+          <Show when={hasDiffs() && props.onToggleReviewed}>
+            <div data-slot="session-review-reviewed-progress">
+              {reviewedSet().size}/{files().length}
+            </div>
+            <button
+              type="button"
+              data-slot="session-review-step"
+              aria-label={i18n.t("ui.sessionReview.reviewed.prev")}
+              onClick={() => step(-1)}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              data-slot="session-review-step"
+              aria-label={i18n.t("ui.sessionReview.reviewed.next")}
+              onClick={() => step(1)}
+            >
+              ›
+            </button>
+          </Show>
           <Show when={hasDiffs() && props.onDiffStyleChange}>
             <RadioGroup
               options={["unified", "split"] as const}
@@ -514,6 +552,25 @@ export const SessionReview = (props: SessionReviewProps) => {
                             <div data-slot="session-review-trigger-content">
                               <div data-slot="session-review-file-info">
                                 <SealIcon />
+                                <Show when={props.onToggleReviewed}>
+                                  <button
+                                    type="button"
+                                    data-slot="session-review-reviewed"
+                                    data-reviewed={reviewedSet().has(file) ? "" : undefined}
+                                    aria-label={i18n.t(
+                                      reviewedSet().has(file)
+                                        ? "ui.sessionReview.reviewed.unmark"
+                                        : "ui.sessionReview.reviewed.mark",
+                                    )}
+                                    aria-pressed={reviewedSet().has(file)}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      props.onToggleReviewed?.(file)
+                                    }}
+                                  >
+                                    <span data-slot="session-review-reviewed-dot" />
+                                  </button>
+                                </Show>
                                 <div data-slot="session-review-file-name-container">
                                   <Show when={file.includes("/")}>
                                     <span data-slot="session-review-directory">{`\u202A${getDirectory(file)}\u202C`}</span>

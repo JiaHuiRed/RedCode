@@ -52,6 +52,9 @@ type SessionView = {
   }
   // 261109 Karina UX-01：最近一次应用的布局预设；undefined = 用户没动过/手动改过。
   preset?: LayoutPreset
+  // 261109 Karina UX-04：已审查标记，file → diff 指纹。指纹不匹配即自动失效，
+  // 避免把「改过之后的新 diff」误当成已检查。
+  reviewed?: Record<string, string>
 }
 
 // 260926 Red 并排宽度和聊天栏扣除量共用同一表达式，避免 flex 宽度与面板视觉宽度分叉。
@@ -927,6 +930,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           preset: {
             current: createMemo(() => s().preset),
             apply: applyPreset,
+          },
+          reviewed: {
+            map: createMemo(() => s().reviewed ?? {}),
+            toggle(file: string, fingerprint: string) {
+              const session = key()
+              const current = store.sessionView[session]
+              const reviewed = { ...current?.reviewed }
+              if (reviewed[file] === fingerprint) delete reviewed[file]
+              else reviewed[file] = fingerprint
+              setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, reviewed })
+              prune(usage.active ?? session)
+            },
           },
           review: {
             open: createMemo(() => s().reviewOpen ?? []),

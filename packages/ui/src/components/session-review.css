@@ -234,4 +234,68 @@
     gap: 8px;
     margin-top: 10px;
   }
+
+  /* 261109 Karina UX-04：审查进度控件（已审查标记 / 上一文件 / 下一文件）。
+     「已审查」只表示用户看过，不代表暂存或测试通过。 */
+  [data-slot="session-review-reviewed"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    padding: 0;
+    margin-right: 6px;
+    border-radius: 999px;
+    border: 1px solid var(--icon-weaker);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  [data-slot="session-review-reviewed"]:hover {
+    border-color: var(--text-weak);
+  }
+
+  [data-slot="session-review-reviewed"][data-reviewed] {
+    border-color: transparent;
+    background: var(--text-strong);
+  }
+
+  [data-slot="session-review-reviewed-dot"] {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: transparent;
+  }
+
+  [data-slot="session-review-reviewed"][data-reviewed] [data-slot="session-review-reviewed-dot"] {
+    background: var(--surface-base);
+  }
+
+  [data-slot="session-review-reviewed-progress"] {
+    font-size: var(--font-size-small);
+    color: var(--text-weak);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="session-review-step"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 6px;
+    color: var(--text-weak);
+    background: transparent;
+    cursor: pointer;
+    font-size: var(--font-size-large);
+    line-height: 1;
+  }
+
+  [data-slot="session-review-step"]:hover {
+    color: var(--text-strong);
+    background: var(--surface-base-active);
+  }
 }

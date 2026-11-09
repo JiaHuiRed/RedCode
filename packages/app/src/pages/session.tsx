@@ -52,6 +52,7 @@ import { createSessionComposerState, SessionComposerRegion } from "@/pages/sessi
 import { createSessionTabs } from "@/context/session-layout"
 import { createOpenReviewFile, createSizing } from "@/pages/session/helpers"
 import { createDeferRender } from "./session-defer-render"
+import { diffFingerprint, reviewedFiles } from "./session/review-progress"
 import { anonKey, guiDiagnostics, hashId } from "@/context/gui-diagnostics"
 import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
@@ -1012,6 +1013,11 @@ export default function Page() {
         focusedComment={comments.focus()}
         onFocusedCommentChange={comments.setFocus}
         onViewFile={openReviewFile}
+        reviewed={reviewedFiles(reviewDiffs(), view().reviewed.map())}
+        onToggleReviewed={(file) => {
+          const diff = reviewDiffs().find((item) => item.file === file)
+          if (diff) view().reviewed.toggle(file, diffFingerprint(diff))
+        }}
         classes={input.classes}
       />
     </Show>
