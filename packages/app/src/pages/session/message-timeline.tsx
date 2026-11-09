@@ -912,6 +912,11 @@ export function MessageTimeline(props: {
   // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
   let imeComposing = false
   const [scrollRoot, setScrollRoot] = createSignal<HTMLDivElement>()
+  // 261109 Red 虚拟列表零行降级。virtua 的视口区间/行测量任一环节失败时，整段会话一行都
+  // 不渲染也没有降级——用户看到聊天区整块露出壁纸、回来滚动位置丢失、输入框跟着失活。
+  // 这是「结构性问题」（见 CHANGELOG 0.17.x 的 native 分支条目），所以这里做最后一道保底：
+  // 连续取样拿不到任何可见行，就只为当前会话切到 native 真实 DOM 渲染，不再赌测量成功。
+  const [virtualFallback, setVirtualFallback] = createSignal(false)
 
   // 260922 Red：revealMessage 的契约是「让消息进入当前 renderer 的视口」，不能绑死 Virtua。
   // native timeline 没有 virtualizer，直接按 hash scroll 的同一套 sticky 标题偏移计算 DOM 落点；
@@ -1251,6 +1256,61 @@ export function MessageTimeline(props: {
     setScrollRoot(undefined)
     connectListRoot(root)
   }
+
+  // 261109 Red 「有行但一个都看不见」的判据：只读几何，不改状态。间隔取样而不是每帧
+  // 回调——看门狗自己不能变成布局抖动的来源。
+  const hasVisibleRow = (root: HTMLDivElement) => {
+    const rows = root.querySelectorAll<HTMLElement>("[data-timeline-row]")
+    if (rows.length === 0) return false
+    const box = root.getBoundingClientRect()
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect()
+      if (rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1) return true
+    }
+    return false
+  }
+
+  // 261109 Red 换会话先复位：上一个会话的失败不追到新会话，native 只在这个会话里兜底。
+  createEffect(
+    on(
+      sessionKey,
+      () => {
+        setVirtualFallback(false)
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on([() => timelineRows().length > 0, scrollRoot, virtualFallback, sessionKey], ([hasRows, root, fallback]) => {
+      if (!hasRows || fallback || nativeTimelineEnabled()) return
+      let misses = 0
+      const degrade = () => {
+        if (++misses < 4) return
+        setVirtualFallback(true)
+        guiDiagnostics.record("timeline.virtual-fallback", {
+          name: "no-visible-row",
+          detail: { rows: timelineRows().length, root: !!root },
+        })
+      }
+      const timer = window.setInterval(() => {
+        if (virtualFallback()) return
+        if (!root) return degrade()
+        // 261109 Red 容器隐藏（切到 changes 标签页、面板折叠）时没有布局盒，此时
+        // 「看不见行」是预期状态，不能算列表失败——否则一切标签就会误降级。
+        if (root.clientHeight === 0 || root.getClientRects().length === 0) {
+          misses = 0
+          return
+        }
+        if (hasVisibleRow(root)) {
+          misses = 0
+          return
+        }
+        degrade()
+      }, 500)
+      onCleanup(() => window.clearInterval(timer))
+    }),
+  )
 
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     const root = event.currentTarget
@@ -2392,9 +2452,13 @@ export function MessageTimeline(props: {
             261108 Red 自动追底不再观察 content（observeContent:false），高度必须由这条路自己
             上报，否则原生模式彻底失去尺寸来源。 */}
         <Show
-          when={!nativeTimelineEnabled()}
+          when={!nativeTimelineEnabled() && !virtualFallback()}
           fallback={
-            <div ref={(el) => attachContent(el)} data-component="timeline-native">
+            <div
+              ref={(el) => attachContent(el)}
+              data-component="timeline-native"
+              data-fallback={virtualFallback() ? "virtual" : undefined}
+            >
               <For each={timelineRows()}>{(row) => <TimelineRowView row={row} />}</For>
             </div>
           }

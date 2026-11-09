@@ -27,6 +27,8 @@ export const GUI_DIAGNOSTIC_TYPES = [
   "timeline.group-build",
   "timeline.merge",
   "timeline.measure",
+  // 261109 Red 虚拟列表连续拿不到可见行 → 当前会话降级到 native 渲染
+  "timeline.virtual-fallback",
   "renderer.longtask",
   "error.boundary",
 ] as const
