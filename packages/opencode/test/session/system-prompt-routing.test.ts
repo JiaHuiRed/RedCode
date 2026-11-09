@@ -26,8 +26,14 @@ describe("system prompt routing", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT, PROMPT_WORKING_STYLE])
     expect(PROMPT_GPT).toContain("Do not manufacture a need")
     expect(PROMPT_GPT).toContain("Reuse valid verification")
+    expect(PROMPT_GPT).toContain("## Anti-defensive writing")
+    expect(PROMPT_GPT).toContain("a question nobody asked")
     for (const id of ["step-5-preview", "deepseek-v4", "glm-5.3"])
       expect(provider(model(id)).join("\n")).not.toContain("## Avoid self-generated work")
+    // 261109 Red 反防御写作只绑定有失效证据的 GPT 家族，Step/DeepSeek/GLM 不吃这段
+    // （决策与四问：docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md）
+    for (const id of ["step-5-preview", "deepseek-v4", "glm-5.3", "claude-sonnet-4-5"])
+      expect(provider(model(id)).join("\n")).not.toContain("## Anti-defensive writing")
   })
 
   test("已删除专属提示词的 Claude 系走默认提示词", () => {
@@ -150,6 +156,7 @@ describe("shared agent contract", () => {
     ])
       expect(PROMPT_DEFAULT).toContain(section)
     expect(PROMPT_DEFAULT).toContain("For inquiries, investigate and answer")
+    expect(PROMPT_DEFAULT).toContain("No agreement rituals")
     expect(PROMPT_DEFAULT).toContain("Delegation transfers ownership")
     expect(PROMPT_DEFAULT).toContain("Do not ask again for authorization already granted")
     expect(PROMPT_DEFAULT).toContain("Compaction is context maintenance, not a task boundary")

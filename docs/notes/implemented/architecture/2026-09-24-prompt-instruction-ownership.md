@@ -162,3 +162,62 @@
 真实 GPT high 沿用既有隔离 eval：`scope` 实际改动后只运行一次 verify、无额外文件；
 `failed-check` 未完成后续验证，改动前的同条件对照也未通过（两边均报告验证失败而非伪报成功）。
 该项保留失败，不修改判据凑通过，不据单次短样本宣称新规则具有普遍效果。
+
+
+## 2026-11-09 GPT 专属：反防御写作
+
+失效证据（维护者 GPT 会话反复出现，非单样本）：①「你说得对，我会……」仪式性确认与
+预防性自证清白——「我不会碰 X」（未来承诺）、「字段 ID 和业务逻辑都没动」（过去自证，
+用户只要求调布局）、「不会影响 Y」（波及否认）——共同点是在回答用户从未提出的担忧
+（判据：谁问你了？没人问，先否认就是在背假想责任）；②叠加保留措辞；③「不是 X 而是 Y」
+「需要澄清的是」模板句式；伴生症状是测试当护甲（加跑测试代替交付）与人格塌缩（防御
+语域把 soul 压成 generic assistant 腔）。规则来源：anti-defensive-writing 项目（本地
+`E:\AI\anti-defensive-writing`，SKILL.md 四条核心：先给结论/删假想质疑/不叠保留措辞/
+除模板句式），按编码助手语境改写，保留其「减防御不牺牲准确性」底线：真实风险照讲，
+一次、平静、有证据。
+
+- **写法纪律：判据导向，不列句式清单**。防御句式层出不穷（时态一换就是新形态），
+  按句式列举会被模型当成白名单绕过；规则一律先给可执行判据（「用户没提这个担忧」
+  「对比本身是否携带信息」「证据撑不撑得住」），例句至多作示意，不作为匹配面。
+- **落点**：`gpt.md` 末尾新增 `## Anti-defensive writing` 一节（8 条 bullet）。不改
+  `Deliver, don't defend` 与共享 `working-style.md`——它们管努力分配与交互契约，本节管
+  句子形状；两处不重叠。判据沿用上文 261025 先例：只绑定有失效证据的 GPT 家族，
+  不扩散到 Step/DeepSeek/GLM。
+- **registry**：仍由 `model-family-prompt` 一行罩住（cap = 固定源码文件大小），
+  无新增动态注入、无新增 `system.push`。
+
+### 模型可见四问
+
+1. **看到什么变了**：GPT 在模型 Delta 末尾新增 `## Anti-defensive writing` 八条表达纪律
+   （原文见 `gpt.md`）；Step/DeepSeek/GLM 及其它家族文本零变化。
+2. **token 影响**：`gpt.md` 2,271 → 3,735 UTF-8 bytes，净增 1,464 bytes ≈ 366 估算
+   tokens（chars/4，非 tokenizer 实测），低于单项 1K 点名线。
+3. **KV cache 影响**：仅 GPT 会话——现存会话从 Delta 新增节起至 working-style、env、
+   instructions、Soul、history 尾部重建一次缓存；新会话无额外成本。非 GPT 前缀不动。
+4. **硬上限**：固定源码文件 3,735 bytes（registry `model-family-prompt`），
+   不拼接运行时输入。
+
+### 验证与边界
+
+- `test/session/system-prompt-routing.test.ts` 16 pass（新增断言：GPT 含新节与
+  「a question nobody asked」关键句；step/deepseek/glm/claude 不含新节）；
+  `bun run typecheck` exit 0。
+- **真机行为验证未做**：新规则能否压住「你说得对，我会……不会X」与「X 没动」两类
+  句式需 GPT 真会话对照，与上文 261025 批次一样保留为待验收；不据静态路由断言宣称
+  行为收益。
+
+### 同批追加：通用基线禁仪式性认同（default.md）
+
+失效证据跨模型（不限于 GPT）：「你说得对，我会……」式开场在多家模型出现，维护者明确
+反感。`default.md` 的 "What the user actually sees" 节、紧邻 First-sentence 规则新增
+一条 `No agreement rituals`：不用「You're right」及等价形开场、不回声复述请求；
+首句带内容——发现了什么、定了什么、做了什么。判据导向：点名短语是示意，等价形同样
+适用。
+
+模型可见四问：① 所有模型可见 default.md 全文，新增一条 bullet，其余文本不变；
+② 9,630→9,910 bytes，净增 280 ≈ 70 估算 tokens（chars/4，非 tokenizer 实测）；
+③ default.md 位于前缀最前，所有家族现存会话从该句起至请求尾部重建一次缓存，
+新会话无额外成本；④ 固定源码文件 9,910 bytes（registry `model-family-prompt`）。
+验证：路由 16 pass / 81 expects（新增 default 含「No agreement rituals」断言）；
+typecheck exit 0。与 gpt.md 反防御节的关系：通用层只管仪式性认同与回声复述，GPT Delta
+管表达防御全谱；受批评场景的交互契约仍归 working-style.md，三处各管一段不重复展开。
