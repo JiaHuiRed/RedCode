@@ -8,6 +8,12 @@
 
 ---
 
+### [0.17.3] - 2026-11-09
+
+- **GPT 反防御写作调优 + 通用基线禁仪式性认同**（`opencode/src/session/prompt/{gpt,default}.md`、`test/session/system-prompt-routing.test.ts`）：GPT 真实会话反复出现「你说得对，我会……」仪式性确认、预防性自证清白（用户只要求调布局，回复却补「业务逻辑都没动」——回答没人提出的问题）、叠加保留措辞、「不是X而是Y」模板句式，伴生测试当护甲与人格塌缩（同 soul 下防御语域压扁人格）。gpt.md 新增 Anti-defensive writing 八条 bullet，判据导向、不列句式清单（句式层出不穷，列举会被当白名单绕过），只绑定有失效证据的 GPT 家族；default.md 公共基线新增 No agreement rituals（禁「你说得对」式开场与回声复述请求，首句带内容），全模型生效。模型可见：gpt.md +366 est tokens（仅 GPT）、default.md +70 est tokens（全模型），各从新增处起尾部缓存重建一次；固定源码文件有界。验证：路由 16 pass / 81 expects、typecheck exit 0；真机行为验收待 GPT 会话对照。决策记录：`docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md`。
+- **引入 cloudflare security-audit 安全审计 skill**（`seed/skill/security-audit/`，20 文件 320KB）：上游 cloudflare/security-audit-skill（c1c8a8c，MIT）原样引入、SHA256 逐文件对账，零改写以便跟进上游。六阶段结构化审计（侦察→覆盖率台账狩猎→对抗性候选验证→findings.json 机器校验→独立复核→中立报告），三态判定（confirmed/needs_validation/rejected）、severity 只给 confirmed、无 OS 沙箱时自动降级为纯静态 + needs_validation。「security audit / 找漏洞 / pen test」触发，与 ce-code-review 边界不撞；home 无同名，下会话 bootstrap 自动播种。模型可见：skills 清单固定前缀 +1 行（≈70 est tokens），SKILL.md 22KB 仅触发式注入。
+- **引导与真实能力对齐：Plan 派单、plan_exit、explore 续跑三处失配修正**（`opencode/src/session/prompt/`、tool task、seed 命令描述）：实验性 Plan 设计阶段从派 execute（执行者）改为 explore（只读、description 明确支持 DESIGN）；plan_exit 仅 CLI 注册，非 CLI 客户端退回非实验路径，引导与工具表一致；explore 结果头不再承诺 task_id 续跑（实际校验明确拒绝），改提示派发新任务；/goal 文档补 REDCODE_ENABLE_GOAL_TOOLS=true 依赖说明。模型可见：plan-mode.md 固定文件改写、task 结果头固定一行改写、命令描述固定。验证：opencode typecheck exit 0。
+- **审计文档对齐现状**（`MANUAL.md`、`packages/opencode/README.md`、`docs/agent-dispatch-plan.md`）：/goal 落库依赖 REDCODE_ENABLE_GOAL_TOOLS=true（默认关）、/subtask 为隔离子会话同步执行而非后台；`bun run index.ts` 不存在，改为 `bun run dev` 等真实命令；agent 派发方案实施批次状态改为真实落地状态。
 ### [0.17.2] - 2026-11-08
 
 - **ResizeObserver 布局循环清零：内容高度改由时间线上报，滚动决策收敛为状态机**（`ui/src/hooks/create-auto-scroll.tsx`、新增 `ui/src/hooks/auto-scroll-machine.ts`、`app/src/pages/session/message-timeline.tsx`、`session.tsx`）：content 元素此前同时被会话与 auto-scroll 两处 RO 观察，而虚拟列表行尺寸提交也在同一帧，Chrome 把每次交付报成 `ResizeObserver loop completed with undelivered notifications`（Electron renderer.log 单晚 911 条）。现在时间线在行集合/宽度/流式版本变化时 rAF 读一次高度、值变了才回调；滚动决策移植上游 #61588 的状态机（idle/following/settling/paused/detached + flight），所有入口只 dispatch，是否写 scrollTop 由 reducer 产出的 effect 决定。验证：dev 实测进入会话 4-6→0、连续滚动 1-2→0、顶部加载历史 4→0；滚动上后不被拉回、回底 resize 保持底部；状态机单测 14 条；ui/app typecheck exit 0。
