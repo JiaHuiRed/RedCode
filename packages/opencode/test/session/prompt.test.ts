@@ -32,6 +32,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { SessionCompaction } from "../../src/session/compaction"
 import { SessionSummary } from "../../src/session/summary"
+import { SessionVerification } from "../../src/session/verification"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
@@ -309,6 +310,7 @@ function makePrompt(input?: {
     Layer.provide(SystemPrompt.defaultLayer),
     Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(deps),
+    Layer.provide(SessionVerification.defaultLayer),
     Layer.provide(summary),
   )
 }
@@ -4913,4 +4915,43 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+// 261109 Karina RC-05 端到端：一轮里真的改了文件，收尾必须落一份可见报告。
+// 报告不是模型输出，而是 harness 依据 patch part 计算的交付证据。
+it.instance(
+  "appends a verification report after a turn that changed files",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Verification report",
+        permission: [
+          { permission: "edit", pattern: "*", action: "allow" },
+          { permission: "bash", pattern: "*", action: "allow" },
+        ],
+      })
+      yield* writeText(path.join(dir, "package.json"), JSON.stringify({ scripts: { typecheck: "bun pass.js" } }))
+      yield* writeText(path.join(dir, "pass.js"), "process.exit(0)\n")
+      const target = path.join(dir, "src", "a.ts")
+      yield* llm.tool("write", { filePath: target, content: "export const a = 2\n" })
+      yield* llm.text("done")
+      yield* user(chat.id, "Change src/a.ts")
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const messages = yield* MessageV2.filterCompactedEffect(chat.id)
+      const report = messages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "text" && part.metadata?.verification)
+      expect(report).toBeDefined()
+      const verification = (report as { metadata?: { verification?: { status: string; changed_files: string[] } } })
+        .metadata?.verification
+      expect(verification?.status).toBe("passed")
+      // 绝对路径与工具入参必须归一化去重成一条 worktree 相对路径
+      expect(verification?.changed_files).toEqual(["src/a.ts"])
+    }),
+  { git: true },
 )

@@ -303,6 +303,41 @@ export const Info = Schema.Struct({
   ).annotate({
     description: "Instruction prefix budget and remote fetch timeout",
   }),
+  // 261109 Karina RC-05 回合收尾的定向验证。默认开启，但只在回合真有文件改动、
+  // 且受影响包存在 typecheck 脚本时才执行；没有匹配检查时报告 not_run 并写原因。
+  verification: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Run a delivery verification report at the end of a turn that changed files (default: true)",
+      }),
+      timeout_ms: Schema.optional(PositiveInt).annotate({
+        description: "Timeout for one verification command (default: 120000)",
+      }),
+      max_checks: Schema.optional(PositiveInt).annotate({
+        description: "Maximum number of checks run per turn (default: 3)",
+      }),
+      disabled_scripts: Schema.optional(Schema.Array(Schema.String)).annotate({
+        description: 'Package script names never auto-selected (e.g. ["typecheck"])',
+      }),
+      commands: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            name: Schema.String,
+            command: Schema.String,
+            cwd: Schema.optional(Schema.String),
+          }),
+        ),
+      ).annotate({
+        description:
+          "Extra verification commands. command is split on whitespace and executed without a shell; cwd is relative to the project root",
+      }),
+      protected_paths: Schema.optional(Schema.Array(Schema.String)).annotate({
+        description:
+          "Path prefixes that should not change during a turn; matches are reported in unrelated_change_warning",
+      }),
+    }),
+  ).annotate({ description: "Task-end verification report" }),
   layout: Schema.optional(ConfigLayout.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermission.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),

@@ -1988,6 +1988,39 @@ export type Config = {
     fetch_timeout_ms?: number
   }
   /**
+   * Task-end verification report
+   */
+  verification?: {
+    /**
+     * Run a delivery verification report at the end of a turn that changed files (default: true)
+     */
+    enabled?: boolean
+    /**
+     * Timeout for one verification command (default: 120000)
+     */
+    timeout_ms?: number
+    /**
+     * Maximum number of checks run per turn (default: 3)
+     */
+    max_checks?: number
+    /**
+     * Package script names never auto-selected (e.g. ["typecheck"])
+     */
+    disabled_scripts?: Array<string>
+    /**
+     * Extra verification commands. command is split on whitespace and executed without a shell; cwd is relative to the project root
+     */
+    commands?: Array<{
+      name: string
+      command: string
+      cwd?: string
+    }>
+    /**
+     * Path prefixes that should not change during a turn; matches are reported in unrelated_change_warning
+     */
+    protected_paths?: Array<string>
+  }
+  /**
    * @deprecated Always uses stretch layout.
    */
   layout?: LayoutConfig

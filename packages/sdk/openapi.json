@@ -17842,6 +17842,63 @@
             "additionalProperties": false,
             "description": "Instruction prefix budget and remote fetch timeout"
           },
+          "verification": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Run a delivery verification report at the end of a turn that changed files (default: true)"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "maximum": 9007199254740991,
+                "exclusiveMinimum": 0,
+                "description": "Timeout for one verification command (default: 120000)"
+              },
+              "max_checks": {
+                "type": "integer",
+                "maximum": 9007199254740991,
+                "exclusiveMinimum": 0,
+                "description": "Maximum number of checks run per turn (default: 3)"
+              },
+              "disabled_scripts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Package script names never auto-selected (e.g. [\"typecheck\"])"
+              },
+              "commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "cwd": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name", "command"],
+                  "additionalProperties": false
+                },
+                "description": "Extra verification commands. command is split on whitespace and executed without a shell; cwd is relative to the project root"
+              },
+              "protected_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Path prefixes that should not change during a turn; matches are reported in unrelated_change_warning"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Task-end verification report"
+          },
           "layout": {
             "$ref": "#/components/schemas/LayoutConfig",
             "description": "@deprecated Always uses stretch layout."

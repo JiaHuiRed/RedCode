@@ -21,6 +21,7 @@ import { LLM } from "../../src/session/llm"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionSummary } from "../../src/session/summary"
+import { SessionVerification } from "../../src/session/verification"
 import { MessageV2 } from "../../src/session/message-v2"
 import * as Log from "@redcode-ai/core/util/log"
 import { provideTmpdirServer } from "../fixture/fixture"
@@ -188,6 +189,7 @@ function makeHttp() {
       Layer.provide(Snippet.defaultLayer),
       Layer.provide(SystemPrompt.defaultLayer),
       Layer.provide(RuntimeFlags.layer({})),
+      Layer.provide(SessionVerification.defaultLayer),
       Layer.provideMerge(deps),
     ),
   )

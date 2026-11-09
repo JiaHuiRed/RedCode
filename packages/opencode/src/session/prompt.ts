@@ -35,6 +35,7 @@ import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
+import { SessionVerification } from "./verification"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
 import * as PrefixShape from "./prefix-shape"
@@ -159,6 +160,7 @@ export const layer = Layer.effect(
     const commands = yield* Command.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
+    const verification = yield* SessionVerification.Service
     const fsys = yield* AppFileSystem.Service
     const mcp = yield* MCP.Service
     const lsp = yield* LSP.Service
@@ -304,6 +306,7 @@ export const layer = Layer.effect(
       sessionID: SessionID
       messageID: MessageID
       text: string
+      metadata?: Record<string, unknown>
     }) {
       const now = Date.now()
       yield* sessions.updatePart({
@@ -313,6 +316,65 @@ export const layer = Layer.effect(
         type: "text",
         text: input.text,
         time: { start: now, end: now },
+        ...(input.metadata ? { metadata: input.metadata } : {}),
+      })
+    })
+
+    // 261109 Karina RC-05 收尾验证：本轮有 patch part 才算「改了什么」；子会话不跑
+    // （否则每个子代理收尾都验证一遍，成本翻倍）。报告作为可见 text part 落库，
+    // 结构化结果挂在 metadata.verification 上供机器读取。
+    const reportVerification = Effect.fnUntraced(function* (input: {
+      sessionID: SessionID
+      user: MessageV2.User
+      messageID: MessageID
+      msgs: MessageV2.WithParts[]
+    }) {
+      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (session.parentID) return
+      const ctx = yield* InstanceState.context
+      const turnParts = input.msgs
+        .filter((msg) => msg.info.role === "assistant" && msg.info.parentID === input.user.id)
+        .flatMap((msg) => msg.parts)
+      // patch part 记的是绝对路径，工具入参也是绝对路径；报告与 protected_paths 都要
+      // 按 worktree 相对路径比较，所以在挂载点统一归一化并去重。
+      const relative = (file: string) => {
+        const abs = path.isAbsolute(file) ? file : path.resolve(ctx.worktree, file)
+        const rel = path.relative(ctx.worktree, abs).replaceAll("\\", "/")
+        return rel && rel !== ".." && !rel.startsWith("../") && !path.isAbsolute(rel) ? rel : undefined
+      }
+      // 改动来源两条：patch part（快照可用时最权威）与 edit/write 工具入参。
+      // 后者让功能在非 git 项目或 snapshot=false 时仍然生效——只靠 patch 的话，
+      // 关掉快照就等于静默关掉验证。bash 改文件不在 v1 覆盖范围内。
+      const patches = turnParts.filter((part): part is MessageV2.PatchPart => part.type === "patch")
+      const fromTools = turnParts
+        .filter(
+          (part): part is MessageV2.ToolPart =>
+            part.type === "tool" && (part.tool === "edit" || part.tool === "write"),
+        )
+        .flatMap((part) => {
+          if (part.state.status !== "completed") return []
+          const filePath = part.state.input?.filePath
+          if (typeof filePath !== "string") return []
+          const rel = relative(filePath)
+          return rel ? [rel] : []
+        })
+      const changed = [
+        ...new Set([...patches.flatMap((part) => part.files), ...fromTools].map(relative).filter((file): file is string => Boolean(file))),
+      ]
+      if (changed.length === 0) return
+      const agent = yield* agents.get(input.user.agent)
+      const report = yield* verification.report({
+        sessionID: input.sessionID,
+        worktree: ctx.worktree,
+        ruleset: Permission.merge(agent?.permission ?? [], session.permission ?? []),
+        changed,
+        hash: patches.at(-1)?.hash,
+      })
+      yield* appendNotice({
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        text: verification.render(report),
+        metadata: { verification: report },
       })
     })
 
@@ -1576,6 +1638,14 @@ export const layer = Layer.effect(
               resetQueuedTurn(next.id)
               continue
             }
+            // 261109 Karina RC-05 只在真正结束一轮时出交付报告；排队消息续跑走上面的
+            // continue，不算收尾。验证失败不阻断收尾——坏脚本不能把正常回合变成错误。
+            yield* reportVerification({
+              sessionID,
+              user: lastUser,
+              messageID: lastAssistant.id,
+              msgs,
+            }).pipe(Effect.catchCause((cause) => Effect.sync(() => log.error("verification report failed", { cause }))))
             yield* slog.info("exiting loop")
             break
           }
@@ -2730,7 +2800,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(SessionSummary.defaultLayer),
+    Layer.provide(Layer.mergeAll(SessionSummary.defaultLayer, SessionVerification.defaultLayer)),
     Layer.provide(Image.defaultLayer),
     Layer.provide(
       Layer.mergeAll(
