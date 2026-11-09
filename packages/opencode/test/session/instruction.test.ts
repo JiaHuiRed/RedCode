@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { Effect, FileSystem, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -6,13 +7,13 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { ModelID, ProviderID } from "../../src/provider/schema"
-import { Instruction } from "../../src/session/instruction"
+import { Instruction, isWithinRoot } from "../../src/session/instruction"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Global } from "@redcode-ai/core/global"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { provideInstance, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
 import type { Config } from "@/config/config"
 
@@ -246,7 +247,99 @@ describe("Instruction.resolve", () => {
     ),
   )
 
+  // 261109 Karina RC-01：项目根是 <parent>/proj，文件在 <parent>/proj-backup/nested。
+  // 旧实现用 current.startsWith(root) 判断包含关系，前缀相同的兄弟目录会被判成项目内，
+  // 沿 sibling 向上找到 proj-backup/AGENTS.md 并当本项目指令注入。
+  it.live("does not attach instructions from a sibling sharing the project name prefix", () =>
+    Effect.gen(function* () {
+      const parent = yield* tmpdirScoped()
+      const project = path.join(parent, "proj")
+      const sibling = path.join(parent, "proj-backup")
+      yield* writeFiles(project, { "AGENTS.md": "# Project rules" })
+      yield* writeFiles(sibling, { "AGENTS.md": "# Sibling rules", "nested/file.ts": "const x = 1" })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const results = yield* svc.resolve(
+          [],
+          path.join(sibling, "nested", "file.ts"),
+          MessageID.make("msg_message-path-sibling-1"),
+        )
+        expect(results).toEqual([])
+      }).pipe(provideInstance(project), provideInstruction({ home: project, config: project }))
+    }),
+  )
+
+  // 261109 Karina RC-01：find() 走逻辑路径、读的是链接目标。项目内的目录联接如果指向
+  // 根之外，逻辑路径判定会放行，真实路径判定必须拦住。
+  it.live("does not attach instructions reached through a link pointing outside the project", () =>
+    Effect.gen(function* () {
+      const parent = yield* tmpdirScoped()
+      const project = path.join(parent, "proj")
+      const outside = path.join(parent, "outside")
+      const link = path.join(project, "link")
+      yield* writeFiles(project, { "keep.txt": "keep" })
+      yield* writeFiles(outside, { "AGENTS.md": "# Outside rules", "file.ts": "const x = 1" })
+      yield* Effect.promise(() => fs.symlink(outside, link, process.platform === "win32" ? "junction" : "dir"))
+      // 先摘链接再让 tmpdirScoped 递归清理：Windows 上 rm -r 会顺着目录联接走进目标。
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => fs.rm(link, { recursive: true, force: true })).pipe(Effect.ignore),
+      )
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const results = yield* svc.resolve(
+          [],
+          path.join(link, "file.ts"),
+          MessageID.make("msg_message-path-link-1"),
+        )
+        expect(results).toEqual([])
+      }).pipe(provideInstance(project), provideInstruction({ home: project, config: project }))
+    }),
+  )
+
   test.todo("fetches remote instructions from config URLs via HttpClient", () => {})
+})
+
+// 261109 Karina RC-01：路径包含判定不能是字符串前缀。这些用例钉住路径语义本身
+// （跨盘符、大小写、父级穿越），行为用例在上面。
+describe("Instruction.isWithinRoot", () => {
+  const root = path.resolve(process.platform === "win32" ? "C:/work/RedCode" : "/work/RedCode")
+
+  test("accepts a descendant directory", () => {
+    expect(isWithinRoot(root, path.join(root, "src", "nested"))).toBe(true)
+  })
+
+  test("rejects the root itself", () => {
+    expect(isWithinRoot(root, root)).toBe(false)
+  })
+
+  test("rejects a sibling sharing the project name prefix", () => {
+    expect(isWithinRoot(root, `${root}-backup`)).toBe(false)
+  })
+
+  test("rejects parent traversal", () => {
+    expect(isWithinRoot(root, path.join(root, ".."))).toBe(false)
+  })
+
+  test("compares case-insensitively on Windows", () => {
+    if (process.platform !== "win32") return
+    expect(isWithinRoot(root, path.join(root.toUpperCase(), "src"))).toBe(true)
+  })
+
+  test("rejects a path on another drive", () => {
+    if (process.platform !== "win32") return
+    const other = path.parse(root).root === "C:\\" ? "D:\\work\\RedCode" : "C:\\work\\RedCode"
+    expect(isWithinRoot(root, other)).toBe(false)
+  })
+
+  test("handles UNC paths on Windows", () => {
+    if (process.platform !== "win32") return
+    // 同一共享下的子目录算项目内，同前缀兄弟目录与别的共享都不算
+    expect(isWithinRoot("\\\\server\\share\\proj", "\\\\server\\share\\proj\\src")).toBe(true)
+    expect(isWithinRoot("\\\\server\\share\\proj", "\\\\server\\share\\proj-backup")).toBe(false)
+    expect(isWithinRoot("\\\\server\\share\\proj", "\\\\other\\share\\proj\\src")).toBe(false)
+  })
 })
 
 describe("Instruction.system", () => {
@@ -682,6 +775,224 @@ describe("Instruction.describe 与 system 逐项一致（RC-04）", () => {
             instruction_budget: { max_total_bytes: 260 },
             instructions: [url],
           }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+})
+
+// 261109 Karina RC-01：远程指令的读取上限必须在「读」的时候就生效。旧实现先
+// arrayBuffer 整份载入内存、再按解码后的字节数丢弃——内存仍随响应体线性增长，
+// chunked 响应连 Content-Length 兜底都没有。这组用例用本地服务验证：正常短文本
+// 注入、超限整份丢弃并取消响应流、声明超限提前拒绝、慢响应按时超时、断流不注入半截。
+describe("Instruction remote fetch budget (RC-01)", () => {
+  it.live("injects a short remote instruction", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const server = Bun.serve({ port: 0, fetch: () => new Response("# Remote rules") })
+      const url = `http://127.0.0.1:${server.port}/rules`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const rules = yield* svc.system()
+          expect(rules.some((r) => r.includes("# Remote rules"))).toBe(true)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, { instructions: [url] }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+
+  it.live("stops reading a chunked response once it exceeds max_source_bytes", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const chunk = new Uint8Array(64 * 1024).fill(0x78)
+      // 50 块 × 50ms ≈ 2.5s：预算 1KB 时第一块就越限。「读的时候截断」会立刻返回，
+      // 「读完再丢」的旧实现要接近 2.5s——用耗时把两条路径区分开。
+      const server = Bun.serve({
+        port: 0,
+        fetch() {
+          let sent = 0
+          return new Response(
+            new ReadableStream({
+              async pull(controller) {
+                if (sent >= 50) return controller.close()
+                sent += 1
+                await Bun.sleep(50)
+                controller.enqueue(chunk)
+              },
+            }),
+          )
+        },
+      })
+      const url = `http://127.0.0.1:${server.port}/stream`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const started = Date.now()
+          const rules = yield* svc.system()
+          expect(rules.some((r) => r.startsWith(`Instructions from: ${url}`))).toBe(false)
+          expect(Date.now() - started).toBeLessThan(1500)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+            instructions: [url],
+            instruction_budget: { max_source_bytes: 1024, fetch_timeout_ms: 10000 },
+          }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+
+
+  it.live("rejects a response whose Content-Length already exceeds the budget", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      // 声明 200000 字节但一个字节都不发：只有按 Content-Length 提前拒绝才能在
+      // fetch_timeout_ms 之前返回；只按实际读取字节的实现会一直等到超时。
+      const server = Bun.listen({
+        hostname: "127.0.0.1",
+        port: 0,
+        socket: {
+          open() {},
+          data(socket) {
+            socket.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 200000\r\n\r\n")
+          },
+        },
+      })
+      const url = `http://127.0.0.1:${server.port}/big`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const started = Date.now()
+          const rules = yield* svc.system()
+          expect(Date.now() - started).toBeLessThan(1000)
+          expect(rules.some((r) => r.startsWith(`Instructions from: ${url}`))).toBe(false)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+            instructions: [url],
+            instruction_budget: { max_source_bytes: 1024, fetch_timeout_ms: 5000 },
+          }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+
+  it.live("times out on a stalled body without hanging the session", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const server = Bun.serve({
+        port: 0,
+        fetch() {
+          return new Response(
+            new ReadableStream({
+              pull() {
+                return new Promise<never>(() => {})
+              },
+            }),
+          )
+        },
+      })
+      const url = `http://127.0.0.1:${server.port}/stall`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const started = Date.now()
+          const rules = yield* svc.system()
+          expect(Date.now() - started).toBeLessThan(5000)
+          expect(rules.some((r) => r.startsWith(`Instructions from: ${url}`))).toBe(false)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+            instructions: [url],
+            instruction_budget: { fetch_timeout_ms: 150 },
+          }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+
+  it.live("times out on a stalled body without hanging the session", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const server = Bun.serve({
+        port: 0,
+        fetch() {
+          return new Response(
+            new ReadableStream({
+              pull() {
+                return new Promise<never>(() => {})
+              },
+            }),
+          )
+        },
+      })
+      const url = `http://127.0.0.1:${server.port}/stall`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const started = Date.now()
+          const rules = yield* svc.system()
+          expect(Date.now() - started).toBeLessThan(5000)
+          expect(rules.some((r) => r.startsWith(`Instructions from: ${url}`))).toBe(false)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+            instructions: [url],
+            instruction_budget: { fetch_timeout_ms: 150 },
+          }),
+        )
+      } finally {
+        server.stop(true)
+      }
+    }),
+  )
+
+  it.live("never injects a partial body when the connection drops mid-response", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      // 声明 1000 字节，只发 16 字节就断开：客户端很可能已收到半截正文，
+      // 但必须整份丢弃，不能把 "# Partial rules" 当完整指令注入。
+      const server = Bun.listen({
+        hostname: "127.0.0.1",
+        port: 0,
+        socket: {
+          open() {},
+          data(socket) {
+            socket.write(
+              "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n# Partial rules",
+            )
+            socket.end()
+          },
+        },
+      })
+      const url = `http://127.0.0.1:${server.port}/broken`
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const rules = yield* svc.system()
+          expect(rules.some((r) => r.includes("# Partial rules"))).toBe(false)
+        }).pipe(
+          provideInstance(projectTmp),
+          provideInstruction({ home: globalTmp, config: globalTmp }, undefined, { instructions: [url] }),
         )
       } finally {
         server.stop(true)

@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **指令注入路径边界与远程读取上限**（`opencode/src/session/instruction.ts`、`test/session/instruction.test.ts`）：`resolve()` 用 `current.startsWith(root)` 判断「在项目内」，同前缀兄弟目录（`RedCode` vs `RedCode-backup`）与指向根外的目录联接都会被误判，读外部文件时把别的项目的 AGENTS.md 当本项目指令注入；改为 `isWithinRoot()`（`path.relative` 语义 + realpath 双重判定，realpath 失败退回逻辑路径，读取权限与自动注入资格仍是两个独立判断）。远程 instructions 原本先 `arrayBuffer` 整份入内存再按 `max_source_bytes` 丢弃，chunked 响应没有 Content-Length 兜底；改为逐块累计、超限立刻停读并取消响应流，`Content-Length` 只做提前拒绝，超时仍罩住整段 body，日志 URL 去掉查询串。模型可见：正常项目内注入不变；同前缀兄弟目录/链接目标的指令不再出现（原本属误注入）；超限远程来源整份缺席而非完整注入。KV 缓存：正常路径布局不动。硬上限：沿用配置 `instruction_budget.max_source_bytes`，只是把生效点从解码后提前到读取中。验证：opencode typecheck exit 0；instruction 套件 40 pass / 1 todo；可证伪性——临时改回 `startsWith` 时 sibling/link 两例失败（实测注入 `proj-backup\AGENTS.md` 与链接目标），临时改回 `arrayBuffer` 时 chunked 用例 3.6s 失败、去掉 Content-Length 提前拒绝时该用例 5.4s 失败。决策记录：`docs/notes/implemented/bug-fix/2026-11-09-instruction-path-boundary-and-remote-cap.md`。
 - **连续中断预算按工具步骤重置**（`opencode/src/session/processor.ts`、`tool-failure-guard.ts`）：此前同一用户轮内取历史最大中断计数，中间有成功步骤仍累计到上限；现在只继承上一个工具步骤的中断计数，同一步多个中断仍只算一次。普通工具失败预算不变。详见 `docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md`。
 - **长文档预览增量查找路径**（`opencode/src/cli/cmd/tui/util/partial-json-string.ts`）：`content` 在 `filePath` 前时保留字段搜索游标，跨分片保留匹配边界，不再每次从头搜索正文。测试覆盖字段跨片和 reader 重置；累积字符串本身仍有分配成本。
 

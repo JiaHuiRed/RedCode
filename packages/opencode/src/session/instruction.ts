@@ -1,6 +1,6 @@
 import path from "path"
-import { Effect, Layer, Context, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { Effect, Layer, Context, Option, Schema, Stream } from "effect"
+import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -109,6 +109,24 @@ const files = (disableClaudeCodePrompt: boolean) => [
   "CONTEXT.md", // deprecated
 ]
 
+// 261109 Karina RC-01 指令注入的路径边界。原实现用字符串前缀（current.startsWith(root)）
+// 判断「在项目目录之下」：root 是 C:\work\RedCode 时，兄弟目录 C:\work\RedCode-backup
+// 前缀相同会被判成项目内，读外部文件时把别的项目的 AGENTS.md 当本项目指令注入。
+// 改用 path.relative 语义（AppFileSystem.contains 已处理跨盘符、UNC 与大小写差异），
+// 再按真实路径判一次——find() 走逻辑路径、读的是链接目标，项目内的目录联接可以指向
+// 根之外。语义：严格位于根之下，不含根目录自身（根目录的指令由 system() 注入）。
+// See docs/notes/implemented/bug-fix/2026-11-09-instruction-path-boundary-and-remote-cap.md.
+export const isWithinRoot = (root: string, candidate: string) => {
+  if (!AppFileSystem.contains(root, candidate) || path.relative(root, candidate) === "") return false
+  try {
+    return AppFileSystem.contains(AppFileSystem.resolve(root), AppFileSystem.resolve(candidate))
+  } catch {
+    // realpath 失败（权限、并发删除）时退回逻辑路径判定：链接逃逸是加固项，
+    // 不能因为解析不出真实路径，连项目内的正常指令一起丢掉。
+    return true
+  }
+}
+
 function extract(messages: MessageV2.WithParts[]) {
   const paths = new Set<string>()
   for (const msg of messages) {
@@ -188,18 +206,75 @@ export const layer: Layer.Layer<
       return yield* fs.readFileString(filepath).pipe(Effect.catch(() => Effect.succeed("")))
     })
 
+    // 261109 Karina RC-01 远程指令改成流式读取。原实现 res.arrayBuffer 先把整个响应体
+    // 载入内存，字节预算只在解码后才检查——恶意或异常来源能让内存随响应体大小线性增长，
+    // chunked 响应也没有 Content-Length 兜底。现在逐块累计原始字节，超过
+    // instruction_budget.max_source_bytes 立刻停止读取（取消响应流）并整份丢弃，
+    // 不注入半截内容。Content-Length 只用于提前拒绝：服务器可以撒谎或缺失，
+    // 不能代替实际读取字节计数。
+    // See docs/notes/implemented/bug-fix/2026-11-09-instruction-path-boundary-and-remote-cap.md.
     const fetch = Effect.fnUntraced(function* (url: string) {
       const config = yield* cfg.get()
       const timeout = config.instruction_budget?.fetch_timeout_ms ?? DEFAULT_INSTRUCTION_BUDGET.fetchTimeoutMs
-      // 260913 Red timeout 必须罩住响应体读取：原实现只包 execute，慢速吐 body 的服务器
-      // 会让这一轮 system prompt 组装无界挂住（没有上限就是缺陷）。
-      return yield* Effect.gen(function* () {
+      const maxBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
+      // 日志只留协议 + 主机 + 路径：查询串可能携带访问令牌，不能原样进日志。
+      const label = (() => {
+        try {
+          const parsed = new URL(url)
+          return `${parsed.protocol}//${parsed.host}${parsed.pathname}`
+        } catch {
+          // 配置层已校验过 URL 形状，这里只兜畸形输入；不回显原文以免泄漏
+          return "(invalid url)"
+        }
+      })()
+      const read = Effect.gen(function* () {
         const res = yield* http.execute(HttpClientRequest.get(url))
-        const body = yield* res.arrayBuffer
+        const declared = Option.getOrUndefined(Headers.get(res.headers, "content-length"))
+        if (declared !== undefined && Number(declared) > maxBytes) {
+          Log.Default.warn(
+            `Instruction source skipped, Content-Length ${declared} over instruction_budget.max_source_bytes (${maxBytes}): ${label}`,
+          )
+          return ""
+        }
+        const chunks: Uint8Array[] = []
+        let total = 0
+        let overflow = false
+        yield* res.stream.pipe(
+          Stream.runForEachWhile((chunk) =>
+            Effect.sync(() => {
+              if (total + chunk.byteLength > maxBytes) {
+                overflow = true
+                return false
+              }
+              chunks.push(chunk)
+              total += chunk.byteLength
+              return true
+            }),
+          ),
+        )
+        if (overflow) {
+          Log.Default.warn(
+            `Instruction source skipped, response over instruction_budget.max_source_bytes (${maxBytes}): ${label}`,
+          )
+          return ""
+        }
+        const body = new Uint8Array(total)
+        let offset = 0
+        for (const chunk of chunks) {
+          body.set(chunk, offset)
+          offset += chunk.byteLength
+        }
         return new TextDecoder().decode(body)
-      }).pipe(
+      })
+      // 260913 Red timeout 必须罩住响应体读取：原实现只包 execute，慢速吐 body 的服务器
+      // 会让这一轮 system prompt 组装无界挂住（没有上限就是缺陷）。超时、网络异常、
+      // 超限都安全失败，不注入半截远程指令。
+      return yield* read.pipe(
         Effect.timeout(timeout),
-        Effect.catch(() => Effect.succeed("")),
+        Effect.catch((error) => {
+          Log.Default.warn(`Instruction source fetch failed: ${label} (${error._tag})`)
+          return Effect.succeed("")
+        }),
       )
     })
 
@@ -487,7 +562,7 @@ export const layer: Layer.Layer<
       let current = path.dirname(target)
 
       // Walk upward from the file being read and attach nearby instruction files once per message.
-      while (current.startsWith(root) && current !== root) {
+      while (isWithinRoot(root, current)) {
         const found = yield* find(current)
         if (!found || found === target || sys.has(found) || already.has(found)) {
           current = path.dirname(current)
