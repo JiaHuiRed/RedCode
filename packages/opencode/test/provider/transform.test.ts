@@ -1657,7 +1657,39 @@ describe("ProviderTransform.message - archive attachment placeholder", () => {
     headers: {},
   } as any
 
-  test("replaces a file:// archive part with a stable placeholder containing the disk path", () => {
+  // 261109 Red 生产链路给到的是 AI SDK v7 形状：data 是 { type: "url", url: URL }，
+  // 不是字符串。旧用例只测了字符串形态，恰好把「typeof === string 恒假、压缩包原样
+  // 进请求 → URL scheme must be http…」这条线上故障放过去了（#183 同族漂移）。
+  test("replaces a v7 file:// archive part ({type:'url'}) with a stable placeholder", () => {
+    const msgs = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "inspect this bundle" },
+          {
+            type: "file",
+            data: { type: "url", url: new URL("file:///C:/repo/.attachments/arc_abc.zip") },
+            mediaType: "application/x-zip-compressed",
+            filename: "bundle.zip",
+          },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, mockModel, {})
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toHaveLength(2)
+    expect(result[0].content[0]).toEqual({ type: "text", text: "inspect this bundle" })
+    const placeholder = result[0].content[1] as { type: string; text: string }
+    expect(placeholder.type).toBe("text")
+    expect(placeholder.text).toContain('"bundle.zip"')
+    expect(placeholder.text).toContain("arc_abc.zip")
+    expect(placeholder.text).not.toContain("file://")
+    expect(placeholder.text.startsWith("ERROR: Cannot read")).toBe(true)
+  })
+
+  test("replaces a legacy string file:// archive part with a stable placeholder", () => {
     const msgs = [
       {
         role: "user",
@@ -1681,7 +1713,7 @@ describe("ProviderTransform.message - archive attachment placeholder", () => {
     const placeholder = result[0].content[1] as { type: string; text: string }
     expect(placeholder.type).toBe("text")
     expect(placeholder.text).toContain('"bundle.zip"')
-    expect(placeholder.text).toContain("C:/repo/.attachments/arc_abc.zip")
+    expect(placeholder.text).toContain("arc_abc.zip")
     expect(placeholder.text.startsWith("ERROR: Cannot read")).toBe(true)
   })
 

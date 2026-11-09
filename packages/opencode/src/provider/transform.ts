@@ -7,6 +7,7 @@ import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync } from "fs
 import { createHash } from "crypto"
 import { join } from "path"
 import { tmpdir } from "os"
+import { fileURLToPath } from "url"
 import { iife } from "@/util/iife"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
@@ -504,6 +505,24 @@ function unwrapV7Payload(value: unknown): unknown {
   return value
 }
 
+// 261109 Red file:// → 本地路径。encodeFilePath 产出 file:///D:/…，截掉 scheme 会剩
+// /D:/…（Windows 读不了）；fileURLToPath 才能给出 D:\…。非标准 URL（手工拼接/含 host）
+// 解析失败时退回旧口径，解不了百分号转义就原样交给模型——宁可路径难看，也别丢线索。
+function archiveDiskPath(url: string) {
+  try {
+    return fileURLToPath(url)
+  } catch {
+    // 261109 Red 非标准 file://：继续走下面的截前缀兜底
+  }
+  const raw = url.slice("file://".length)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    // 261109 Red 非法百分号转义：原样返回，路径本身仍是可读线索
+    return raw
+  }
+}
+
 // vision 临时文件只写不删（同图同路径靠 existsSync 去重），temp 目录会缓慢堆积截图。
 // 首次落盘时惰性清一次 7 天前的旧文件；正在活跃引用的文件必然是近期写入，不会误删。
 let visionTempSwept = false
@@ -626,18 +645,21 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
         // part.data（AI SDK FilePart 无 url 字段，savePartToTemp 同款取法）。原样 return part
         // 会被 AI SDK throw 掉整个请求，这里换成稳定文本——路径由落盘时的 uuid 固定，
         // 逐轮逐字节一致，前缀缓存安全。其他未知 mime 维持原行为（不扩大面）。
-        const rawData = part.type === "file" && typeof part.data === "string" ? part.data : ""
-        if (part.type === "file" && ARCHIVE_MIMES.has(mime) && rawData.startsWith("file://")) {
-          let diskPath = rawData.slice("file://".length)
-          try {
-            diskPath = decodeURIComponent(diskPath)
-          } catch {
-            // file:// URL 由 encodeFilePath 生成，正常必可解码；解不了就原样给模型
-          }
+        // 261109 Red v7 形状：file part 的 data 是 { type: "url", url: URL }，不是字符串。
+        // 261011 那版按 typeof === "string" 取载荷，恒假 —— 压缩包原样进请求，AI SDK 的
+        // download 校验直接抛 "URL scheme must be http, https, or data, got file:"，
+        // 整个 prompt_async 失败（实测 ses_ffe5e3fa…，GUI 只看到红色报错）。
+        const rawData = part.type === "file" ? unwrapV7Payload(part.data) : undefined
+        if (
+          part.type === "file" &&
+          ARCHIVE_MIMES.has(mime) &&
+          typeof rawData === "string" &&
+          rawData.startsWith("file://")
+        ) {
           const name = filename ? `"${filename}"` : "archive"
           return {
             type: "text" as const,
-            text: `ERROR: Cannot read ${name} (archive attachments are not sent inline). The file is on disk at ${diskPath} — dispatch a subagent with shell access to list or extract it.`,
+            text: `ERROR: Cannot read ${name} (archive attachments are not sent inline). The file is on disk at ${archiveDiskPath(rawData)} — dispatch a subagent with shell access to list or extract it.`,
           }
         }
         return part
