@@ -52,3 +52,14 @@ test("reader returns undefined until the value actually starts", () => {
   expect(reader.read('{"content": ')).toBeUndefined()
   expect(reader.read('{"content": "')).toEqual({ value: "", complete: false })
 })
+
+test("reader finds a later key split across chunks and resets its search", () => {
+  const reader = new PartialJsonStringReader("filePath")
+  const prefix = `{"content":"${"x".repeat(10000)}",`
+  for (let end = 1; end < prefix.length; end += 137) expect(reader.read(prefix.slice(0, end))).toBeUndefined()
+  expect(reader.read(prefix + '"file')).toBeUndefined()
+  expect(reader.read(prefix + '"filePath"')).toBeUndefined()
+  expect(reader.read(prefix + '"filePath":')).toBeUndefined()
+  expect(reader.read(prefix + '"filePath":"a.md"}')).toEqual({ value: "a.md", complete: true })
+  expect(reader.read('{"filePath":"b"}')).toEqual({ value: "b", complete: true })
+})

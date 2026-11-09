@@ -52,6 +52,7 @@ export class PartialJsonStringReader {
   private value = ""
   private lineCount = 0
   private at = -1 // 下一个待消费的 raw 下标；-1 表示还没定位到值的起始引号
+  private searchFrom = 0
   private done = false
   private lastRawLength = 0
 
@@ -69,6 +70,7 @@ export class PartialJsonStringReader {
     this.value = ""
     this.lineCount = 0
     this.at = -1
+    this.searchFrom = 0
     this.done = false
     this.lastRawLength = 0
   }
@@ -81,8 +83,12 @@ export class PartialJsonStringReader {
     if (this.done) return { value: this.value, complete: true }
     if (this.at < 0) {
       const marker = `"${this.key}"`
-      const keyIdx = raw.indexOf(marker)
-      if (keyIdx < 0) return undefined
+      const keyIdx = raw.indexOf(marker, this.searchFrom)
+      if (keyIdx < 0) {
+        this.searchFrom = Math.max(0, raw.length - marker.length + 1)
+        return undefined
+      }
+      this.searchFrom = keyIdx
       const colon = raw.indexOf(":", keyIdx + marker.length)
       if (colon < 0) return undefined
       let i = colon + 1

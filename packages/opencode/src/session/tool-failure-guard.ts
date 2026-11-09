@@ -1,6 +1,6 @@
 // 261015 Red 重复失败预算跨 step 持久化；见 docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md。
 import { createHash } from "node:crypto"
-import { and, eq, sql } from "drizzle-orm"
+import { and, desc, eq, sql } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import type { MessageID, SessionID } from "./schema"
 import { MessageTable, PartTable } from "./session.sql"
@@ -47,6 +47,32 @@ export function count(input: {
         input.errorSignature === undefined ? undefined :
           sql`json_extract(${PartTable.data}, '$.state.metadata.failureGuard.errorSignature') = ${input.errorSignature}`,
       ))
+      .get(),
+  )
+  return row?.count ?? 0
+}
+
+export function interruptCount(input: {
+  sessionID: SessionID
+  parentID: MessageID
+  messageID: MessageID
+  coreSignature: string
+}): number {
+  const row = Database.use((db) =>
+    db.select({
+      count: sql<number>`coalesce(max(case when json_extract(${PartTable.data}, '$.state.metadata.failureGuard.coreSignature') = ${input.coreSignature} then json_extract(${PartTable.data}, '$.state.metadata.failureGuard.count') end), 0)`,
+    })
+      .from(MessageTable)
+      .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
+      .where(and(
+        eq(MessageTable.session_id, input.sessionID),
+        sql`json_extract(${MessageTable.data}, '$.parentID') = ${input.parentID}`,
+        sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
+        sql`(${MessageTable.time_created}, ${MessageTable.id}) < (select time_created, id from message where id = ${input.messageID})`,
+      ))
+      .groupBy(MessageTable.id)
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(1)
       .get(),
   )
   return row?.count ?? 0

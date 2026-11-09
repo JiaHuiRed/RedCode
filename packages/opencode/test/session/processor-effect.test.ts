@@ -33,6 +33,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
 import * as Stream from "effect/Stream"
 import { reminderFor } from "@/session/repeat-tool-reminder"
+import * as ToolFailureGuard from "@/session/tool-failure-guard"
 
 void Log.init({ print: false })
 
@@ -1528,6 +1529,66 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "tool abort")
+        const prior = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: prior.id,
+          sessionID: chat.id,
+          type: "tool",
+          callID: "prior-interrupt",
+          tool: "bash",
+          state: {
+            status: "error",
+            input: {},
+            error: "Tool execution aborted",
+            metadata: {
+              interrupted: true,
+              failureGuard: { coreSignature: ToolFailureGuard.coreSignature("*", "Tool execution aborted"), count: 4 },
+            },
+            time: { start: Date.now(), end: Date.now() },
+          },
+        })
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: prior.id,
+          sessionID: chat.id,
+          type: "tool",
+          callID: "parallel-interrupt",
+          tool: "read",
+          state: {
+            status: "error",
+            input: {},
+            error: "Tool execution aborted",
+            metadata: {
+              interrupted: true,
+              failureGuard: { coreSignature: ToolFailureGuard.coreSignature("*", "Tool execution aborted"), count: 4 },
+            },
+            time: { start: Date.now(), end: Date.now() },
+          },
+        })
+        const success = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        expect(ToolFailureGuard.interruptCount({
+          sessionID: chat.id,
+          parentID: parent.id,
+          messageID: success.id,
+          coreSignature: ToolFailureGuard.coreSignature("*", "Tool execution aborted"),
+        })).toBe(4)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: success.id,
+          sessionID: chat.id,
+          type: "tool",
+          callID: "success",
+          tool: "read",
+          state: {
+            status: "completed",
+            input: {},
+            output: "ok",
+            title: "ok",
+            metadata: {},
+            time: { start: Date.now(), end: Date.now() },
+          },
+        })
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
         const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
         const handle = yield* processors.create({
@@ -1576,6 +1637,7 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
           // 261108 Red 中断文本带进度后缀（第 N/limit 次），核心语义仍是 aborted。
           expect(call.state.error).toContain("Tool execution aborted")
           expect(call.state.metadata?.interrupted).toBe(true)
+          expect(call.state.metadata?.failureGuard).toMatchObject({ count: 1 })
           expect(call.state.time.end).toBeDefined()
         }
       }),

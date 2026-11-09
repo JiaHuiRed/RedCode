@@ -1293,12 +1293,14 @@ export const layer = Layer.effect(
           // 此前每个 part 各查一次库、边写边累加，同一步六个并行中断会一路涨到 6，
           // 一步就耗完五步预算；且 count > limit 要到第 6 次才停。现在整步只取一次计数、
           // 所有中断 part 共用，count >= limit 即停，和「连续 5 步停止」的契约一致。
+          // 261109 Red 只继承上一工具步骤的中断计数；见 docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md。
           // 固定签名与普通失败预算隔离；parentID 限定当前用户轮，新用户消息自然重置。
           const interruptSignature = ToolFailureGuard.coreSignature("*", interruptedText)
           const interruptCount =
-            ToolFailureGuard.count({
+            ToolFailureGuard.interruptCount({
               sessionID: ctx.sessionID,
               parentID: ctx.assistantMessage.parentID,
+              messageID: ctx.assistantMessage.id,
               coreSignature: interruptSignature,
             }) + 1
           const stopped = interruptCount >= interruptLimit

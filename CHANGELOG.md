@@ -8,6 +8,11 @@
 
 ---
 
+### [Unreleased]
+
+- **连续中断预算按工具步骤重置**（`opencode/src/session/processor.ts`、`tool-failure-guard.ts`）：此前同一用户轮内取历史最大中断计数，中间有成功步骤仍累计到上限；现在只继承上一个工具步骤的中断计数，同一步多个中断仍只算一次。普通工具失败预算不变。详见 `docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md`。
+- **长文档预览增量查找路径**（`opencode/src/cli/cmd/tui/util/partial-json-string.ts`）：`content` 在 `filePath` 前时保留字段搜索游标，跨分片保留匹配边界，不再每次从头搜索正文。测试覆盖字段跨片和 reader 重置；累积字符串本身仍有分配成本。
+
 ### [0.17.3] - 2026-11-09
 
 - **GPT 反防御写作调优 + 通用基线禁仪式性认同**（`opencode/src/session/prompt/{gpt,default}.md`、`test/session/system-prompt-routing.test.ts`）：GPT 真实会话反复出现「你说得对，我会……」仪式性确认、预防性自证清白（用户只要求调布局，回复却补「业务逻辑都没动」——回答没人提出的问题）、叠加保留措辞、「不是X而是Y」模板句式，伴生测试当护甲与人格塌缩（同 soul 下防御语域压扁人格）。gpt.md 新增 Anti-defensive writing 八条 bullet，判据导向、不列句式清单（句式层出不穷，列举会被当白名单绕过），只绑定有失效证据的 GPT 家族；default.md 公共基线新增 No agreement rituals（禁「你说得对」式开场与回声复述请求，首句带内容），全模型生效。模型可见：gpt.md +366 est tokens（仅 GPT）、default.md +70 est tokens（全模型），各从新增处起尾部缓存重建一次；固定源码文件有界。验证：路由 16 pass / 81 expects、typecheck exit 0；真机行为验收待 GPT 会话对照。决策记录：`docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md`。
