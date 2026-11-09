@@ -657,6 +657,29 @@ export const SettingsGeneral: Component = () => {
             </div>
           </SettingsRow>
 
+          {/* 261109 Karina UX-08：壁纸遮罩可调——壁纸偏亮/复杂时把正文区域压下去，
+              设置立即生效并持久化；0% 保留原图观感。 */}
+          <SettingsRow
+            title={language.t("settings.general.row.wallpaperDim.title")}
+            description={language.t("settings.general.row.wallpaperDim.description")}
+          >
+            <div class="flex items-center gap-3">
+              <input
+                data-action="settings-wallpaper-dim"
+                type="range"
+                min="0"
+                max="60"
+                step="2"
+                value={settings.appearance.wallpaperDim()}
+                onInput={(event) => settings.appearance.setWallpaperDim(Number(event.currentTarget.value))}
+                class="h-1 w-40 cursor-pointer accent-[var(--v2-background-bg-accent)]"
+              />
+              <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-text-weak">
+                {settings.appearance.wallpaperDim()}%
+              </span>
+            </div>
+          </SettingsRow>
+
           <SettingsRow
             title={language.t("settings.general.row.homeBackground.title")}
             description={language.t("settings.general.row.homeBackground.description")}

@@ -1176,6 +1176,8 @@ export default function Layout(props: ParentProps) {
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
       // 260610 Red 毛玻璃 B：当前视图设了背景图则整窗打标记，CSS 据此让标题栏/主卡片半透明模糊透出背景图
       data-app-frost={appBackground() ? "" : undefined}
+      // 261109 Karina UX-08：壁纸遮罩强度可调（设置 → 通用 → 壁纸遮罩），默认 18% 与 token 一致
+      style={{ "--frost-alpha-veil": `${settings.appearance.wallpaperDim()}%` }}
     >
       {/* 260610 Red 背景图升级为整窗铺底：从聊天面板移到根布局，标题栏/文件栏/审查栏共享同一张壁纸做毛玻璃 */}
       <Show when={appBackground()}>

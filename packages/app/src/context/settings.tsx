@@ -56,6 +56,9 @@ export interface Settings {
     chatBackground: string
     // 260610 Red 0.5.0 主界面（首页/无会话）背景图：data URL（""=无），与聊天背景独立，便于公司/家里分别换壁纸
     homeBackground: string
+    // 261109 Karina UX-08：壁纸遮罩强度（0-60，默认 18 与 --frost-alpha-veil 一致）。
+    // 壁纸复杂/偏亮时用户可自行加深，正文可读性优先。
+    wallpaperDim: number
   }
   keybinds: Record<string, string>
   notifications: NotificationSettings
@@ -198,6 +201,7 @@ const defaultSettings: Settings = {
     terminal: "",
     chatBackground: "",
     homeBackground: "",
+    wallpaperDim: 18,
   },
   keybinds: {},
   notifications: {
@@ -280,6 +284,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       // 此前 fontSize 是死配置——储存、有读写、有 setFontSize，但没有任何消费点。
       const scale = (store.appearance?.fontSize ?? 14) / 14
       const px = (base: number) => `${Math.round(base * scale * 100) / 100}px`
+      // 261109 Karina UX-08：x-small 此前漏在缩放之外（261024 才补的 11px 档），
+      // 于是调大字号时工具名/路径/时间戳仍是全界面最小的一档。基准从 11 提到 12。
+      root.style.setProperty("--font-size-x-small", px(12))
       root.style.setProperty("--font-size-small", px(13))
       root.style.setProperty("--font-size-base", px(14))
       root.style.setProperty("--font-size-large", px(16))
@@ -382,6 +389,12 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         homeBackground: withFallback(() => media.homeBackground, defaultMedia.homeBackground),
         setHomeBackground(value: string) {
           setMedia("homeBackground", value)
+        },
+        // 261109 Karina UX-08：0-60 的遮罩强度，越界一律钳回；读的时候也钳，
+        // 防止旧配置文件里被手改成离谱值。
+        wallpaperDim: createMemo(() => Math.max(0, Math.min(60, store.appearance?.wallpaperDim ?? 18))),
+        setWallpaperDim(value: number) {
+          setStore("appearance", "wallpaperDim", Math.max(0, Math.min(60, Math.round(value))))
         },
       },
       keybinds: {
