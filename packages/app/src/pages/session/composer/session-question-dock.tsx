@@ -166,6 +166,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     focusFrame = requestAnimationFrame(() => {
       focusFrame = undefined
+      // 261109 Red 检查与真正 focus 之间隔了一帧：用户可能已经点进编辑器开始输入，
+      // 排队中的自动聚焦会把输入焦点抢走（中文组合直接断）。执行时必须复查一次。
+      if (typingOutside()) return
       const el = next === options().length ? customRef : optsRef[next]
       el?.focus()
     })

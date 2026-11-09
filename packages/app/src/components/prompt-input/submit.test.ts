@@ -40,6 +40,7 @@ let dirtyValue = false
 let lastSoul = "karina"
 
 let params: { id?: string; dir?: string } = {}
+let readyValue = true
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 
@@ -119,7 +120,7 @@ beforeAll(async () => {
 
   mock.module("@/context/local", () => ({
     useLocal: () => ({
-      ready: () => true,
+      ready: () => readyValue,
       model: {
         current: () => ({ id: "model", provider: { id: "provider" } }),
         variant: { current: () => variant },
@@ -263,6 +264,7 @@ beforeEach(() => {
   defaultClients.length = 0
   promoted.length = 0
   params = {}
+  readyValue = true
   sentShell.length = 0
   syncedDirectories.length = 0
   resetScopes.length = 0
@@ -483,6 +485,44 @@ describe("prompt submit worktree selection", () => {
 
     expect(sentPrompts.map((item) => item.delivery)).toEqual(["queue", "steer"])
     expect(optimistic.map((item) => item.message.delivery)).toEqual(["queued", "steer"])
+  })
+
+  test("keeps the submit target when the user switches session during the readiness wait", async () => {
+    // 真实路由下 useParams() 返回的是响应式对象，切换会话时属性就地变化；
+    // 这里用同一引用改写来复现那个窗口。
+    const route: { id?: string; dir?: string } = { id: "session-a", dir: "/repo/main" }
+    params = route
+
+    const submit = createPromptSubmit({
+      info: () => (route.id ? { id: route.id } : undefined),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    readyValue = false
+    const event = { preventDefault: () => undefined } as unknown as Event
+    const pending = submit.handleSubmit(event)
+
+    // 初始化未完成，用户切到会话 B
+    route.id = "session-b"
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    readyValue = true
+    await pending
+    // sendFollowupDraft 是 void 出去的，runSubmit 返回时请求还没落地
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(sentPrompts.map((item) => item.sessionID)).toEqual(["session-a"])
   })
 
   test("seeds new sessions before optimistic prompts are added", async () => {

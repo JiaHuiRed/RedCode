@@ -348,6 +348,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const images = input.imageAttachments().slice()
     const mode = input.mode()
 
+    // 261109 Red 提交目标钉在点击那一刻：下面的 ready() 轮询最长等 5 秒，期间用户切到
+    // 别的会话时，params / input.info() 已经是新会话，A 的草稿会被发进 B（连同模型调用）。
+    // 草稿正文与上下文同理——等待后再读，读到的是新会话的输入框状态。
+    const submitRoute = { dir: params.dir, id: params.id }
+    const submitSession = input.info()
+    const submitContext = prompt.context.items().slice()
+    const submitAutoAccept = input.autoAccept()
+    const submitWorktree = input.newSessionWorktree?.() || "main"
+    const projectDirectory = sdk.directory
+
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
       if (input.working()) void abort()
       return
@@ -382,11 +392,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
 
-    const projectDirectory = sdk.directory
-    const routeDir = params.dir
-    const isNewSession = !params.id
-    const shouldAutoAccept = isNewSession && input.autoAccept()
-    const worktreeSelection = input.newSessionWorktree?.() || "main"
+    const routeDir = submitRoute.dir
+    const isNewSession = !submitRoute.id
+    const shouldAutoAccept = isNewSession && submitAutoAccept
+    const worktreeSelection = submitWorktree
 
     let sessionDirectory = projectDirectory
     let client = sdk.client
@@ -394,7 +403,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // 261018 Red 防重入必须早于 worktree.create：两次 Enter 会在它的 await 处交错，
     // 各建一个 worktree 之后才被 session.create 的 guard 挡住，留下孤儿目录和重复的
     // 工作区草稿清理。锁从第一个副作用起持有，worktree 与 session.create 同属创建窗口。
-    let session = input.info()
+    let session = submitSession
     const needsSessionCreate = isNewSession && !session
     if (needsSessionCreate) {
       if (creatingSession) {
@@ -506,7 +515,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       providerID: currentModel.provider.id,
     }
     const agent = currentAgent.name
-    const context = prompt.context.items().slice()
+    const context = submitContext
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
