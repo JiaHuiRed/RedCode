@@ -364,6 +364,16 @@ export function MessageTimeline(props: {
   // mounted 之外的代码一律不许碰 handle。
   let mounted: { session: string; keys: readonly string[]; handle: VirtualizerHandle } | undefined
   let cacheWriteFrame: number | undefined
+  // 261109 Red 虚拟列表零行降级。virtua 的视口区间/行测量任一环节失败时，整段会话一行都
+  // 不渲染也没有降级——用户看到聊天区整块露出壁纸、回来滚动位置丢失、输入框跟着失活。
+  // 这是「结构性问题」（见 CHANGELOG 0.17.x 的 native 分支条目），所以这里做最后一道保底：
+  // 连续取样拿不到任何可见行，就只为当前会话切到 native 真实 DOM 渲染，不再赌测量成功。
+  const [virtualFallback, setVirtualFallback] = createSignal(false)
+  // 261110 Red 审计收尾：手动 native 开关与自动降级是**同一条渲染路径**。此前跟底/跳转/
+  // 视口保持只认 nativeTimelineEnabled()，降级后挂载中的 Virtua 实例已卸载、handle 失效，
+  // 这些路径全部静默 no-op（新消息不再跟底、目录跳转失效）。所有「按哪个 renderer 工作」的
+  // 判断统一读这一个状态，不再各自检查开关。
+  const usingNative = () => nativeTimelineEnabled() || virtualFallback()
   // 260920 Red viewport 宽度参与 timeline cache 有效域（见 readTimelineCache）。宽度变化由
   // scrollRoot 上的 ResizeObserver 写回；尚未测量时为 0，cacheReusable 对 0 保持宽松判据。
   const [listWidth, setListWidth] = createSignal(0)
@@ -744,9 +754,9 @@ export function MessageTimeline(props: {
 
   const canAnchorBottom = () => {
     if (props.hasNewer() || props.historyShift) return false
-    // 260921 Red virtua 路径必须有 handle 才能算底部；native 路径没有 handle，
+    // 260921 Red virtua 路径必须有 handle 才能算底部；native 路径（含降级）没有 handle，
     // 但锚定本身只写 listRoot.scrollTop（见 anchorMeasuredBottom），不依赖 virtua。
-    if (nativeTimelineEnabled() ? false : !mounted) return false
+    if (!usingNative() && !mounted) return false
     if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return false
     return timelineRowKeys().length > 0
   }
@@ -798,7 +808,7 @@ export function MessageTimeline(props: {
       if (isMeasuredBottom(listRoot)) return
       const keys = timelineRowKeys()
       if (keys.length === 0) return
-      if (nativeTimelineEnabled()) {
+      if (usingNative()) {
         listRoot.scrollTop = listRoot.scrollHeight
         return
       }
@@ -812,7 +822,7 @@ export function MessageTimeline(props: {
 
   const maybeAnchorBottom = () => {
     const key = sessionKey()
-    if (nativeTimelineEnabled() ? false : !mounted) return
+    if (!usingNative() && !mounted) return
     const keys = timelineRowKeys()
     if (keys.length === 0) return
     // 260829 cc 「每会话只锚一次」不够。一次刷新若把窗口从 1671 行砍回 12 行，内容整段
@@ -833,6 +843,19 @@ export function MessageTimeline(props: {
     // native 与 virtua 统一走这条路径；force 在行高重测期间持续纠偏。
     scheduleMeasuredBottomAnchor({ force: true })
   }
+
+  // 261110 Red 审计收尾：入场锚定此前只挂在 Virtualizer 的 ref 回调里，native 分支没有
+  // Virtualizer —— 手动开关与自动降级进入会话时都停在顶部。这里补上同一语义的入口，
+  // 与 virtua 的 ref 共用 maybeAnchorBottom 的「每会话一次 + shouldAnchorBottom」门禁。
+  createEffect(
+    on(
+      () => [sessionKey(), timelineRows().length > 0] as const,
+      ([, hasRows]) => {
+        if (!hasRows || !usingNative()) return
+        maybeAnchorBottom()
+      },
+    ),
+  )
 
   // 260929 Red 缓存只从「当前挂载实例自己的 session」这一条路写（§3.5 跨会话别名）。
   // listWidth 也进依赖：此前只依赖 [sessionKey, timelineRowKeys]，resize 后读路径把条目删掉
@@ -912,18 +935,13 @@ export function MessageTimeline(props: {
   // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
   let imeComposing = false
   const [scrollRoot, setScrollRoot] = createSignal<HTMLDivElement>()
-  // 261109 Red 虚拟列表零行降级。virtua 的视口区间/行测量任一环节失败时，整段会话一行都
-  // 不渲染也没有降级——用户看到聊天区整块露出壁纸、回来滚动位置丢失、输入框跟着失活。
-  // 这是「结构性问题」（见 CHANGELOG 0.17.x 的 native 分支条目），所以这里做最后一道保底：
-  // 连续取样拿不到任何可见行，就只为当前会话切到 native 真实 DOM 渲染，不再赌测量成功。
-  const [virtualFallback, setVirtualFallback] = createSignal(false)
 
   // 260922 Red：revealMessage 的契约是「让消息进入当前 renderer 的视口」，不能绑死 Virtua。
   // native timeline 没有 virtualizer，直接按 hash scroll 的同一套 sticky 标题偏移计算 DOM 落点；
   // 否则 outline / message rail 在 native A/B 下会静默 no-op，比较结果不公平。
   const revealMessage = (id: string) => {
     const index = messageRowIndex().get(id)
-    if (!nativeTimelineEnabled()) {
+    if (!usingNative()) {
       if (index === undefined) return
       mounted?.handle.scrollToIndex(index, { align: "center" })
       return
@@ -958,9 +976,12 @@ export function MessageTimeline(props: {
     const offset = row ? row.getBoundingClientRect().top - box.top : 0
     return () => {
       if (!key || root !== listRoot || sessionKey() !== session) return
-      const index = timelineRowKeys().indexOf(key)
-      if (index < 0) return
-      mounted?.handle.scrollToIndex(index, { align: "start", offset: -offset })
+      // 261110 Red 降级后 handle 已卸载：native 全量 DOM 无需 scrollToIndex，直接走下方两帧校正。
+      if (!usingNative()) {
+        const index = timelineRowKeys().indexOf(key)
+        if (index < 0) return
+        mounted?.handle.scrollToIndex(index, { align: "start", offset: -offset })
+      }
       if (viewportFrame !== undefined) cancelAnimationFrame(viewportFrame)
       const correct = () => {
         viewportFrame = undefined
@@ -993,6 +1014,40 @@ export function MessageTimeline(props: {
   )
 
   const isMeasuredBottom = (root: HTMLDivElement) => root.scrollHeight - root.clientHeight - root.scrollTop <= 4
+
+  // 261110 Red 降级瞬间的阅读位置接管（审计：不能只做到「内容重新出现」）。
+  // 原本贴底的继续贴底；原本在读历史的按「视口内第一条真实行 + 相对视口顶偏移」在新 DOM
+  // 里恢复——虚拟列表只挂载视口附近的行，切到全量 DOM 后 scrollHeight 变化，裸 scrollTop 会漂。
+  type TimelineScrollAnchor = { bottom: true } | { bottom: false; key: string; offset: number }
+  const captureTimelineAnchor = (root: HTMLDivElement): TimelineScrollAnchor | undefined => {
+    if (isMeasuredBottom(root)) return { bottom: true }
+    const box = root.getBoundingClientRect()
+    if (box.height <= 0) return undefined
+    for (const row of root.querySelectorAll<HTMLElement>("[data-timeline-key]")) {
+      const rect = row.getBoundingClientRect()
+      if (rect.bottom <= box.top + 1) continue
+      const key = row.dataset.timelineKey
+      return key ? { bottom: false, key, offset: rect.top - box.top } : undefined
+    }
+    return undefined
+  }
+  const restoreTimelineAnchor = (root: HTMLDivElement, anchor: TimelineScrollAnchor | undefined) => {
+    const apply = () => {
+      if (root !== listRoot) return
+      if (anchor?.bottom) {
+        root.scrollTop = root.scrollHeight
+      } else if (anchor) {
+        const target = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")].find(
+          (row) => row.dataset.timelineKey === anchor.key,
+        )
+        if (target) root.scrollTop += target.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+      }
+      measuredBottomAnchored = isMeasuredBottom(root)
+    }
+    // 首帧先落一次；rAF 再校正，兜住 Markdown/代码块与字体在真实 DOM 里定型后的行高变化。
+    apply()
+    requestAnimationFrame(apply)
+  }
 
   const measureTimeline = () => {
     anchorMeasuredBottom()
@@ -1192,7 +1247,9 @@ export function MessageTimeline(props: {
     contentEl = el
     if (!el) return
     props.setContentRef(el)
-    if (nativeTimelineEnabled()) {
+    // 261110 Red 降级同样是 native 渲染：没有 virtua 写 inline height，继续等 style 变更会
+    // 彻底丢失高度来源（自动追底失效）。
+    if (usingNative()) {
       contentObserver = new ResizeObserver(scheduleReportContentHeight)
       contentObserver.observe(el)
     } else {
@@ -1259,16 +1316,20 @@ export function MessageTimeline(props: {
 
   // 261109 Red 「有行但一个都看不见」的判据：只读几何，不改状态。间隔取样而不是每帧
   // 回调——看门狗自己不能变成布局抖动的来源。
-  const hasVisibleRow = (root: HTMLDivElement) => {
-    const rows = root.querySelectorAll<HTMLElement>("[data-timeline-row]")
-    if (rows.length === 0) return false
+  // 261110 Red 审计收尾：BottomSpacer（h-16 底部占位）也带 data-timeline-row，滚到底时恒在
+  // 视口内——不排除它，看门狗会把「只剩占位块」误判成正常。只统计真实行。
+  const realTimelineRows = (root: HTMLDivElement) =>
+    root.querySelectorAll<HTMLElement>('[data-timeline-row]:not([data-timeline-row="bottom-spacer"])')
+  const countVisibleRows = (root: HTMLDivElement) => {
     const box = root.getBoundingClientRect()
-    for (const row of rows) {
+    let count = 0
+    for (const row of realTimelineRows(root)) {
       const rect = row.getBoundingClientRect()
-      if (rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1) return true
+      if (rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1) count++
     }
-    return false
+    return count
   }
+  const hasVisibleRow = (root: HTMLDivElement) => countVisibleRows(root) > 0
 
   // 261109 Red 换会话先复位：上一个会话的失败不追到新会话，native 只在这个会话里兜底。
   createEffect(
@@ -1282,19 +1343,34 @@ export function MessageTimeline(props: {
   )
 
   createEffect(
-    on([() => timelineRows().length > 0, scrollRoot, virtualFallback, sessionKey], ([hasRows, root, fallback]) => {
-      if (!hasRows || fallback || nativeTimelineEnabled()) return
+    on([() => timelineRows().length > 0, scrollRoot, usingNative, sessionKey], ([hasRows, root, native]) => {
+      if (!hasRows || native) return
       let misses = 0
       const degrade = () => {
         if (++misses < 4) return
+        const box = root
+        const anchor = box ? captureTimelineAnchor(box) : undefined
         setVirtualFallback(true)
+        if (box) restoreTimelineAnchor(box, anchor)
+        // 261110 Red 审计收尾：失败现场一次性记全——下次降级能判断是区间为空、行不可见，
+        // 还是视口尺寸/缓存异常，而不是只留一个 no-visible-row 标签。
         guiDiagnostics.record("timeline.virtual-fallback", {
           name: "no-visible-row",
-          detail: { rows: timelineRows().length, root: !!root },
+          detail: {
+            rows: timelineRows().length,
+            root: !!box,
+            visibleRows: box ? countVisibleRows(box) : 0,
+            viewport: box?.clientHeight ?? 0,
+            content: box?.scrollHeight ?? 0,
+            scrollTop: Math.round(box?.scrollTop ?? 0),
+            cache: !!virtualCache(),
+            viewportSize: mounted?.handle.viewportSize ?? -1,
+            anchor: anchor ? (anchor.bottom ? "bottom" : "row") : "none",
+          },
         })
       }
       const timer = window.setInterval(() => {
-        if (virtualFallback()) return
+        if (usingNative()) return
         if (!root) return degrade()
         // 261109 Red 容器隐藏（切到 changes 标签页、面板折叠）时没有布局盒，此时
         // 「看不见行」是预期状态，不能算列表失败——否则一切标签就会误降级。
@@ -2452,7 +2528,7 @@ export function MessageTimeline(props: {
             261108 Red 自动追底不再观察 content（observeContent:false），高度必须由这条路自己
             上报，否则原生模式彻底失去尺寸来源。 */}
         <Show
-          when={!nativeTimelineEnabled() && !virtualFallback()}
+          when={!usingNative()}
           fallback={
             <div
               ref={(el) => attachContent(el)}
