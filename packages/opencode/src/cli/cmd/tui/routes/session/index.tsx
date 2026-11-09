@@ -20,6 +20,7 @@ import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
 import { useSync, cmpTime } from "@tui/context/sync"
+import { SessionActivityHud } from "./activity-hud"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
@@ -1629,6 +1630,8 @@ export function Session() {
                 </For>
               </scrollbox>
               <box flexShrink={0}>
+                {/* 261109 Karina UX-02：输入框上方的实时工作状态台（根/子会话都可见） */}
+                <SessionActivityHud sessionID={route.sessionID} />
                 <CompactingIndicator sessionID={route.sessionID} />
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt request={permissions()[0]} />

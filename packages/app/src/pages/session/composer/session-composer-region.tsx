@@ -10,6 +10,7 @@ import { useSDK } from "@/context/sdk"
 import { getSessionHandoff, setSessionHandoff } from "@/utils/session-handoff"
 import { useSessionKey } from "@/context/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
+import { SessionActivityHud } from "@/pages/session/composer/session-activity-hud"
 import { SessionCompactingDock } from "@/pages/session/composer/session-compacting-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
@@ -204,6 +205,10 @@ export function SessionComposerRegion(props: {
             </div>
           )}
         </Show>
+
+        {/* 261109 Karina UX-02：实时工作状态台——当前工具、已加载范围内读/改/命令计数、
+            失败数、待确认与子代理进度。空闲时自动隐藏，不长期占屏。 */}
+        <SessionActivityHud />
 
         {/* 260920 Red 把 Composer 变成轻量状态区：正文时间线保留完整 thinking 细节，这里只
             告诉用户输入框当前是否仍在工作/重试，避免底部像一块无状态的浮卡。 */}
