@@ -683,6 +683,16 @@ export const dict = {
   "home.shortcuts.switchProject": "Switch project",
 
   "session.tab.session": "Session",
+  "session.layout.preset.label": "Workspace layout",
+  "session.layout.preset.focus": "Focus",
+  "session.layout.preset.build": "Build",
+  "session.layout.preset.review": "Review",
+  "session.activity.read": "read",
+  "session.activity.edit": "edit",
+  "session.activity.command": "cmd",
+  "session.activity.failed": "failed",
+  "session.activity.permission": "needs your confirmation",
+  "session.activity.subagents": "subagents",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.tab.status": "Status",
@@ -1059,6 +1069,9 @@ export const dict = {
 
   "settings.general.row.chatBackground.title": "Chat Background",
   "settings.general.row.chatBackground.description": "Image shown behind the chat window (applies to all chats)",
+  "settings.general.row.wallpaperDim.title": "Wallpaper dimming",
+  "settings.general.row.wallpaperDim.description":
+    "Darken the wallpaper behind panels so text stays readable on bright or busy images",
   "settings.general.row.homeBackground.title": "Home Background",
   "settings.general.row.homeBackground.description":
     "Image shown behind the home / no-session screen (independent from chat background)",

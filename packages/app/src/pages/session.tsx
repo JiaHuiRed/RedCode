@@ -32,6 +32,7 @@ import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode, checksum } from "@redcode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView } from "@/components/session"
+import { SessionLayoutPreset } from "@/components/session-layout-preset"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { createReconnectRefresh } from "@/context/reconnect"
@@ -1873,6 +1874,9 @@ export default function Page() {
           注意不能把边界加到路由层（cb3b8b4e 试过，已撤回）——那会废掉 solid-router 的
           transition，反而从「保持旧画面」退化成「立刻清空」。边界必须贴着挂起源。 */}
         <Suspense>{sessionSync() ?? ""}</Suspense>
+
+        {/* 261109 Karina UX-01：布局预设切换（专注 / 开发 / 审查），挂到顶栏动作区 */}
+        <SessionLayoutPreset />
 
         <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
           <Show when={!isDesktop() && !!params.id}>

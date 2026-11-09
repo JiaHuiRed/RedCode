@@ -524,6 +524,16 @@ export const dict = {
   "home.empty.title": "最近のプロジェクトはありません",
   "home.empty.description": "ローカルプロジェクトを開いて始めましょう",
   "session.tab.session": "セッション",
+  "session.layout.preset.label": "ワークスペースレイアウト",
+  "session.layout.preset.focus": "集中",
+  "session.layout.preset.build": "開発",
+  "session.layout.preset.review": "レビュー",
+  "session.activity.read": "読取",
+  "session.activity.edit": "変更",
+  "session.activity.command": "コマンド",
+  "session.activity.failed": "失敗",
+  "session.activity.permission": "確認が必要",
+  "session.activity.subagents": "サブエージェント",
   "session.tab.review": "レビュー",
   "session.tab.context": "コンテキスト",
   "session.panel.workspace": "セッションワークスペース",
@@ -772,6 +782,9 @@ export const dict = {
   "settings.general.row.chatBackground.title": "チャット背景",
   "settings.general.row.chatBackground.description":
     "チャットウィンドウの背後に表示される画像（すべてのチャットに適用）",
+  "settings.general.row.wallpaperDim.title": "壁紙の減光",
+  "settings.general.row.wallpaperDim.description":
+    "明るい画像や複雑な画像でも本文が読みやすいよう、壁紙を暗くします",
   "settings.general.row.homeBackground.title": "ホーム背景",
   "settings.general.row.homeBackground.description":
     "ホーム / セッションなし画面の背後に表示される画像（チャット背景とは独立）",

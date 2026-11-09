@@ -12,6 +12,7 @@ import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
+import { presetPlan, type LayoutPreset } from "./layout-preset"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_SIDEBAR_WIDTH = 344
@@ -49,6 +50,8 @@ type SessionView = {
     mode: "capsule" | "docked" | "floating"
     floating?: { x: number; y: number; width: number; height: number }
   }
+  // 261109 Karina UX-01：最近一次应用的布局预设；undefined = 用户没动过/手动改过。
+  preset?: LayoutPreset
 }
 
 // 260926 Red 并排宽度和聊天栏扣除量共用同一表达式，避免 flex 宽度与面板视觉宽度分叉。
@@ -638,7 +641,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       if (sessionTimer !== undefined) window.clearTimeout(sessionTimer)
     })
 
-    return {
+    // 261109 Karina UX-01：命名引用，view().preset.apply 需要回调同级 fileTree/tabs。
+    const layout = {
       ready,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
@@ -824,6 +828,32 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
         const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? true)
 
+        // 261109 Karina UX-01：预设与手动切换共用同一条写路径，避免两处 setStore 形状漂移。
+        const setWorkbenchMode = (mode: "capsule" | "docked" | "floating") => {
+          const session = key()
+          const current = store.sessionView[session]
+          setStore("sessionView", session, {
+            ...current,
+            scroll: current?.scroll ?? {},
+            workbench: { ...current?.workbench, mode },
+          })
+          prune(usage.active ?? session)
+        }
+
+        // 预设只切可见性/工作台模式/默认标签，不碰宽度与滚动 —— 用户手动调整必须保留。
+        const applyPreset = (preset: LayoutPreset) => {
+          const plan = presetPlan(preset)
+          if (plan.fileTree) layout.fileTree.open()
+          else layout.fileTree.close()
+          setReviewPanelOpened(plan.reviewPanel)
+          if (plan.workbench) setWorkbenchMode(plan.workbench)
+          if (plan.tab) layout.tabs(key()).open(plan.tab)
+          const session = key()
+          const current = store.sessionView[session]
+          setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, preset })
+          prune(usage.active ?? session)
+        }
+
         function setTerminalOpened(next: boolean) {
           const current = store.terminal
           if (!current) {
@@ -882,16 +912,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           workbench: {
             mode: createMemo(() => s().workbench?.mode ?? "capsule"),
             floating: createMemo(() => s().workbench?.floating),
-            setMode(mode: "capsule" | "docked" | "floating") {
-              const session = key()
-              const current = store.sessionView[session]
-              setStore("sessionView", session, {
-                ...current,
-                scroll: current?.scroll ?? {},
-                workbench: { ...current?.workbench, mode },
-              })
-              prune(usage.active ?? session)
-            },
+            setMode: setWorkbenchMode,
             setFloating(floating: { x: number; y: number; width: number; height: number }) {
               const session = key()
               const current = store.sessionView[session]
@@ -902,6 +923,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               })
               prune(usage.active ?? session)
             },
+          },
+          preset: {
+            current: createMemo(() => s().preset),
+            apply: applyPreset,
           },
           review: {
             open: createMemo(() => s().reviewOpen ?? []),
@@ -1026,5 +1051,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         }
       },
     }
+
+    return layout
   },
 })

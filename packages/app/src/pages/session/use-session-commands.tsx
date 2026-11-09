@@ -6,6 +6,7 @@ import { previewSelectedLines } from "@redcode-ai/ui/pierre/selection-bridge"
 import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { LAYOUT_PRESETS } from "@/context/layout-preset"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
@@ -555,6 +556,20 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           }),
         ]
       : []),
+    // 261109 Karina UX-01：三种布局预设走命令系统，快捷键 mod+1/2/3。
+    ...LAYOUT_PRESETS.map((preset) =>
+      viewCommand({
+        id: `layout.preset.${preset}`,
+        title:
+          preset === "focus"
+            ? language.t("session.layout.preset.focus")
+            : preset === "build"
+              ? language.t("session.layout.preset.build")
+              : language.t("session.layout.preset.review"),
+        keybind: preset === "focus" ? "mod+1" : preset === "build" ? "mod+2" : "mod+3",
+        onSelect: () => view().preset.apply(preset),
+      }),
+    ),
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
