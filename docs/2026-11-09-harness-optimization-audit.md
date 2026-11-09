@@ -11,7 +11,7 @@
 | RC-01 | 指令路径边界 + 远程流式限额 | 已完成 | `76b267cd`；`session/instruction.ts`；`test/session/instruction.test.ts` 14 条 | 无 |
 | RC-02 | 端到端 Coding Agent Eval | 未实现 | 全仓无 eval 任务集/运行器 | 整套 |
 | RC-03 | 后台子代理并发/排队/预算 | 未实现 | `background/job.ts` 的 `Status` 只有 `running/completed/error/cancelled`，无 `queued`，无 Scheduler | 并发上限、排队、预算 |
-| RC-04 | `redcode doctor` | 部分实现 | `cli/cmd/doctor.ts`（445 行）：`--json`、`--prefix`、脱敏、非零退出码、retired key/provider/plugin/MCP 静态检查；`test/cli/doctor.test.ts` 2 条（Soul 配置） | 缺 `--probe`；`--json` 等输出形状无测试 |
+| RC-04 | `redcode doctor` | 已完成（261109 收口） | 静态主体（`--json`/`--prefix`/脱敏/退出码/retired key 检查）+ `--probe` 真实模型/MCP 连通性探测（opt-in、限 3 家×1 次、费用提示）；`test/cli/doctor.test.ts` 5 条 + read-only smoke 新增 3 条（`--json` 形状契约、probe 两分支） | MCP 探测不做 tools/list 级协议往返（复用 status() 语义） |
 | RC-05 | 收尾自动验证与交付报告 | 已完成 | `da1b5513`；`session/verification.ts`；`test/session/verification.test.ts` 12 条 + `prompt.test.ts` 端到端 1 条 | v1 不覆盖 `bash` 改文件；`protected_paths` 是前缀匹配 |
 | RC-06 | 记忆双写一致性 | 部分实现 | `seed/scripts/check-memory-dualwrite.mjs`（只读核对索引行 ↔ db 正文） | 无统一写入服务、无事务、无 reconcile、无迁移方案 |
 | RC-07 | 分层 CI / 发布门禁 | 已存在 | `.github/workflows/{test,typecheck,e2e,nightly}.yml`；`packages/opencode` 的 `test:smoke` / `test:ci` | Release Gate 未单列（`nightly` 之外没有发布前关键路径集） |
@@ -25,6 +25,14 @@
 - 方案：抽出可单测的 `isWithinRoot(root, candidate)`（`path.relative` 语义 + realpath 二次判定，realpath 失败退回逻辑路径）；远程指令改 `res.stream` 逐块累计，超 `instruction_budget.max_source_bytes` 立即停读并整份丢弃，`Content-Length` 只做提前拒绝。
 - 可证伪证据：改回 `startsWith` → sibling/link 两例失败；改回 `arrayBuffer` → chunked 用例 3.56s 失败（阈值 1.5s）；去掉 `Content-Length` 提前拒绝 → 该例 5.43s 失败（阈值 1s）。恢复后 typecheck 0，套件 41 pass / 1 todo。
 
+### RC-04 `redcode doctor`（261109 收口）
+
+原缺口两块均已补齐（决策记录：`docs/notes/implemented/feature/2026-11-09-doctor-probe.md`）：
+
+- **`--probe`**：显式 opt-in；有凭据的 provider 各 1 次最小模型请求（限 3 家、无重试、`getSmallModel` 控费、默认模型 provider 置顶）；MCP 只观察既有后台连接至收敛，不自建连接；probe 失败计 error → 退出码 1；费用提示在 `--help` 与 human 模式开场行。
+- **输出形状测试**：`--json` 顶层/嵌套键集合恰好匹配 + tally 与 checks 一致（read-only smoke）；probe happy path 与 401 失败 path 子进程 smoke（假 LLM 服务器，`enabled_providers: ["test"]` 钉死候选防真实 env key 泄入）。
+- 验证：doctor 单测 5 pass；read-only smoke 10 pass；typecheck 0。
+
 ### RC-05（提交 `da1b5513`）
 
 - 根因：Agent 常在没有验证证据时宣布完成；仓库有快照/diff，但没把「改了什么 → 该跑什么 → 结果」接成证据链。
@@ -33,16 +41,6 @@
 - 验证：opencode typecheck 0；verification 12 pass；prompt 110 pass / 12 skip；端到端用例经真实 `write` 工具改文件后报告 `changed_files: ["src/a.ts"]` 且 `passed`；OpenAPI drift 一致。
 
 ## 部分实现项
-
-### RC-04 `redcode doctor`
-
-本地已有实现，覆盖了任务书要求的「本地静态诊断 + 脱敏 JSON + 失败退出码」主体：
-
-- `cli/cmd/doctor.ts`：`retiredCheck` 扫已废弃配置键；provider/model 统计（enabled/disabled、模型数）；plugin / MCP 检查；`--json` 输出；`--prefix` 指定工作区。
-- 脱敏：provider `options.apiKey` 按掩码输出（`doctor.ts` 内 `mask` 逻辑）。
-- 单测：`test/cli/doctor.test.ts` 已有 2 条（Soul registry 告警、Soul 来源预算），尚未覆盖 `--json` 输出与顶层/嵌套未知键。
-- 未覆盖：`--probe`（真实模型/MCP 连通性探测）。
-- 结论：RC-04 的「基础版本」已满足任务书验收的一半；补 `--probe` 与输出形状测试即可收口。
 
 ### RC-06 记忆双写
 
@@ -68,10 +66,11 @@
 
 ## 建议顺序
 
-1. **RC-04 收口**（低成本、用户可感知）：补 `--probe`（显式 opt-in、限次、费用提示）与 doctor 测试。
-2. **RC-02 离线 Eval**：先 5~8 个 fixture，复用 RC-05 的报告口径做 `verification_status`。
-3. **RC-03 并发上限**：先做全局 + 父会话两级信号量，`queued` 状态与 UI 呈现随后。
-4. **RC-06 写入服务化**、**RC-07 Release Gate**、**RC-08 RFC** 按批次推进。
+1. **RC-02 离线 Eval**：先 5~8 个 fixture，复用 RC-05 的报告口径做 `verification_status`。
+2. **RC-03 并发上限**：先做全局 + 父会话两级信号量，`queued` 状态与 UI 呈现随后。
+3. **RC-06 写入服务化**、**RC-07 Release Gate**、**RC-08 RFC** 按批次推进。
+
+（RC-04 已于 261109 收口，从本清单移除。）
 
 ## 兼容性说明
 

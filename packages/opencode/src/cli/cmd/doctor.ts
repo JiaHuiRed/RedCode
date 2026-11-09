@@ -1,9 +1,11 @@
 import { Cause, Effect, Exit } from "effect"
+import { generateText } from "ai"
 import { effectCmd, fail } from "../effect-cmd"
 import { Config } from "@/config/config"
 import { ConfigRetire } from "@/config/retire"
 import { Auth } from "@/auth"
 import { Plugin } from "@/plugin"
+import { Provider } from "@/provider/provider"
 import { MCP } from "@/mcp"
 import { ModelsDev } from "@redcode-ai/core/models-dev"
 import { Global } from "@redcode-ai/core/global"
@@ -102,6 +104,8 @@ function skipped(names: string[], why: string): Check[] {
   return names.map((name) => ({ name, status: "skip" as const, detail: why }))
 }
 
+const NO_CONFIG = "skipped: config not loaded"
+
 export function soulRegistryCheck(valid: number, issues: number): Check {
   return {
     name: "registry",
@@ -126,6 +130,147 @@ export function soulRenderCheck(bytes: number): Check {
   }
 }
 
+// ---- probe（261109 Karina RC-04 收口：真实模型/MCP 连通性探测）----
+// 显式 opt-in 靠 --probe 本身；限次 = 最多 3 家 × 每家 1 次最小请求，无重试；
+// 费用提示在 --help describe 与 human 模式的开场行里（JSON 模式 stdout 必须纯净）。
+// 决策记录：docs/notes/implemented/feature/2026-11-09-doctor-probe.md
+
+export const PROBE_MAX_PROVIDERS = 3
+
+// 261109 Karina 泛型保留 ProviderID 的品牌类型 —— 返回值还要拿去索引 Record<ProviderID, Info>。
+export function selectProbeProviders<T>(ids: T[], opts: { defaultProviderID?: T; max: number }): T[] {
+  const ordered =
+    opts.defaultProviderID !== undefined && ids.includes(opts.defaultProviderID)
+      ? [opts.defaultProviderID, ...ids.filter((id) => id !== opts.defaultProviderID)]
+      : ids
+  return ordered.slice(0, opts.max)
+}
+
+// 261109 Karina 模型探测结果 → Check。失败 detail 走 errorMessage（只留 message，不带 key）。
+export function probeModelCheck(providerID: string, result: { modelID: string; ms: number } | { error: unknown }): Check {
+  if ("error" in result) {
+    return { name: `model:${providerID}`, status: "error", detail: errorMessage(result.error) }
+  }
+  return {
+    name: `model:${providerID}`,
+    status: "ok",
+    detail: `ok via ${result.modelID} in ${result.ms}ms`,
+  }
+}
+
+// 261109 Karina MCP 状态映射。probe 不自建连接：MCP 层在 AppRuntime 初始化时就已
+// forkScoped(connectAll) 后台连接，这里只观察 status() 收敛到终态的结果。
+// waiting 超时后仍停在 connecting 的 server 连 failed 都不是 —— 挂起比失败更难查，单独报 error。
+export function probeMcpChecks(statuses: Record<string, MCP.Status>): Check[] {
+  const entries = Object.entries(statuses)
+  if (!entries.length) return [{ name: "mcp", status: "skip", detail: "no servers configured" }]
+  return entries.map(([name, value]): Check => {
+    switch (value.status) {
+      case "connected":
+        return { name: `mcp:${name}`, status: "ok", detail: "connected" }
+      case "disabled":
+        return { name: `mcp:${name}`, status: "skip", detail: "disabled in config" }
+      case "connecting":
+        return { name: `mcp:${name}`, status: "error", detail: "still connecting after probe deadline" }
+      case "needs_auth":
+        return { name: `mcp:${name}`, status: "warn", detail: "needs authentication" }
+      case "needs_client_registration":
+        return { name: `mcp:${name}`, status: "warn", detail: value.error }
+      case "failed":
+        return { name: `mcp:${name}`, status: "error", detail: value.error }
+    }
+  })
+}
+
+// 261109 Karina probe 组体：模型探测串行执行（限次的另一面 —— 同时也不会并发压同一个上游），
+// 单家失败收成 error check 不影响其余家；MCP 只等后台连接收敛，零成本。
+const PROBE_DEADLINE_MS = 15_000
+const probeGroup = Effect.fn("Cli.doctor.probeGroup")(function* (cfg: Config.Info | undefined) {
+  if (!cfg) return { name: "probe", checks: skipped(["model", "mcp"], NO_CONFIG) }
+
+  const modelExit = yield* Effect.exit(
+    Effect.gen(function* () {
+      const provider = yield* Provider.Service
+      const list = yield* provider.list()
+
+      // 候选过滤与 providers 静态检查同口径（enabled/disabled）；凭据看合并后的 Info ——
+      // env/auth 进 key，config 进 options.apiKey，只看 Auth 会漏掉 config 型 key。
+      const enabledProviders = cfg.enabled_providers ? new Set(cfg.enabled_providers) : undefined
+      const disabledProviders = new Set(cfg.disabled_providers ?? [])
+      const credentialed = Object.values(list).filter(
+        (info) =>
+          (enabledProviders ? enabledProviders.has(info.id) : true) &&
+          !disabledProviders.has(info.id) &&
+          (info.key !== undefined || typeof info.options?.apiKey === "string"),
+      )
+      if (!credentialed.length)
+        return [{ name: "model", status: "skip" as const, detail: "no credentialed providers" }]
+
+      const defaultExit = yield* Effect.exit(provider.defaultModel())
+      const selected = selectProbeProviders(credentialed.map((info) => info.id), {
+        defaultProviderID: Exit.isSuccess(defaultExit) ? defaultExit.value.providerID : undefined,
+        max: PROBE_MAX_PROVIDERS,
+      })
+
+      return yield* Effect.forEach(
+        selected,
+        (id) =>
+          Effect.gen(function* () {
+            // getSmallModel 挑最便宜的模型做探测，把探测成本压到最低；没有就退第一家模型。
+            const small = yield* Effect.exit(provider.getSmallModel(id))
+            const model = Exit.isSuccess(small) ? small.value : undefined
+            const target = model ?? Object.values(list[id].models)[0]
+            if (!target) return probeModelCheck(id, { error: new Error("no model available") })
+
+            const language = yield* provider.getLanguage(target)
+            // abortSignal 让底层 fetch 真正中断；Effect.timeout 是兜底 —— 防 SDK 忽略
+            // abortSignal 时把诊断进程无限挂住（无界等待在日志里一个字都不会留）。
+            const start = Date.now()
+            yield* Effect.promise(() =>
+              generateText({
+                model: language,
+                messages: [{ role: "user", content: "ping" }],
+                abortSignal: AbortSignal.timeout(PROBE_DEADLINE_MS),
+              }),
+            ).pipe(Effect.timeout("20 seconds"))
+            return probeModelCheck(id, { modelID: target.id, ms: Date.now() - start })
+          }).pipe(
+            Effect.exit,
+            Effect.map((exit) =>
+              Exit.isSuccess(exit) ? exit.value : probeModelCheck(id, { error: Cause.squash(exit.cause) }),
+            ),
+          ),
+        { concurrency: 1 },
+      )
+    }),
+  )
+
+  const mcpExit = yield* Effect.exit(
+    Effect.gen(function* () {
+      const mcp = yield* MCP.Service
+      let statuses = yield* mcp.status()
+      const deadline = Date.now() + PROBE_DEADLINE_MS
+      while (Object.values(statuses).some((s) => s.status === "connecting") && Date.now() < deadline) {
+        yield* Effect.sleep("500 millis")
+        statuses = yield* mcp.status()
+      }
+      return probeMcpChecks(statuses)
+    }),
+  )
+
+  return {
+    name: "probe",
+    checks: [
+      ...(Exit.isSuccess(modelExit)
+        ? modelExit.value
+        : [{ name: "model", status: "error" as const, detail: errorMessage(Cause.squash(modelExit.cause)) }]),
+      ...(Exit.isSuccess(mcpExit)
+        ? mcpExit.value
+        : [{ name: "mcp", status: "error" as const, detail: errorMessage(Cause.squash(mcpExit.cause)) }]),
+    ],
+  }
+})
+
 export const DoctorCommand = effectCmd({
   command: "doctor",
   describe: "run diagnostics",
@@ -137,6 +282,10 @@ export const DoctorCommand = effectCmd({
       })
       .option("prefix", {
         describe: "inspect the fixed prompt-prefix sources and their budget",
+        type: "boolean",
+      })
+      .option("probe", {
+        describe: `probe real model and MCP connectivity (up to ${PROBE_MAX_PROVIDERS} real API requests; may incur cost)`,
         type: "boolean",
       }),
   // Diagnostics should work without a full project instance; avoids bootstrap hang.
@@ -254,8 +403,6 @@ export const DoctorCommand = effectCmd({
       ],
     })
 
-    const NO_CONFIG = "skipped: config not loaded"
-
     // ---- providers ----
     if (cfg) {
       const providers = yield* attempt(
@@ -363,6 +510,18 @@ export const DoctorCommand = effectCmd({
       })
     } else {
       groups.push({ name: "extensions", checks: skipped(["plugins", "skill-coverage", "mcp"], NO_CONFIG) })
+    }
+
+    // ---- probe（261109 Karina RC-04 收口：真实连通性，显式 opt-in）----
+    if (args.probe) {
+      // 费用提示只在 human 模式打印：--json 的 stdout 必须保持纯 JSON 可解析。
+      // MCP 探测只是观察既有后台连接，不产生成本；成本上限来自模型探测（≤3 家 × 1 次）。
+      if (!args.json) {
+        yield* Console.log(
+          `probe: real connectivity check — up to ${PROBE_MAX_PROVIDERS} model request(s), one minimal call each; may incur cost`,
+        )
+      }
+      groups.push(yield* probeGroup(cfg))
     }
 
     // ---- prefix（261007 Red 固定前缀预算）----
