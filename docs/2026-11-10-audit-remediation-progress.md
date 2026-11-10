@@ -94,6 +94,23 @@
 - Diff 连续导航真机交互链（Next ×3、Previous ×2）——A2 纯函数已测，真机未截。
 - RC-05 检查数量截断真机验证（4 项预检、限制 3 项）——A4 单测已补。
 
+## 第二轮外部审计（性能/体验，快照 6948d23f）——已全部落地
+
+另一轮外部审计（未运行客户端、纯源码级）五项优化，分四批实施：
+
+| 项 | 内容 | 提交 |
+|---|---|---|
+| 1 | 命令面板与 @ 候选本地先行：items 同步化，文件搜索/会话列表进后台 resource（stale-while-revalidate），Enter 不再被远程请求挂住，结果刷新保留既有高亮（useFilteredList reset 语义） | `c78258c4` |
+| 4/5 | 文件树整树平铺真正只在根实例求值（原注释与实现不符）；模型管理列表补 List virtual | `d0996ba8` |
+| 3 | 设置页九分区 lazy 加载（主 chunk 7.4KB）+ persisted 记住上次分区 + initialTab prop（desktop 异步 hydration 可能盖回 initialTab，零调用方时暂不处理） | `8e72a87a` |
+| 2 | 跨工作区返回保留阅读现场：workspace-cache（maxEntries=4、快照预算 10MB）存打开文件内容+文件树状态，恢复即对打开文件与展开目录 force 校验；content LRU 全局预算不再每次清账 | `553aa9f6` |
+
+实现要点与踩坑：
+- 同步 items + 后台补充的关键坑：items() 在 useFilteredList 的 resource source（响应式追踪）内执行，内部 set signal 必须命中相同引用（`setEntries(prev => ...)`）否则无限重算；`.latest` 读取会建立依赖使 items 自动随远程落地重算——这条响应链是设计的核心。
+- useFilteredList reset 新语义：选中项 id 仍在新列表 → 保持高亮；消失 → 落首行。测试在 `packages/ui/src/hooks/use-filtered-list.test.ts`。
+- workspace-cache 的存档只装「打开中的文件」条目：未打开文件的缓存随 provider 销毁，恢复后 loaded 不成立，不会被当最新内容直读。tabs key 必须在 init 固化（onCleanup 时路由 params 已更新为新值）。
+- 待真机验证：devtools 节流 find.files 后本地命令立即可选；项目切换往返后内容与树展开即时恢复且已刷新；设置分区切换无感（idle 预取）；多供应商模型管理滚动流畅。
+
 ## 分支清理记录（2026-11-10）
 
 清理了 4 个陈旧分支，恢复点留档（reflog 默认 90 天内 `git branch <name> <sha>` 可直接复活）：
