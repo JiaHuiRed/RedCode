@@ -74,4 +74,32 @@ describe("useFilteredList 的 Enter 闸门", () => {
 
     dispose()
   })
+
+  // 261110 Red 调用方改为「本地条目同步、远程结果后台补充」后，远程落地会让
+  // grouped 再刷一次：用户已选中的行只要还在新列表里，高亮就不能被重置到行 0。
+  test("结果刷新保留仍存在的选中项，消失时才落回首行", async () => {
+    let api!: ReturnType<typeof useFilteredList<string>>
+    const dispose = createRoot((dispose) => {
+      api = useFilteredList<string>({
+        items: ["alpha", "beta"],
+        key: (x) => x,
+      })
+      return dispose
+    })
+
+    await settle()
+    api.setActive("beta")
+
+    api.onInput("t") // 触发按 filter 重新过滤
+    await settle()
+    // beta 仍在结果里：高亮保持，没有被拉回行 0
+    expect(api.active()).toBe("beta")
+
+    api.onInput("alph")
+    await settle()
+    // beta 已被过滤掉：落回（过滤后的）首行
+    expect(api.active()).toBe("alpha")
+
+    dispose()
+  })
 })

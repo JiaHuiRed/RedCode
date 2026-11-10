@@ -79,6 +79,11 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     }
     const all = flat()
     if (all.length === 0) return
+    // 261110 Red 结果刷新不再抢高亮：调用方改为同步 items + 后台资源补充后，远程
+    // 结果落地会让 grouped 再刷一次——当前选中项（id 稳定：命令 id / 文件路径 /
+    // session id）若仍在新列表里就保持不动，否则落回首行。
+    const current = list.active()
+    if (current && all.some((item) => props.key(item) === current)) return
     list.setActive(props.key(all[0]))
   }
 

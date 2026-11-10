@@ -695,6 +695,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return x.type === "agent" ? `agent:${x.name}` : `file:${x.path}`
   }
 
+  // 261110 Red @ 候选本地先行：agents 和已打开文件同步返回，文件搜索进后台
+  // resource（latest 在途时显示上一次结果，落地后经响应链补进列表）。
+  const [atQuery, setAtQuery] = createSignal("")
+  const [atFiles] = createResource(atQuery, async (value) => {
+    const text = value.trim()
+    if (!text) return []
+    return files.searchFilesAndDirectories(text)
+  })
+
   const {
     flat: atFlat,
     active: atActive,
@@ -703,13 +712,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onKeyDown: atOnKeyDown,
     loading: atLoading,
   } = useFilteredList<AtOption>({
-    items: async (query) => {
+    items: (query) => {
       const agents = agentList()
       const open = recent()
       const seen = new Set(open)
       const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
+      setAtQuery(query)
       if (!query.trim()) return [...agents, ...pinned]
-      const paths = await files.searchFilesAndDirectories(query)
+      const paths = atFiles.latest ?? []
       const fileOptions: AtOption[] = paths
         .filter((path) => !seen.has(path))
         .map((path) => ({ type: "file", path, display: path }))

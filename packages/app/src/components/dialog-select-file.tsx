@@ -7,7 +7,7 @@ import { List } from "@redcode-ai/ui/list"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import { useNavigate } from "@solidjs/router"
-import { createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
+import { createMemo, createResource, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
 import { formatKeybind, useCommand, type CommandOption } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -180,7 +180,7 @@ function createSessionEntries(props: {
 }) {
   const state: {
     token: number
-    inflight: Promise<Entry[]> | undefined
+    inflight: Promise<void> | undefined
     cached: Entry[] | undefined
   } = {
     token: 0,
@@ -188,21 +188,31 @@ function createSessionEntries(props: {
     cached: undefined,
   }
 
+  // 261110 Red 会话列表改为「后台拉取、signal 同步可读」：首次非空查询的 fetch
+  // 在途期间 entries() 返回 []（命令先出，会话落地后补进列表），不再让本地条目陪等。
+  // setEntries 必须命中相同引用（prev / cached）时保持原引用，否则 items() 在
+  // 响应式追踪内调用 sessions() 会因每次键击写新数组而无限重算。
+  const [entries, setEntries] = createSignal<Entry[]>([])
+
   const sessions = (text: string) => {
     const query = text.trim()
     if (!query) {
       state.token += 1
       state.inflight = undefined
       state.cached = undefined
-      return [] as Entry[]
+      setEntries((prev) => (prev.length === 0 ? prev : []))
+      return
     }
 
-    if (state.cached) return state.cached
-    if (state.inflight) return state.inflight
+    if (state.cached) {
+      setEntries(state.cached)
+      return
+    }
+    if (state.inflight) return
 
     const current = state.token
     const dirs = props.workspaces()
-    if (dirs.length === 0) return [] as Entry[]
+    if (dirs.length === 0) return
 
     state.inflight = Promise.all(
       dirs.map((directory) => {
@@ -235,7 +245,7 @@ function createSessionEntries(props: {
       }),
     )
       .then((results) => {
-        if (state.token !== current) return [] as Entry[]
+        if (state.token !== current) return
         const seen = new Set<string>()
         const category = props.language.t("command.category.session")
         const next = results
@@ -248,17 +258,15 @@ function createSessionEntries(props: {
           })
           .map((item) => createSessionEntry(item, category))
         state.cached = next
-        return next
+        setEntries(next)
       })
-      .catch(() => [] as Entry[])
+      .catch(() => {})
       .finally(() => {
         state.inflight = undefined
       })
-
-    return state.inflight
   }
 
-  return { sessions }
+  return { sessions, entries }
 }
 
 export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFile?: (path: string) => void }) {
@@ -306,38 +314,40 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
     return `${kind} : ${name || path}`
   }
 
-  const { sessions } = createSessionEntries({ workspaces, label, globalSDK, language })
+  const { sessions, entries: sessionEntries } = createSessionEntries({ workspaces, label, globalSDK, language })
 
-  const items = async (text: string) => {
+  // 261110 Red 本地结果不再陪远程等待：文件搜索放进后台 resource（latest 即上一
+  // 次查询的结果，在途时照常显示，落地后经响应链触发 items 重算补进列表）。items
+  // 变为同步函数——命令、最近文件立即可选，Enter 不再被远程请求挂住。
+  const [query, setQuery] = createSignal("")
+  const [searchedFiles] = createResource(query, async (value) => {
+    const text = value.trim()
+    if (!text) return []
+    return file.searchFiles(text)
+  })
+
+  const items = (text: string) => {
     const query = text.trim()
+    setQuery(text)
     setGrouped(query.length > 0)
 
     if (!query && filesOnly()) {
-      const loaded = file.tree.state("")?.loaded
-      const pending = loaded ? Promise.resolve() : file.tree.list("")
-      const next = uniqueEntries([...fileEntries.recent(), ...fileEntries.root()])
-
-      if (loaded || next.length > 0) {
-        void pending
-        return next
-      }
-
-      await pending
+      // 树未加载时后台拉根目录：fileEntries.root() 读 tree store，落地后经响应链刷新列表
+      if (!file.tree.state("")?.loaded) void file.tree.list("")
       return uniqueEntries([...fileEntries.recent(), ...fileEntries.root()])
     }
 
-    if (!query) return [...commandEntries.picks(), ...fileEntries.recent()]
-
-    if (filesOnly()) {
-      const files = await file.searchFiles(query)
-      const category = language.t("palette.group.files")
-      return files.map((path) => createFileEntry(path, category))
+    if (!query) {
+      sessions("")
+      return [...commandEntries.picks(), ...fileEntries.recent()]
     }
 
-    const [files, nextSessions] = await Promise.all([file.searchFiles(query), Promise.resolve(sessions(query))])
+    // 触发/续用会话列表后台加载；entries() 同步读，未落地时为 []（命令先出）
+    sessions(query)
     const category = language.t("palette.group.files")
-    const entries = files.map((path) => createFileEntry(path, category))
-    return [...commandEntries.list(), ...nextSessions, ...entries]
+    const files = (searchedFiles.latest ?? []).map((path) => createFileEntry(path, category))
+    if (filesOnly()) return uniqueEntries([...fileEntries.recent(), ...files])
+    return [...commandEntries.list(), ...sessionEntries(), ...files]
   }
 
   const handleMove = (item: Entry | undefined) => {
