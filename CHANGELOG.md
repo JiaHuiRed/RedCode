@@ -8,9 +8,20 @@
 
 ---
 
-### [Unreleased]
+### [0.18.0] - 2026-11-10
 
 - **TUI 同窗口切换项目**：输入框上方的项目名与路径可点击，也可从命令面板或 `/projects` 打开工作区选择器；支持搜索最近项目、添加已有目录及失败时保留输入。默认启动直接进入首页，显式路径和调用目录优先。切换按目录重绑配置与插件，恢复各项目的会话、草稿、附件和基本阅读位置；Worker 与事件连接常驻，原项目后台任务不因切换视图停止，待确认请求保留原归属。选择器里 `ctrl+d` 两次可把工作区移出列表（只摘记录，目录与会话不动；当前工作区不可删，重新切过去会自动恢复）。仅本地 TUI 启用，attach 不做本地目录切换。决策与验证见 `docs/notes/implemented/feature/2026-11-10-tui-project-navigation.md`。
+- **引用标记的缩写形不再外露**（`opencode/src/session/instruction-echo.ts`）：模型把 `[History reference: msg_…]` 压成 `[ref: msg_…]` 当正文输出，本次实测 79 个只含该标记的 text part 落库，TUI/GUI 都把它渲染成一行 `ref: msg_…`；回放时模型又从自己的历史里读到它，继续模仿形成自持循环。流式锚点、终结剥离与回放净化三处同步覆盖缩写形，只锚 `msg_`/`prt_` 机读前缀，正常写作里的 `[ref: …]` 不受影响。验证：instruction-echo 套件 58 pass（新增单独成段、正文后、流式锚点与不误切四例）；opencode typecheck 0。
+- **跨工作区返回保留阅读现场**（`app/src/context/file/workspace-cache.ts`、FileProvider）：scope 切换会清空打开文件内容与文件树，从 A 到 B 再回 A 得重新读文件、从头找树。新增按工作区的 LRU（最多 4 个工作区、快照预算 10MB），切换时存档、返回时接管；恢复即校验——切换期间 watcher 收不到事件，打开的文件与已加载目录全部强制重读，旧内容只作先行渲染；内容 LRU 不再每切一次整账清零。验证：file/watcher 8/8；app typecheck 0。
+- **设置页九个分区按需加载**（GUI 设置页）：分区改 `lazy()` 动态导入 + Suspense，挂载后空闲预取；记住上次分区，入口可指定目标分区。首开不再背上 general 的 1190 行与 providers 的三个对话框。验证：app typecheck 0；构建产物 chunk 体积对照确认拆分生效。
+- **文件树整树平铺只在根实例求值；模型管理列表虚拟化**（GUI 文件树 / 模型设置）：平铺模式不再在每个子实例重复全树计算，模型列表改虚拟滚动。验证：file-tree 12/12；app typecheck 0。
+- **命令面板与 @ 候选本地先行**（GUI/UI）：本地结果先渲染，远程结果后台补充，远程项目不再等一次往返才出候选。验证：定向用例 3/3；app typecheck 0。
+- **状态台准确性收尾**（GUI + TUI `activity`）：命令不再被当成路径、计时改取工具实际起点、统计范围收敛到当前用户回合；回合起点不在已加载窗口时明示「统计可能不完整」（GUI 三语，TUI 沿用中文文案）。验证：两包 activity 各 11 条全过；i18n parity 过；两包 typecheck 0。
+- **Diff 上一/下一文件导航回写焦点**（`ui/src/components/session-review.tsx`、GUI 会话）：`step` 只展开与滚动、从不回写焦点，连点「下一文件」永远按旧焦点重复跳同一个；现在把目标回写宿主 `focusReviewDiff`（与文件树点击同语义），目标 diff 尚未渲染时用 `pendingDiff` 重试滚动兜住。验证：新增 ui 套件覆盖连续 next×3、previous×2、手动选中后继续、越界钳制、焦点失效与空列表。
+- **Diff 已审查指纹优先绑定 patch 内容哈希**（GUI 审查面板）：此前指纹只用 status + 增删行数，内容不同但行数相同的两次 diff（10 → 20 再改 30）共享指纹，旧「已审查」标记不失效；改后内容变化即失效重标。
+- **`max_checks` 截断的检查以 skipped 落进报告**（`opencode/src/session/verification.ts`）：计划检查被 `slice(0, maxChecks)` 后，未执行项不再被当成通过、整体静默报 `passed`，报告如实给出 skipped。
+- **设置面板新增「交付验证报告」显示时机**（GUI 通用设置）：仅失败时显示（默认）/ 总是显示 / 关闭三选一，与 `verification.notice` 配置同源。
+- **布局预设按钮与状态台字号接入缩放 token**（GUI）：两处此前写死像素，字号设置调大后按钮与状态台不跟；改后随 `--text-*` 缩放。验证：产物 CSS 中确认选择器编译成功（arbitrary class 编译失败是静默的，必须查产物）；app typecheck 0。
 
 ### [0.17.4] - 2026-11-10
 
