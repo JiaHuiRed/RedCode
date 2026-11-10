@@ -1002,6 +1002,9 @@ export default function Page() {
         onDiffStyleChange={input.onDiffStyleChange}
         onScrollRef={(el) => setTree("reviewScroll", el)}
         focusedFile={tree.activeDiff}
+        // 261110 Red 导航焦点回写：与文件树点击同语义（activeDiff + pendingDiff），
+        // pendingDiff 的重试滚动覆盖目标 diff 尚未渲染的情况
+        onFocusedFileChange={(file) => focusReviewDiff(file)}
         onLineComment={(comment) => addCommentToContext({ ...comment, origin: "review" })}
         onLineCommentUpdate={updateCommentInContext}
         onLineCommentDelete={removeCommentFromContext}

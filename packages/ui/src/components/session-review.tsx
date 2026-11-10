@@ -105,6 +105,7 @@ export interface SessionReviewProps {
   focusedComment?: SessionReviewFocus | null
   onFocusedCommentChange?: (focus: SessionReviewFocus | null) => void
   focusedFile?: string
+  onFocusedFileChange?: (file: string) => void
   open?: string[]
   onOpenChange?: (open: string[]) => void
   scrollRef?: (el: HTMLDivElement) => void
@@ -165,6 +166,15 @@ type SessionReviewSelection = {
   range: SelectedLineRange
 }
 
+// 261110 Red 导航目标计算抽出为纯函数供测试：focused 不在列表里视同无焦点，
+// 从对应端点开始；越界钳制在端点，不循环。
+export function stepTarget(all: readonly string[], focused: string | undefined, delta: number) {
+  if (all.length === 0) return undefined
+  const current = focused ? all.indexOf(focused) : -1
+  const next = current === -1 ? (delta > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, current + delta))
+  return all[next]
+}
+
 export const SessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
@@ -207,14 +217,14 @@ export const SessionReview = (props: SessionReviewProps) => {
   const reviewedSet = createMemo(() => new Set(props.reviewed ?? []))
 
   // 上一/下一文件：按文件列表顺序移动，展开目标并滚到它的顶部。
+  // 261110 Red 焦点必须回写给宿主（受控）：不回写则宿主 activeDiff 停在旧值，
+  // 连续导航永远按旧焦点计算，重复跳到同一个文件。
   const step = (delta: number) => {
-    const all = files()
-    if (all.length === 0) return
-    const current = props.focusedFile ? all.indexOf(props.focusedFile) : -1
-    const next = current === -1 ? (delta > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, current + delta))
-    const file = all[next]
+    const file = stepTarget(files(), props.focusedFile, delta)
+    if (!file) return
     const openFiles = open()
     if (!openFiles.includes(file)) handleChange([...openFiles, file])
+    props.onFocusedFileChange?.(file)
     requestAnimationFrame(() => anchors.get(file)?.scrollIntoView({ block: "start" }))
   }
 
