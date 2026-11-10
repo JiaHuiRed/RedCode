@@ -1,10 +1,11 @@
 /* 261021 Red V0.3：位置跟手、触摸反馈与图片呼吸分层，气泡不参与拖动包围盒。 */
 .pet-layer {
   position: fixed;
-  left: clamp(16px, 400px, calc(100vw - 176px));
+  /* 261110 Red 素材换成 704 方形后整体放大 15%（160 → 184），右侧留白同步 +24 保持贴边距离。 */
+  left: clamp(16px, 400px, calc(100vw - 200px));
   bottom: 24px;
   z-index: 40;
-  width: 160px;
+  width: 184px;
   max-width: calc(100vw - 32px);
   pointer-events: none;
 }
