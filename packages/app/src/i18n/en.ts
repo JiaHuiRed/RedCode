@@ -693,6 +693,7 @@ export const dict = {
   "session.activity.failed": "failed",
   "session.activity.permission": "needs your confirmation",
   "session.activity.subagents": "subagents",
+  "session.activity.incomplete": "stats may be incomplete",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.tab.status": "Status",

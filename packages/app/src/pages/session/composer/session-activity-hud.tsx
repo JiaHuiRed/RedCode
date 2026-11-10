@@ -2,7 +2,7 @@ import { Show, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/context/session-layout"
-import { deriveActivity, type ActivityPart } from "./activity"
+import { deriveActivity, targetLabel, targetTitle, type ActivityPart } from "./activity"
 
 // 261109 Karina UX-02：输入框上方的实时工作状态台（GUI）。
 //
@@ -10,6 +10,8 @@ import { deriveActivity, type ActivityPart } from "./activity"
 // 百分比进度。会话空闲时整块隐藏，只在真正工作时占据一行；失败数与待确认数永远
 // 单独显示，不能被折叠掉。
 // 261110 Red 字号接 token：固定 11px 换 --font-size-x-small，随外观字号档等比缩放。
+// 261110 Red 统计范围收敛到当前用户回合：上一轮的失败不再挂在下一轮的状态里；
+// 回合起点不在已加载窗口时明示统计不完整。target 显示按 kind 走（命令不做 basename）。
 export function SessionActivityHud() {
   const sync = useSync()
   const { params } = useSessionKey()
@@ -19,10 +21,17 @@ export function SessionActivityHud() {
   const status = createMemo(() => (params.id ? (sync.data.session_status[params.id]?.type ?? "idle") : "idle"))
   const working = createMemo(() => status() !== "idle")
 
-  const parts = createMemo<ActivityPart[]>(() => {
-    if (!params.id) return []
-    return (sync.data.message[params.id] ?? []).flatMap((message) => sync.data.part[message.id] ?? [])
+  // 回合范围：最后一条用户消息及其后的消息才算本轮；找不到说明起点不在已加载窗口里。
+  const turnStart = createMemo(() => {
+    if (!params.id) return -1
+    return (sync.data.message[params.id] ?? []).findLastIndex((message) => message.role === "user")
   })
+  const parts = createMemo<ActivityPart[]>(() => {
+    if (!params.id || turnStart() === -1) return []
+    const messages = sync.data.message[params.id] ?? []
+    return messages.slice(turnStart()).flatMap((message) => sync.data.part[message.id] ?? [])
+  })
+  const turnIncomplete = createMemo(() => working() && turnStart() === -1)
   const activity = createMemo(() => deriveActivity(parts()))
   const permissions = createMemo(() => (params.id ? (sync.data.permission[params.id]?.length ?? 0) : 0))
   const children = createMemo(() => {
@@ -37,12 +46,6 @@ export function SessionActivityHud() {
       }).length,
   )
 
-  const target = (value: string) => {
-    const normalized = value.replaceAll("\\", "/")
-    const index = normalized.lastIndexOf("/")
-    return index === -1 ? normalized : normalized.slice(index + 1)
-  }
-
   return (
     <Show when={working() || permissions() > 0 || runningChildren() > 0}>
       <div
@@ -55,10 +58,13 @@ export function SessionActivityHud() {
         </Show>
         <Show when={activity().running} keyed>
           {(running) => (
-            <span class="min-w-0 truncate text-[var(--v2-text-text-base)]">
+            <span
+              class="min-w-0 truncate text-[var(--v2-text-text-base)]"
+              title={running.target ? targetTitle(running.target) : undefined}
+            >
               {running.tool}
               <Show when={running.target}>
-                <span class="text-[var(--v2-text-text-muted)]"> · {target(running.target!)}</span>
+                <span class="text-[var(--v2-text-text-muted)]"> · {targetLabel(running.target!)}</span>
               </Show>
             </span>
           )}
@@ -81,6 +87,9 @@ export function SessionActivityHud() {
           <span class="shrink-0">
             {language.t("session.activity.subagents")} {runningChildren()}/{children().length}
           </span>
+        </Show>
+        <Show when={turnIncomplete()}>
+          <span class="shrink-0">{language.t("session.activity.incomplete")}</span>
         </Show>
       </div>
     </Show>

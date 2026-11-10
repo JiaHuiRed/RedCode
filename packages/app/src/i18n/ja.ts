@@ -534,6 +534,7 @@ export const dict = {
   "session.activity.failed": "失敗",
   "session.activity.permission": "確認が必要",
   "session.activity.subagents": "サブエージェント",
+  "session.activity.incomplete": "統計は不完全な可能性があります",
   "session.tab.review": "レビュー",
   "session.tab.context": "コンテキスト",
   "session.panel.workspace": "セッションワークスペース",

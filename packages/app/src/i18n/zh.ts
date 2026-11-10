@@ -662,6 +662,7 @@ export const dict = {
   "session.activity.failed": "失败",
   "session.activity.permission": "需要你的确认",
   "session.activity.subagents": "子代理",
+  "session.activity.incomplete": "统计可能不完整",
   "session.tab.review": "审查",
   "session.tab.context": "上下文",
   "session.tab.status": "状态",
