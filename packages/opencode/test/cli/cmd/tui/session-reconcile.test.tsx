@@ -46,7 +46,8 @@ describe("tui session reconcile", () => {
       return new Response("", { status: 404 })
     })
     const connectedEvent = (): GlobalEvent => ({
-      directory: "/tmp/other",
+      // 261110 Red 独立目录不再共享事件：事件必须归属当前目录才会被 sync 收到。
+      directory,
       project: "proj_test",
       payload: { id: `evt_conn_${++connections}`, type: "server.connected", properties: {} },
     })

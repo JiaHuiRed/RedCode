@@ -46,6 +46,8 @@ export function Home() {
   // 261110 Red 启动动作（--prompt）属于一次性消费：跨项目切换后 Home 会重挂，
   // 已发送/已消费的状态存在导航 context 里，不能靠组件局部变量（重挂即归零）。
   const navigation = useProjectNavigation()
+  // 261110 Red 启动时刻的目录是固定事实：没有它的 --prompt 不自动发送（见下方 effect）。
+  const startupDirectory = navigation?.startup.directory
   let sent = false
   let attempting = false
 
@@ -81,9 +83,11 @@ export function Home() {
     if (!r) return
     if (!sync.ready || !local.model.ready) return
     if (!args.prompt) return
-    // 261110 Red 已消费过就不再自动发送；没有目录 / 正在切换时只保留文字，
-    // 等用户选好工作区自己按回车，绝不把请求发到错误目录。
+    // 261110 Red 已消费过就不再自动发送；正在切换时也先等，绝不把请求发到错误目录。
     if (navigation?.startup.promptConsumed) return
+    // 261110 Red 启动时没有可靠目录：只保留文字，等用户选好工作区自己按回车，
+    // 不在目录出现的那一刻自动开工。
+    if (navigation && !startupDirectory) return
     if (navigation && !navigation.canSend()) return
     if (r.current.input !== args.prompt) return
     attempting = true

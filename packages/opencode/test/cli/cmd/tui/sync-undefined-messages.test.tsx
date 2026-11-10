@@ -30,7 +30,7 @@ describe("tui sync (#26560)", () => {
     }
     const { app, sync } = await mount((url) => {
       if (url.pathname === `/session/${sessionID}`) return json(sessionPayload)
-      if (url.pathname === `/session/${sessionID}/messages`) return json({}, { status: 500 })
+      if (url.pathname === `/session/${sessionID}/message`) return json({}, { status: 500 })
       if (url.pathname === `/session/${sessionID}/todo`) return json([])
       if (url.pathname === `/session/${sessionID}/diff`) return json([])
       if (url.pathname === "/session") return json([sessionPayload])
@@ -38,7 +38,10 @@ describe("tui sync (#26560)", () => {
     })
 
     try {
-      await expect(sync.session.sync(sessionID)).resolves.toBeUndefined()
+      // 261108 Red 失败必须抛出而不是吞成空数组（RC-P1-03）：这样调用方不会把会话
+      // 标成已加载，store 也不会被 undefined 当成合法空历史整体替换。
+      await expect(sync.session.sync(sessionID)).rejects.toThrow()
+      expect(sync.data.message[sessionID]).toBeUndefined()
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

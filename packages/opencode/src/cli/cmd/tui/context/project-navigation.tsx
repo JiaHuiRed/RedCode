@@ -71,7 +71,9 @@ const navigation = createSimpleContext({
     let generation = 0
     let live = true
     let committing = Promise.resolve()
-    const startup = { promptConsumed: false }
+    // 261110 Red 启动时有没有可靠目录决定 --prompt 能否自动发送；没有目录时只保留文字，
+    // 等工作区选定后由用户自己按回车。
+    const startup = { promptConsumed: false, directory: props.directory }
     const key = (directory: string | undefined, sessionID?: string) =>
       JSON.stringify([sdk.url, projectDirectoryKey(directory), sessionID ?? ""])
 

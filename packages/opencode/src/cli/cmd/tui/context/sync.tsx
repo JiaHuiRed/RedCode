@@ -158,6 +158,12 @@ export const {
     const project = useProject()
     const sdk = useSDK()
     const kv = useKV()
+    // 261110 Red 项目切换会卸载旧 SyncProvider，但已发出的请求不会被取消；
+    // 迟到的失败不能再触发应用退出（exit 会销毁整个 TUI）。
+    let live = true
+    onCleanup(() => {
+      live = false
+    })
 
     const fullSyncedSessions = new Set<string>()
     // 260923 Red 当前会话 = 最后一次 sync/reconcile 的目标（进会话与子会话导航都走
@@ -748,6 +754,8 @@ export const {
             name: e instanceof Error ? e.name : undefined,
             stack: e instanceof Error ? e.stack : undefined,
           })
+          // 261110 Red 已卸载的 provider 只记日志：旧目录的迟到失败不能连坐整个 TUI。
+          if (!live) return
           if (fatal) {
             await exit(e)
           } else {
@@ -806,6 +814,34 @@ export const {
       })
     }
 
+    // 261110 Red 阅读锚点被离开期间的新消息挤出默认 100 条窗口时向前翻页。服务端
+    // before 接受消息 id，返回整页升序；遇到压缩摘要说明已到可见历史起点，再往前
+    // 是被摘要覆盖的旧消息，不能重新放进界面。
+    async function loadEarlierMessages(sessionID: string) {
+      const loaded = store.message[sessionID] ?? []
+      const oldest = loaded[0]
+      if (!oldest) return false
+      if (oldest.role === "assistant" && oldest.summary) return false
+      const page = await sdk.client.session.messages(
+        { sessionID, limit: 100, before: oldest.id },
+        { throwOnError: true },
+      )
+      const items = page.data ?? []
+      if (!items.length) return false
+      const boundary = items.findIndex((item) => item.info.role === "assistant" && item.info.summary)
+      const known = new Set(loaded.map((message) => message.id))
+      const older = (boundary >= 0 ? items.slice(boundary + 1) : items).filter((item) => !known.has(item.info.id))
+      if (older.length) {
+        setStore(
+          produce((draft) => {
+            for (const item of older) draft.part[item.info.id] = item.parts
+            draft.message[sessionID] = [...older.map((item) => item.info), ...(draft.message[sessionID] ?? [])]
+          }),
+        )
+      }
+      return boundary < 0 && older.length > 0
+    }
+
     const result = {
       data: store,
       set: setStore,
@@ -855,6 +891,10 @@ export const {
           currentSessionID = sessionID
           await loadSessionSnapshot(sessionID)
           fullSyncedSessions.add(sessionID)
+        },
+        // 261110 Red 阅读位置恢复用：向前补取一页并前置，不推进 fullSyncedSessions。
+        loadEarlier(sessionID: string) {
+          return loadEarlierMessages(sessionID)
         },
       },
       bootstrap,

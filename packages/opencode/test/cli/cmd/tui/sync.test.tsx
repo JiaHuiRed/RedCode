@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import { Global } from "@redcode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"
-import { directory, json, mount, wait } from "./sync-fixture"
+import { directory, json, mount, wait, worktree } from "./sync-fixture"
 import type { GlobalEvent } from "@redcode-ai/sdk/v2"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
@@ -104,6 +104,84 @@ describe("tui sync", () => {
       await wait(() => sync.data.vcs?.branch === "feature")
 
       expect(sync.data.vcs?.branch).toBe("feature")
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
+  // 261110 Red 阅读锚点被新消息挤出默认窗口时向前补取；压缩摘要处必须停住，
+  // 不能再把被摘要覆盖的旧消息放回界面。
+  test("loadEarlier pages history backwards and stops at a compaction summary", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    const paged = "ses_paging"
+    const compacted = "ses_compacted"
+    const before = [] as string[]
+    const info = (sessionID: string, id: string, created: number, extra: Record<string, unknown> = {}) => ({
+      info: {
+        id,
+        sessionID,
+        role: "assistant",
+        time: { created, completed: created },
+        providerID: "test",
+        modelID: "test",
+        mode: "test",
+        agent: "test",
+        path: { cwd: directory, root: worktree },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        ...extra,
+      },
+      parts: [],
+    })
+    const session = (id: string) => ({
+      id,
+      title: id,
+      time: { created: 0, updated: 0 },
+      version: "1.14.42",
+      directory,
+      project_id: "proj_test",
+    })
+    const { app, sync } = await mount((url) => {
+      if (!url.pathname.startsWith(`/session/${paged}`) && !url.pathname.startsWith(`/session/${compacted}`))
+        return undefined
+      const sessionID = url.pathname.startsWith(`/session/${paged}`) ? paged : compacted
+      if (url.pathname === `/session/${sessionID}`) return json(session(sessionID))
+      if (url.pathname === `/session/${sessionID}/todo`) return json([])
+      if (url.pathname === `/session/${sessionID}/diff`) return json([])
+      if (url.pathname !== `/session/${sessionID}/message`) return new Response("", { status: 404 })
+      const cursor = url.searchParams.get("before")
+      if (!cursor) {
+        return sessionID === paged
+          ? json([info(sessionID, "msg_new_1", 10), info(sessionID, "msg_new_2", 20)])
+          : json([info(sessionID, "msg_new", 10)])
+      }
+      before.push(`${sessionID}:${cursor}`)
+      // 压缩摘要不在首屏（服务端 after 排他），但一定出现在往前翻的那一页里。
+      return sessionID === paged
+        ? json([info(sessionID, "msg_old", 1)])
+        : json([info(sessionID, "msg_old", 1), info(sessionID, "msg_summary", 2, { summary: true })])
+    })
+
+    try {
+      await sync.session.sync(paged)
+      expect(sync.data.message[paged]?.map((message) => message.id)).toEqual(["msg_new_1", "msg_new_2"])
+
+      expect(await sync.session.loadEarlier(paged)).toBe(true)
+      expect(before).toEqual([`${paged}:msg_new_1`])
+      expect(sync.data.message[paged]?.map((message) => message.id)).toEqual([
+        "msg_old",
+        "msg_new_1",
+        "msg_new_2",
+      ])
+
+      await sync.session.sync(compacted)
+      expect(await sync.session.loadEarlier(compacted)).toBe(false)
+      expect(before).toEqual([`${paged}:msg_new_1`, `${compacted}:msg_new`])
+      expect(sync.data.message[compacted]?.map((message) => message.id)).toEqual(["msg_new"])
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

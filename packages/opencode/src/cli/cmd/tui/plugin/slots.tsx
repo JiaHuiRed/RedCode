@@ -22,7 +22,9 @@ function empty<Name extends string>(_props: TuiSlotProps<Name>) {
 let view: Slot = empty
 
 // 261110 Red 同一个 renderer 复用同一份 slot registry（项目切换会重新 init 插件运行时）。
-const registries = new WeakMap<object, HostSlots>()
+// context 保持同一个对象：registry 只保存引用，插件每次渲染都从它上面取最新主题。
+type SlotHost = { slots: HostSlots; context: TuiSlotContext }
+const registries = new WeakMap<object, SlotHost>()
 
 export const Slot: Slot = (props) => view(props)
 
@@ -36,25 +38,25 @@ function isHostSlotPlugin(value: unknown): value is HostSlotPlugin<Record<string
 export function setupSlots(api: HostPluginApi): HostSlots {
   // 261110 Red 每个 renderer 只允许一个 slot registry：切换项目会重新 init 插件运行时，
   // 再次 createSolidSlotRegistry 会抛 "called with a different context" 让整个 TUI 崩掉。
+  // registry 复用，但主题上下文要跟着本次 init 换：ThemeProvider 已随项目重建，
+  // 继续用第一次的 api.theme 会让 B 项目的插件继续显示 A 项目的配色。
   const existing = registries.get(api.renderer)
-  if (existing) return existing
-  const reg = createSolidSlotRegistry<RuntimeSlotMap, TuiSlotContext>(
-    api.renderer,
-    {
-      theme: api.theme,
+  if (existing) {
+    existing.context.theme = api.theme
+    return existing.slots
+  }
+  const context: TuiSlotContext = { theme: api.theme }
+  const reg = createSolidSlotRegistry<RuntimeSlotMap, TuiSlotContext>(api.renderer, context, {
+    onPluginError(event) {
+      console.error("[tui.slot] plugin error", {
+        plugin: event.pluginId,
+        slot: event.slot,
+        phase: event.phase,
+        source: event.source,
+        message: event.error.message,
+      })
     },
-    {
-      onPluginError(event) {
-        console.error("[tui.slot] plugin error", {
-          plugin: event.pluginId,
-          slot: event.slot,
-          phase: event.phase,
-          source: event.source,
-          message: event.error.message,
-        })
-      },
-    },
-  )
+  })
 
   const slot = createSlot<RuntimeSlotMap, TuiSlotContext>(reg)
   view = (props) => slot(props)
@@ -64,6 +66,6 @@ export function setupSlots(api: HostPluginApi): HostSlots {
       return reg.register(plugin)
     },
   }
-  registries.set(api.renderer, shell)
+  registries.set(api.renderer, { slots: shell, context })
   return shell
 }

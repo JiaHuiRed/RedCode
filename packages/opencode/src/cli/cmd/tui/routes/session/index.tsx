@@ -712,6 +712,54 @@ export function Session() {
     })
   }
 
+  // 261110 Red 每页 100 条：最多补 5 页。再远说明离开期间积累了整段历史，继续补会把
+  // 巨量消息一次性排进布局，退回像素位置更划算。
+  const MAX_READING_BACKFILL_PAGES = 5
+
+  // 261110 Red 锚点可能被离开期间的新消息挤出默认窗口：向前分页补取，补到才滚；补不到
+  // （太旧 / 已被压缩或删除）才退回像素位置——那时像素对应的消息集合已经变了。
+  async function backfillReading(sessionID: string, messageID: string, scrollTop: number | undefined) {
+    for (let page = 0; page < MAX_READING_BACKFILL_PAGES; page++) {
+      if (route.sessionID !== sessionID) return
+      const advanced = await sync.session.loadEarlier(sessionID).catch(() => {
+        // 补取失败按「补不到」处理：阅读位置恢复是尽力而为，不弹错误。
+        return false
+      })
+      if (!advanced) break
+      if (route.sessionID !== sessionID) return
+      if (messages().some((message) => message.id === messageID)) {
+        scrollToReadingAnchor(messageID)
+        return
+      }
+    }
+    if (scrollTop !== undefined && scroll && !scroll.isDestroyed) scroll.scrollTo(scrollTop)
+  }
+
+  // 261110 Red 锚点可能在默认消息窗口之外：先把窗口撑到能容纳它，再等它真正排进布局
+  // （height > 0）才滚。逐帧复查，而不是猜一个 timeout。
+  function scrollToReadingAnchor(messageID: string) {
+    const all = messages()
+    const index = all.findIndex((message) => message.id === messageID)
+    if (index >= 0 && all.length - index > messageWindowSize()) setMessageWindowSize(all.length - index)
+    let frames = 0
+    const tick = () => {
+      if (!scroll) {
+        if (++frames > 120) return
+        requestAnimationFrame(tick)
+        return
+      }
+      if (scroll.isDestroyed) return
+      const child = scroll.getChildren().find((c) => c.id === messageID)
+      if (child && child.height > 0) {
+        scroll.scrollBy(child.y - scroll.y - 1)
+        return
+      }
+      if (++frames > 120) return
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+
   let restoredFor: string | undefined
   function restoreReading() {
     if (!navigation?.enabled) return
@@ -722,9 +770,16 @@ export function Session() {
     const all = messages()
     if (!all.length) return
     restoredFor = sessionID
-    const index = target.messageID ? all.findIndex((m) => m.id === target.messageID) : -1
-    // 锚点可能在默认消息窗口之外：先把窗口撑到能容纳它，首帧就一起参与布局。
-    if (index >= 0 && all.length - index > messageWindowSize()) setMessageWindowSize(all.length - index)
+    // 锚点不在已加载的窗口里：先向前补取，别拿像素位置去对已经变了的消息集合。
+    if (target.messageID && !all.some((message) => message.id === target.messageID)) {
+      void backfillReading(sessionID, target.messageID, target.scrollTop)
+      return
+    }
+    if (target.messageID) {
+      scrollToReadingAnchor(target.messageID)
+      return
+    }
+    // 没有锚点：等 scrollbox 可用后退回保存时的像素位置。
     let frames = 0
     const tick = () => {
       if (!scroll) {
@@ -733,18 +788,7 @@ export function Session() {
         return
       }
       if (scroll.isDestroyed) return
-      const child = target.messageID ? scroll.getChildren().find((c) => c.id === target.messageID) : undefined
-      if (child && child.height > 0) {
-        scroll.scrollBy(child.y - scroll.y - 1)
-        return
-      }
-      // 锚点消息已不存在（被 revert/删除）或本来就没有锚点：退回保存时的像素位置。
-      if (!child && (target.messageID === undefined || index === -1) && target.scrollTop !== undefined) {
-        scroll.scrollTo(target.scrollTop)
-        return
-      }
-      if (++frames > 120) return
-      requestAnimationFrame(tick)
+      if (target.scrollTop !== undefined) scroll.scrollTo(target.scrollTop)
     }
     requestAnimationFrame(tick)
   }
