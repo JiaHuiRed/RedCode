@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **TUI 同窗口切换项目**：输入框上方的项目名与路径可点击，也可从命令面板或 `/projects` 打开工作区选择器；支持搜索最近项目、添加已有目录及失败时保留输入。默认启动直接进入首页，显式路径和调用目录优先。切换按目录重绑配置与插件，恢复各项目的会话、草稿、附件和基本阅读位置；Worker 与事件连接常驻，原项目后台任务不因切换视图停止，待确认请求保留原归属。选择器里 `ctrl+d` 两次可把工作区移出列表（只摘记录，目录与会话不动；当前工作区不可删，重新切过去会自动恢复）。仅本地 TUI 启用，attach 不做本地目录切换。决策与验证见 `docs/notes/implemented/feature/2026-11-10-tui-project-navigation.md`。
+
 ### [0.17.4] - 2026-11-10
 
 - **提交目标与自动聚焦都钉在触发那一刻**（`app/pages/session/composer/submit.ts`、`components/session/session-question-dock.tsx`）：两条同源的「异步窗口里重新读当前状态」缺陷。提交先取草稿、再等 `local.ready()` 最多 5 秒，之后才读路由/会话/上下文——初始化慢时用户切到会话 B，A 的草稿会连整轮模型调用一起发进 B；提问面板的 `focus()` 在 rAF 里延后一帧执行，而 `typingOutside()` 只在挂载时检查一次，这一帧里用户点进编辑器开始输入仍会被抢焦点、中文组合直接断。现在提交侧在点击时快照路由/会话/上下文/autoAccept/worktree，聚焦侧在 rAF 回调里复查 `typingOutside()`。验证：submit 套件 14 pass（新增「初始化未完成时切到 session-b、消息仍发往 session-a」，回退修复点即失败）；app typecheck exit 0。
@@ -30,6 +34,7 @@
 - **引入 cloudflare security-audit 安全审计 skill**（`seed/skill/security-audit/`，20 文件 320KB）：上游 cloudflare/security-audit-skill（c1c8a8c，MIT）原样引入、SHA256 逐文件对账，零改写以便跟进上游。六阶段结构化审计（侦察→覆盖率台账狩猎→对抗性候选验证→findings.json 机器校验→独立复核→中立报告），三态判定（confirmed/needs_validation/rejected）、severity 只给 confirmed、无 OS 沙箱时自动降级为纯静态 + needs_validation。「security audit / 找漏洞 / pen test」触发，与 ce-code-review 边界不撞；home 无同名，下会话 bootstrap 自动播种。模型可见：skills 清单固定前缀 +1 行（≈70 est tokens），SKILL.md 22KB 仅触发式注入。
 - **引导与真实能力对齐：Plan 派单、plan_exit、explore 续跑三处失配修正**（`opencode/src/session/prompt/`、tool task、seed 命令描述）：实验性 Plan 设计阶段从派 execute（执行者）改为 explore（只读、description 明确支持 DESIGN）；plan_exit 仅 CLI 注册，非 CLI 客户端退回非实验路径，引导与工具表一致；explore 结果头不再承诺 task_id 续跑（实际校验明确拒绝），改提示派发新任务；/goal 文档补 REDCODE_ENABLE_GOAL_TOOLS=true 依赖说明。模型可见：plan-mode.md 固定文件改写、task 结果头固定一行改写、命令描述固定。验证：opencode typecheck exit 0。
 - **审计文档对齐现状**（`MANUAL.md`、`packages/opencode/README.md`、`docs/agent-dispatch-plan.md`）：/goal 落库依赖 REDCODE_ENABLE_GOAL_TOOLS=true（默认关）、/subtask 为隔离子会话同步执行而非后台；`bun run index.ts` 不存在，改为 `bun run dev` 等真实命令；agent 派发方案实施批次状态改为真实落地状态。
+
 ### [0.17.2] - 2026-11-08
 
 - **ResizeObserver 布局循环清零：内容高度改由时间线上报，滚动决策收敛为状态机**（`ui/src/hooks/create-auto-scroll.tsx`、新增 `ui/src/hooks/auto-scroll-machine.ts`、`app/src/pages/session/message-timeline.tsx`、`session.tsx`）：content 元素此前同时被会话与 auto-scroll 两处 RO 观察，而虚拟列表行尺寸提交也在同一帧，Chrome 把每次交付报成 `ResizeObserver loop completed with undelivered notifications`（Electron renderer.log 单晚 911 条）。现在时间线在行集合/宽度/流式版本变化时 rAF 读一次高度、值变了才回调；滚动决策移植上游 #61588 的状态机（idle/following/settling/paused/detached + flight），所有入口只 dispatch，是否写 scrollTop 由 reducer 产出的 effect 决定。验证：dev 实测进入会话 4-6→0、连续滚动 1-2→0、顶部加载历史 4→0；滚动上后不被拉回、回底 resize 保持底部；状态机单测 14 条；ui/app typecheck exit 0。
@@ -205,6 +210,7 @@
 - **openrouter 白名单收敛至 stealth/crouton-alpha**（`seed/redcode.home.jsonc`）：只留 11-03 上线的免费 stealth 模型，其余免费层条目一并过滤——白名单决定模型可见性，残留条目只制造列表噪音。
 
 ### [0.14.0] - 2026-10-31
+
 - **忙碌引导改为待消费形态并新增打断发送**（`packages/opencode/src/session/`、`packages/app/src/components/prompt-input*`、`pages/session.tsx`、TUI `prompt/index.tsx`）：忙碌时的引导（steer）现在落 `pending_steer` 待消费形态——已进消息流（用户随时可编辑/撤回），但未领取前对模型隐藏（组装、`MessageV2.latest` 与 reminder 收集三处排除，防 promote 后落库的窗口竞态）；loop 每步组装前 `promotePendingSteer` 领取转 steer，与编辑/撤回在 queueLock 串行，领取后编辑明确 409 不悄悄改历史。busy 判定以服务端 Runner 为准（`isBusy` 查询），不信客户端快照。新增 `interruptPrompt` 服务端入口（`POST /session/:id/interrupt_prompt`）：单请求串行「取消当前 Runner → 提交新消息 → 开新轮」，客户端不再自己串 abort + prompt 两个请求；不碰 Git 快照、不回滚工作区文件，旧工具中断由 cancelTree 异步收尾。GUI 忙碌且输入非空时主按钮旁出现「打断并发送」按钮（与引导发送并存，纯停止仍是忙碌+空输入的 stop 形态），TUI 忙碌默认从 queue 对齐为 steer、`/pending` 同时管理 queued 与 pending_steer。GUI 待消费 dock 同时接受 queued 与 pending_steer 两形态（编辑/撤回/立即送达三键共用）。模型可见四问见 [引导与打断决策](docs/notes/implemented/feature/2026-10-31-steer-pending-interrupt.md)。
 - **修复引导待消费形态的三处衔接缺陷**（`packages/opencode/src/session/prompt.ts`、TUI `routes/session/index.tsx`、`packages/app/src/components/prompt-input.tsx`）：第三方审计四项复核后三项属实。① 提交方重跑判据只认 `steer`，`pending_steer` 被判成已送达——引导恰在旧轮最后一次领取之后落库时会滞留到下一次显式执行（判据抽成 `retryableDelivery` 并配可判别单测：旧逻辑下测试必红）。② TUI 的 `activeMessageID` 只排除 `queued`，未领取引导被误认作活跃轮首，待发送徽标也被跳过；抽 `isPendingDelivery` 统一 queued/pending_steer 三处判断。③ GUI 打断按钮此前在 Shell 模式与自定义斜杠命令下也显示，而这两条分支走 `session.shell`/`session.command` 不会取消当前轮，按钮承诺落空——显示条件与真实请求路由同判据。审计的 TUI 打断入口一项复核后不改：TUI 的 Escape 连按两次打断不清空输入，`Escape×2 → Enter` 已是等价两步路径，而 Ctrl+Enter/Alt+Enter 在终端支持不一致（Windows Terminal 的 Alt+Enter 被全屏占用），新增不可靠键位得不偿失；取舍记录在决策 note。
 - **Shell 运行中显示命令文本**（`packages/ui/src/components/message-part.tsx`）：bash 工具卡片运行期间在标题旁以副标题显示命令原文（沿用 subtitle 单行截断样式），长命令不再黑箱等待；完成后仍切回描述文本的动画形态。展示层改动，不影响工具输出与模型可见内容。
