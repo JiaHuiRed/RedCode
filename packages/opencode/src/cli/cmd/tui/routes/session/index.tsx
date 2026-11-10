@@ -725,12 +725,15 @@ export function Session() {
         // 补取失败按「补不到」处理：阅读位置恢复是尽力而为，不弹错误。
         return false
       })
-      if (!advanced) break
       if (route.sessionID !== sessionID) return
+      // 261110 Red 一页里可能既有压缩摘要边界、又有边界之后的有效消息：后者已经前置进
+      // store，但 loadEarlier 会因为边界返回 false。先查锚点是否进来，再按 advanced
+      // 决定是否继续——否则明明补到了也退回像素位置。
       if (messages().some((message) => message.id === messageID)) {
         scrollToReadingAnchor(messageID)
         return
       }
+      if (!advanced) break
     }
     if (scrollTop !== undefined && scroll && !scroll.isDestroyed) scroll.scrollTo(scrollTop)
   }

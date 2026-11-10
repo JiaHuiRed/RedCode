@@ -6,6 +6,7 @@ import { Filesystem } from "@/util/filesystem"
 import { ProjectSelector } from "@/cli/project-selector"
 import { TuiConfig } from "../config/tui"
 import { TuiPluginRuntime } from "../plugin/runtime"
+import { sameDirectory } from "../validate-session"
 import {
   readProjectHistory,
   readIgnoredProjects,
@@ -89,10 +90,10 @@ const navigation = createSimpleContext({
     }
 
     async function visit(directory: string, view: View) {
-      await recordProjectVisit({
-        directory,
-        sessionID: view.route.type === "session" ? view.route.sessionID : undefined,
-      })
+      // 261110 Red dummy 只是 --continue 的启动占位，不能当会话写进历史（与 rememberView 同口径）。
+      const sessionID =
+        view.route.type === "session" && view.route.sessionID !== "dummy" ? view.route.sessionID : undefined
+      await recordProjectVisit({ directory, sessionID })
       await refreshRecent()
     }
 
@@ -262,7 +263,10 @@ const navigation = createSimpleContext({
           if (sessionID) view.route = { type: "session", sessionID }
           if (view.route.type === "session" && view.route.sessionID !== "dummy") {
             const session = await client.session.get({ sessionID: view.route.sessionID })
-            if (!session.data) view.route = { type: "home" }
+            // 261110 Red 服务端 session.get 按 ID 查库、不按目录过滤：历史里残留别的项目的
+            // SessionID 时，只验存在会直接打开它。归属不符落回目标工作区首页。
+            if (!session.data?.directory || !sameDirectory(session.data.directory, directory))
+              view.route = { type: "home" }
           }
           if (attempt !== generation || !live) return false
           // 261110 Red 准备可并发，插件清理与视图提交串行，旧清理不能擦掉新目标。

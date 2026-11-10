@@ -7,7 +7,7 @@ const decodeSessionID = Schema.decodeUnknownSync(SessionID)
 
 // 261110 Red 只校验会话 ID 存在不够：服务端可能按自己的默认实例路由，打开的是别的项目的会话。
 // 拿到会话后必须核对 directory，不一致就明确报错，绝不通过中间件把请求路由到其他项目。
-function sameDirectory(a: string, b: string) {
+export function sameDirectory(a: string, b: string) {
   const normalize = (value: string) => Filesystem.resolve(value).replaceAll("\\", "/").replace(/\/+$/, "")
   const left = normalize(a)
   const right = normalize(b)

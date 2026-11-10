@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **TUI 项目导航三处收尾修复**（`opencode/src/cli/cmd/tui/context/project-navigation.tsx`、`project-history.ts`、`routes/session/index.tsx`，`validate-session.ts` 导出 `sameDirectory`）：① 切换工作区恢复历史会话时只验存在、不验归属，服务端 `session.get` 按 ID 查库，历史里残留别的项目的 SessionID 会直接打开它；现在复用 `--session` 的目录归属判定，不符落回目标工作区首页（`dialog-project-select` 的两条 `switchTo` 是唯一入口）。② 启动与回首页的访问记录不带 SessionID，`recordProjectVisit` 用新记录整体替换旧记录，把「最后查看会话」抹掉；改为锁内继承旧 sessionID，只有真正切到另一段会话才更新，`forget` 后重新访问不继承。③ 阅读锚点补页时，一页里既有压缩摘要边界又有边界后的有效消息时消息已前置进 store，`loadEarlier` 却因边界返回 false，调用方先 `break` 再查锚点，明明补到了仍退回像素位置；改为每次补取后先查锚点是否已进入，再按返回值决定是否继续。验证：`project-history` 3 pass；`validate-session` + `sync` 7 pass；opencode typecheck exit 0。决策与验证见 `docs/notes/implemented/feature/2026-11-10-tui-project-navigation.md`。
+
 ### [0.18.1] - 2026-11-10
 
 - **桌宠换用 13 状态真透明素材并整体放大 15%**（`app/public/pet/*.png`、`app/src/pet/pet-layer.css`）：13 张 704×704 RGBA 按去 `@2x` 后的正式名直接替换旧素材，与 `pet-layer.tsx` 的 `/pet/NN-name.png` 引用逐一对应，写入前后 sha256 一致（未经重采样）。Pillow 逐像素核验 alpha 0-255、四角全 0、透明面积 50.6%-56.1%，贴棋盘格底无白边；素材总量 13MB → 5.9MB。方形素材比原竖版（约 700×1024）显矮，按需求容器 160px → 184px、右侧贴边留白 176 → 200px。拖拽/气泡/描边读运行时测量尺寸，没有其他写死像素。

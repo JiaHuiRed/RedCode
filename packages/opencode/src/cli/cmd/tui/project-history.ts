@@ -103,16 +103,20 @@ export async function recordProjectVisit(entry: {
   sessionID?: string
 }): Promise<void> {
   if (!entry.directory.trim()) return
-  const next: ProjectVisit = {
-    directory: entry.directory,
-    ...(entry.name ? { name: entry.name } : {}),
-    ...(entry.sessionID ? { sessionID: entry.sessionID } : {}),
-    usedAt: Date.now(),
-  }
   await Flock.withLock(lockKey(), async () => {
     // 261110 Red 读-改-写必须在同一把锁内，多个 TUI 同时记录才不会互相覆盖
     const value = await readUnlocked()
-    const key = normalize(next.directory)
+    const key = normalize(entry.directory)
+    // 261110 Red 启动记录与回首页的访问都不带 sessionID：直接替换会抹掉「最后查看会话」。
+    // 没提供新值就继承旧记录，只有真正切到另一段会话时才更新。
+    const previous = value.visits.find((item) => normalize(item.directory) === key)
+    const sessionID = entry.sessionID ?? previous?.sessionID
+    const next: ProjectVisit = {
+      directory: entry.directory,
+      ...(entry.name ? { name: entry.name } : {}),
+      ...(sessionID ? { sessionID } : {}),
+      usedAt: Date.now(),
+    }
     const merged = [next, ...value.visits.filter((item) => normalize(item.directory) !== key)].sort(
       (a, b) => b.usedAt - a.usedAt,
     )
