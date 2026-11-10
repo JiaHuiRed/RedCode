@@ -90,6 +90,8 @@ export const Definitions = {
   session_fork: keybind("none", "分叉会话"),
   session_rename: keybind("ctrl+r", "Rename session"),
   session_delete: keybind("ctrl+d", "Delete session"),
+  // 261110 Red 工作区列表里删除一条记录（只移除列表项，不删目录和会话）。
+  project_delete: keybind("ctrl+d", "Remove workspace from the workspace list"),
   session_share: keybind("none", "Share current session"),
   session_unshare: keybind("none", "Unshare current session"),
   session_interrupt: keybind("escape", "Interrupt current session"),
@@ -288,6 +290,7 @@ export const CommandMap = {
   session_fork: "session.fork",
   session_rename: "session.rename",
   session_delete: "session.delete",
+  project_delete: "project.delete",
   session_share: "session.share",
   session_unshare: "session.unshare",
   session_interrupt: "session.interrupt",

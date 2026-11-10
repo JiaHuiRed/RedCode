@@ -8,7 +8,7 @@ type WorkspaceStatus = "connected" | "connecting" | "disconnected" | "error"
 
 export const { use: useProject, provider: ProjectProvider } = createSimpleContext({
   name: "Project",
-  init: () => {
+  init: (props: { workspace?: string }) => {
     const sdk = useSDK()
 
     const defaultPath = {
@@ -27,7 +27,7 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
         path: defaultPath,
       },
       workspace: {
-        current: undefined as string | undefined,
+        current: props.workspace,
         list: [] as Workspace[],
         status: {} as Record<string, WorkspaceStatus>,
       },

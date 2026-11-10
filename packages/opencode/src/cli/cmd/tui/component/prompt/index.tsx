@@ -23,6 +23,9 @@ import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
+// 261110 Red 多项目导航：未提供时（attach / 旧测试）行为保持原样。
+import { useProjectNavigation, type ProjectDraft } from "@tui/context/project-navigation"
+import { appendDraftChunk, appendDraftText, consumeSubmittedDraft, sameDraftScope, type DraftPart, type DraftScope } from "./draft"
 import { useEvent } from "@tui/context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui/context/editor"
 import { MessageID, PartID } from "@/session/schema"
@@ -41,7 +44,7 @@ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import * as Editor from "@tui/util/editor"
 import { useExit } from "../../context/exit"
 import * as Clipboard from "../../util/clipboard"
-import type { AssistantMessage, FilePart, UserMessage } from "@redcode-ai/sdk/v2"
+import type { AssistantMessage, UserMessage } from "@redcode-ai/sdk/v2"
 import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
 import { Locale } from "@/util/locale"
@@ -238,6 +241,10 @@ export function Prompt(props: PromptProps) {
   const [promptWidth, setPromptWidth] = createSignal(0)
   const { theme, syntax } = useTheme()
   const kv = useKV()
+  const navigation = useProjectNavigation()
+  // 261110 Red 草稿归属取本组件绑定的 sdk.directory：切换准备阶段目标目录已经确定，
+  // 但请求与画面还停在源项目，按目标目录记草稿会把 A 的内容记到 B 名下。
+  let draftScope: DraftScope = { directory: sdk.directory, sessionID: props.sessionID }
   const animationsEnabled = createMemo(() => kv.get("animations_enabled", true))
   const list = createMemo(() => props.placeholders?.normal ?? [])
   const shell = createMemo(() => props.placeholders?.shell ?? [])
@@ -432,18 +439,55 @@ export function Prompt(props: PromptProps) {
   })
   const submissionController = createSubmissionController()
 
-  function markDraftChanged() {
-    submissionController.changed()
+  // 261110 Red 草稿按「目录 + 会话」落格：一个字符、纯附件都存；发送成功后清空同样落格。
+  // 没有导航（attach / 旧测试）时不写格子，草稿仍走原来的模块级单槽 stashed。
+  function saveDraft(scope: DraftScope = draftScope) {
+    if (!navigation?.enabled) return
+    if (!input || input.isDestroyed) return
+    navigation.saveDraft(scope.directory, scope.sessionID, {
+      prompt: structuredClone(unwrap(store.prompt)),
+      cursor: input.cursorOffset,
+      mode: store.mode,
+    })
   }
 
-  function setPrompt(prompt: PromptInfo) {
+  // 261110 Red 恢复草稿：直接落 store/extmark，不经过 setPrompt/setMode，
+  // 免得先按旧内容写一次格子、再按新内容写一次。
+  function applyDraft(draft: ProjectDraft | undefined) {
+    if (!input || input.isDestroyed) return
+    if (!draft) {
+      if (!store.prompt.input && store.prompt.parts.length === 0 && store.mode === "normal") return
+      input.clear()
+      input.extmarks.clear()
+      setStore("prompt", { input: "", parts: [] })
+      setStore("extmarkToPartIndex", new Map())
+      setStore("mode", "normal")
+      markDraftChanged()
+      return
+    }
+    input.setText(draft.prompt.input)
+    setStore("prompt", structuredClone(draft.prompt))
+    restoreExtmarksFromParts(draft.prompt.parts)
+    setStore("mode", draft.mode)
+    input.cursorOffset = draft.cursor
     markDraftChanged()
+  }
+
+  function markDraftChanged() {
+    submissionController.changed()
+    saveDraft()
+  }
+
+  // 261110 Red 先落 store 再通知：markDraftChanged 会顺手把当前草稿写进归属格子，
+  // 反过来会永远存到上一次的值（差一步）。
+  function setPrompt(prompt: PromptInfo) {
     setStore("prompt", prompt)
+    markDraftChanged()
   }
 
   function setMode(mode: "normal" | "shell") {
-    markDraftChanged()
     setStore("mode", mode)
+    markDraftChanged()
   }
 
   createEffect(
@@ -561,17 +605,22 @@ export function Prompt(props: PromptProps) {
         run: async (ctx: CommandContext<Renderable, KeyEvent>) => {
           ctx.event.preventDefault()
           ctx.event.stopPropagation()
+          // 261110 Red 归属在 await 之前捕获：剪贴板读取期间可能已经切换了项目。
+          const scope: DraftScope = { directory: sdk.directory, sessionID: props.sessionID }
           const content = await Clipboard.read()
           if (content?.mime.startsWith("image/")) {
-            await pasteAttachment({
-              filename: "clipboard",
-              mime: content.mime,
-              content: content.data,
-            })
+            await pasteAttachment(
+              {
+                filename: "clipboard",
+                mime: content.mime,
+                content: content.data,
+              },
+              scope,
+            )
             return
           }
           if (content?.mime === "text/plain") {
-            await pasteInputText(content.data)
+            await pasteInputText(content.data, scope)
           }
         },
       },
@@ -805,6 +854,11 @@ export function Prompt(props: PromptProps) {
     const saved = stashed
     stashed = undefined
     if (store.prompt.input) return
+    // 261110 Red 有导航时按归属格子恢复（没有草稿就保持空，绝不把别的项目带进来）。
+    if (navigation?.enabled) {
+      applyDraft(navigation.draft(draftScope.directory, draftScope.sessionID))
+      return
+    }
     if (saved && saved.prompt.input) {
       input.setText(saved.prompt.input)
       setPrompt(saved.prompt)
@@ -813,8 +867,24 @@ export function Prompt(props: PromptProps) {
     }
   })
 
+  // 261110 Red 同一实例换会话 / 换目录：先把旧归属的现场写回旧格子，再取新格子的草稿。
+  createEffect(
+    on(
+      () => [sdk.directory, props.sessionID] as const,
+      ([directory, sessionID]) => {
+        const next = { directory, sessionID }
+        if (sameDraftScope(next, draftScope)) return
+        saveDraft(draftScope)
+        draftScope = next
+        if (navigation?.enabled) applyDraft(navigation.draft(directory, sessionID))
+      },
+      { defer: true },
+    ),
+  )
+
   onCleanup(() => {
-    if (store.prompt.input) {
+    saveDraft()
+    if (!navigation?.enabled && store.prompt.input) {
       stashed = { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
     }
     setInputTarget(undefined)
@@ -899,7 +969,6 @@ export function Prompt(props: PromptProps) {
 
   function syncExtmarksWithPromptParts() {
     const allExtmarks = input.extmarks.getAllForTypeId(promptPartTypeId)
-    markDraftChanged()
     setStore(
       produce((draft) => {
         const newMap = new Map<number, number>()
@@ -930,6 +999,8 @@ export function Prompt(props: PromptProps) {
         draft.prompt.parts = newParts
       }),
     )
+    // 261110 Red 通知放在 store 更新之后：saveDraft 读的是当前 store，早一步就是旧值。
+    markDraftChanged()
   }
 
   const stashCommands = createMemo(() =>
@@ -1151,6 +1222,15 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", "input", input.plainText)
       syncExtmarksWithPromptParts()
     }
+    // 261110 Red 未选目录 / 切换中拦下所有发送路径：请求目标与画面对不上时宁可不发。
+    if (navigation && !navigation.canSend()) {
+      toast.show({
+        variant: "warning",
+        message: navigation.switching() ? "正在切换工作区，完成后再发送" : "请先选择工作区再发送",
+        duration: 3000,
+      })
+      return false
+    }
     if (props.disabled) return false
     if (workspaceCreating()) return false
     if (auto()?.visible) return false
@@ -1226,6 +1306,7 @@ export function Prompt(props: PromptProps) {
       return undefined
     })
     const promptSnapshot = structuredClone(unwrap(store.prompt))
+    const submissionScope = { ...draftScope }
     const messageID = MessageID.ascending()
     let inputText = promptSnapshot.input
 
@@ -1388,6 +1469,19 @@ export function Prompt(props: PromptProps) {
     }
 
     history.append(submission.payload.history)
+    // 261110 Red 请求由连接持有；离开后的完成回调只消费原草稿，不触碰已销毁的输入框。
+    if (staleScope(submissionScope)) {
+      if (navigation?.enabled) {
+        const remaining = consumeSubmittedDraft(navigation.draft(submissionScope.directory, submissionScope.sessionID), {
+          prompt: promptSnapshot,
+          cursor: 0,
+          mode: currentMode,
+        })
+        if (remaining) navigation.saveDraft(submissionScope.directory, submissionScope.sessionID, remaining)
+        if (isNewSession) navigation.finishSubmission(submissionScope.directory, sessionID)
+      }
+      return true
+    }
     const clearPrompt = () => {
       input.extmarks.clear()
       setPrompt({
@@ -1424,9 +1518,72 @@ export function Prompt(props: PromptProps) {
   }
   const exit = useExit()
 
-  function pasteText(text: string, virtualText: string) {
-    const currentOffset = input.visualCursor.offset
-    const extmarkStart = currentOffset
+  // 261110 Red 异步归属：await 回来时目录/会话可能已经换了（或本实例已卸载），
+  // 结果只能写回发起时的草稿格子，绝不落到当前画面。
+  function staleScope(scope: DraftScope) {
+    if (!input || input.isDestroyed) return true
+    return !sameDraftScope(scope, { directory: sdk.directory, sessionID: props.sessionID })
+  }
+
+  function stashStalePart(scope: DraftScope, virtualText: string, part: DraftPart) {
+    if (!navigation?.enabled) return
+    navigation.saveDraft(
+      scope.directory,
+      scope.sessionID,
+      appendDraftChunk(navigation.draft(scope.directory, scope.sessionID), { virtual: virtualText, part }),
+    )
+  }
+
+  function stashStaleText(scope: DraftScope, text: string) {
+    if (!navigation?.enabled) return
+    navigation.saveDraft(
+      scope.directory,
+      scope.sessionID,
+      appendDraftText(navigation.draft(scope.directory, scope.sessionID), text),
+    )
+  }
+
+  function attachmentCount(parts: PromptInfo["parts"], pdf: boolean) {
+    return parts.filter((x) => {
+      if (x.type !== "file") return false
+      if (pdf) return x.mime === "application/pdf"
+      return x.mime.startsWith("image/")
+    }).length
+  }
+
+  function attachmentVirtualText(count: number, pdf: boolean) {
+    return pdf ? `[PDF ${count + 1}]` : `[Image ${count + 1}]`
+  }
+
+  function attachmentPart(
+    file: { filename?: string; filepath?: string; content: string; mime: string },
+    virtualText: string,
+    start: number,
+    end: number,
+  ): DraftPart {
+    return {
+      type: "file" as const,
+      mime: file.mime,
+      filename: file.filename,
+      url: `data:${file.mime};base64,${file.content}`,
+      source: {
+        type: "file",
+        path: file.filepath ?? file.filename ?? "",
+        text: { start, end, value: virtualText },
+      },
+    }
+  }
+
+  function pasteText(text: string, virtualText: string, scope: DraftScope) {
+    if (staleScope(scope)) {
+      stashStalePart(scope, virtualText, {
+        type: "text" as const,
+        text,
+        source: { text: { start: 0, end: 0, value: virtualText } },
+      })
+      return
+    }
+    const extmarkStart = input.visualCursor.offset
     const extmarkEnd = extmarkStart + virtualText.length
 
     input.insertText(virtualText + " ")
@@ -1439,7 +1596,6 @@ export function Prompt(props: PromptProps) {
       typeId: promptPartTypeId,
     })
 
-    markDraftChanged()
     setStore(
       produce((draft) => {
         const partIndex = draft.prompt.parts.length
@@ -1457,9 +1613,10 @@ export function Prompt(props: PromptProps) {
         draft.extmarkToPartIndex.set(extmarkId, partIndex)
       }),
     )
+    markDraftChanged()
   }
 
-  async function pasteInputText(text: string) {
+  async function pasteInputText(text: string, scope: DraftScope) {
     const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
     // 261105 Red trim 只用于路径与阈值判断，摘要保存的是原文：此前先把整段 trim
     // 再 pasteText，粘贴代码时首行缩进/末尾空行被静默删掉；短文本分支用的却是原文，
@@ -1485,7 +1642,7 @@ export function Prompt(props: PromptProps) {
         if (mime === "image/svg+xml") {
           const content = await Filesystem.readText(filepath).catch(() => {})
           if (content) {
-            pasteText(content, `[SVG: ${filename ?? "image"}]`)
+            pasteText(content, `[SVG: ${filename ?? "image"}]`, scope)
             return
           }
         }
@@ -1494,12 +1651,15 @@ export function Prompt(props: PromptProps) {
             .then((buffer) => Buffer.from(buffer).toString("base64"))
             .catch(() => {})
           if (content) {
-            await pasteAttachment({
-              filename,
-              filepath,
-              mime,
-              content,
-            })
+            await pasteAttachment(
+              {
+                filename,
+                filepath,
+                mime,
+                content,
+              },
+              scope,
+            )
             return
           }
         }
@@ -1513,10 +1673,15 @@ export function Prompt(props: PromptProps) {
       (lineCount >= 3 || trimmed.length > 150) &&
       kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary)
     ) {
-      pasteText(normalizedText, `[Pasted ~${lineCount} lines]`)
+      pasteText(normalizedText, `[Pasted ~${lineCount} lines]`, scope)
       return
     }
 
+    // 261110 Red 短文本也要认归属：切走之后原样落回原格子，不写当前输入框。
+    if (staleScope(scope)) {
+      stashStaleText(scope, normalizedText)
+      return
+    }
     input.insertText(normalizedText)
 
     setTimeout(() => {
@@ -1526,20 +1691,22 @@ export function Prompt(props: PromptProps) {
     }, 0)
   }
 
-  async function pasteAttachment(file: { filename?: string; filepath?: string; content: string; mime: string }) {
-    const currentOffset = input.visualCursor.offset
-    const extmarkStart = currentOffset
+  async function pasteAttachment(
+    file: { filename?: string; filepath?: string; content: string; mime: string },
+    scope: DraftScope,
+  ) {
     const pdf = file.mime === "application/pdf"
-    const count = store.prompt.parts.filter((x) => {
-      if (x.type !== "file") return false
-      if (pdf) return x.mime === "application/pdf"
-      return x.mime.startsWith("image/")
-    }).length
-    const virtualText = pdf ? `[PDF ${count + 1}]` : `[Image ${count + 1}]`
+    if (staleScope(scope)) {
+      const count = attachmentCount(navigation?.draft(scope.directory, scope.sessionID)?.prompt.parts ?? [], pdf)
+      const virtualText = attachmentVirtualText(count, pdf)
+      stashStalePart(scope, virtualText, attachmentPart(file, virtualText, 0, 0))
+      return
+    }
+    const extmarkStart = input.visualCursor.offset
+    const virtualText = attachmentVirtualText(attachmentCount(store.prompt.parts, pdf), pdf)
     const extmarkEnd = extmarkStart + virtualText.length
-    const textToInsert = virtualText + " "
 
-    input.insertText(textToInsert)
+    input.insertText(virtualText + " ")
 
     const extmarkId = input.extmarks.create({
       start: extmarkStart,
@@ -1549,30 +1716,14 @@ export function Prompt(props: PromptProps) {
       typeId: promptPartTypeId,
     })
 
-    const part: Omit<FilePart, "id" | "messageID" | "sessionID"> = {
-      type: "file" as const,
-      mime: file.mime,
-      filename: file.filename,
-      url: `data:${file.mime};base64,${file.content}`,
-      source: {
-        type: "file",
-        path: file.filepath ?? file.filename ?? "",
-        text: {
-          start: extmarkStart,
-          end: extmarkEnd,
-          value: virtualText,
-        },
-      },
-    }
-    markDraftChanged()
     setStore(
       produce((draft) => {
         const partIndex = draft.prompt.parts.length
-        draft.prompt.parts.push(part)
+        draft.prompt.parts.push(attachmentPart(file, virtualText, extmarkStart, extmarkEnd))
         draft.extmarkToPartIndex.set(extmarkId, partIndex)
       }),
     )
-    return
+    markDraftChanged()
   }
 
   function clearPrompt() {
@@ -1617,12 +1768,17 @@ export function Prompt(props: PromptProps) {
   const inputBorder = createMemo(() => tint(theme.borderSubtle ?? theme.border, highlight(), 0.8 * agentMetaAlpha()))
 
   // 261104 Red 输入框标题栏：多开 TUI 时靠工作区路径区分窗口，避免把需求发错工作区。
+  // 261110 Red 同时是项目切换入口：启用导航才可点、才有悬停反馈和下拉指示；
+  // attach 场景（没有导航）保持原样的纯标题。
+  const canNavigate = createMemo(() => !!navigation?.enabled)
+  const [titleHover, setTitleHover] = createSignal(false)
   const workspacePath = createMemo(() => project.instance.directory())
   const workspaceTitle = createMemo(() =>
     layoutPromptTitle({
-      width: promptWidth() || dimensions().width,
-      name: workspacePath().split(/[\\/]/).filter(Boolean).at(-1) ?? workspacePath(),
-      path: workspacePath(),
+      // 下拉指示占 2 列（▾ + 间隙），从路径预算里先扣掉，整行仍然不折。
+      width: (promptWidth() || dimensions().width) - (canNavigate() ? 2 : 0),
+      name: workspacePath().split(/[\\/]/).filter(Boolean).at(-1) || (canNavigate() ? "未选择工作区" : ""),
+      path: workspacePath() || (canNavigate() ? "点击选择" : ""),
       branch: sync.data.vcs?.branch,
     }),
   )
@@ -1698,7 +1854,25 @@ export function Prompt(props: PromptProps) {
           flexShrink={0}
           backgroundColor={theme.backgroundPanel}
         >
-          <box flexDirection="row" gap={1} flexShrink={1} minWidth={0}>
+          {/* 261110 Red 项目名 + 路径是可点击的切换入口：右侧分支不参与点击；
+              拖选文字后松手不误触切换（与消息区、滚动区同款判定）；
+              未启用导航时不挂事件、不显示 ▾，标题与原来完全一致。 */}
+          <box
+            flexDirection="row"
+            gap={1}
+            flexShrink={1}
+            minWidth={0}
+            onMouseOver={canNavigate() ? () => setTitleHover(true) : undefined}
+            onMouseOut={canNavigate() ? () => setTitleHover(false) : undefined}
+            onMouseUp={
+              canNavigate()
+                ? () => {
+                    if (renderer.getSelection()?.getSelectedText()) return
+                    navigation?.open()
+                  }
+                : undefined
+            }
+          >
             <text flexShrink={0} fg={fadeColor(highlight(), agentMetaAlpha())}>
               ▍
             </text>
@@ -1707,10 +1881,15 @@ export function Prompt(props: PromptProps) {
             </text>
             <Show when={workspaceTitle().path}>
               {(path) => (
-                <text fg={theme.textMuted} wrapMode="none" flexShrink={0}>
+                <text fg={titleHover() ? theme.text : theme.textMuted} wrapMode="none" flexShrink={0}>
                   <span style={{ bold: true }}>{path()}</span>
                 </text>
               )}
+            </Show>
+            <Show when={canNavigate()}>
+              <text flexShrink={0} fg={titleHover() ? theme.text : theme.textMuted}>
+                ▾
+              </text>
             </Show>
           </box>
           <Show when={workspaceTitle().branch}>
@@ -1804,6 +1983,9 @@ export function Prompt(props: PromptProps) {
                   return
                 }
 
+                // 261110 Red 归属在第一个 await 之前捕获，异步结果只写回这里。
+                const scope: DraftScope = { directory: sdk.directory, sessionID: props.sessionID }
+
                 // Normalize line endings at the boundary
                 // Windows ConPTY/Terminal often sends CR-only newlines in bracketed paste
                 // Replace CRLF first, then any remaining CR
@@ -1821,7 +2003,7 @@ export function Prompt(props: PromptProps) {
                 // default paste unless we suppress it first and handle insertion ourselves.
                 event.preventDefault()
 
-                await pasteInputText(normalizedText)
+                await pasteInputText(normalizedText, scope)
               }}
               ref={(r: TextareaRenderable) => {
                 input = r
@@ -2110,8 +2292,8 @@ export function Prompt(props: PromptProps) {
         anchor={() => anchor}
         input={() => input}
         setPrompt={(cb) => {
-          markDraftChanged()
           setStore("prompt", produce(cb))
+          markDraftChanged()
         }}
         setExtmark={(partIndex, extmarkId) => {
           setStore("extmarkToPartIndex", (map: Map<number, number>) => {

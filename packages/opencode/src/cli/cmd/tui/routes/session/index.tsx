@@ -19,6 +19,7 @@ import { Dynamic } from "solid-js/web"
 import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
+import { useProjectNavigation } from "@tui/context/project-navigation"
 import { useSync, cmpTime } from "@tui/context/sync"
 import { SessionActivityHud } from "./activity-hud"
 import { useEvent } from "@tui/context/event"
@@ -225,7 +226,9 @@ export function Session() {
   // 261031 Red pending_steer（忙碌引导的待消费形态）与 queued 一起进待发送列表，
   // /pending 的送达/编辑/撤销对两种形态都可用（服务端 API 已兼容）。
   const queuedMessages = createMemo(() =>
-    messages().filter((message): message is UserMessageInfo => message.role === "user" && isPendingDelivery(message.delivery)),
+    messages().filter(
+      (message): message is UserMessageInfo => message.role === "user" && isPendingDelivery(message.delivery),
+    ),
   )
 
   // 260708 Red TUI 消息级 windowing — 只渲染最近 N 条，屏外不进 yoga 树
@@ -357,6 +360,8 @@ export function Session() {
   const toast = useToast()
   const sdk = useSDK()
   const editor = useEditorContext()
+  // 261110 Red 项目导航：未提供时（attach / 旧测试）阅读锚点相关逻辑全部不生效。
+  const navigation = useProjectNavigation()
 
   // 261108 Red 审计 RC-P2-03：列表摘要会压缩空白，编辑框必须用原文——此前编辑待发送
   // 消息复用摘要，打开不改直接确认就把多行代码压成一行、字符串里的连续空格也被改写。
@@ -692,6 +697,78 @@ export function Session() {
     }
     if (child) scroll.scrollBy(child.y - scroll.y - 1)
   }
+
+  // 261110 Red 多项目返回时恢复基本阅读位置。保存锚点用「视口顶部第一条消息 + 像素」，
+  // 恢复等锚点消息真正排进布局（height > 0）才滚，逐帧复查而不是猜一个 timeout。
+  let readingSession = route.sessionID
+  function saveReading(sessionID: string) {
+    if (!navigation?.enabled) return
+    if (!scroll) return
+    // 卸载时 scrollbox 可能已经先被销毁：此时 getChildren() 为空，仍把像素位置存下来。
+    const children = scroll.isDestroyed ? [] : scroll.getChildren()
+    navigation.saveReading(sdk.directory, sessionID, {
+      messageID: children.find((child) => child.id && child.y + child.height > scroll.y)?.id,
+      scrollTop: scroll.scrollTop,
+    })
+  }
+
+  let restoredFor: string | undefined
+  function restoreReading() {
+    if (!navigation?.enabled) return
+    const sessionID = route.sessionID
+    if (restoredFor === sessionID) return
+    const target = navigation.reading(sdk.directory, sessionID)
+    if (!target) return
+    const all = messages()
+    if (!all.length) return
+    restoredFor = sessionID
+    const index = target.messageID ? all.findIndex((m) => m.id === target.messageID) : -1
+    // 锚点可能在默认消息窗口之外：先把窗口撑到能容纳它，首帧就一起参与布局。
+    if (index >= 0 && all.length - index > messageWindowSize()) setMessageWindowSize(all.length - index)
+    let frames = 0
+    const tick = () => {
+      if (!scroll) {
+        if (++frames > 120) return
+        requestAnimationFrame(tick)
+        return
+      }
+      if (scroll.isDestroyed) return
+      const child = target.messageID ? scroll.getChildren().find((c) => c.id === target.messageID) : undefined
+      if (child && child.height > 0) {
+        scroll.scrollBy(child.y - scroll.y - 1)
+        return
+      }
+      // 锚点消息已不存在（被 revert/删除）或本来就没有锚点：退回保存时的像素位置。
+      if (!child && (target.messageID === undefined || index === -1) && target.scrollTop !== undefined) {
+        scroll.scrollTo(target.scrollTop)
+        return
+      }
+      if (++frames > 120) return
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+
+  createEffect(
+    on(
+      () => sync.data.message[route.sessionID]?.length ?? 0,
+      () => restoreReading(),
+    ),
+  )
+
+  createEffect(
+    on(
+      () => route.sessionID,
+      (next, previous) => {
+        // 同一实例里换会话：先把上一段读到的位置存回它自己的格子。
+        if (previous) saveReading(previous)
+        readingSession = next
+      },
+      { defer: true },
+    ),
+  )
+
+  onCleanup(() => saveReading(readingSession))
 
   const local = useLocal()
 
@@ -1259,17 +1336,13 @@ export function Session() {
             { throwOnError: true },
           )
           const sessionMessages = full.data ?? []
-          const transcript = formatTranscript(
-            sessionData,
-            sessionMessages as Parameters<typeof formatTranscript>[1],
-            {
-              thinking: show思考中(),
-              toolDetails: showDetails(),
-              assistantMetadata: showAssistantMetadata(),
-              providers: sync.data.provider,
-              agents: sync.data.agent,
-            },
-          )
+          const transcript = formatTranscript(sessionData, sessionMessages as Parameters<typeof formatTranscript>[1], {
+            thinking: show思考中(),
+            toolDetails: showDetails(),
+            assistantMetadata: showAssistantMetadata(),
+            providers: sync.data.provider,
+            agents: sync.data.agent,
+          })
           await Clipboard.copy(transcript)
           toast.show({ message: "会话记录已复制到剪贴板！", variant: "success" })
         } catch {
@@ -1309,17 +1382,13 @@ export function Session() {
 
           if (options === null) return
 
-          const transcript = formatTranscript(
-            sessionData,
-            sessionMessages as Parameters<typeof formatTranscript>[1],
-            {
-              thinking: options.thinking,
-              toolDetails: options.toolDetails,
-              assistantMetadata: options.assistantMetadata,
-              providers: sync.data.provider,
-              agents: sync.data.agent,
-            },
-          )
+          const transcript = formatTranscript(sessionData, sessionMessages as Parameters<typeof formatTranscript>[1], {
+            thinking: options.thinking,
+            toolDetails: options.toolDetails,
+            assistantMetadata: options.assistantMetadata,
+            providers: sync.data.provider,
+            agents: sync.data.agent,
+          })
 
           if (options.openWithoutSaving) {
             // Just open in editor without saving
@@ -1801,13 +1870,15 @@ export function UserMessage(props: {
         (sync.data.part[message.id] ?? []).some((part) => part.type === "compaction"),
     )
     const end = nextMarkerIndex < 0 ? messages.length : nextMarkerIndex
-    const after = messages.slice(markerIndex + 1, end).find(
-      (message): message is AssistantMessageInfo =>
-        message.role === "assistant" &&
-        !message.summary &&
-        message.tokens.output > 0 &&
-        message.tokens.context !== undefined,
-    )
+    const after = messages
+      .slice(markerIndex + 1, end)
+      .find(
+        (message): message is AssistantMessageInfo =>
+          message.role === "assistant" &&
+          !message.summary &&
+          message.tokens.output > 0 &&
+          message.tokens.context !== undefined,
+      )
     return {
       before: contextSource(messages.slice(0, markerIndex))?.tokens.context,
       after: after?.tokens.context,
@@ -1819,9 +1890,7 @@ export function UserMessage(props: {
     if (!part || part.type !== "compaction") return undefined
     const duration = (part as CompactionPart & { duration_ms?: number }).duration_ms
     const dur =
-      duration !== undefined
-        ? ` · 耗时 ${duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`}`
-        : ""
+      duration !== undefined ? ` · 耗时 ${duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`}` : ""
     const context = compactionContext()
     const failed = compactionError()
     // 261026 Red 摘要写库失败后，后续主请求不代表本次压缩已提交。
@@ -2145,7 +2214,10 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
               <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
-                <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())} · {toolCalls()} toolcalls</span>
+                <span style={{ fg: theme.textMuted }}>
+                  {" "}
+                  · {Locale.duration(duration())} · {toolCalls()} toolcalls
+                </span>
               </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>

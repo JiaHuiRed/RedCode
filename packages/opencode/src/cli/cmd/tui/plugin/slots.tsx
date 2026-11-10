@@ -21,6 +21,9 @@ function empty<Name extends string>(_props: TuiSlotProps<Name>) {
 
 let view: Slot = empty
 
+// 261110 Red 同一个 renderer 复用同一份 slot registry（项目切换会重新 init 插件运行时）。
+const registries = new WeakMap<object, HostSlots>()
+
 export const Slot: Slot = (props) => view(props)
 
 function isHostSlotPlugin(value: unknown): value is HostSlotPlugin<Record<string, object>> {
@@ -31,6 +34,10 @@ function isHostSlotPlugin(value: unknown): value is HostSlotPlugin<Record<string
 }
 
 export function setupSlots(api: HostPluginApi): HostSlots {
+  // 261110 Red 每个 renderer 只允许一个 slot registry：切换项目会重新 init 插件运行时，
+  // 再次 createSolidSlotRegistry 会抛 "called with a different context" 让整个 TUI 崩掉。
+  const existing = registries.get(api.renderer)
+  if (existing) return existing
   const reg = createSolidSlotRegistry<RuntimeSlotMap, TuiSlotContext>(
     api.renderer,
     {
@@ -51,10 +58,12 @@ export function setupSlots(api: HostPluginApi): HostSlots {
 
   const slot = createSlot<RuntimeSlotMap, TuiSlotContext>(reg)
   view = (props) => slot(props)
-  return {
+  const shell: HostSlots = {
     register(plugin: HostSlotPlugin) {
       if (!isHostSlotPlugin(plugin)) return () => {}
       return reg.register(plugin)
     },
   }
+  registries.set(api.renderer, shell)
+  return shell
 }

@@ -27,7 +27,8 @@ const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY
 function Directory(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const dir = createMemo(() => {
-    const dir = props.api.state.path.directory || process.cwd()
+    // 261110 Red 只显示所属项目目录；进程 cwd 是多项目切换前的启动目录，不代表当前项目
+    const dir = props.api.state.path.directory
     const out = dir.replace(Global.Path.home, "~")
     const branch = props.api.state.vcs?.branch
     if (branch) return out + ":" + branch
@@ -84,12 +85,14 @@ function Stats(props: { api: TuiPluginApi }) {
     if (!data) return { costCNY: 0, hitPct: null, count: 0 }
 
     const costCNY = data.models.reduce((sum, model) => {
-      const cost = sync.data.provider.find((p) => p.id === model.providerID)?.models[model.modelID]
-        ?.cost as { currency?: string } | undefined
+      const cost = sync.data.provider.find((p) => p.id === model.providerID)?.models[model.modelID]?.cost as
+        | { currency?: string }
+        | undefined
       return sum + (cost?.currency === "CNY" ? model.cost : model.cost * USD_TO_CNY)
     }, 0)
     const hitPct =
-      cacheHitPercent({ read: data.tokens.cacheRead, miss: data.tokens.input, write: data.tokens.cacheWrite }, 0) ?? null
+      cacheHitPercent({ read: data.tokens.cacheRead, miss: data.tokens.input, write: data.tokens.cacheWrite }, 0) ??
+      null
     return { costCNY, hitPct, count: data.sessions }
   })
 

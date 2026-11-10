@@ -116,7 +116,7 @@ type EditorLockFile = {
 
 export const { use: useEditorContext, provider: EditorContextProvider } = createSimpleContext({
   name: "EditorContext",
-  init: (props: { WebSocketImpl?: typeof WebSocket }) => {
+  init: (props: { WebSocketImpl?: typeof WebSocket; directory?: string; disabled?: boolean }) => {
     const mentionListeners = new Set<(mention: EditorMention) => void>()
     const WebSocketImpl = props.WebSocketImpl ?? WebSocket
     const [store, setStore] = createStore<{
@@ -138,7 +138,8 @@ export const { use: useEditorContext, provider: EditorContextProvider } = create
     let requestID = 0
     let zedSelection: Promise<void> | undefined
     let lastZedSelectionKey: string | undefined
-    let directory = process.cwd()
+    // 261110 Red 编辑器上下文跟随所属项目目录；未传入时保留原进程目录行为（测试/attach）。
+    let directory = props.directory || process.cwd()
     let preserveSelectionOnReconnect = false
     const pending = new Map<number, string>()
 
@@ -169,7 +170,7 @@ export const { use: useEditorContext, provider: EditorContextProvider } = create
     }
 
     const connect = () => {
-      if (closed) return
+      if (closed || props.disabled) return
 
       const connection = resolveEditorConnection(directory)
       if (!connection) {
@@ -285,7 +286,7 @@ export const { use: useEditorContext, provider: EditorContextProvider } = create
     }
 
     const reconnectWithDirectory = (nextDirectory?: string) => {
-      const resolved = nextDirectory || process.cwd()
+      const resolved = nextDirectory || props.directory || process.cwd()
       const sameDirectory = directory === resolved
       clearSelectionForReconnect({ resetZedSelectionKey: !sameDirectory })
       if (sameDirectory) return

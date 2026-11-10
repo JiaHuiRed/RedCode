@@ -4,6 +4,7 @@ import { Filesystem } from "@/util/filesystem"
 import { onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "../../context/helper"
+import { useSync } from "../../context/sync"
 import { appendFile, writeFile } from "fs/promises"
 
 function calculateFrecency(entry?: { frequency: number; lastOpen: number }): number {
@@ -19,6 +20,11 @@ export const { use: useFrecency, provider: FrecencyProvider } = createSimpleCont
   name: "Frecency",
   init: () => {
     const frecencyPath = path.join(Global.Path.state, "frecency.jsonl")
+    const sync = useSync()
+    // 261110 Red 相对路径按所属项目目录解析：多项目切换后进程 cwd 仍是启动目录，
+    // 继续用 cwd 会把 B 项目的文件记成 A 项目下的绝对路径。
+    const resolveEntry = (filePath: string) =>
+      sync.path.directory ? path.resolve(sync.path.directory, filePath) : filePath
     onMount(async () => {
       const text = await Filesystem.readText(frecencyPath).catch(() => "")
       const lines = text
@@ -63,7 +69,7 @@ export const { use: useFrecency, provider: FrecencyProvider } = createSimpleCont
     })
 
     function updateFrecency(filePath: string) {
-      const absolutePath = path.resolve(process.cwd(), filePath)
+      const absolutePath = resolveEntry(filePath)
       const newEntry = {
         frequency: (store.data[absolutePath]?.frequency || 0) + 1,
         lastOpen: Date.now(),
@@ -82,7 +88,7 @@ export const { use: useFrecency, provider: FrecencyProvider } = createSimpleCont
     }
 
     return {
-      getFrecency: (filePath: string) => calculateFrecency(store.data[path.resolve(process.cwd(), filePath)]),
+      getFrecency: (filePath: string) => calculateFrecency(store.data[resolveEntry(filePath)]),
       updateFrecency,
       data: () => store.data,
     }

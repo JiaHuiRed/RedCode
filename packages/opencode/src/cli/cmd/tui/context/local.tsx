@@ -17,6 +17,7 @@ import { Filesystem } from "@/util/filesystem"
 import { Locale } from "@/util/locale"
 import { useKV } from "./kv"
 import { resolveNewSessionSoul } from "../soul"
+import { useProjectNavigation } from "./project-navigation"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -38,6 +39,7 @@ export const {
     const sdk = useSDK()
     const toast = useToast()
     const kv = useKV()
+    const navigation = useProjectNavigation()
 
     function isModelValid(model: { providerID: string; modelID: string }) {
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
@@ -125,12 +127,13 @@ export const {
     })
     createEffect(() => setDisplayName("user", sync.data.config.username || "User"))
 
-    const [souls, setSouls] = createStore<
-      { id: string; name: string; displayName?: string; description?: string }[]
-    >([])
+    const [souls, setSouls] = createStore<{ id: string; name: string; displayName?: string; description?: string }[]>(
+      [],
+    )
     const [serverDefault, setServerDefault] = createStore<{ id?: string }>({})
     const [soulState, setSoulState] = createStore({ ready: false })
     function refreshSouls() {
+      if (navigation?.enabled && !sdk.directory) return Promise.resolve(false)
       return Promise.all([
         sdk.client.soul.list({ throwOnError: true }),
         sdk.client.soul.default({ client: "tui" }, { throwOnError: true }),

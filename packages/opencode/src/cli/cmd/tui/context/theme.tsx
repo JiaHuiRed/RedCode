@@ -496,7 +496,7 @@ export const {
   context,
 } = createSimpleContext({
   name: "Theme",
-  init: (props: { mode: "dark" | "light" }) => {
+  init: (props: { mode: "dark" | "light"; directory?: string }) => {
     const renderer = useRenderer()
     const config = useTuiConfig()
     const kv = useKV()
@@ -528,7 +528,8 @@ export const {
     function init() {
       void Promise.allSettled([
         resolveSystemTheme(store.mode),
-        getCustomThemes()
+        // 261110 Red 主题扫描锚定所属项目目录：多项目切换不再 chdir，用进程 cwd 会把 A 的自定义主题扫进 B。
+        getCustomThemes(props.directory ?? process.cwd())
           .then((custom) => {
             customThemes = custom
             syncThemes()
@@ -678,7 +679,9 @@ export const {
   },
 })
 
-async function getCustomThemes() {
+// 261110 Red 扫描起点必须是当前项目目录：多项目切换后进程 cwd 不再等于当前项目，
+// 继续用 cwd 会把 A 的 .redcode/themes 扫进 B 的主题表。目录来源（全局 < 项目）的覆盖顺序不变。
+async function getCustomThemes(start?: string) {
   const directories = [
     Global.Path.config,
     ...(await Array.fromAsync(
@@ -687,7 +690,7 @@ async function getCustomThemes() {
         // <项目>/.redcode/themes，而这里只找 .opencode，项目级装的主题永远发现不了。
         // .opencode 保留兼容既有项目。
         targets: [".redcode", ".opencode"],
-        start: process.cwd(),
+        start: start ?? process.cwd(),
       }),
     )),
   ]
@@ -716,18 +719,13 @@ export function tint(base: RGBA, overlay: RGBA, alpha: number): RGBA {
 }
 
 function readableForegroundColor(preferred: RGBA, background: RGBA) {
-  if (
-    preferred.a !== 1 ||
-    background.a !== 1 ||
-    contrastRatio(preferred, background) >= MIN_TEXT_CONTRAST
-  ) {
+  if (preferred.a !== 1 || background.a !== 1 || contrastRatio(preferred, background) >= MIN_TEXT_CONTRAST) {
     return preferred
   }
 
   const black = RGBA.fromInts(0, 0, 0)
   const white = RGBA.fromInts(255, 255, 255)
-  const endpoint =
-    contrastRatio(black, background) >= contrastRatio(white, background) ? black : white
+  const endpoint = contrastRatio(black, background) >= contrastRatio(white, background) ? black : white
 
   for (let step = 1; step <= 255; step++) {
     const candidate = tint(endpoint, preferred, step / 255)
@@ -744,8 +742,7 @@ function contrastRatio(foreground: RGBA, background: RGBA) {
 }
 
 function relativeLuminance(color: RGBA) {
-  const linear = (channel: number) =>
-    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  const linear = (channel: number) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
 
   return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
 }

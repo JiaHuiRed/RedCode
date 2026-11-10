@@ -234,14 +234,15 @@ function isTheme(value: unknown) {
   return true
 }
 
-function resolveRoot(root: string) {
+// 261110 Red 相对插件根目录按本次 runtime 的项目目录解析，不再依赖 process.cwd()。
+function resolveRoot(root: string, directory: string) {
   if (root.startsWith("file://")) {
     const file = fileURLToPath(root)
     if (root.endsWith("/")) return file
     return path.dirname(file)
   }
   if (path.isAbsolute(root)) return root
-  return path.resolve(process.cwd(), root)
+  return path.resolve(directory, root)
 }
 
 function createThemeInstaller(
@@ -359,7 +360,7 @@ function createMeta(
   }
 }
 
-function loadInternalPlugin(item: InternalTuiPlugin): PluginLoad {
+function loadInternalPlugin(item: InternalTuiPlugin, directory: string): PluginLoad {
   const spec = item.id
   const target = spec
 
@@ -376,7 +377,7 @@ function loadInternalPlugin(item: InternalTuiPlugin): PluginLoad {
       scope: "global",
       source: target,
     },
-    plugin_root: process.cwd(),
+    plugin_root: directory,
     theme_files: [],
   }
 }
@@ -684,7 +685,7 @@ function applyInitialPluginEnabledState(state: RuntimeState, config: TuiConfig.R
   }
 }
 
-async function resolveExternalPlugins(list: ConfigPlugin.Origin[], wait: () => Promise<void>) {
+async function resolveExternalPlugins(list: ConfigPlugin.Origin[], directory: string, wait: () => Promise<void>) {
   return PluginLoader.loadExternal({
     items: list,
     kind: "tui",
@@ -730,7 +731,7 @@ async function resolveExternalPlugins(list: ConfigPlugin.Origin[], wait: () => P
         id,
         module: mod,
         origin,
-        plugin_root: loaded.pkg?.dir ?? resolveRoot(loaded.target),
+        plugin_root: loaded.pkg?.dir ?? resolveRoot(loaded.target, directory),
         theme_files,
       }
     },
@@ -757,7 +758,7 @@ async function resolveExternalPlugins(list: ConfigPlugin.Origin[], wait: () => P
         id,
         module: EMPTY_TUI,
         origin,
-        plugin_root: loaded.pkg?.dir ?? resolveRoot(loaded.target),
+        plugin_root: loaded.pkg?.dir ?? resolveRoot(loaded.target, directory),
         theme_files,
       }
     },
@@ -885,7 +886,9 @@ async function addPluginBySpec(state: RuntimeState | undefined, raw: string) {
     state.pending.delete(spec)
     return true
   }
-  const ready = await resolveExternalPlugins([cfg], () => TuiConfig.waitForDependencies()).catch((error) => {
+  const ready = await resolveExternalPlugins([cfg], state.directory, () =>
+    TuiConfig.waitForDependencies(state.directory),
+  ).catch((error) => {
     fail("failed to add tui plugin", { path: next, error })
     return [] as PluginLoad[]
   })
@@ -976,7 +979,7 @@ async function installPluginBySpec(
     global,
     vcs: dir.worktree && dir.worktree !== "/" ? "git" : undefined,
     worktree: dir.worktree,
-    directory: dir.directory,
+    directory: state.directory,
   })
   if (!patch.ok) {
     if (patch.code === "invalid_json") {
@@ -1012,6 +1015,8 @@ async function installPluginBySpec(
 
 let dir = ""
 let loaded: Promise<void> | undefined
+// 261110 Red 清理进行中时新的 init 必须等它结束，否则旧插件的 dispose 会作用到新 runtime 上。
+let closing: Promise<void> | undefined
 let runtime: RuntimeState | undefined
 export const Slot = View
 
@@ -1020,17 +1025,22 @@ export async function init(input: {
   config: TuiConfig.Resolved
   dispose?: () => void
   disposeTimeoutMs?: number
+  // 261110 Red 项目切换后主代理用目标目录重新 init；省略时保持旧的 process.cwd() 语义。
+  directory?: string
 }) {
-  const cwd = process.cwd()
+  if (closing) await closing
+  const directory = Filesystem.resolve(input.directory ?? process.cwd())
   if (loaded) {
-    if (dir !== cwd) {
-      throw new Error(`TuiPluginRuntime.init() called with a different working directory. expected=${dir} got=${cwd}`)
+    if (dir !== directory) {
+      throw new Error(
+        `TuiPluginRuntime.init() called with a different working directory. expected=${dir} got=${directory}`,
+      )
     }
     return loaded
   }
 
-  dir = cwd
-  loaded = load(input)
+  dir = directory
+  loaded = load({ ...input, directory })
   return loaded
 }
 
@@ -1056,26 +1066,43 @@ export async function installPlugin(spec: string, options?: { global?: boolean }
 }
 
 export async function dispose() {
+  // 261110 Red 重复 dispose 复用同一次清理；新 init 会 await closing 等它完成。
+  if (closing) return closing
   const task = loaded
   loaded = undefined
   dir = ""
-  if (task) await task
-  const state = runtime
-  runtime = undefined
-  if (!state) return
-  const queue = [...state.plugins].reverse()
-  for (const plugin of queue) {
-    await deactivatePluginEntry(state, plugin, false)
+  const done = (async () => {
+    // 261110 Red 等当前这次 init 真正加载完再清理，避免加载中途被换成新的 runtime。
+    if (task) await task
+    const state = runtime
+    runtime = undefined
+    if (!state) return
+    const queue = [...state.plugins].reverse()
+    for (const plugin of queue) {
+      await deactivatePluginEntry(state, plugin, false)
+    }
+    state.dispose?.()
+  })()
+  closing = done
+  try {
+    await done
+  } finally {
+    if (closing === done) closing = undefined
   }
-  state.dispose?.()
 }
 
-async function load(input: { api: Api; config: TuiConfig.Resolved; dispose?: () => void; disposeTimeoutMs?: number }) {
+async function load(input: {
+  api: Api
+  config: TuiConfig.Resolved
+  dispose?: () => void
+  disposeTimeoutMs?: number
+  directory?: string
+}) {
   const { api, config } = input
-  const cwd = process.cwd()
+  const directory = input.directory ?? process.cwd()
   const slots = setupSlots(api)
   const next: RuntimeState = {
-    directory: cwd,
+    directory,
     api,
     dispose: input.dispose,
     slots,
@@ -1098,7 +1125,7 @@ async function load(input: { api: Api; config: TuiConfig.Resolved; dispose?: () 
 
     for (const item of internalTuiPlugins(flags)) {
       log.info("loading internal tui plugin", { id: item.id })
-      const entry = loadInternalPlugin(item)
+      const entry = loadInternalPlugin(item, directory)
       const meta = createMeta(entry.source, entry.spec, entry.target, undefined, entry.id)
       addPluginEntry(next, {
         id: entry.id,
@@ -1110,7 +1137,7 @@ async function load(input: { api: Api; config: TuiConfig.Resolved; dispose?: () 
       })
     }
 
-    const ready = await resolveExternalPlugins(records, () => TuiConfig.waitForDependencies())
+    const ready = await resolveExternalPlugins(records, directory, () => TuiConfig.waitForDependencies(directory))
     await addExternalPluginEntries(next, ready)
 
     applyInitialPluginEnabledState(next, config)
@@ -1123,7 +1150,7 @@ async function load(input: { api: Api; config: TuiConfig.Resolved; dispose?: () 
       await activatePluginEntry(next, plugin, false)
     }
   } catch (error) {
-    fail("failed to load tui plugins", { directory: cwd, error })
+    fail("failed to load tui plugins", { directory, error })
   }
 }
 

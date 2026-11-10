@@ -238,7 +238,8 @@ export function Autocomplete(props: {
   }
 
   function createFilePart(item: string, lineRange?: { startLine: number; endLine?: number }) {
-    const baseDir = (sync.path.directory || process.cwd()).replace(/\/+$/, "")
+    // 261110 Red 文件 URL 以所属项目目录拼接；进程 cwd 在多项目切换后仍是启动目录
+    const baseDir = (sync.path.directory || sdk.directory || process.cwd()).replace(/\/+$/, "")
     const fullPath = path.isAbsolute(item) ? item : path.join(baseDir, item)
     const urlObj = pathToFileURL(fullPath)
     const filename =
@@ -336,8 +337,9 @@ export function Autocomplete(props: {
   const references = createMemo(() =>
     Reference.resolveAll({
       references: ConfigReference.normalize(sync.data.config.reference ?? {}),
-      directory: sync.path.directory || process.cwd(),
-      worktree: sync.path.worktree || sync.path.directory || process.cwd(),
+      // 261110 Red 引用补全的根目录跟随所属项目；进程 cwd 不能作为项目根
+      directory: sync.path.directory || sdk.directory || process.cwd(),
+      worktree: sync.path.worktree || sync.path.directory || sdk.directory || process.cwd(),
     }),
   )
 
@@ -356,8 +358,9 @@ export function Autocomplete(props: {
   })
 
   function normalizeMentionPath(filePath: string) {
-    const baseDir = sync.path.directory || process.cwd()
-    const absolute = path.resolve(filePath)
+    const baseDir = sync.path.directory || sdk.directory || process.cwd()
+    // 261110 Red 相对路径按所属项目目录解析，不能落进进程 cwd：多项目切换后 cwd 仍是启动目录
+    const absolute = path.resolve(baseDir, filePath)
     const relative = path.relative(baseDir, absolute)
 
     if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
@@ -512,34 +515,38 @@ export function Autocomplete(props: {
     const agents = sync.data.agent
     return agents
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map((agent): AutocompleteOption => ({
-        display: "@" + agent.name,
-        onSelect: () => {
-          insertPart(agent.name, {
-            type: "agent",
-            name: agent.name,
-            source: {
-              start: 0,
-              end: 0,
-              value: "",
-            },
-          })
-        },
-      }))
+      .map(
+        (agent): AutocompleteOption => ({
+          display: "@" + agent.name,
+          onSelect: () => {
+            insertPart(agent.name, {
+              type: "agent",
+              name: agent.name,
+              source: {
+                start: 0,
+                end: 0,
+                value: "",
+              },
+            })
+          },
+        }),
+      )
   })
 
   const referenceAliases = createMemo(() =>
-    references().map((reference): AutocompleteOption => ({
-      display: "@" + reference.name,
-      description: reference.kind === "invalid" ? reference.message : " configured reference",
-      onSelect: () => {
-        insertPart(reference.name, {
-          type: "text",
-          text: referencePromptText(reference),
-          synthetic: true,
-        })
-      },
-    })),
+    references().map(
+      (reference): AutocompleteOption => ({
+        display: "@" + reference.name,
+        description: reference.kind === "invalid" ? reference.message : " configured reference",
+        onSelect: () => {
+          insertPart(reference.name, {
+            type: "text",
+            text: referencePromptText(reference),
+            synthetic: true,
+          })
+        },
+      }),
+    ),
   )
 
   const commands = createMemo((): AutocompleteOption[] => {

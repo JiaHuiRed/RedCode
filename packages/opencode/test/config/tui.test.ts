@@ -1,4 +1,5 @@
-import { expect } from "bun:test"
+import { expect, test } from "bun:test"
+import fs from "fs/promises"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer } from "effect"
@@ -8,7 +9,7 @@ import { Config } from "@/config/config"
 import { ConfigPlugin } from "@/config/plugin"
 import { CurrentWorkingDirectory } from "@/cli/cmd/tui/config/cwd"
 import { TuiConfig } from "../../src/cli/cmd/tui/config/tui"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, tmpdir } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Config.defaultLayer, AppFileSystem.defaultLayer))
@@ -878,3 +879,22 @@ it.instance("missing tui.json - silently treated as empty (ENOENT path)", () =>
     }),
   ),
 )
+
+// 261110 Red 显式目录走 TuiConfig.get(directory)：不依赖 process.cwd()/CurrentWorkingDirectory，
+// 且同一目录只构建一次（改文件后再次读取仍是首次结果）。
+test("loads an explicit directory without rebuilding it per call", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      const explicit = path.join(dir, "explicit")
+      await fs.mkdir(explicit, { recursive: true })
+      await fs.writeFile(path.join(explicit, "tui.json"), JSON.stringify({ theme: "explicit-theme" }))
+      return explicit
+    },
+  })
+
+  const config = await TuiConfig.get(tmp.extra)
+  expect(config.theme).toBe("explicit-theme")
+
+  await fs.writeFile(path.join(tmp.extra, "tui.json"), JSON.stringify({ theme: "changed-theme" }))
+  expect((await TuiConfig.get(tmp.extra)).theme).toBe("explicit-theme")
+})

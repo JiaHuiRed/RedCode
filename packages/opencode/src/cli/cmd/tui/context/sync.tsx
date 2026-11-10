@@ -64,7 +64,7 @@ export const {
   context,
 } = createSimpleContext({
   name: "Sync",
-  init: () => {
+  init: (props: { disabled?: boolean }) => {
     const [store, setStore] = createStore<{
       status: "loading" | "partial" | "complete"
       provider: Provider[]
@@ -236,6 +236,29 @@ export const {
     })
     onCleanup(() => questionRecovery.dispose())
 
+    // 261110 Red 切回目录时权限也从服务端恢复，复用提问的快照/实时事件合并门禁。
+    const permissionRecovery = createQuestionRecovery<PermissionRequest>({
+      workspace: () => project.workspace.current(),
+      fetch: (workspace) => sdk.client.permission.list({ workspace }, { throwOnError: true }).then((x) => x.data),
+      read: () => Object.values(store.permission).flat(),
+      apply: (requests, workspace) => {
+        const retained = new Set(requests.map((request) => request.id))
+        const grouped: Record<string, PermissionRequest[]> = {}
+        for (const request of Object.values(store.permission).flat()) {
+          if (!retained.has(request.id)) forgetRequestWorkspace(request.id)
+        }
+        for (const request of requests) {
+          ;(grouped[request.sessionID] ??= []).push(request)
+          if (!Object.hasOwn(store.request_workspace, request.id)) {
+            setStore("request_workspace", request.id, workspace)
+          }
+        }
+        for (const items of Object.values(grouped)) items.sort((a, b) => a.id.localeCompare(b.id))
+        setStore("permission", reconcile(grouped))
+      },
+    })
+    onCleanup(() => permissionRecovery.dispose())
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
@@ -259,6 +282,7 @@ export const {
           break
         }
         case "permission.replied": {
+          permissionRecovery.changed(event.properties.requestID)
           forgetRequestWorkspace(event.properties.requestID)
           const requests = store.permission[event.properties.sessionID]
           if (!requests) break
@@ -276,6 +300,7 @@ export const {
 
         case "permission.asked": {
           const request = event.properties
+          permissionRecovery.changed(request.id)
           setStore("request_workspace", request.id, workspace)
           const requests = store.permission[request.sessionID]
           if (!requests) {
@@ -566,6 +591,10 @@ export const {
     }
 
     async function bootstrap(input: { fatal?: boolean } = {}) {
+      if (props.disabled) {
+        setStore("status", "complete")
+        return
+      }
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
@@ -698,6 +727,10 @@ export const {
               // 弹窗不出现、输入框不禁、模型无限等（GUI bootstrap 同款恢复早已存在）。
               name: "question.list",
               promise: questionRecovery.recover(),
+            },
+            {
+              name: "permission.list",
+              promise: permissionRecovery.recover(),
             },
             { name: "project.workspace.sync", promise: project.workspace.sync() },
           ]

@@ -18,6 +18,7 @@ import {
   batch,
   Show,
   on,
+  onCleanup,
 } from "solid-js"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@redcode-ai/core/flag/flag"
@@ -26,7 +27,9 @@ import { DialogProvider, useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
 import { ErrorComponent } from "@tui/component/error-component"
 import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
-import { ProjectProvider } from "@tui/context/project"
+import { ProjectProvider, useProject } from "@tui/context/project"
+import { ProjectNavigationProvider, useProjectNavigation, type ProjectScope } from "./context/project-navigation"
+import { DialogProjectSelect } from "./component/dialog-project-select"
 import { EditorContextProvider } from "@tui/context/editor"
 import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -174,6 +177,7 @@ export function tui(input: {
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
   events?: EventSource
+  local?: boolean
 }) {
   // promise to prevent immediate exit
   // oxlint-disable-next-line no-async-promise-executor -- intentional: async executor used for sequential setup before resolve
@@ -205,7 +209,12 @@ export function tui(input: {
     const mode = renderer.themeMode ?? "dark"
 
     const keymap = createDefaultOpenTuiKeymap(renderer)
-    const offKeymap = registerOpencodeKeymap(keymap, renderer, input.config)
+    let offKeymap = registerOpencodeKeymap(keymap, renderer, input.config)
+    const configure = (config: TuiConfig.Resolved) => {
+      offKeymap()
+      offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+      renderer.useMouse = !Flag.REDCODE_DISABLE_MOUSE && (config.mouse ?? true)
+    }
 
     await render(() => {
       return (
@@ -215,61 +224,106 @@ export function tui(input: {
           )}
         >
           <OpencodeKeymapProvider keymap={keymap}>
-            <ArgsProvider {...input.args}>
-              <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
-                <KVProvider>
-                  <ToastProvider>
-                    <RouteProvider
-                      initialRoute={
-                        input.args.continue
-                          ? {
-                              type: "session",
-                              sessionID: "dummy",
-                            }
-                          : undefined
-                      }
+            <ExitProvider onBeforeExit={onBeforeExit} onExit={onExit}>
+              <KVProvider>
+                <ToastProvider>
+                  <SDKProvider
+                    url={input.url}
+                    directory={input.directory}
+                    fetch={input.fetch}
+                    headers={input.headers}
+                    events={input.events}
+                    unselected={input.local && !input.directory}
+                  >
+                    <ProjectNavigationProvider
+                      directory={input.directory}
+                      config={input.config}
+                      args={input.args}
+                      local={input.local}
                     >
-                      <TuiConfigProvider config={input.config}>
-                        <SDKProvider
-                          url={input.url}
-                          directory={input.directory}
-                          fetch={input.fetch}
-                          headers={input.headers}
-                          events={input.events}
-                        >
-                          <ProjectProvider>
-                            <SyncProvider>
-                              <ThemeProvider mode={mode}>
-                                <LocalProvider>
-                                  <PromptStashProvider>
-                                    <DialogProvider>
-                                      <FrecencyProvider>
-                                        <PromptHistoryProvider>
-                                          <PromptRefProvider>
-                                            <EditorContextProvider>
-                                              <App onSnapshot={input.onSnapshot} />
-                                            </EditorContextProvider>
-                                          </PromptRefProvider>
-                                        </PromptHistoryProvider>
-                                      </FrecencyProvider>
-                                    </DialogProvider>
-                                  </PromptStashProvider>
-                                </LocalProvider>
-                              </ThemeProvider>
-                            </SyncProvider>
-                          </ProjectProvider>
-                        </SDKProvider>
-                      </TuiConfigProvider>
-                    </RouteProvider>
-                  </ToastProvider>
-                </KVProvider>
-              </ExitProvider>
-            </ArgsProvider>
+                      <ProjectHost mode={mode} configure={configure} onSnapshot={input.onSnapshot} />
+                    </ProjectNavigationProvider>
+                  </SDKProvider>
+                </ToastProvider>
+              </KVProvider>
+            </ExitProvider>
           </OpencodeKeymapProvider>
         </ErrorBoundary>
       )
     }, renderer)
   })
+}
+
+function ProjectHost(props: {
+  mode: "dark" | "light"
+  configure: (config: TuiConfig.Resolved) => void
+  onSnapshot?: () => Promise<string[]>
+}) {
+  const navigation = useProjectNavigation()!
+  const connection = useSDK()
+  // 261110 Red 只保留一条事件通道；卸载项目视图不取消原目录已经接受的请求。
+  const events: EventSource = {
+    subscribe: async (handler) => connection.event.on("event", handler),
+  }
+  return (
+    <Show when={navigation.current()} keyed>
+      {(scope) => <ProjectScreen scope={scope} connection={connection} events={events} {...props} />}
+    </Show>
+  )
+}
+
+function ProjectScreen(props: {
+  scope: ProjectScope
+  connection: ReturnType<typeof useSDK>
+  events: EventSource
+  mode: "dark" | "light"
+  configure: (config: TuiConfig.Resolved) => void
+  onSnapshot?: () => Promise<string[]>
+}) {
+  const navigation = useProjectNavigation()!
+  props.configure(props.scope.config)
+  return (
+    <ArgsProvider {...props.scope.args}>
+      <RouteProvider initialRoute={props.scope.view.route}>
+        <TuiConfigProvider config={props.scope.config}>
+          <SDKProvider
+            url={props.connection.url}
+            directory={props.scope.directory}
+            fetch={props.connection.fetch}
+            headers={props.connection.headers}
+            events={props.events}
+            requestSignal={props.connection.signal}
+            unselected={navigation.enabled && !props.scope.directory}
+          >
+            <ProjectProvider workspace={props.scope.view.workspace}>
+              <SyncProvider disabled={navigation.enabled && !props.scope.directory}>
+                <ThemeProvider mode={props.mode}>
+                  <LocalProvider>
+                    <PromptStashProvider>
+                      <DialogProvider>
+                        <FrecencyProvider>
+                          <PromptHistoryProvider>
+                            <PromptRefProvider>
+                              <EditorContextProvider
+                                directory={props.scope.directory}
+                                disabled={navigation.enabled && !props.scope.directory}
+                              >
+                                <App onSnapshot={props.onSnapshot} />
+                              </EditorContextProvider>
+                            </PromptRefProvider>
+                          </PromptHistoryProvider>
+                        </FrecencyProvider>
+                      </DialogProvider>
+                    </PromptStashProvider>
+                  </LocalProvider>
+                </ThemeProvider>
+              </SyncProvider>
+            </ProjectProvider>
+          </SDKProvider>
+        </TuiConfigProvider>
+      </RouteProvider>
+    </ArgsProvider>
+  )
 }
 
 function App(props: { onSnapshot?: () => Promise<string[]> }) {
@@ -283,6 +337,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const keymap = useOpencodeKeymap()
   const event = useEvent()
   const sdk = useSDK()
+  const navigation = useProjectNavigation()
+  const project = useProject()
   const toast = useToast()
   const themeState = useTheme()
   const { theme, mode, setMode, locked, lock, unlock } = themeState
@@ -317,6 +373,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   TuiPluginRuntime.init({
     api,
     config: tuiConfig,
+    directory: sdk.directory,
     dispose: () => attention.dispose(),
   })
     .catch((error) => {
@@ -335,7 +392,28 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     },
     { priority: 1 },
   )
-  Cleanup.register(() => offSelectionKeys())
+  onCleanup(offSelectionKeys)
+  if (navigation) {
+    onCleanup(
+      navigation.bind(
+        () => dialog.replace(() => <DialogProjectSelect />),
+        () => ({ route: route.data, workspace: project.workspace.current() }),
+        () => dialog.clear(),
+      ),
+    )
+    createEffect(() =>
+      navigation.trackWorkspaces(
+        sdk.directory,
+        project.workspace.list().map((item) => item.id),
+      ),
+    )
+    createEffect(() =>
+      navigation.rememberView(sdk.directory, {
+        route: { ...route.data },
+        workspace: project.workspace.current(),
+      }),
+    )
+  }
 
   // Wire up console copy-to-clipboard via opentui's onCopySelection callback
   renderer.console.onCopySelection = async (text: string) => {
@@ -444,7 +522,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       () => sync.status === "complete" && sync.data.provider.length === 0,
       (isEmpty, wasEmpty) => {
         // only trigger when we transition into an empty-provider state
-        if (!isEmpty || wasEmpty) return
+        if (!isEmpty || wasEmpty || (navigation?.enabled && !sdk.directory)) return
         dialog.replace(() => <DialogProviderList />)
       },
     ),
@@ -453,6 +531,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   const appCommands = createMemo(() =>
     [
+      {
+        name: "project.switch",
+        title: "切换工作区",
+        category: "Project",
+        slashName: "projects",
+        hidden: navigation?.enabled !== true,
+        run: () => navigation?.open(),
+      },
       {
         name: COMMAND_PALETTE_COMMAND,
         title: "显示命令面板",

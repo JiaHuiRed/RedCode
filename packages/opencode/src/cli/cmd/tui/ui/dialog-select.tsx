@@ -168,6 +168,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     )
   })
 
+  // 261110 Red 搜索把列表缩短后选中索引可能越界，submit() 的 !option 守卫会把回车静默吞掉。
+  // 必须放在 flat 之后：on(flat, …) 在建立时就要读它。
+  createEffect(
+    on(flat, (list) => {
+      if (store.selected >= list.length) setStore("selected", 0)
+    }),
+  )
+
   const rows = createMemo(() => {
     const headers = grouped().reduce((acc, [category], i) => {
       if (!category) return acc

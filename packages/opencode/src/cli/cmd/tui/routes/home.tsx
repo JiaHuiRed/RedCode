@@ -15,6 +15,7 @@ import { usePromptRef } from "../context/prompt"
 import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { useEditorContext } from "@tui/context/editor"
+import { useProjectNavigation } from "@tui/context/project-navigation"
 
 let once = false
 
@@ -42,6 +43,9 @@ export function Home() {
   const dialog = useDialog()
   const editor = useEditorContext()
   const promptMaxWidth = usePromptMaxWidth()
+  // 261110 Red 启动动作（--prompt）属于一次性消费：跨项目切换后 Home 会重挂，
+  // 已发送/已消费的状态存在导航 context 里，不能靠组件局部变量（重挂即归零）。
+  const navigation = useProjectNavigation()
   let sent = false
   let attempting = false
 
@@ -64,6 +68,8 @@ export function Home() {
       return
     }
     if (!args.prompt) return
+    // 261110 Red 启动参数已被消费过就不再播种：切走再回来不重播。
+    if (navigation?.startup.promptConsumed) return
     r.set({ input: args.prompt, parts: [] })
     once = true
   }
@@ -75,11 +81,17 @@ export function Home() {
     if (!r) return
     if (!sync.ready || !local.model.ready) return
     if (!args.prompt) return
+    // 261110 Red 已消费过就不再自动发送；没有目录 / 正在切换时只保留文字，
+    // 等用户选好工作区自己按回车，绝不把请求发到错误目录。
+    if (navigation?.startup.promptConsumed) return
+    if (navigation && !navigation.canSend()) return
     if (r.current.input !== args.prompt) return
     attempting = true
     void Promise.resolve(r.submit())
       .then((submitted) => {
-        if (submitted) sent = true
+        if (!submitted) return
+        sent = true
+        if (navigation) navigation.startup.promptConsumed = true
       })
       .finally(() => {
         attempting = false
@@ -122,9 +134,7 @@ export function Home() {
               local.soul.default() ??
               "server default"}
             {local.soul.saved() ? " · last selected" : " · server default"}
-            {local.soul.ready() && local.soul.saved() && !local.soul.current()
-              ? " · unavailable; choose /soul"
-              : ""}
+            {local.soul.ready() && local.soul.saved() && !local.soul.current() ? " · unavailable; choose /soul" : ""}
           </text>
         </box>
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>

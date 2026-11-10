@@ -35,14 +35,18 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     fetch?: typeof fetch
     headers?: RequestInit["headers"]
     events?: EventSource
+    requestSignal?: AbortSignal
+    unselected?: boolean
   }) => {
     const abort = new AbortController()
     let sse: AbortController | undefined
+    let unsubscribe: (() => void) | undefined
+    let disposed = false
 
     function createSDK() {
       return createOpencodeClient({
         baseUrl: props.url,
-        signal: abort.signal,
+        signal: props.requestSignal ?? abort.signal,
         directory: props.directory,
         fetch: props.fetch,
         headers: props.headers,
@@ -108,7 +112,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             sseMaxRetryAttempts: 0,
           })
 
-          if (Flag.REDCODE_EXPERIMENTAL_WORKSPACES) {
+          if (Flag.REDCODE_EXPERIMENTAL_WORKSPACES && !props.unselected) {
             // Start syncing workspaces, it's important to do this after
             // we've started listening to events
             await sdk.sync.start().catch(() => {})
@@ -153,9 +157,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     onMount(async () => {
       if (props.events) {
         const unsub = await props.events.subscribe(handleEvent)
-        onCleanup(unsub)
+        if (disposed) {
+          unsub()
+          return
+        }
+        unsubscribe = unsub
 
-        if (Flag.REDCODE_EXPERIMENTAL_WORKSPACES) {
+        if (Flag.REDCODE_EXPERIMENTAL_WORKSPACES && !props.unselected) {
           // Start syncing workspaces, it's important to do this after
           // we've started listening to events
           await sdk.sync.start().catch(() => {})
@@ -166,6 +174,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     })
 
     onCleanup(() => {
+      disposed = true
+      unsubscribe?.()
       abort.abort()
       sse?.abort()
       if (timer) clearTimeout(timer)
@@ -179,6 +189,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       event: emitter,
       fetch: props.fetch ?? fetch,
       url: props.url,
+      headers: props.headers,
+      signal: props.requestSignal ?? abort.signal,
     }
   },
 })

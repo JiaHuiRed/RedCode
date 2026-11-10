@@ -4,7 +4,7 @@ import { type rpc } from "./worker"
 import path from "path"
 import { fileURLToPath } from "url"
 import { UI } from "@/cli/ui"
-import { ProjectSelector } from "@/cli/project-selector"
+import { ProjectHistory } from "./project-history"
 import * as Log from "@redcode-ai/core/util/log"
 import { errorMessage } from "@/util/error"
 import { withTimeout } from "@/util/timeout"
@@ -29,7 +29,7 @@ declare global {
 
 type RpcClient = ReturnType<typeof Rpc.client<typeof rpc>>
 
-function createWorkerFetch(client: RpcClient): typeof fetch {
+export function createWorkerFetch(client: RpcClient): typeof fetch {
   const fn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init)
     const body = request.body ? await request.text() : undefined
@@ -47,7 +47,7 @@ function createWorkerFetch(client: RpcClient): typeof fetch {
   return fn as typeof fetch
 }
 
-function createEventSource(client: RpcClient): EventSource {
+export function createEventSource(client: RpcClient): EventSource {
   return {
     subscribe: async (handler) => {
       return client.on<GlobalEvent>("global.event", (e) => {
@@ -75,6 +75,31 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
   const root = Filesystem.resolve(envPWD ?? cwd)
   if (project) return Filesystem.resolve(path.isAbsolute(project) ? project : path.join(root, project))
   return Filesystem.resolve(cwd)
+}
+
+// 261110 Red 编译产物双击/快捷方式启动时，调用位置会落在 exe 自己的目录——那不是用户想工作的
+// 项目。只有 cwd 确实等于可执行文件所在目录时才判定为安装位置；不按目录名（如 bin）猜。
+export function resolveInvocationDirectory(input: { cwd: string; execPath: string; compiled: boolean }) {
+  const cwd = Filesystem.resolve(input.cwd)
+  if (!input.compiled) return cwd
+  const install = path.dirname(Filesystem.resolve(input.execPath))
+  if (sameDirectory(cwd, install)) return undefined
+  return cwd
+}
+
+function sameDirectory(a: string, b: string) {
+  const normalize = (value: string) => value.replaceAll("\\", "/").replace(/\/+$/, "")
+  const left = normalize(a)
+  const right = normalize(b)
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right
+}
+
+// 261110 Red 取最近记录里第一个仍然存在的目录；历史里被删/改名的路径不能当启动位置。
+export async function latestProjectDirectory(): Promise<string | undefined> {
+  for (const visit of await ProjectHistory.readProjectHistory()) {
+    if (await Filesystem.isDir(visit.directory)) return visit.directory
+  }
+  return undefined
 }
 
 export const TuiThreadCommand = cmd({
@@ -128,23 +153,33 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      // If no explicit project path, show interactive project selector
-      if (!args.project) {
-        const selected = await ProjectSelector.selectProjectInteractive()
-        if (selected) args.project = selected
-      }
-
-      // Resolve relative --project paths from PWD, then use the real cwd after
-      // chdir so the thread and worker share the same directory key.
-      const next = resolveThreadDirectory(args.project)
+      // 261110 Red 不再弹启动前的 raw 选择器：显式 path 优先；否则尊重真实调用 cwd，
+      // 只有 cwd 落在 exe 安装目录时才恢复最近仍有效的项目；都没有就留空直达首页。
+      const next =
+        args.project !== undefined && args.project !== ""
+          ? resolveThreadDirectory(args.project)
+          : (resolveInvocationDirectory({
+              cwd: process.cwd(),
+              execPath: process.execPath,
+              compiled: typeof REDCODE_WORKER_PATH !== "undefined",
+            }) ?? (await latestProjectDirectory()))
       const file = await target()
-      try {
-        process.chdir(next)
-      } catch {
-        UI.error("Failed to change directory to " + next)
+      if (next) {
+        try {
+          process.chdir(next)
+        } catch {
+          UI.error("Failed to change directory to " + next)
+          return
+        }
+      }
+      // 261110 Red 没有可靠目录时保持 directory 为空，不能拿安装目录当项目。
+      const cwd = next ? Filesystem.resolve(process.cwd()) : undefined
+      // 261110 Red 显式会话必须有归属目录可校验，否则中间件会按默认实例把它路由到别的项目。
+      if (args.session && !cwd) {
+        UI.error("--session requires a project directory: start redcode in that project or pass its path")
+        process.exitCode = 1
         return
       }
-      const cwd = Filesystem.resolve(process.cwd())
       const env = sanitizedProcessEnv({
         [REDCODE_PROCESS_ROLE]: "worker",
         [REDCODE_RUN_ID]: ensureRunID(),
@@ -194,7 +229,7 @@ export const TuiThreadCommand = cmd({
       }
 
       const prompt = await input(args.prompt)
-      const config = await TuiConfig.get()
+      const config = await TuiConfig.get(cwd)
 
       const network = resolveNetworkOptionsNoConfig(args)
       const external =
@@ -230,9 +265,11 @@ export const TuiThreadCommand = cmd({
         return
       }
 
-      setTimeout(() => {
-        client.call("checkUpgrade", { directory: cwd }).catch(() => {})
-      }, 1000).unref?.()
+      if (cwd) {
+        setTimeout(() => {
+          client.call("checkUpgrade", { directory: cwd }).catch(() => {})
+        }, 1000).unref?.()
+      }
 
       try {
         const { tui } = await import("./app")
@@ -245,6 +282,7 @@ export const TuiThreadCommand = cmd({
           },
           config,
           directory: cwd,
+          local: true,
           fetch: transport.fetch,
           events: transport.events,
           args: {

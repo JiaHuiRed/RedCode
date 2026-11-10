@@ -4,7 +4,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
-import { mockTuiRuntime } from "../../fixture/tui-runtime"
+import { createTuiResolvedConfig, mockTuiRuntime } from "../../fixture/tui-runtime"
 
 const { TuiPluginRuntime } = await import("../../../src/cli/cmd/tui/plugin/runtime")
 
@@ -222,3 +222,68 @@ test(
   },
   { timeout: 15000 },
 )
+
+// 261110 Red 跨项目切换：init 接受显式 directory；换目录必须先 dispose，且新 init 要等
+// 上一次清理真正结束（旧插件的 dispose 不能落到新 runtime 上）。
+test("requires dispose before init for another directory", async () => {
+  await using first = await tmpdir()
+  await using second = await tmpdir()
+  const { config, restore } = mockTuiRuntime(first.path, [])
+
+  try {
+    await TuiPluginRuntime.init({ api: createTuiPluginApi(), config, directory: first.path })
+    await expect(TuiPluginRuntime.init({ api: createTuiPluginApi(), config, directory: second.path })).rejects.toThrow(
+      "different working directory",
+    )
+
+    await TuiPluginRuntime.dispose()
+    await TuiPluginRuntime.init({
+      api: createTuiPluginApi(),
+      config: createTuiResolvedConfig({ plugin: [] }),
+      directory: second.path,
+    })
+  } finally {
+    await TuiPluginRuntime.dispose()
+    restore()
+  }
+})
+
+test("waits for the pending dispose before loading another directory", async () => {
+  await using first = await tmpdir({
+    init: async (dir) => {
+      const marker = path.join(dir, "released.txt")
+      const file = path.join(dir, "slow.ts")
+      await Bun.write(
+        file,
+        `export default {
+  id: "demo.slow",
+  tui: async (api) => {
+    api.lifecycle.onDispose(async () => {
+      await Bun.sleep(30)
+      await Bun.write(${JSON.stringify(marker)}, "released")
+    })
+  },
+}
+`,
+      )
+      return { spec: pathToFileURL(file).href, marker }
+    },
+  })
+  await using second = await tmpdir()
+  const { config, restore } = mockTuiRuntime(first.path, [[first.extra.spec, {}]])
+
+  try {
+    await TuiPluginRuntime.init({ api: createTuiPluginApi(), config, directory: first.path })
+    const closing = TuiPluginRuntime.dispose()
+    await TuiPluginRuntime.init({
+      api: createTuiPluginApi(),
+      config: createTuiResolvedConfig({ plugin: [] }),
+      directory: second.path,
+    })
+    expect(await Bun.file(first.extra.marker).text()).toBe("released")
+    await closing
+  } finally {
+    await TuiPluginRuntime.dispose()
+    restore()
+  }
+})

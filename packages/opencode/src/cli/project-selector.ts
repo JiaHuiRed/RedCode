@@ -7,7 +7,9 @@ import { Style } from "./ui"
 const NEW_DIR_SENTINEL = "__new_project_directory__"
 const { TEXT_HIGHLIGHT_BOLD, TEXT_DIM, TEXT_NORMAL, TEXT_WARNING, TEXT_SUCCESS, TEXT_DANGER } = Style
 
-interface ProjectEntry {
+// 261110 Red 只读导出给 TUI 的项目选择弹窗复用（跨项目切换时列既有工作区），
+// 不把 raw stdin 的全屏选择器嵌入 TUI。
+export interface ProjectEntry {
   worktree: string
   name: string
 }
@@ -17,7 +19,7 @@ interface ProjectEntry {
 // 时打开、后 git init（实测 attendance/financialcost），或 .git 被删过重建（实测 RedClaw），
 // 都会让同一路径换 id 再插一行，旧行没人清，选择器里就并排显示两个同名条目。
 // 这里按路径去重：选择器返回的是 worktree 路径而非 id，保留哪一行都等价。
-function loadProjects(): ProjectEntry[] {
+export function loadProjects(): ProjectEntry[] {
   try {
     return Database.use((db) => {
       const rows = (db as typeof db).select().from(ProjectTable).all() as Array<{

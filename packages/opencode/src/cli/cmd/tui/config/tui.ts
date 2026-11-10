@@ -285,67 +285,85 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   }
 })
 
-export const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const directory = yield* CurrentWorkingDirectory
-    const npm = yield* Npm.Service
-    const data = yield* loadState({ directory })
-    // 260828 cc 与 config.ts 的后台安装同源（本仓两份并行拷贝），同样受
-    // REDCODE_DISABLE_PLUGIN_DEP_INSTALL 约束 —— 否则离线用户设了开关，TUI 这条路
-    // 照样去装。config.ts 那份的泄漏账见
-    // docs/notes/implemented/bug-fix/2026-08-28-test-temp-dir-leak.md。
-    const deps = yield* Effect.forEach(
-      Flag.REDCODE_DISABLE_PLUGIN_DEP_INSTALL ? [] : data.dirs,
-      (dir) =>
-        npm
-          .install(dir, {
-            add: [
-              {
-                name: "@opencode-ai/plugin",
-                version: InstallationLocal ? undefined : InstallationVersion,
-              },
-            ],
-          })
-          // 260922 Red 这份安装原本没有失败出口：waitForDependencies 末尾的 Effect.ignore()
-          // 会把错误一起吞掉，而 TUI 侧调用（cli/cmd/tui/plugin/runtime.ts 的
-          // resolveExternalPlugins）没有 plugin/index.ts 那条 2 秒 timeout 兜底，
-          // 于是安装失败只表现为「插件静默不加载」、日志里一个字都没有。
-          // Effect.exit 不改控制流（原先失败也是被外层 ignore），只把失败记下来，
-          // 与 config.ts 那份插件的写法对齐。
-          .pipe(
-            Effect.exit,
-            Effect.tap((exit) =>
-              Exit.isFailure(exit)
-                ? Effect.sync(() =>
-                    log.warn("tui plugin dependency install failed", { dir, error: Cause.pretty(exit.cause) }),
-                  )
-                : Effect.void,
+function makeLayer(directory?: string) {
+  return Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const cwd = directory ?? (yield* CurrentWorkingDirectory)
+      const npm = yield* Npm.Service
+      const data = yield* loadState({ directory: cwd })
+      // 260828 cc 与 config.ts 的后台安装同源（本仓两份并行拷贝），同样受
+      // REDCODE_DISABLE_PLUGIN_DEP_INSTALL 约束 —— 否则离线用户设了开关，TUI 这条路
+      // 照样去装。config.ts 那份的泄漏账见
+      // docs/notes/implemented/bug-fix/2026-08-28-test-temp-dir-leak.md。
+      const deps = yield* Effect.forEach(
+        Flag.REDCODE_DISABLE_PLUGIN_DEP_INSTALL ? [] : data.dirs,
+        (dir) =>
+          npm
+            .install(dir, {
+              add: [
+                {
+                  name: "@opencode-ai/plugin",
+                  version: InstallationLocal ? undefined : InstallationVersion,
+                },
+              ],
+            })
+            // 260922 Red 这份安装原本没有失败出口：waitForDependencies 末尾的 Effect.ignore()
+            // 会把错误一起吞掉，而 TUI 侧调用（cli/cmd/tui/plugin/runtime.ts 的
+            // resolveExternalPlugins）没有 plugin/index.ts 那条 2 秒 timeout 兜底，
+            // 于是安装失败只表现为「插件静默不加载」、日志里一个字都没有。
+            // Effect.exit 不改控制流（原先失败也是被外层 ignore），只把失败记下来，
+            // 与 config.ts 那份插件的写法对齐。
+            .pipe(
+              Effect.exit,
+              Effect.tap((exit) =>
+                Exit.isFailure(exit)
+                  ? Effect.sync(() =>
+                      log.warn("tui plugin dependency install failed", { dir, error: Cause.pretty(exit.cause) }),
+                    )
+                  : Effect.void,
+              ),
+              Effect.forkScoped,
             ),
-            Effect.forkScoped,
-          ),
-      {
-        concurrency: "unbounded",
-      },
-    )
+        {
+          concurrency: "unbounded",
+        },
+      )
 
-    const get = Effect.fn("TuiConfig.get")(() => Effect.succeed(data.config))
+      const get = Effect.fn("TuiConfig.get")(() => Effect.succeed(data.config))
 
-    const waitForDependencies = Effect.fn("TuiConfig.waitForDependencies")(() =>
-      Effect.forEach(deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.ignore(), Effect.asVoid),
-    )
-    return Service.of({ get, waitForDependencies })
-  }).pipe(Effect.withSpan("TuiConfig.layer")),
-)
+      const waitForDependencies = Effect.fn("TuiConfig.waitForDependencies")(() =>
+        Effect.forEach(deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.ignore(), Effect.asVoid),
+      )
+      return Service.of({ get, waitForDependencies })
+    }).pipe(Effect.withSpan("TuiConfig.layer")),
+  )
+}
+
+export const layer = makeLayer()
 
 export const defaultLayer = layer.pipe(Layer.provide(Npm.defaultLayer), Layer.provide(AppFileSystem.defaultLayer))
 
 const { runPromise } = makeRuntime(Service, defaultLayer)
+// 261110 Red 每个显式目录有独立层身份，不能让共享 memoMap 把 A 的配置缓存成 B 的配置。
+const directoryRuntimes = new Map<string, ReturnType<typeof makeRuntime<Service, Interface, never>>>()
 
-export async function waitForDependencies() {
-  await runPromise((svc) => svc.waitForDependencies())
+function forDirectory(directory: string) {
+  const key = Filesystem.resolve(directory)
+  const existing = directoryRuntimes.get(key)
+  if (existing) return existing
+  const runtime = makeRuntime(
+    Service,
+    makeLayer(key).pipe(Layer.provide(Npm.defaultLayer), Layer.provide(AppFileSystem.defaultLayer)),
+  )
+  directoryRuntimes.set(key, runtime)
+  return runtime
 }
 
-export async function get() {
-  return runPromise((svc) => svc.get())
+export async function waitForDependencies(directory?: string) {
+  await (directory ? forDirectory(directory).runPromise : runPromise)((svc) => svc.waitForDependencies())
+}
+
+export async function get(directory?: string) {
+  return (directory ? forDirectory(directory).runPromise : runPromise)((svc) => svc.get())
 }
