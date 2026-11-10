@@ -6,6 +6,7 @@ import {
   leakAnchorStart,
   LeakAnchorScanner,
   releaseLeakHold,
+  stripHistoryReferences,
 } from "../../src/session/instruction-echo"
 
 describe("instruction-echo 快路径", () => {
@@ -80,6 +81,26 @@ const r = detect(t)
 expect(r.kinds).toContain("native-history-reference")
 expect(r.stripped).toBe("真正的回答在这里。")
 expect(r.stripped).not.toContain("History reference")
+})
+
+// 261110 Red 现场（ses_ffe5e3c6c1512ffe…）：模型把引用标记压成缩写形 "[ref: msg_…]"，
+// 79 个只含该标记的 text part 落库，TUI/GUI 都把它当正文渲染。锚点与剥离同步覆盖。
+test("缩写形 [ref: msg_…] 单独成段时剥成空正文", () => {
+ const r = detect("[ref: msg_001a1c433e8e3001XkYAxdCJ2Zz8cW]")
+ expect(r.kinds).toContain("native-history-reference")
+ expect(r.stripped).toBe("")
+})
+
+test("正文后的缩写形引用标记被剥掉，正文保留", () => {
+ const r = detect("改动已完成。\n\n[ref: msg_001a1c433e8e3001XkYAxdCJ2Zz8cW]")
+ expect(r.kinds).toContain("native-history-reference")
+ expect(r.stripped).toBe("改动已完成。")
+})
+
+test("缩写形标记进流式锚点，并从回放副本里剥掉", () => {
+ expect(hasLeakAnchor("正文 [ref: msg_001a1c433e8e3001XkYAxdCJ2Zz8cW]")).toBe(true)
+ expect(hasLeakAnchor("这里讨论 ref: 参数名，不是标记")).toBe(false)
+ expect(stripHistoryReferences("正文。[ref: msg_001a1c433e8e3001XkYAxdCJ2Zz8cW]")).toBe("正文。")
 })
 
 // 261106 Red 现场（ses_ffe5e5537f23effeBIrCP8aKzbJ0iO）：模型在 native 压缩上下文里

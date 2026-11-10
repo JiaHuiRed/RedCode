@@ -53,6 +53,11 @@ const LEAK_ANCHORS = [
 "[History reference: ",
 // 261028 Red step-5-preview 把 History 改写为 Historical，仍是同一引用标记回声。
 "[Historical reference: ",
+// 261110 Red 同一族的新缩写形：模型把引用标记压成 "[ref: msg_…]" 再当正文输出
+// （ses_ffe5e3c6c1512ffe… 实测，79 条纯标记 text part 漏进 GUI）。只锚 msg_/prt_ 前缀，
+// 避免把正常写作里的 "[ref: …]" 一起切掉。
+"[ref: msg_",
+"[ref: prt_",
 // 261024 Red 压缩块头的新模仿形（step-5-preview 实测，ses_ffe5e979…）：块渲染头
 // "[Historical context summary. This is not …]" 的句式被模型压缩改写成
 // "[Historical context summary: msg_…]" 拼在回复尾部——上下文里从不出现这个
@@ -215,10 +220,18 @@ const EMPTY: string[] = []
 
 // 261028 Red 仅净化回放副本里的引用回声，不改其他指令或代码示例。
 export function stripHistoryReferences(text: string): string {
-  if (!text.includes("[History reference: msg_") && !text.includes("[Historical reference: msg_")) return text
+  if (
+    !text.includes("[History reference: msg_") &&
+    !text.includes("[Historical reference: msg_") &&
+    !text.includes("[ref: msg_") &&
+    !text.includes("[ref: prt_")
+  )
+    return text
   const code = new MarkdownCode()
   const masked = text.split("").map((char) => (code.feed(char) && char !== "\n" ? " " : char)).join("")
-  const matches = [...masked.matchAll(/\[(?:History|Historical) reference: msg_[^\]\n]*\]/g)]
+  const matches = [
+    ...masked.matchAll(/\[(?:(?:History|Historical) reference: msg_|ref: (?:msg_|prt_))[^\]\n]*\]/g),
+  ]
   for (const match of matches.reverse()) text = text.slice(0, match.index) + text.slice(match.index! + match[0].length)
   return text
 }
@@ -238,8 +251,10 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
   ["system-notice", /^\s*\[System notice\][^\n]*(?:\n(?!\n)[^\n]*)*\n?/gm],
 // 261010 Red native 压缩（compaction.native）注入的两种前缀，此前只收了 [System notice]，
 // 漏掉的这两种在 exe 上整楼复述。都是我们自己的注入、有明确起止，同 A 类整块剥。
-// 引用标记：每条历史消息一个，可能连续成百行，用全局替换一次吃干净。
-  ["native-history-reference", /\[(?:History|Historical) reference: [^\n]*?\]\s*/g],
+  // 引用标记：每条历史消息一个，可能连续成百行，用全局替换一次吃干净。
+  // 261110 Red 缩写形 "[ref: msg_…]" 同族，一并剥掉。
+  ["native-history-reference", /\[(?:(?:History|Historical) reference|ref): [^\n]*?\]\s*/g],
+
   // 261106 Red 现场（ses_ffe5e553…）：模型在 native 压缩上下文里只回复
   // "[history truncated]"（5 tokens、finish=stop），任务实际未完成，用户看到一条
   // 只有占位符的消息以为做完了。与引用标记同族，是模型改写出的截断占位形。
