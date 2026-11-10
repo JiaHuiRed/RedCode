@@ -408,18 +408,23 @@ export default function FileTree(props: {
     return { files, dirs }
   })
 
-  // 261106 Red 审计 P2-03：整树可见平铺只在根实例求值（嵌套实例的 tabStop 不经过它，
-  // 嵌套实例只付 memo 创建成本），用于失效光标恢复判定。
-  const allVisible = createMemo(() =>
-    visibleTreeNodes({
-      path: props.path,
-      filter: filter(),
-      chain,
-      level,
-      children: (dir) => file.tree.children(dir),
-      expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
-    }),
-  )
+  // 261110 Red 修正 261106 P2-03 的实现偏差：原注释声称「整树平铺只在根实例求值」，
+  // 实际每个递归实例都创建 createMemo 且创建即同步首跑（全子树 DFS），每个展开的
+  // 目录都白付一份、还持续跟踪重算。Solid 组件 setup 只跑一次、isRoot 生命周期内
+  // 恒定，条件创建安全；嵌套实例的 tabStop 本来就不读它（isRoot 分支短路）。
+  // 261106 Red 审计 P2-03：整树可见平铺用于根层失效光标恢复判定与键盘导航。
+  const allVisible: () => FileNode[] = isRoot
+    ? createMemo(() =>
+        visibleTreeNodes({
+          path: props.path,
+          filter: filter(),
+          chain,
+          level,
+          children: (dir) => file.tree.children(dir),
+          expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
+        }),
+      )
+    : () => []
 
   const tabStop = (path: string) => {
     const current = rovingCursor()
@@ -449,14 +454,8 @@ export default function FileTree(props: {
     }
     const nav = navKeys[event.key]
     if (!nav) return
-    const visible = visibleTreeNodes({
-      path: props.path,
-      filter: filter(),
-      chain,
-      level,
-      children: (dir) => file.tree.children(dir),
-      expanded: (dir) => file.tree.state(dir)?.expanded ?? false,
-    })
+    // 261110 Red 复用根实例的 allVisible memo（同步新鲜），不再每次按键重新 DFS 整棵树
+    const visible = allVisible()
     if (visible.length === 0) return
     const next = moveTreeCursor({
       key: nav,

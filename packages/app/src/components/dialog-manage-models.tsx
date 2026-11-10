@@ -43,6 +43,9 @@ export const DialogManageModels: Component = () => {
         emptyMessage={language.t("dialog.model.empty")}
         key={(x) => `${x?.provider?.id}:${x?.id}`}
         items={local.model.list()}
+        // 261110 Red 与模型选择器同款虚拟化：供应商多、模型量大时窗口不再全量渲染。
+        // 分组头的 Switch 状态在 local.model store 里，不在 DOM 行上，虚拟化安全。
+        virtual
         filterKeys={["provider.name", "name", "id"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         groupBy={(x) => x.provider.id}
