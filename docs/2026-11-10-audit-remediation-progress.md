@@ -94,6 +94,14 @@
 - Diff 连续导航真机交互链（Next ×3、Previous ×2）——A2 纯函数已测，真机未截。
 - RC-05 检查数量截断真机验证（4 项预检、限制 3 项）——A4 单测已补。
 
+## 分支清理记录（2026-11-10）
+
+清理了 4 个陈旧分支，恢复点留档（reflog 默认 90 天内 `git branch <name> <sha>` 可直接复活）：
+
+- `upstream-main`（本地）+ `upstream/main`（孤儿 remote-tracking 引用）→ `0b89d3b9`：upstream remote 本身已删，两者同指上游一个 commit，纯死引用。
+- `origin/fix/timeline-measured-bottom-20261028` → `56ed0719`（10 行 timeline 底部锚定修复，patch 未进 dev；其代码路径已被 62e21aff 起的虚拟列表重构取代）。
+- `redcode/hidden-nebula` → `1a179966`（10-09 分页窗口连续性实验，落后 dev 549 提交，提交自述验证被缺失工作区依赖阻塞；问题域被 209a78f6 重连补拉重构覆盖）。
+
 ## 运行验证方式
 
 | 项 | 命令 |
