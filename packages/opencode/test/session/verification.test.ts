@@ -170,6 +170,63 @@ describe("SessionVerification", () => {
     }),
   )
 
+  // 261110 Red 截断不是通过：max_checks 之外的计划项必须以 skipped 出现在报告里，
+  // 全部执行项通过时整体只能算 partial，不能静默标成 passed。
+  it.live("records checks beyond max_checks as skipped and downgrades passed to partial", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      yield* writeFiles(dir, {
+        "package.json": packageJson("bun pass.js"),
+        "bun.lock": "",
+        "pass.js": "process.exit(0)\n",
+        "src/a.ts": "export const a = 1\n",
+      })
+
+      const result = yield* report(
+        { worktree: dir, changed: ["src/a.ts"] },
+        {
+          verification: {
+            max_checks: 1,
+            // 两条命令字符串必须不同：同 cwd + 同命令会被去重合并，凑不出两条截断项
+            commands: [
+              { name: "extra-1", command: "bun pass.js" },
+              { name: "extra-2", command: "bun ./pass.js" },
+            ],
+          },
+        },
+      )
+
+      expect(result.checks).toHaveLength(3)
+      expect(result.checks[0]).toMatchObject({ name: "typecheck", status: "passed" })
+      expect(result.checks[1]).toMatchObject({ name: "extra-1", status: "skipped" })
+      expect(result.checks[1].reason).toContain("max_checks limit (1)")
+      expect(result.checks[2]).toMatchObject({ name: "extra-2", status: "skipped" })
+      expect(result.status).toBe("partial")
+    }),
+  )
+
+  it.live("keeps failed status when truncated checks coexist with a failing one", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      yield* writeFiles(dir, {
+        "package.json": packageJson("bun fail.js"),
+        "bun.lock": "",
+        "fail.js": "process.exit(3)\n",
+        "pass.js": "process.exit(0)\n",
+        "src/a.ts": "export const a = 1\n",
+      })
+
+      const result = yield* report(
+        { worktree: dir, changed: ["src/a.ts"] },
+        { verification: { max_checks: 1, commands: [{ name: "extra", command: "bun pass.js" }] } },
+      )
+
+      expect(result.checks[0]).toMatchObject({ name: "typecheck", status: "failed" })
+      expect(result.checks[1]).toMatchObject({ name: "extra", status: "skipped" })
+      expect(result.status).toBe("failed")
+    }),
+  )
+
   it.live("flags protected paths that changed during the turn", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()

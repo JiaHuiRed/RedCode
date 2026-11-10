@@ -214,14 +214,14 @@ export const layer: Layer.Layer<
       const maxChecks = settings?.max_checks ?? DEFAULT_MAX_CHECKS
       const timeout = settings?.timeout_ms ?? DEFAULT_TIMEOUT_MS
       const seen = new Set<string>()
-      const selection = planned
-        .filter((item) => {
-          const key = `${item.cwd}\u0000${item.command}`
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        .slice(0, maxChecks)
+      const deduped = planned.filter((item) => {
+        const key = `${item.cwd}\u0000${item.command}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      const selection = deduped.slice(0, maxChecks)
+      const truncated = deduped.slice(maxChecks)
 
       if (selection.length === 0) {
         return {
@@ -312,6 +312,18 @@ export const layer: Layer.Layer<
                   MAX_REASON_CHARS,
                 ),
               }),
+        })
+      }
+
+      // 261110 Red 截断不是通过：因 max_checks 没跑的检查以 skipped 落进报告，
+      // 让 every(passed) 判定自然降级为 partial，漏跑了哪些对模型和用户都可见。
+      for (const item of truncated) {
+        checks.push({
+          name: item.name,
+          command: item.command,
+          cwd: displayCwd(input.worktree, item.cwd),
+          status: "skipped",
+          reason: `not run: max_checks limit (${maxChecks})`,
         })
       }
 
