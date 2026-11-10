@@ -4,7 +4,7 @@
 
 ## 问题
 
-外部审计（`docs/notes/proposed/architecture/2026-09-24-incremental-audit.md`）在 GUI 会话
+外部审计（`docs/notes/archived/architecture/2026-09-24-incremental-audit.md`）在 GUI 会话
 时间线上记录了两条缓存缺陷，都属于「同一职责分散在多个写入点」：
 
 - **§3.5 跨会话别名**：`writeTimelineCache` 有三处调用（`:739`/`:749`/`:758`），都能拿组件级

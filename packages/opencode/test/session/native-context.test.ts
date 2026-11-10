@@ -211,7 +211,7 @@ describe("native context boundary", () => {
 
   // 261022 Red 窗口边界（拟修 B）：选段起点下移到最后活跃块之后，锚点不再恒为会话
   // 首条消息——每次压缩不再从头重写历史（摘要冷输入与压后缓存全灭的结构性根源）。
-  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  // 决策：docs/notes/implemented/architecture/2026-10-22-anchored-window-compaction.md
   describe("windowed selection", () => {
     const second: MessageV2.WithParts = {
       ...message, info: { ...message.info, id: MessageID.make("msg_second"), time: { created: 2 } },

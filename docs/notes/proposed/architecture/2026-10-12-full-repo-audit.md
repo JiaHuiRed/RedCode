@@ -1,6 +1,6 @@
 # 全仓审计（三）：分歧标记 +45%，15 条里修 4 未动 8，以及两套零测试零节流的并行渲染栈
 
-日期：2026-10-12 · 状态：proposed · 窗口：`034a8649..HEAD`（0.11.13 → 0.12.7，289 commit / 358 文件 / +29786 −5613，净 +24k 行）· 前两份：`2026-09-18-full-repo-audit.md`、`2026-09-24-incremental-audit.md`
+日期：2026-10-12 · 状态：proposed · 窗口：`034a8649..HEAD`（0.11.13 → 0.12.7，289 commit / 358 文件 / +29786 −5613，净 +24k 行）· 前两份（261110 已归档）：`archived/architecture/2026-09-18-full-repo-audit.md`、`archived/architecture/2026-09-24-incremental-audit.md`
 
 > 本文全部条目由主 agent 在 HEAD 直接 grep/读码得出，**无子审计**（本轮五路并行子 agent 因额度中断，未产出结论）。每条标 **verified**（读了当前代码）或 **inferred**（只到 grep 层面 / 依赖推断）。
 >
@@ -12,7 +12,7 @@
 
 ## 〇、先更正一份过时认知：DCP 已退役
 
-`2026-09-24-incremental-audit.md` §3.3 与 §五 第 2 条（"seed/ 出 `dcp.jsonc` 模板 + 启动时比对 `modelMinLimits` 键并 warn"）**作废**。
+`archived/architecture/2026-09-24-incremental-audit.md` §3.3 与 §五 第 2 条（"seed/ 出 `dcp.jsonc` 模板 + 启动时比对 `modelMinLimits` 键并 warn"）**作废**。
 
 - 迁移在 261010 完成，决策记录：`docs/notes/implemented/feature/2026-10-10-native-compaction.md`；`seed/redcode.home.jsonc:11` 明写"不再加载 DCP"，`:134-135` 出厂即 `compaction.native.enabled = true`。
 - 阈值来源改为 provider 目录：`session/overflow.ts:9-19` 的 `usable()` 读 `model.limit.context / model.limit.input`，`config/native-compaction.ts:176-181` 按可用窗口等比 clamp trigger/target/reminder。**旧事故类（新模型未登记 → 静默回落 → 每轮压缩打穿前缀缓存）在结构上消失**——删掉了需要被告警的那个外部状态，比"加告警"是更正确的解。

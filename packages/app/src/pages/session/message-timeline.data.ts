@@ -598,7 +598,7 @@ export namespace TimelineCache {
    *
    * 收编原 message-timeline.tsx 里的模块级 Map + readTimelineCache/writeTimelineCache：
    * 读路径在 createMemo 体内 delete（副作用）、写路径有三处且都能拿组件级 handle 配另一条
-   * 会话的 key，见 docs/notes/proposed/architecture/2026-09-24-incremental-audit.md
+   * 会话的 key，见 docs/notes/archived/architecture/2026-09-24-incremental-audit.md
    * §3.5（跨会话别名）与 §3.7（resize 只删不写）。现在表内聚在这里：read 纯净化，
    * write 带宽度守卫，淘汰只能走显式 invalidate。
    */

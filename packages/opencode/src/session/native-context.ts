@@ -92,7 +92,7 @@ export function planAutomatic(
   // 261022 Red 窗口边界（拟修 B）：选段起点下界 = 最后活跃块在投影视图中的末尾。
   // 0 = 全吞旧行为；边界越过可压段（latestUser 保护 / 消息末尾）时自动回退全吞。
   // 每次压缩不再从会话首条消息改写历史——摘要冷输入与压后缓存全灭的结构性根源。
-  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  // 决策：docs/notes/implemented/architecture/2026-10-22-anchored-window-compaction.md
   startFloor = 0,
 ): AutomaticPlan {
   // 261010 Red latestUser 口径必须与 commit 的保护一致：排除 queued（排队输入还不是

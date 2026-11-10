@@ -506,7 +506,7 @@ describe("native compression ledger", () => {
   }))
 
   // 261022 Red 窗口边界（拟修 B）：投影视图里最后一个活跃锚点之后才是下一段可压历史。
-  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  // 决策：docs/notes/implemented/architecture/2026-10-22-anchored-window-compaction.md
   it.instance("marks the first message after the last active anchor as the window boundary", () => Effect.gen(function* () {
     const f = yield* fixture()
     expect(ContextCompaction.windowBoundary(f.messages, [])).toBe(0)

@@ -63,7 +63,7 @@
 
 ## 补记（260918 Karina）：同形状的漏网兄弟，以及门检的两个盲区
 
-上面第 5 条的盲区断言只管得住**绑定到 `AppProcess.Service` 的文件**。审计（`2026-09-18-full-repo-audit.md` 附核验批注）翻出了这套机制外的两条路：
+上面第 5 条的盲区断言只管得住**绑定到 `AppProcess.Service` 的文件**。审计（`archived/architecture/2026-09-18-full-repo-audit.md` 附核验批注，已归档）翻出了这套机制外的两条路：
 
 **一、`packages/opencode/src/util/process.ts` 的 `timeout` 曾经是死参数。** 它是与 `AppProcess.run` 并列的另一套子进程封装（`Process.run/text/lines/spawn`，MCP stdio、LSP 启动、剪贴板、pager 等走这条）。原来只有一个 `timer`，仅在 `abort()` 内部被 arm——也就是说 `timeout` 从来没有作为墙钟上限生效过，它实际是「abort 已触发之后，SIGTERM 到 SIGKILL 之间的强杀宽限」。没有 AbortSignal 的调用点传了等于没传，`Promise.all([exited, stdout, stderr])` 可以永远挂住，正是本 note 行 16 描述的那种"evloop drift 探针一声不响、日志里一个字都没有"的静默签名。
 

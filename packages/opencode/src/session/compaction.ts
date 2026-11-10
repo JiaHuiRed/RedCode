@@ -542,7 +542,7 @@ export const layer = Layer.effect(
         // 摘要冷输入从全历史降到增量、压后缓存作废范围缩到新窗口。现有活跃块渲染逼近
         // active 预算时直接全吞（合并出口，floor=0 与旧路径同构），一次把窗口归一，
         // 避免摘要生成后 commit 才因预算失败的白付。决策：
-        // docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+        // docs/notes/implemented/architecture/2026-10-22-anchored-window-compaction.md
         const boundary = ContextCompaction.windowBoundary(view, active)
         const activeTokens = Token.estimate(active.map(ContextCompaction.render).join("\n"))
         const merged = active.length > 0 &&
@@ -1009,7 +1009,7 @@ export const layer = Layer.effect(
       if (result === "continue") {
         // 260920 Red 压缩期不做全表扫描：原先两处 `session.messages()` 不带 limit 载入整个会话，
         // 只为按主键找同一条消息，而压缩恰好发生在会话最长的时刻（note：
-        // docs/notes/proposed/architecture/2026-09-18-full-repo-audit.md §4.4）。改成主键点查并
+        // docs/notes/archived/architecture/2026-09-18-full-repo-audit.md §4.4）。改成主键点查并
         // 复用结果；NotFound 时退回内存里的 msg，与旧 `find(...) ?? { info: msg, parts: [] }` 等价。
         const summaryMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
           Effect.orElseSucceed((): MessageV2.WithParts => ({ info: msg, parts: [] })),

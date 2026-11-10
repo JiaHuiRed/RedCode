@@ -438,7 +438,7 @@ describe("TimelineRow.cacheReusable — timeline cache 有效域", () => {
   })
 })
 
-// 260929 Red 行高缓存表回归。背景：docs/notes/proposed/architecture/2026-09-24-incremental-audit.md
+// 260929 Red 行高缓存表回归。背景：docs/notes/archived/architecture/2026-09-24-incremental-audit.md
 // §3.5（跨会话别名）与 §3.7（读路径在 createMemo 体内 delete、resize 只删不写）。
 describe("TimelineCache.CacheTable — 行高缓存表", () => {
   const keys = ["user-message:u1", "assistant-part:u1:p1"]
