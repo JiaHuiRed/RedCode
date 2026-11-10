@@ -8,6 +8,7 @@ import { useLanguage } from "@/context/language"
 // 261109 Karina UX-01：会话顶栏的布局预设切换（专注 / 开发 / 审查）。
 // 挂在 titlebar 的 #redcode-session-actions 槽位，不新开一行、不动聊天区几何；
 // 点击只走 layout.view(...).preset.apply，宽度与滚动由用户决定，预设不覆盖。
+// 261110 Red 字号接 token：固定 11px 换 --font-size-x-small，随外观字号档等比缩放。
 export function SessionLayoutPreset() {
   const layout = useLayout()
   const { sessionKey } = useSessionKey()
@@ -36,7 +37,7 @@ export function SessionLayoutPreset() {
           {(preset) => (
             <button
               type="button"
-              class="h-6 rounded px-2 text-[11px] font-[530] leading-[1.1] transition-colors"
+              class="h-6 rounded px-2 text-[length:var(--font-size-x-small)] font-[530] leading-[1.1] transition-colors"
               classList={{
                 "bg-[var(--v2-background-bg-accent)] text-[var(--v2-text-text-contrast)]": current() === preset,
                 "text-[var(--v2-text-text-muted)] hover:text-[var(--v2-text-text-base)]": current() !== preset,

@@ -9,6 +9,7 @@ import { deriveActivity, type ActivityPart } from "./activity"
 // 数据全部来自已加载的 part / session_status / permission，不需要模型配合，也不做
 // 百分比进度。会话空闲时整块隐藏，只在真正工作时占据一行；失败数与待确认数永远
 // 单独显示，不能被折叠掉。
+// 261110 Red 字号接 token：固定 11px 换 --font-size-x-small，随外观字号档等比缩放。
 export function SessionActivityHud() {
   const sync = useSync()
   const { params } = useSessionKey()
@@ -45,7 +46,7 @@ export function SessionActivityHud() {
   return (
     <Show when={working() || permissions() > 0 || runningChildren() > 0}>
       <div
-        class="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11px] leading-[1.3] text-[var(--v2-text-text-muted)]"
+        class="mb-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[length:var(--font-size-x-small)] leading-[1.3] text-[var(--v2-text-text-muted)]"
         role="status"
         aria-live="polite"
       >
