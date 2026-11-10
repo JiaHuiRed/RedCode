@@ -1036,6 +1036,12 @@ export const dict = {
     "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
+  "settings.general.row.verificationNotice.title": "Delivery verification report",
+  "settings.general.row.verificationNotice.description":
+    "When to show the end-of-turn verification report as a message in the session",
+  "settings.general.row.verificationNotice.option.failure": "Only on failure (default)",
+  "settings.general.row.verificationNotice.option.always": "Every changed turn",
+  "settings.general.row.verificationNotice.option.off": "Never",
   "settings.general.row.colorScheme.title": "Color scheme",
   "settings.general.row.colorScheme.description": "Choose whether RedCode follows the system, light, or dark theme",
   "settings.general.row.theme.title": "Theme",

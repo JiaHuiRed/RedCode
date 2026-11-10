@@ -1258,6 +1258,12 @@ export const dict = {
     "ターミナルで使うシェルを選択します。互換性のあるシェルはエージェントのツール実行にも使われます。",
   "settings.general.row.shell.autoDefault": "自動（デフォルト）",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
+  "settings.general.row.verificationNotice.title": "検証レポート",
+  "settings.general.row.verificationNotice.description":
+    "ターン終了時の検証レポートをいつセッションにメッセージとして表示するか",
+  "settings.general.row.verificationNotice.option.failure": "失敗時のみ（デフォルト）",
+  "settings.general.row.verificationNotice.option.always": "毎回表示",
+  "settings.general.row.verificationNotice.option.off": "表示しない",
   "settings.general.row.pinchZoom.title": "ピンチズーム",
   "settings.general.row.pinchZoom.description": "トラックパッドのピンチと Ctrl+スクロールでのズームを許可",
 }

@@ -225,6 +225,13 @@ export const SettingsGeneral: Component = () => {
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   const currentShell = createMemo(() => globalSync.data.config.shell ?? "")
 
+  const currentNotice = createMemo(() => globalSync.data.config.verification?.notice ?? "failure")
+  const noticeOptions = createMemo<{ value: "failure" | "always" | "off"; label: string }[]>(() => [
+    { value: "failure", label: language.t("settings.general.row.verificationNotice.option.failure") },
+    { value: "always", label: language.t("settings.general.row.verificationNotice.option.always") },
+    { value: "off", label: language.t("settings.general.row.verificationNotice.option.off") },
+  ])
+
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
     const list = shells.latest
     const current = globalSync.data.config.shell
@@ -358,6 +365,35 @@ export const SettingsGeneral: Component = () => {
               if (!option) return
               if (option.value === currentShell()) return
               globalSync.updateConfig({ shell: option.value })
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.verificationNotice.title")}
+          description={language.t("settings.general.row.verificationNotice.description")}
+        >
+          <Select
+            data-action="settings-verification-notice"
+            options={noticeOptions()}
+            current={noticeOptions().find((o) => o.value === currentNotice()) ?? noticeOptions()[0]}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option || option.value === currentNotice()) return
+              // 261110 Red 展开保留 enabled/timeout_ms 等同级键，PATCH 走服务端 mergeDeep 部分合并
+              globalSync.updateConfig({
+                verification: { ...globalSync.data.config.verification, notice: option.value },
+              }).catch((err: unknown) => {
+                showToast({
+                  title: language.t("common.requestFailed"),
+                  description: err instanceof Error ? err.message : String(err),
+                })
+              })
             }}
             variant="secondary"
             size="small"
