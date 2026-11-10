@@ -23,6 +23,7 @@ import {
 import { createFileViewCache } from "./file/view-cache"
 import { createFileTreeStore } from "./file/tree-store"
 import { invalidateFromWatcher } from "./file/watcher"
+import { putWorkspaceSnapshot, takeWorkspaceSnapshot } from "./file/workspace-cache"
 import {
   selectionFromLines,
   type FileState,
@@ -63,7 +64,11 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const path = createPathHelpers(scope)
     // 261106 Red 自审计 P2-02：归一与否跟工作区根形态走（POSIX 文件名允许字面反斜杠）
     const windows = createMemo(() => isWindowsRoot(scope()))
-    const tabs = layout.tabs(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
+    // 261110 Red provider 存活期内 params 恒定（dir 变化触发 keyed 重建），固化
+    // tabs key 供 onCleanup 取「本 provider 的」打开文件列表——cleanup 时 params
+    // 已被路由更新为新值，不能响应式地读
+    const frozenTabsKey = `${params.dir}${params.id ? "/" + params.id : ""}`
+    const tabs = layout.tabs(() => frozenTabsKey)
 
     const inflight = new Map<string, Promise<void>>()
     const [store, setStore] = createStore<{
@@ -107,15 +112,57 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       })
     }
 
-    createEffect(() => {
-      scope()
-      inflight.clear()
-      resetFileContentLru()
+    // 261110 Red 外部审计第 2 项：scope 切换由 keyed Show 销毁重建整个 provider
+    // （directory-layout.tsx），旧的全量清理 effect 实为死代码——provider 生命周期
+    // 等于 scope 生命周期，现场保留改由 workspace-cache 在 onCleanup/onInit 完成，
+    // 内容记账则由全局 LRU 总预算接管（不再每切一次工作区就整账清零）。
+
+    // 恢复现场：上一个 FileProvider 离开本工作区时存档了打开文件的内容与文件树
+    // 状态。恢复即校验——切换期间 watcher 收不到事件，打开的文件与展开目录强制
+    // 重读，旧内容只作为阅读现场先行渲染。在 load 定义之后调用（见下方 init 尾部）。
+    let restored: ReturnType<typeof takeWorkspaceSnapshot> | undefined
+    const restoreWorkspace = (snapshot: NonNullable<ReturnType<typeof takeWorkspaceSnapshot>>) => {
       batch(() => {
-        setStore("file", reconcile({}))
-        tree.reset()
+        setStore("file", reconcile(snapshot.files))
+        tree.restore(snapshot.tree)
       })
-    })
+      for (const [file, state] of Object.entries(snapshot.files)) {
+        if (state.content) touchFileContent(file, approxBytes(state.content))
+      }
+      for (const file of Object.keys(snapshot.files)) void load(file, { force: true })
+      for (const [dir, state] of Object.entries(snapshot.tree.dir)) {
+        if (state.loaded && state.expanded) void tree.listDir(dir, { force: true })
+      }
+      if (!snapshot.tree.dir[""]?.loaded) void tree.listDir("", { force: true })
+    }
+    restored = takeWorkspaceSnapshot(scope())
+
+    // 收档：只保留「打开中的文件」的内容条目与文件树状态；未打开文件的缓存随
+    // provider 销毁——恢复后它们的 loaded 不成立，不能被当作最新内容直读。
+    const archive = () => {
+      const MAX_SNAPSHOT_BYTES = 10 * 1024 * 1024
+      const openPaths = new Set<string>(
+        tabs.all().flatMap((tab) => {
+          const file = path.pathFromTab(tab)
+          return file ? [file] : []
+        }),
+      )
+      const files: Record<string, FileState> = {}
+      let bytes = 0
+      for (const file of openPaths) {
+        const state = store.file[file]
+        if (!state) continue
+        if (!state.content) continue
+        const size = approxBytes(state.content)
+        if (bytes + size > MAX_SNAPSHOT_BYTES) {
+          files[file] = { ...state, content: undefined, loaded: false }
+          continue
+        }
+        bytes += size
+        files[file] = state
+      }
+      putWorkspaceSnapshot(scope(), { files, tree: tree.snapshot() })
+    }
 
     const viewCache = createFileViewCache()
     const view = createMemo(() => viewCache.load(scope(), params.id))
@@ -251,9 +298,12 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const setSelectedLines = (input: string, range: SelectedLineRange | null) =>
       withPath(input, (file) => view().setSelectedLines(file, range))
 
+    if (restored) restoreWorkspace(restored)
+
     onCleanup(() => {
       stop()
       viewCache.clear()
+      archive()
     })
 
     return {

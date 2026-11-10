@@ -1,12 +1,17 @@
 import { createStore, produce, reconcile } from "solid-js/store"
 import type { FileNode } from "@redcode-ai/sdk/v2"
 
-type DirectoryState = {
+export type DirectoryState = {
   expanded: boolean
   loaded?: boolean
   loading?: boolean
   error?: string
   children?: string[]
+}
+
+export type TreeSnapshot = {
+  node: Record<string, FileNode>
+  dir: Record<string, DirectoryState>
 }
 
 type TreeStoreOptions = {
@@ -165,6 +170,17 @@ export function createFileTreeStore(options: TreeStoreOptions) {
     children,
     node: (path: string) => tree.node[path],
     isLoaded: (path: string) => Boolean(tree.dir[path]?.loaded),
+    // 261110 Red 跨工作区现场保留：浅拷贝快照供离开时存档，restore 时 reconcile
+    // 接管（之后与快照对象独立演化）
+    snapshot: (): TreeSnapshot => ({ node: { ...tree.node }, dir: { ...tree.dir } }),
+    restore: (input: TreeSnapshot) => {
+      setTree(
+        reconcile({
+          node: input.node,
+          dir: { "": { expanded: true }, ...input.dir },
+        }),
+      )
+    },
     reset,
   }
 }
