@@ -13,9 +13,11 @@
 | A2 | P1 | Diff 上一/下一文件连点失效：step 只读 focusedFile 不回写 | `packages/ui/src/components/session-review.tsx` | ✅ 已修 | `e3a9b05e` |
 | A3 | P1 | 布局预设双生命周期混写，按钮高亮与实际面板脱钩 | `packages/app/src/context/layout.tsx:846-858` | ⏸ **未修，等产品决策** | — |
 | A4 | P1 | max_checks 静默截断仍报 passed，漏跑项无痕迹 | `packages/opencode/src/session/verification.ts` | ✅ 已修 | `107cffc6` |
-| B1 | P2 | 状态台统计整个已加载会话，失败跨任务残留，无口径标注 | `session-activity-hud.tsx`（GUI）+ TUI `activity-hud.tsx` | 未修 | — |
+| B1 | P2 | 状态台统计整个已加载会话，失败跨任务残留，无口径标注 | `session-activity-hud.tsx`（GUI）+ TUI `activity-hud.tsx` | ✅ 已修 | `00879951` |
 | B2 | P2 | 新增组件字号钉死 11px 未接缩放 token | 预设按钮 + GUI 状态台 | ✅ 已修（点名两处） | `fbdf5117` |
-| B3 | P2 | 状态台纯展示，无点击定位/跳转闭环 | `session-activity-hud.tsx:45-86` | 未修 | — |
+| B3 | P2 | 状态台纯展示，无点击定位/跳转闭环 | `session-activity-hud.tsx:45-86` | 部分修复（悬停看完整命令已加；点击定位未做） | `00879951` |
+| C1 | P1 | 补充审计：Bash 命令被当文件路径——数据层截 48 + 展示层统一 basename，`bun test ./src/session.test.ts` 显示成 `session.test.ts` | 两端 `activity.ts` + 两端 HUD | ✅ 已修 | `00879951` |
+| C2 | P2 | 补充审计：TUI 计时起点用「最后一条未完成 assistant 消息创建时间」冒充，语义不明 | TUI `activity-hud.tsx:19-24` | ✅ 已修 | `00879951` |
 
 同会话顺手完成（非审计项）：`c22c11bc` 设置面板提供 `verification.notice` 三选一开关（通用页，紧跟终端 Shell 行，desktop 内嵌同一 UI 自动生效）。
 
@@ -40,7 +42,15 @@
 - 测试注意：**同 cwd + 同命令串会被去重合并**，测试里两条命令字符串必须不同（如 `bun pass.js` / `bun ./pass.js`）。
 - commit 里有模型可见四问的完整回答（render 多一行、token 受 MAX_REPORT_BYTES=4096 约束、KV cache 不动）。
 
-### B2 字号（`fbdf5117`）
+### C1/C2 + B1 状态台收尾（`00879951`）
+
+- 数据层 `ActivityTarget = { kind: "file"|"command"|"pattern"; value: string }`，值保留完整不截断；`running.started` 携带 `state.time.start`。两个 activity.ts（GUI `composer/`、TUI `routes/session/`）同口径镜像。
+- 展示层分流：file 才 basename；命令折叠空白单行保留命令头；GUI 用 CSS truncate + `title` 悬停完整内容，TUI `targetText` 定长 48 截断显式加 `…`。
+- TUI 计时：只显示 running 工具自己的 `已运行 MM:SS`，没有 `time.start` 就不显示；「本轮总耗时」「最近输出距今」按审计建议后加，先做好一个计时。
+- 回合范围：两端 HUD 从最后一条 user 消息 `findLastIndex` 起算；`working()` 且找不到 user 消息 → 显示「统计可能不完整」。
+- 测试注意：target 断言全部从字符串改为 `{kind, value}` 对象形状；截断断言 `length === 49`（48 字符 + `…`）。
+
+
 
 - `text-[11px]` → `text-[length:var(--font-size-x-small)]`；两处行高本就是相对值（1.1 / 1.3）自动跟随。
 - **默认档渲染 11px → 12px 是预期行为**（UX-08 已把 x-small 基准提到 12，随 `fontSize/14` 等比缩放），不是回归。
@@ -64,16 +74,15 @@
 - **全局生效**：`preset` 提升为全局状态，切会话不复原；改动小，但丢「按会话记忆」。
 - 无论哪个方案都需要：手动调整进入 custom / 清空 preset + 跨会话、重启恢复、手动调整后的回归测试。
 
-### B1 统计口径（P2）
+### B1 统计口径（P2）——已修（`00879951`）
 
-- GUI `session-activity-hud.tsx:21-24`、TUI `activity-hud.tsx:25-28` 都全量遍历已加载消息的 parts；`deriveActivity` 顺序累加，error part 永久留在 `counts.failed`，HUD 只要 >0 就持续显示——上一任务的失败会出现在下一任务的运行状态里。
-- 「已加载范围内」的限定只写在代码注释里（`activity.ts:3-5`），用户不可见。
-- 建议：口径改当前用户回合，或 UI 显式标注「本会话累计」；另补长会话重扫性能基准（任一 part 变化触发全列表重遍历）。
+- 两端 parts 改为从最后一条 user 消息起算（当前用户回合）；回合起点不在已加载窗口时显示「统计可能不完整」（GUI i18n `session.activity.incomplete`，TUI 硬编码中文）。
+- 未做：长会话重扫性能基准（任一 part 变化触发回合内列表重遍历，范围已缩小但仍是全列表）。
 
-### B3 交互闭环（P2）
+### B3 交互闭环（P2）——部分修复（`00879951`）
 
-- GUI 纯 `<div>/<span>`（仅 `role="status"` + `aria-live`），grep onClick 为空；TUI 纯 `<box>/<text>` 无键鼠绑定。
-- 建议最小闭环：点击当前文件名 → 定位 diff；点击失败数 → 跳到对应失败工具调用。不加复杂面板。
+- 已加：GUI running 目标悬停 `title` 显示完整命令/路径（补充审计建议的「保留查看完整命令入口」）。
+- 未做：点击当前文件名 → 定位 diff；点击失败数 → 跳到对应失败工具调用。
 
 ## 验证缺口（审计原文照录，均未补）
 
@@ -104,3 +113,4 @@
 - `0f70e834` fix(app): Diff 已审查指纹优先绑定 patch 内容哈希
 - `e3a9b05e` fix(app,ui): Diff 上一/下一文件导航受控回写焦点
 - `fbdf5117` fix(app): 布局预设按钮与状态台字号接入缩放 token
+- `00879951` fix(app,tui): 状态台准确性收尾——命令不再当路径（C1）、计时取工具起点（C2）、统计收敛当前回合（B1）
