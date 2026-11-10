@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { diffFingerprint, reviewedFiles } from "./review-progress"
 
-const diff = (file: string, additions: number, deletions: number, status = "modified") => ({
+const diff = (file: string, additions: number, deletions: number, status = "modified", patch?: string) => ({
   file,
   additions,
   deletions,
   status,
+  patch,
 })
 
 describe("review progress", () => {
@@ -24,6 +25,18 @@ describe("review progress", () => {
   test("status changes also invalidate", () => {
     const reviewed = { "a.ts": diffFingerprint(diff("a.ts", 1, 0, "modified")) }
     expect(reviewedFiles([diff("a.ts", 1, 0, "added")], reviewed)).toEqual([])
+  })
+
+  // 261110 Red 指纹升级：增删行数相同但内容不同的 diff 不能共享指纹
+  test("same counts but different patch content invalidates the mark", () => {
+    const reviewed = { "a.ts": diffFingerprint(diff("a.ts", 1, 1, "modified", "-timeout = 10\n+timeout = 20")) }
+    expect(reviewedFiles([diff("a.ts", 1, 1, "modified", "-timeout = 10\n+timeout = 30")], reviewed)).toEqual([])
+  })
+
+  test("identical patch content keeps the mark", () => {
+    const patch = "-timeout = 10\n+timeout = 20"
+    const reviewed = { "a.ts": diffFingerprint(diff("a.ts", 1, 1, "modified", patch)) }
+    expect(reviewedFiles([diff("a.ts", 1, 1, "modified", patch)], reviewed)).toEqual(["a.ts"])
   })
 
   test("unknown files are ignored", () => {
