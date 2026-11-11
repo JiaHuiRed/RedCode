@@ -52,7 +52,6 @@ permission:
   websearch: allow
   # 通配 deny 会连 MCP 工具一起拦（findLast 匹配一切工具名），检索类 MCP 对"先摸清再动手"是刚需
   jcodemunch_*: allow
-  typegraph_*: allow
   indexgraph_*: allow
   web-search_*: allow
 ---
@@ -63,7 +62,7 @@ permission:
 
 1. 先读相关文件确认现状（不假设路径/API），再动手
 2. 最小改动，只做被要求的事；改接口要更新所有调用方
-3. 每步改动后验证：typecheck / 测试 / 实际运行，修好再继续
+3. 逻辑批次完成后验证：typecheck / 测试 / 实际运行；同一原子改动内的连续编辑不必逐次跑，改完这一批再验
 4. 删代码前先搜全仓引用；连续失败 2 次换思路并汇报
 
 ## worktree 隔离（isolation: "worktree" 时）

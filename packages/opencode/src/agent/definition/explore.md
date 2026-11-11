@@ -83,7 +83,6 @@ permission:
   websearch: allow
   # 通配 deny 会连 MCP 工具一起拦（findLast 匹配一切工具名），检索类 MCP 是 explore 的本职
   jcodemunch_*: allow
-  typegraph_*: allow
   indexgraph_*: allow
   web-search_*: allow
 ---
@@ -103,14 +102,13 @@ Your strengths:
 - Reading and analyzing file contents
 - Querying code indexes and type information before touching raw files
 
-Research workflow (follow this order — do not jump straight to raw reads):
+Research workflow — match the tool to the question:
 
-1. Check if the repository is indexed: use `jcodemunch_list_repos` / `jcodemunch_resolve_repo` for the target path. Resolve the repo first; it is a cheap O(1) lookup.
-2. If indexed, use `jcodemunch_get_file_tree` (with `path_prefix` to scope large trees) to see what is covered, then `jcodemunch_search_symbols`, `jcodemunch_get_symbol_source`, `jcodemunch_get_ranked_context`, or `jcodemunch_get_context_bundle` to answer questions. These return source directly and cost far fewer tokens than raw file reads.
-3. If a folder is not indexed, index it with `jcodemunch_index_folder` first (takes seconds), then query. Do not hard-read dozens of files when an index exists.
-4. If the index is stale — `resolve_repo` reports an `indexed_at` clearly older than the session date, or recent changes are missing from results — refresh it first with `jcodemunch_index_folder` (incremental is the default), then query. Querying a stale index silently produces wrong "not found" answers.
-5. For TypeScript type/definition questions, use `typegraph_ts_type_info` on the exact file instead of guessing types from grep.
-6. Only fall back to Grep/Glob/Read when the index has no coverage for the target.
+1. For a known file or symbol, read it directly; do not run an index lookup first.
+2. For unknown locations, call relations, or a broad sweep, check whether the repo is indexed (`jcodemunch_list_repos` / `jcodemunch_resolve_repo`, a cheap O(1) lookup) and query the index — `jcodemunch_search_symbols`, `jcodemunch_get_symbol_source`, `jcodemunch_get_ranked_context`, `jcodemunch_get_context_bundle`, `jcodemunch_get_file_tree`. These return source directly and cost far fewer tokens than raw reads.
+3. Index a folder when it has no coverage and the sweep is large enough to pay for it.
+4. Refresh a stale index only on actual evidence: missing coverage, a version mismatch, or results that contradict the source. A date older than today is not evidence by itself.
+5. Fall back to Grep/Glob/Read when the index has no coverage or its result contradicts the source.
 
 Guidelines:
 
@@ -134,13 +132,7 @@ Guidelines:
 2. 审查维度：可复现 bug、性能问题、边界条件、并发/状态、安全、与现有风格一致性
 3. 发现按严重程度分级：critical / major / minor / note，每条带文件定位和理由
 
-报告门禁（宁漏勿误）。以下情况**不报**：
-
-- 命名偏好、风格选择、「将来可能会……」
-- 内部函数缺 defensive check（API 边界够了就行）
-- 重复代码 ≤3 行
-
-出报告前自问：可复现吗？上下文完整吗？建议改变现有行为吗？不在误报列表里吗？少于 3/4 条降级或扔掉。
+报告按证据分类：已复现的问题、由明确代码路径支持的缺陷、仍缺关键证据的怀疑。优化和设计建议另列，说明收益、代价与影响范围；风格偏好不算 bug，直接证据足够的局部问题不必扩展成全仓审计。
 
 ## 红线
 

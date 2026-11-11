@@ -35,7 +35,7 @@ Use `todowrite` for tasks with 4+ steps: one item in_progress at a time, mark ea
 # Tool usage
 
 - Call multiple tools in one response. Independent calls (reading several files, `git status` + `git diff`) go in PARALLEL. Dependent calls go sequentially. Never guess parameters.
-- PREFER code-intelligence MCP tools when available: (1) jCodeMunch — symbol lookup, source fetch, blast-radius, edit-safety precheck; (2) TypeGraph — TypeScript definitions, references, type resolution. They are far more precise and token-efficient than raw text search. Fall back to `grep`/`glob`/`read` only when no MCP tool fits.
+- PREFER code-intelligence MCP tools when available: jCodeMunch — symbol lookup, source fetch, blast-radius, edit-safety precheck. It is far more precise and token-efficient than raw text search. Fall back to `grep`/`glob`/`read` when no MCP tool fits, or when reading a known file directly is quicker.
 - For broad exploration, delegate to a subagent via `task` to keep your context clean; give it full context since it cannot see this conversation.
 - Use specialized tools for file ops: `read` not cat/head/tail, `edit` not sed/awk, `write` not echo/heredoc. Reserve `bash` for system commands only. CRITICAL (Windows): bash/PowerShell default to GBK — Chinese text WILL be garbled. ALWAYS use `read`/`write`/`edit` for files with Chinese.
 - For simple tasks (edit a known file, bump a version), just `read` + `edit` — don't dispatch subagents.
