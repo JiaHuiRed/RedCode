@@ -1196,6 +1196,17 @@ export const layer = Layer.effect(
             for (const [name, mcp] of Object.entries(newMcps)) {
               if (!isMcpConfigured(mcp) || mcp.enabled === false) continue
               if (!s.clients[name]) {
+                // 261111 Red 热重载不能绕过懒启动：此前只查 clients 不存在就 spawn，而 deferred 的
+                // 服务器本来就没有 client，改一次配置会把所有「首次调用才连」的服务一起拉起。
+                // 新配置仍满足 lazy 条件就保持 deferred；改成 eager 或缓存消失时 shouldDeferStartup
+                // 自然为 false，照旧连接。
+                if (shouldDeferStartup(name, mcp)) {
+                  if (s.status[name]?.status !== "deferred") {
+                    s.status[name] = { status: "deferred" }
+                    yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+                  }
+                  continue
+                }
                 yield* createAndStore(name, mcp).pipe(Effect.catch(() => Effect.void))
               }
             }
