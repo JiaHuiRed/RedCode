@@ -24,39 +24,36 @@ describe("system prompt routing", () => {
 
   test("GPT 系走 default.md + gpt.md", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT, PROMPT_WORKING_STYLE])
-    expect(PROMPT_GPT).toContain("Do not manufacture a need")
-    expect(PROMPT_GPT).toContain("Reuse valid verification")
-    expect(PROMPT_GPT).toContain("## Anti-defensive writing")
-    expect(PROMPT_GPT).toContain("a question nobody asked")
-    for (const id of ["step-5-preview", "deepseek-v4", "glm-5.3"])
-      expect(provider(model(id)).join("\n")).not.toContain("## Avoid self-generated work")
-    // 261109 Red 反防御写作只绑定有失效证据的 GPT 家族，Step/DeepSeek/GLM 不吃这段
-    // （决策与四问：docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md）
+    // 261111 Red 逐句自我审查与强制结果开场已删（docs/2026-11-11-prompt-revision-proposal.md §4），
+    // 这里只钉保留下来的四项行为纠偏。
+    expect(PROMPT_GPT).toContain("Prefer the smallest complete solution")
+    expect(PROMPT_GPT).toContain("Reuse verification while it still covers the final state")
+    expect(PROMPT_GPT).toContain("instead of reopening it for reassurance")
+    expect(PROMPT_GPT).not.toContain("## Anti-defensive writing")
+    expect(PROMPT_GPT).not.toContain("a question nobody asked")
     for (const id of ["step-5-preview", "deepseek-v4", "glm-5.3", "claude-sonnet-4-5"])
-      expect(provider(model(id)).join("\n")).not.toContain("## Anti-defensive writing")
+      expect(provider(model(id)).join("\n")).not.toContain("GPT family delta")
   })
 
   test("已删除专属提示词的 Claude 系走默认提示词", () => {
     expect(provider(model("claude-sonnet-4-5", "anthropic"))).toEqual([PROMPT_DEFAULT])
   })
 
-  // 261013 Red 当前 GPT Delta 继承公共提示词与 Soul，不再单独重复声线规则。
-  test("GPT Delta 继承公共交付契约与 soul", () => {
-    expect(PROMPT_DEFAULT).toContain("First sentence responds to the user's actual intent.")
-    expect(PROMPT_DEFAULT).toContain("语气、称呼、详略由 soul（人格文件）决定")
-    expect(PROMPT_GPT).toContain("Use the common RedCode prompt, repository instructions, tool contracts, and soul.")
+  // 261111 Red 声线由公共 Conversation 段与 Soul 承担，GPT Delta 不再重复。
+  test("GPT Delta 继承公共交流契约与 soul", () => {
+    expect(PROMPT_DEFAULT).toContain("# Conversation")
+    expect(PROMPT_DEFAULT).toContain("The bound Soul defines the conversational identity")
+    expect(PROMPT_GPT).toContain("Follow the common engineering contract and the bound Soul.")
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })
 
-  // 261025 Red 通用工作法从 GPT Delta 移出；不以固定三段报告覆盖 soul。
-  test("shared working style preserves delivery, scoped verification and soul", () => {
+  // 261111 Red 交付契约收敛为五条，删掉人格编排与机械验证清单。
+  test("shared working style preserves delivery and correction handling", () => {
     expect(PROMPT_GPT).not.toContain("## Working style")
-    expect(PROMPT_WORKING_STYLE).toContain("Use the established workflow first")
+    expect(PROMPT_WORKING_STYLE).toContain("Deliver the accepted outcome")
     expect(PROMPT_WORKING_STYLE).toContain("A correction changes the next action")
-    expect(PROMPT_WORKING_STYLE).toContain("replies and retrospectives")
-    expect(PROMPT_WORKING_STYLE).toContain("Keep explicit read-only requests read-only")
-    expect(PROMPT_WORKING_STYLE).toContain("Keep non-trivial/high-risk verification")
-    expect(PROMPT_WORKING_STYLE).toContain("Concision must not erase the soul")
+    expect(PROMPT_WORKING_STYLE).toContain("Explicit review-only work remains review-only")
+    expect(PROMPT_WORKING_STYLE).toContain("Recover from evidence")
     expect(PROMPT_WORKING_STYLE).not.toContain("contains exactly three things")
   })
 
@@ -155,8 +152,8 @@ describe("shared agent contract", () => {
       "# Steering and continuity",
     ])
       expect(PROMPT_DEFAULT).toContain(section)
-    expect(PROMPT_DEFAULT).toContain("For inquiries, investigate and answer")
-    expect(PROMPT_DEFAULT).toContain("No agreement rituals")
+    expect(PROMPT_DEFAULT).toContain("provide investigation or explanation")
+    expect(PROMPT_DEFAULT).toContain("ritual agreement")
     expect(PROMPT_DEFAULT).toContain("Delegation transfers ownership")
     expect(PROMPT_DEFAULT).toContain("Do not ask again for authorization already granted")
     expect(PROMPT_DEFAULT).toContain("Compaction is context maintenance, not a task boundary")
