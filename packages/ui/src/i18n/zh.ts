@@ -191,6 +191,7 @@ export const dict = {
   "ui.tool.skill": "技能",
   "ui.basicTool.called": "调用了 `{{tool}}`",
   "ui.toolErrorCard.failed": "失败",
+  "ui.toolErrorCard.aborted": "工具执行已中断",
   "ui.toolErrorCard.copyError": "复制错误",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",

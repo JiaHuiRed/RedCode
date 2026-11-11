@@ -217,3 +217,29 @@ describe("parseAPICallError transient capacity refusals", () => {
     })
   })
 })
+
+// 261111 Red 流读到一半断开时 AI SDK 只给一句英文，用户看不出能不能重发。
+describe("parseAPICallError stream failure wording", () => {
+  test("rewrites the AI SDK stream-broken message", () => {
+    const result = parse("Failed to process successful response")
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.message).toContain("流式响应中断")
+    expect(result.message).toContain("可直接重发")
+  })
+
+  test("rewrites the unreachable-API message", () => {
+    const result = parse("Cannot connect to API: connect ECONNREFUSED 127.0.0.1:7897")
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.message).toContain("无法连接 API")
+    expect(result.message).toContain("ECONNREFUSED")
+  })
+
+  test("leaves provider business wording untouched", () => {
+    const result = parse("Free usage exceeded")
+    expect(result.type).toBe("api_error")
+    if (result.type !== "api_error") throw new Error("expected api_error")
+    expect(result.message).toBe("Free usage exceeded")
+  })
+})

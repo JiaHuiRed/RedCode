@@ -6,7 +6,7 @@ import { isRecord } from "@/util/record"
 
 export type Err = ReturnType<NamedError["toObject"]>
 
-export const GO_UPSELL_MESSAGE = "Free usage exceeded, subscribe to Go"
+export const GO_UPSELL_MESSAGE = "免费额度已用尽，订阅 Go 可继续使用"
 export const GO_UPSELL_URL = "https://redcode.dev/go"
 export type RetryReason = "free_tier_limit" | "account_rate_limit" | (string & {})
 
@@ -107,9 +107,9 @@ export function retryable(error: unknown, provider: string) {
         action: {
           reason: "free_tier_limit",
           provider,
-          title: "Free limit reached",
-          message: "Subscribe to RedCode Go for reliable access to the best open-source models, starting at $5/month.",
-          label: "subscribe",
+          title: "免费额度已用尽",
+          message: "订阅 RedCode Go 可获得稳定访问，起价 $5/月。",
+          label: "去订阅",
           link: GO_UPSELL_URL,
         },
       }
@@ -125,14 +125,14 @@ export function retryable(error: unknown, provider: string) {
         const days = Math.floor(seconds / 86_400)
         const hours = Math.floor((seconds % 86_400) / 3_600)
         const minutes = Math.ceil((seconds % 3_600) / 60)
-        const unit = (value: number, name: string) => `${value} ${name}${value === 1 ? "" : "s"}`
+        const unit = (value: number, name: string) => `${value} ${name}`
 
-        if (days > 0) return hours > 0 ? `${unit(days, "day")} ${unit(hours, "hour")}` : unit(days, "day")
-        if (hours > 0) return minutes > 0 ? `${unit(hours, "hour")} ${unit(minutes, "minute")}` : unit(hours, "hour")
-        return minutes > 0 ? unit(minutes, "minute") : "less than a minute"
+        if (days > 0) return hours > 0 ? `${unit(days, "天")} ${unit(hours, "小时")}` : unit(days, "天")
+        if (hours > 0) return minutes > 0 ? `${unit(hours, "小时")} ${unit(minutes, "分钟")}` : unit(hours, "小时")
+        return minutes > 0 ? unit(minutes, "分钟") : "不到 1 分钟"
       })
 
-      const message = `${limitName ? `${limitName} usage limit` : "Usage limit"} reached. It will reset in ${resetIn}. To continue using this model now, enable usage from your available balance`
+      const message = `${limitName ? `${limitName} 额度` : "额度"}已用尽，将在 ${resetIn}后重置。如需现在继续使用该模型，请启用账户余额用量。`
 
       const link = `https://redcode.dev/workspace/${workspace}/go`
       return {
@@ -140,14 +140,14 @@ export function retryable(error: unknown, provider: string) {
         action: {
           reason: "account_rate_limit",
           provider,
-          title: "Go limit reached",
+          title: "Go 额度已用尽",
           message,
-          label: "open settings",
+          label: "打开设置",
           link,
         },
       }
     }
-    return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
+    return { message: error.data.message.includes("Overloaded") ? "供应商负载过高" : error.data.message }
   }
 
   // Check for rate limit patterns in plain text error messages
@@ -169,13 +169,13 @@ export function retryable(error: unknown, provider: string) {
   const code = typeof json.code === "string" ? json.code : ""
 
   if (json.type === "error" && json.error?.type === "too_many_requests") {
-    return { message: "Too Many Requests" }
+    return { message: "请求过于频繁" }
   }
   if (code.includes("exhausted") || code.includes("unavailable")) {
-    return { message: "Provider is overloaded" }
+    return { message: "供应商负载过高" }
   }
   if (json.type === "error" && typeof json.error?.code === "string" && json.error.code.includes("rate_limit")) {
-    return { message: "Rate Limited" }
+    return { message: "触发限流" }
   }
   return undefined
 }

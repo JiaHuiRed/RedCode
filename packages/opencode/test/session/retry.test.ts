@@ -251,12 +251,12 @@ describe("session.retry.messagePreview", () => {
 describe("session.retry.retryable", () => {
   test("maps too_many_requests json messages", () => {
     const error = wrap(JSON.stringify({ type: "error", error: { type: "too_many_requests" } }))
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Too Many Requests" })
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "请求过于频繁" })
   })
 
   test("maps overloaded provider codes", () => {
     const error = wrap(JSON.stringify({ code: "resource_exhausted" }))
-    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Provider is overloaded" })
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "供应商负载过高" })
   })
 
   test("does not retry unknown json messages", () => {
@@ -346,7 +346,7 @@ describe("session.retry.retryable", () => {
   test("retries ZlibError decompression failures", () => {
     const error = Schema.decodeUnknownSync(MessageV2.APIError.Schema)(
       new MessageV2.APIError({
-        message: "Response decompression failed",
+        message: "响应解压失败：传输数据已损坏，可直接重发这条消息。",
         isRetryable: true,
         metadata: { code: "ZlibError" },
       }).toObject(),
@@ -354,7 +354,7 @@ describe("session.retry.retryable", () => {
 
     const retryable = SessionRetry.retryable(error, retryProvider)
     expect(retryable).toBeDefined()
-    expect(retryable).toEqual({ message: "Response decompression failed" })
+    expect(retryable).toEqual({ message: "响应解压失败：传输数据已损坏，可直接重发这条消息。" })
   })
 
   test("maps free limits to Go upsell action", () => {
@@ -375,9 +375,9 @@ describe("session.retry.retryable", () => {
       action: {
         reason: "free_tier_limit",
         provider: "redcode",
-        title: "Free limit reached",
-        message: "Subscribe to RedCode Go for reliable access to the best open-source models, starting at $5/month.",
-        label: "subscribe",
+        title: "免费额度已用尽",
+        message: "订阅 RedCode Go 可获得稳定访问，起价 $5/月。",
+        label: "去订阅",
         link: SessionRetry.GO_UPSELL_URL,
       },
     })
@@ -408,14 +408,13 @@ describe("session.retry.retryable", () => {
 
     expect(SessionRetry.retryable(error, "redcode-go")).toEqual({
       message:
-        "5 hour usage limit reached. It will reset in 5 hours 23 minutes. To continue using this model now, enable usage from your available balance - https://redcode.dev/workspace/wrk_01K6XGM22R6FM8JVABE9XDQXGH/go",
+        "5 hour 额度已用尽，将在 5 小时 23 分钟后重置。如需现在继续使用该模型，请启用账户余额用量。 - https://redcode.dev/workspace/wrk_01K6XGM22R6FM8JVABE9XDQXGH/go",
       action: {
         reason: "account_rate_limit",
         provider: "redcode-go",
-        title: "Go limit reached",
-        message:
-          "5 hour usage limit reached. It will reset in 5 hours 23 minutes. To continue using this model now, enable usage from your available balance",
-        label: "open settings",
+        title: "Go 额度已用尽",
+        message: "5 hour 额度已用尽，将在 5 小时 23 分钟后重置。如需现在继续使用该模型，请启用账户余额用量。",
+        label: "打开设置",
         link: "https://redcode.dev/workspace/wrk_01K6XGM22R6FM8JVABE9XDQXGH/go",
       },
     })
@@ -444,7 +443,7 @@ describe("session.retry.retryable", () => {
     )
 
     expect(SessionRetry.retryable(error, "redcode-go")?.action?.message).toBe(
-      "Usage limit reached. It will reset in 15 minutes. To continue using this model now, enable usage from your available balance",
+      "额度已用尽，将在 15 分钟后重置。如需现在继续使用该模型，请启用账户余额用量。",
     )
   })
 })
@@ -480,7 +479,7 @@ describe("session.message-v2.fromError", () => {
       expect(MessageV2.APIError.isInstance(result)).toBe(true)
       if (!MessageV2.APIError.isInstance(result)) throw new Error("expected APIError")
       expect(result.data.isRetryable).toBe(true)
-      expect(result.data.message).toBe("Connection reset by server")
+      expect(result.data.message).toBe("连接被服务端重置（多为网络或代理中断），可直接重发这条消息。")
       expect(result.data.metadata?.code).toBe("ECONNRESET")
       expect(result.data.metadata?.message).toInclude("socket connection")
     },
@@ -490,7 +489,7 @@ describe("session.message-v2.fromError", () => {
   test("ECONNRESET socket error is retryable", () => {
     const error = Schema.decodeUnknownSync(MessageV2.APIError.Schema)(
       new MessageV2.APIError({
-        message: "Connection reset by server",
+        message: "连接被服务端重置（多为网络或代理中断），可直接重发这条消息。",
         isRetryable: true,
         metadata: { code: "ECONNRESET", message: "The socket connection was closed unexpectedly" },
       }).toObject(),
@@ -498,7 +497,7 @@ describe("session.message-v2.fromError", () => {
 
     const retryable = SessionRetry.retryable(error, retryProvider)
     expect(retryable).toBeDefined()
-    expect(retryable).toEqual({ message: "Connection reset by server" })
+    expect(retryable).toEqual({ message: "连接被服务端重置（多为网络或代理中断），可直接重发这条消息。" })
   })
 
   test("marks OpenAI 404 status codes as retryable", () => {

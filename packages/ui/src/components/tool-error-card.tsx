@@ -45,7 +45,14 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
-  const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
+  // 261111 Red 中断文案由 RedCode 自己的状态机写入固定英文，这里只在展示层本地化；
+  // state.error 本身不动——它会回灌给模型，也是中断预算的签名。
+  const cleaned = createMemo(() => {
+    const value = split.error.replace(/^Error:\s*/, "").trim()
+    const aborted = "Tool execution aborted"
+    if (value.startsWith(aborted)) return i18n.t("ui.toolErrorCard.aborted") + value.slice(aborted.length)
+    return value
+  })
   const tail = createMemo(() => {
     const value = cleaned()
     const prefix = `${split.tool} `

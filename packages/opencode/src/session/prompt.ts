@@ -2463,7 +2463,7 @@ export const layer = Layer.effect(
             // 不当错误处理的话会话直接静默转 idle，用户什么都看不到
             if (handle.message.finish === "content-filter") {
               handle.message.error = new MessageV2.ContentFilterError({
-                message: "The response was blocked by the provider's content filter",
+                message: "响应被供应商的内容过滤器拦截",
               }).toObject()
               yield* sessions.updateMessage(handle.message)
               yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
@@ -2471,7 +2471,7 @@ export const layer = Layer.effect(
             }
             if (format.type === "json_schema") {
               handle.message.error = new MessageV2.StructuredOutputError({
-                message: "Model did not produce structured output",
+                message: "模型没有按要求返回结构化输出",
                 retries: 0,
               }).toObject()
               yield* sessions.updateMessage(handle.message)

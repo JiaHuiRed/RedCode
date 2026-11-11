@@ -183,6 +183,7 @@ export const dict = {
   "ui.tool.skill": "スキル",
   "ui.basicTool.called": "`{{tool}}` を呼び出しました",
   "ui.toolErrorCard.failed": "失敗",
+  "ui.toolErrorCard.aborted": "ツール実行が中断されました",
   "ui.toolErrorCard.copyError": "エラーをコピー",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",

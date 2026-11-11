@@ -50,6 +50,33 @@ export function errorMessage(error: unknown): string {
   return "unknown error"
 }
 
+export type ErrorLink = {
+  type: string
+  message: string
+  code?: string
+}
+
+/**
+ * 261111 Red 错误链摘要。AI SDK 的 APICallError 只带自己的 message，真正的原因
+ * （`terminated` / `other side closed` / `ECONNRESET`）藏在 cause 里；只记 message
+ * 就永远看不出连接是谁断的。上限 4 层、每层 300 字符，避免日志出现无界正文。
+ */
+export function errorChain(error: unknown, limit = 4): ErrorLink[] {
+  const links: ErrorLink[] = []
+  const seen = new Set<unknown>()
+  let current: unknown = error
+  while (current !== undefined && current !== null && links.length < limit && !seen.has(current)) {
+    seen.add(current)
+    const record = isRecord(current) ? current : undefined
+    const code = typeof record?.code === "string" ? record.code : undefined
+    const type =
+      current instanceof Error ? current.name : typeof record?.name === "string" ? record.name : typeof current
+    links.push({ type, message: errorMessage(current).slice(0, 300), ...(code ? { code } : {}) })
+    current = current instanceof Error ? current.cause : record?.cause
+  }
+  return links
+}
+
 export function errorData(error: unknown) {
   if (error instanceof Error) {
     return {

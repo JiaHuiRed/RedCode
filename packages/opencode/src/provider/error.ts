@@ -307,14 +307,14 @@ export function parseStreamError(input: unknown): ParsedStreamError | undefined 
     case "insufficient_quota":
       return {
         type: "api_error",
-        message: "Quota exceeded. Check your plan and billing details.",
+        message: "额度已用尽，请检查套餐与账单信息。",
         isRetryable: false,
         responseBody,
       }
     case "usage_not_included":
       return {
         type: "api_error",
-        message: "To use Codex with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus.",
+        message: "要在这份 ChatGPT 套餐中使用 Codex，请先升级到 Plus：https://chatgpt.com/explore/plus",
         isRetryable: false,
         responseBody,
       }
@@ -351,6 +351,17 @@ export type ParsedAPICallError =
       responseBody?: string
       metadata?: Record<string, string>
     }
+
+// 261111 Red 这三句是 AI SDK 的固定英文，用户看不出「连接断了、要不要重发」。
+// 判断仍用原英文（上面的 overflow / 额度识别依赖原文），只在最终展示的 message 上替换。
+function humanize(message: string): string | undefined {
+  if (message === "Failed to process successful response")
+    return "流式响应中断：与服务端的连接在传输中被断开（多为网络或代理抖动），可直接重发这条消息。"
+  if (message === "Failed to process error response") return "错误响应解析失败：上游返回了无法识别的内容。"
+  const unreachable = /^Cannot connect to API:\s*(.+)$/i.exec(message)
+  if (unreachable) return `无法连接 API：${unreachable[1]}（检查网络或代理设置）。`
+  return undefined
+}
 
 export function parseAPICallError(input: { providerID: ProviderID; error: APICallError }): ParsedAPICallError {
   const m = message(input.providerID, input.error)
@@ -409,7 +420,7 @@ export function parseAPICallError(input: { providerID: ProviderID; error: APICal
   const metadata = input.error.url ? { url: input.error.url } : undefined
   return {
     type: "api_error",
-    message: m,
+    message: humanize(m) ?? m,
     statusCode: input.error.statusCode,
     isRetryable: input.providerID.startsWith("openai") ? isOpenAiErrorRetryable(input.error) : input.error.isRetryable,
     responseHeaders: input.error.responseHeaders,

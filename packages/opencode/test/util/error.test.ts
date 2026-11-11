@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { NamedError } from "@redcode-ai/core/util/error"
-import { errorData, errorFormat, errorMessage } from "../../src/util/error"
+import { errorChain, errorData, errorFormat, errorMessage } from "../../src/util/error"
 import { MessageError } from "../../src/session/message-error"
 
 describe("util.error", () => {
@@ -60,5 +60,24 @@ describe("util.error", () => {
 
   test("named errors without fields serialize data", () => {
     expect(new MessageError.OutputLengthError({}).toObject()).toEqual({ name: "MessageOutputLengthError", data: {} })
+  })
+
+  test("errorChain exposes cause codes hidden behind SDK error wrappers", () => {
+    const socket = Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" })
+    const terminated = new TypeError("terminated", { cause: socket })
+    const wrapped = new Error("Failed to process successful response", { cause: terminated })
+
+    expect(errorChain(wrapped)).toEqual([
+      { type: "Error", message: "Failed to process successful response" },
+      { type: "TypeError", message: "terminated" },
+      { type: "Error", message: "other side closed", code: "UND_ERR_SOCKET" },
+    ])
+  })
+
+  test("errorChain stops at the depth limit", () => {
+    const root = new Error("root")
+    let current = root
+    for (let i = 0; i < 6; i++) current = new Error(`layer ${i}`, { cause: current })
+    expect(errorChain(current)).toHaveLength(4)
   })
 })

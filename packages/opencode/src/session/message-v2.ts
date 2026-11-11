@@ -1660,7 +1660,7 @@ export function fromError(
     case errorCode(e) === "ECONNRESET":
       return new APIError(
         {
-          message: "Connection reset by server",
+          message: "连接被服务端重置（多为网络或代理中断），可直接重发这条消息。",
           isRetryable: true,
           metadata: {
             code: errorCode(e) ?? "",
@@ -1676,7 +1676,7 @@ export function fromError(
       }
       return new APIError(
         {
-          message: "Response decompression failed",
+          message: "响应解压失败：传输数据已损坏，可直接重发这条消息。",
           isRetryable: true,
           metadata: {
             code: (e as FetchDecompressionError).code,

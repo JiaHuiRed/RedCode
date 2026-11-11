@@ -20,7 +20,7 @@ import { Canary } from "./canary"
 import type { Provider } from "@/provider/provider"
 import { Snippet } from "./snippet"
 import { Question } from "@/question"
-import { errorMessage } from "@/util/error"
+import { errorChain, errorMessage } from "@/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { isRecord } from "@/util/record"
 import { Freeform } from "@/tool/freeform"
@@ -1340,7 +1340,13 @@ export const layer = Layer.effect(
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
-        slog.error("process", { error: errorMessage(e), stack: e instanceof Error ? e.stack : undefined })
+        // 261111 Red 带上 cause 链：APICallError 自己的 message 是 AI SDK 的通用句，
+        // 断流到底是 terminated / other side closed / ECONNRESET 全在 cause 里。
+        slog.error("process", {
+          error: errorMessage(e),
+          chain: errorChain(e),
+          stack: e instanceof Error ? e.stack : undefined,
+        })
         const error = parse(e)
         if (MessageV2.ContextOverflowError.isInstance(error)) {
           ctx.needsCompaction = true

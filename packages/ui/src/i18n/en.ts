@@ -144,6 +144,7 @@ export const dict: Record<string, string> = {
 
   "ui.basicTool.called": "Called `{{tool}}`",
   "ui.toolErrorCard.failed": "Failed",
+  "ui.toolErrorCard.aborted": "Tool execution aborted",
   "ui.toolErrorCard.copyError": "Copy error",
 
   "ui.common.file.one": "file",
