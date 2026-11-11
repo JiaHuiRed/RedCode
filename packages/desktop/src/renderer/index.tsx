@@ -28,7 +28,6 @@ import { initI18n, t } from "./i18n"
 import { platformFetch } from "./fetch"
 import { notifyDesktop } from "./notifications"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
-import "./styles.css"
 import { useTheme } from "@redcode-ai/ui/theme"
 import { Splash } from "@redcode-ai/ui/logo"
 
