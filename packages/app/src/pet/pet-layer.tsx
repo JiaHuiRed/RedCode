@@ -420,6 +420,8 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
             onLostPointerCapture={(event) => finishDrag(event, true)}
             onKeyDown={handleKeyDown}
           >
+            {/* 261114 Red 唯一命中面（见 pet-layer.css）：透明空白穿透底层控件，事件仍冒泡回按钮 */}
+            <span class="pet-layer-hotspot" aria-hidden="true" />
             <span class="pet-layer-figure">
               <img
                 class="pet-layer-sprite"
