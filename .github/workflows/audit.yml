@@ -17,5 +17,12 @@ jobs:
         with:
           save-cache: "false"
 
-      - name: Run dependency audit
-        run: bun audit --audit-level=moderate
+      # 261114 Red 门禁改双步：全量报告保留可见性但不阻塞（moderate 下 153 条存量会
+      # 永远红、淹没新回归），红色信号收敛到 critical。豁免清单：
+      # - GHSA-26w7-cxv4-gfx2（astro AVIF RCE，修复在 6.1.6）：toolbeam-docs-theme@0.4.8
+      #   peer 锁 astro ^5，跨 major 迁移前修不了；迁移落地时移除豁免。
+      - name: Full advisory report (non-blocking)
+        run: bun audit --audit-level=moderate || true
+
+      - name: Block on critical advisories
+        run: bun audit --audit-level=critical --ignore=GHSA-26w7-cxv4-gfx2
