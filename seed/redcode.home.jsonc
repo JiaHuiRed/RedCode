@@ -48,6 +48,9 @@
       "type": "local",
       "command": ["markitdown-mcp"],
       "description": "把 Office/PDF 等非纯文本文档转 Markdown 供 LLM 读——read 读不了的二进制文档（.docx/.xlsx/.pptx/.pdf）用它提取文本；纯文本/代码仍用 read。",
+      // 261111 Karina 懒启动：低频工具不值得每次开机 spawn 握手。缓存非空才 defer，
+      // 首次调用触发连接；没有缓存自动退回 eager（工具表不会缺一组）。
+      "startup": "lazy",
       "enabled": true,
     },
     "webqa": {
