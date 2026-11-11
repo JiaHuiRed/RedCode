@@ -121,11 +121,13 @@ function Probe(props: {
 }
 
 describe("useEvent", () => {
-  test("delivers events for the current project", async () => {
+  // 261114 Red 隔离矩阵以 project-event.test.ts 为准（目录是导航身份）；这里只钉
+  // useEvent 布线：订阅、过滤接入与 workspace 元数据透传。
+  test("delivers same-directory events with workspace metadata", async () => {
     const { app, emit, seen, workspaces } = await mount()
 
     try {
-      emit(event(vcs("main"), { directory: "/tmp/other", project: projectID, workspace: "ws_a" }))
+      emit(event(vcs("main"), { directory: "/tmp/root", project: projectID, workspace: "ws_a" }))
 
       await wait(() => seen.length === 1)
 
@@ -136,11 +138,27 @@ describe("useEvent", () => {
     }
   })
 
-  test("ignores events for other projects", async () => {
+  test("delivers same-directory events even when project IDs mismatch", async () => {
+    // 261114 Red 目录命中即放行：project ID 是旧口径，同目录事件不因 ID 漂移被吞。
     const { app, emit, seen } = await mount()
 
     try {
-      emit(event(vcs("other"), { directory: "/tmp/root", project: "proj_other" }))
+      emit(event(vcs("root"), { directory: "/tmp/root", project: "proj_other" }))
+
+      await wait(() => seen.length === 1)
+
+      expect(seen).toEqual([vcs("root")])
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("drops events from other directories without a known workspace", async () => {
+    const { app, emit, seen } = await mount()
+
+    try {
+      emit(event(vcs("stray"), { directory: "/tmp/other", project: projectID, workspace: "ws_stranger" }))
+      emit(event(vcs("bare"), { directory: "/tmp/other", project: projectID }))
       await Bun.sleep(30)
 
       expect(seen).toHaveLength(0)
@@ -149,12 +167,12 @@ describe("useEvent", () => {
     }
   })
 
-  test("delivers current project events regardless of active workspace", async () => {
+  test("delivers events attributed to the active workspace even from another directory", async () => {
     const { app, emit, project, seen } = await mount()
 
     try {
       project.workspace.set("ws_a")
-      emit(event(vcs("ws"), { directory: "/tmp/other", project: projectID, workspace: "ws_b" }))
+      emit(event(vcs("ws"), { directory: "/tmp/child", project: projectID, workspace: "ws_a" }))
 
       await wait(() => seen.length === 1)
 
