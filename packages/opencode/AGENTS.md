@@ -253,12 +253,17 @@ const table = sqliteTable("session", {
 
 - `bun run typecheck` from package dirs, never raw `tsc`
 
-## TypeScript navigation (typegraph-mcp)
+## TypeScript navigation (jcodemunch)
 
-Prefer `ts_*` MCP tools over grep/glob for TS code. They resolve barrels/re-exports and return semantic results.
+This repo is indexed (27.6k symbols / 2511 files), so prefer `jcodemunch_search_symbols` /
+`get_symbol_source` / `get_file_outline` over grep for TS symbols — they answer from the symbol
+table instead of every textual hit.
 
-- Point: `ts_find_symbol`, `ts_definition`, `ts_references`, `ts_type_info`, `ts_navigate_to`, `ts_trace_chain`, `ts_blast_radius`, `ts_module_exports`
-- Graph: `ts_dependency_tree`, `ts_dependents`, `ts_import_cycles`, `ts_shortest_path`, `ts_subgraph`, `ts_module_boundary`
+- Find a definition: `search_symbols` by name, then `get_symbol_source` by id (batchable).
+- Who uses it: `find_references` (import graph) plus `check_references` (any textual mention). Import
+  edges alone miss call sites inside the defining file.
+- Before changing a shared symbol: `get_blast_radius` / `find_importers`.
+- A file's shape without reading it: `get_file_outline`.
 
-Use `rg`/grep for non-TS (docs, config, SQL, JSON) and broad text discovery.
-Use `ts_*` first for TS symbols; combine both when task spans TS + docs/config.
+Grep stays right for non-symbol text (docs, config, SQL, JSON, log strings) and broad discovery;
+`fff_grep` is faster on large trees. The old `ts_*` typegraph tools are retired — do not name them.
