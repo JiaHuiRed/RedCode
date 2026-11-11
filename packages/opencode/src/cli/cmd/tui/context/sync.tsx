@@ -56,6 +56,7 @@ import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
 import { createQuestionRecovery } from "./question-recovery"
+import { useProjectNavigation } from "./project-navigation"
 
 export const {
   use: useSync,
@@ -158,6 +159,9 @@ export const {
     const project = useProject()
     const sdk = useSDK()
     const kv = useKV()
+    // 261114 Red bootstrap 完成时把恢复合并后的活动状态播种给 Navigation；测试夹具
+    // 不挂 NavigationProvider，这里允许 undefined。
+    const navigation = useProjectNavigation()
     // 261110 Red 项目切换会卸载旧 SyncProvider，但已发出的请求不会被取消；
     // 迟到的失败不能再触发应用退出（exit 会销毁整个 TUI）。
     let live = true
@@ -264,6 +268,26 @@ export const {
       },
     })
     onCleanup(() => permissionRecovery.dispose())
+
+    // 261114 Red session.status 快照同样走恢复合并：服务端 idle 会从状态表删除（快照
+    // 只含非 idle），store 里的 idle 条目是事件写的，裸 reconcile 会把拉取期间已变
+    // idle 的会话按旧快照复活成 busy——这份 store 是启动快照喂 Navigation 活动摘要
+    // 的数据源，不能带病播种。
+    const sessionStatusRecovery = createQuestionRecovery<{ id: string; status: SessionStatus }>({
+      workspace: () => project.workspace.current(),
+      fetch: (workspace) =>
+        sdk.client.session
+          .status({ workspace }, { throwOnError: true })
+          .then((x) => Object.entries(x.data ?? {}).map(([sessionID, status]) => ({ id: sessionID, status }))),
+      read: () => Object.entries(store.session_status).map(([sessionID, status]) => ({ id: sessionID, status })),
+      apply: (items) => {
+        setStore(
+          "session_status",
+          reconcile(Object.fromEntries(items.map((item) => [item.id, item.status]))),
+        )
+      },
+    })
+    onCleanup(() => sessionStatusRecovery.dispose())
 
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
@@ -394,6 +418,7 @@ export const {
         }
 
         case "session.status": {
+          sessionStatusRecovery.changed(event.properties.sessionID)
           setStore("session_status", event.properties.sessionID, event.properties.status)
           break
         }
@@ -708,9 +733,7 @@ export const {
             },
             {
               name: "session.status",
-              promise: sdk.client.session.status({ workspace }).then((x) => {
-                setStore("session_status", reconcile(x.data ?? {}))
-              }),
+              promise: sessionStatusRecovery.recover(),
             },
             {
               name: "provider.auth",
@@ -745,6 +768,23 @@ export const {
             // 把 TUI 拦在 complete 之外。
             const failure = aggregateFailures(optionalRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
             if (failure) Log.Default.warn("tui optional bootstrap requests failed", { error: failure.message })
+            // 261114 Red 启动快照：恢复合并后的 store 就是当前目录活动摘要的权威初始值
+            // （busy 集合 + 等待请求），同步推给 Navigation，之后继续由实时事件维护。
+            // 只覆盖本次实际进入的目录，不预热历史工作区。
+            if (live && navigation && sdk.directory) {
+              const busy = Object.entries(store.session_status)
+                .filter(([, status]) => status.type !== "idle")
+                .map(([sessionID]) => sessionID)
+              const requests = [
+                ...Object.values(store.permission).flat(),
+                ...Object.values(store.question).flat(),
+              ].map((request) => ({
+                id: request.id,
+                sessionID: request.sessionID,
+                workspace: store.request_workspace[request.id],
+              }))
+              navigation.seedActivity(sdk.directory, { busy, requests })
+            }
             setStore("status", "complete")
           })
         })

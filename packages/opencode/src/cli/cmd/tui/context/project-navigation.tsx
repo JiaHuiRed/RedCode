@@ -32,6 +32,7 @@ export type ProjectScope = {
   view: View
 }
 type Activity = { busy: Set<string>; requests: Map<string, { sessionID: string; workspace?: string }> }
+type ActivitySeed = { busy: string[]; requests: { id: string; sessionID: string; workspace?: string }[] }
 
 // 261110 Red 目录是导航身份，project ID / worktree ID 不能替代它（同仓可有多个目录）。
 export function projectDirectoryKey(directory?: string) {
@@ -188,6 +189,21 @@ const navigation = createSimpleContext({
       },
       waitingSession(directory: string) {
         return activity.get(projectDirectoryKey(directory))?.requests.values().next().value?.sessionID
+      },
+      // 261114 Red Sync bootstrap 完成时把恢复合并后的全量状态播种为活动摘要初始值，
+      // 之后仍由事件增量维护。同步构建 + 同步推送，中间没有事件空窗；目录已切换的
+      // 迟到播种直接作废。
+      seedActivity(directory: string, seed: ActivitySeed) {
+        if (!props.local) return
+        const owner = projectDirectoryKey(directory)
+        if (owner !== projectDirectoryKey(current().directory)) return
+        const state = activity.get(owner) ?? { busy: new Set<string>(), requests: new Map() }
+        state.busy = new Set(seed.busy)
+        state.requests = new Map(
+          seed.requests.map((request) => [request.id, { sessionID: request.sessionID, workspace: request.workspace }]),
+        )
+        activity.set(owner, state)
+        setRevision((x) => x + 1)
       },
       draft(directory: string | undefined, sessionID?: string) {
         return drafts.get(key(directory, sessionID))

@@ -50,7 +50,7 @@ export function createEventSource() {
   }
 }
 
-type FetchHandler = (url: URL) => Response | Promise<Response> | undefined
+export type FetchHandler = (url: URL) => Response | Promise<Response> | undefined
 
 export function createFetch(override?: FetchHandler) {
   const session = [] as URL[]
@@ -99,7 +99,10 @@ export function createFetch(override?: FetchHandler) {
 
 type Ctx = { kv: ReturnType<typeof useKV>; project: ReturnType<typeof useProject>; sync: ReturnType<typeof useSync> }
 
-export async function mount(override?: FetchHandler) {
+export async function mount(
+  override?: FetchHandler,
+  hooks?: { afterReady?: (ctx: { emit: (event: GlobalEvent) => void }) => void },
+) {
   const calls = createFetch(override)
   const events = createEventSource()
   let sync!: ReturnType<typeof useSync>
@@ -138,6 +141,9 @@ export async function mount(override?: FetchHandler) {
   ))
 
   await ready
+  // 261114 Red 竞态用例需要在 bootstrap 可选阶段进行中拿到 emit；此时 Probe 已挂载、
+  // bootstrap 刚要启动，事件还没开始飞。
+  if (hooks?.afterReady) hooks.afterReady({ emit: events.emit })
   await wait(() => sync.status === "complete")
   return { app, emit: events.emit, kv, project, sync, session: calls.session }
 }

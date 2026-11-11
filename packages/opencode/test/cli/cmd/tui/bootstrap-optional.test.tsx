@@ -14,6 +14,7 @@ import { describe, expect, test } from "bun:test"
 import { Global } from "@redcode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount } from "./sync-fixture"
+import type { GlobalEvent } from "@redcode-ai/sdk/v2"
 
 // 200 with a JSON content-type but an unparseable body: the SDK client rejects
 // instead of resolving with { data: undefined }.
@@ -77,6 +78,48 @@ describe("tui bootstrap optional phase", () => {
       expect(sync.data.lsp).toEqual([])
       expect(sync.data.provider_quota).toEqual([])
       expect(sync.data.vcs).toBeUndefined()
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
+  // 261114 Red 恢复门禁竞态：快照在途时 session.status idle 事件先到。服务端快照只含
+  // 非 idle 会话（idle 从状态表删除），裸 reconcile 会把拉取期间已变 idle 的会话按旧
+  // 快照复活成 busy；门禁按 sessionID 合并、实时优先。
+  test("late session.status snapshot does not resurrect sessions gone idle during fetch", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+
+    let emitFn: ((event: GlobalEvent) => void) | undefined
+    const idleDuringFetch: GlobalEvent = {
+      directory,
+      project: "proj_test",
+      payload: {
+        id: "evt_race",
+        type: "session.status",
+        properties: { sessionID: "ses_race", status: { type: "idle" } },
+      },
+    }
+    const { app, sync } = await mount(
+      (url) => {
+        if (url.pathname === "/permission" || url.pathname === "/question") return json([])
+        if (url.pathname === "/session/status") {
+          // 快照挂起 50ms；10ms 时先投递 idle 事件（SDK 事件队列批量冲洗后
+          // ~26ms 落到 recovery.changed + store），快照 ~50ms 才带旧 busy 到达。
+          setTimeout(() => emitFn?.(idleDuringFetch), 10)
+          return Bun.sleep(50).then(() => json({ ses_race: { type: "busy" } }))
+        }
+        return undefined
+      },
+      { afterReady: ({ emit }) => (emitFn = emit) },
+    )
+
+    try {
+      expect(sync.status).toBe("complete")
+      expect(sync.data.session_status["ses_race"]).toEqual({ type: "idle" })
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

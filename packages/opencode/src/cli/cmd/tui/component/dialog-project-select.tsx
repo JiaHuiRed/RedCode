@@ -1,6 +1,7 @@
 import path from "path"
 import { createMemo, createSignal, onMount } from "solid-js"
 import { useProjectNavigation, projectDirectoryKey } from "../context/project-navigation"
+import { useRoute } from "../context/route"
 import { useDialog } from "../ui/dialog"
 import { DialogSelect, type DialogSelectOption } from "../ui/dialog-select"
 import { DialogPrompt } from "../ui/dialog-prompt"
@@ -11,6 +12,7 @@ export function DialogProjectSelect() {
   const navigation = useProjectNavigation()!
   const dialog = useDialog()
   const toast = useToast()
+  const route = useRoute()
   const [query, setQuery] = createSignal("")
   const [toDelete, setToDelete] = createSignal<string>()
   const [projects, setProjects] = createSignal<{ worktree: string; name: string }[]>([])
@@ -74,6 +76,16 @@ export function DialogProjectSelect() {
       onSelect={(entry) => {
         if (!entry.value) {
           dialog.replace(() => <DialogProjectAdd />)
+          return
+        }
+        // 261114 Red 选当前工作区不再走 switchTo——那会重跑插件清理和 setCurrent，
+        // 把整个 ProjectScreen 推倒重建。同目录时短路在一切清理之前：
+        // 有等待确认的会话只做会话导航（已在该会话上则不动），否则只关弹窗。
+        if (projectDirectoryKey(entry.value) === projectDirectoryKey(navigation.directory())) {
+          const target = navigation.waitingSession(entry.value)
+          const alreadyThere = route.data.type === "session" && route.data.sessionID === target
+          if (target && !alreadyThere) route.navigate({ type: "session", sessionID: target })
+          dialog.clear()
           return
         }
         void navigation
