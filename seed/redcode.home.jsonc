@@ -42,6 +42,9 @@
         "get_context_bundle",
         "get_ranked_context",
         "assemble_task_context",
+        "check_references",
+        "get_blast_radius",
+        "find_dead_code",
       ],
     },
     "markitdown": {
@@ -75,9 +78,9 @@
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
-      "description": "本机记忆库（SQLite+FTS5，就是 ~/.redcode/supermemory.db，与 MEMORY.md 同一份）——recall 按语义查全文（≥3 字走 FTS5 bm25，更短回落 LIKE，可按 project 限定），stats 看条目分布。写入别用 memory 工具：记忆是「MEMORY.md 索引行 + 库里全文」双写，只写这边会留下有全文无索引的孤儿行。",
-      // 260807 Karina: 30 天零调用，白名单留空 = 连接但不注入任何工具
-      "tools": [],
+      "description": "本机记忆库（SQLite+FTS5，就是 ~/.redcode/supermemory.db，与 MEMORY.md 同一份）——list-memories 分页列全量（审计/清理），recall 按语义查全文、stats 看条目分布。召回主通道是 memory-recall 插件注入 + sqlite_query 直查，所以白名单只暴露 list-memories（260830 吸收上游，其他工具维持隐藏）；写入仍用 MEMORY.md 索引行 + 库全文双写，别直接写这边。",
+      // 261111 Red 与 live 对齐：260830 吸收上游后只暴露 list-memories（原 260807「零调用留空」已过时）
+      "tools": ["list-memories"],
       "enabled": true,
     },
     "mcp-process-mgmt": {
@@ -237,7 +240,7 @@
     "deepseek": {
       "models": {
         "deepseek-v4-flash-vision-exp": {
-          "name": "DeepSeek V4 Flash Vision (实验)",
+          "name": "DeepSeek V4 Flash Vision (多模态)",
           "temperature": true,
           "reasoning": true,
           "tool_call": true,
