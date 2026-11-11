@@ -494,6 +494,88 @@ it.instance(
   },
 )
 
+// ========================================================================
+// Test: startup:"lazy" 真懒启动（261111）
+// 设计：docs/notes/proposed/architecture/2026-11-11-mcp-lazy-startup-and-tool-catalog-stability.md
+// ========================================================================
+
+it.instance(
+  "startup:lazy with a seeded cache stays deferred and never creates a client",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        seedToolsCache("lazy-server")
+
+        const status = yield* mcp.status()
+        expect(status["lazy-server"]?.status).toBe("deferred")
+
+        // 缓存定义仍进工具表：模型看到的工具集合不缩水
+        const tool = (yield* mcp.tools())["lazy-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+
+        // 没有 spawn：mock client 一个都没创建
+        expect(clientCreateCount).toBe(0)
+        const clients = yield* mcp.clients()
+        expect(clients["lazy-server"]).toBeUndefined()
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "lazy-server": { type: "local", command: ["echo", "test"], startup: "lazy" },
+      },
+    },
+  },
+)
+
+it.instance(
+  "startup:lazy falls back to eager when no tool cache exists",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        // 不 seed 缓存：deferred 会让工具表里彻底缺这组工具，必须当场连
+        const status = yield* mcp.status()
+        expect(status["lazy-nocache"]?.status).not.toBe("deferred")
+        expect(clientCreateCount).toBeGreaterThan(0)
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "lazy-nocache": { type: "local", command: ["echo", "test"], startup: "lazy" },
+      },
+    },
+  },
+)
+
+it.instance(
+  "first call on a deferred server creates the client on demand",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        seedToolsCache("lazy-ondemand")
+        const tool = (yield* mcp.tools())["lazy-ondemand_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+        expect(clientCreateCount).toBe(0)
+
+        // 调用触发按需连接，连接后执行真实调用体
+        const options = {} as Parameters<typeof tool.execute>[1]
+        yield* Effect.promise(() => tool.execute!({}, options))
+
+        expect(clientCreateCount).toBeGreaterThan(0)
+        expect((yield* mcp.status())["lazy-ondemand"]?.status).toBe("connected")
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "lazy-ondemand": { type: "local", command: ["echo", "test"], startup: "lazy" },
+      },
+    },
+  },
+)
+
 it.instance(
   "cached stub fails fast when the server errors",
   () =>

@@ -176,6 +176,9 @@ export function probeMcpChecks(statuses: Record<string, MCP.Status>): Check[] {
         return { name: `mcp:${name}`, status: "warn", detail: "needs authentication" }
       case "needs_client_registration":
         return { name: `mcp:${name}`, status: "warn", detail: value.error }
+      case "deferred":
+        // 261111 Karina 懒启动：故意的等待态，既不是挂起也不是失败
+        return { name: `mcp:${name}`, status: "skip", detail: "deferred (starts on first use)" }
       case "failed":
         return { name: `mcp:${name}`, status: "error", detail: value.error }
     }

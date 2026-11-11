@@ -15858,6 +15858,17 @@
         "required": ["status", "error"],
         "additionalProperties": false
       },
+      "MCPStatusDeferred": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["deferred"]
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
       "MCPStatusConnecting": {
         "type": "object",
         "properties": {
@@ -15901,6 +15912,9 @@
           },
           {
             "$ref": "#/components/schemas/MCPStatusConnecting"
+          },
+          {
+            "$ref": "#/components/schemas/MCPStatusDeferred"
           },
           {
             "$ref": "#/components/schemas/MCPStatusFailed"
@@ -16038,6 +16052,11 @@
             "type": "string",
             "enum": ["default", "none"],
             "description": "Retry policy for tool calls. Use none for non-idempotent MCP actions."
+          },
+          "startup": {
+            "type": "string",
+            "enum": ["eager", "lazy"],
+            "description": "Startup policy for local servers. eager (default) spawns the server when the session starts. lazy defers the spawn until one of its tools is first called, serving the cached tool catalog in the meantime; requires a cached catalog, otherwise falls back to eager."
           },
           "disabledTools": {
             "type": "array",

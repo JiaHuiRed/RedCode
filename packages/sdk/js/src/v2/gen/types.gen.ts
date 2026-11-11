@@ -1095,6 +1095,10 @@ export type McpStatusFailed = {
   error: string
 }
 
+export type McpStatusDeferred = {
+  status: "deferred"
+}
+
 export type McpStatusConnecting = {
   status: "connecting"
 }
@@ -1111,6 +1115,7 @@ export type McpStatus =
   | McpStatusConnected
   | McpStatusDisabled
   | McpStatusConnecting
+  | McpStatusDeferred
   | McpStatusFailed
   | McpStatusNeedsAuth
   | McpStatusNeedsClientRegistration
@@ -1206,6 +1211,10 @@ export type McpLocalConfig = {
    * Retry policy for tool calls. Use none for non-idempotent MCP actions.
    */
   retry?: "default" | "none"
+  /**
+   * Startup policy for local servers. eager (default) spawns the server when the session starts. lazy defers the spawn until one of its tools is first called, serving the cached tool catalog in the meantime; requires a cached catalog, otherwise falls back to eager.
+   */
+  startup?: "eager" | "lazy"
   /**
    * Tool names to hide from this MCP server. Only tools not in this list will be exposed.
    */

@@ -24,6 +24,15 @@ export const Local = Schema.Struct({
   retry: Schema.optional(Schema.Literals(["default", "none"])).annotate({
     description: "Retry policy for tool calls. Use none for non-idempotent MCP actions.",
   }),
+// 261111 Karina 懒启动（设计见 docs/notes/implemented/architecture/2026-11-11-mcp-lazy-startup-and-tool-catalog-stability.md）：
+// eager 保持现状（会话启动即 spawn）；lazy 启动时不 spawn，工具表从磁盘缓存进表，首次调用才连接。
+// 只对 local 生效：remote 的握手本身就是认证，缓存定义覆盖不了 OAuth 失败。
+startup: Schema.optional(Schema.Literals(["eager", "lazy"])).annotate({
+  description:
+    "Startup policy for local servers. eager (default) spawns the server when the session starts. " +
+    "lazy defers the spawn until one of its tools is first called, serving the cached tool catalog " +
+    "in the meantime; requires a cached catalog, otherwise falls back to eager.",
+}),
   disabledTools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Tool names to hide from this MCP server. Only tools not in this list will be exposed.",
   }),

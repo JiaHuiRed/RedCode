@@ -142,6 +142,18 @@ function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
   return undefined
 }
 
+/**
+ * 261111 Karina 懒启动判定：`startup:"lazy"` + 本地服务器 + 磁盘缓存的工具目录非空，三者同时满足。
+ * 任一不满足按 eager 处理——宁可多起一个进程，也不能让工具表里彻底缺一组工具（缓存缺失时
+ * deferred 的服务器既没有 live defs 也没有缓存，等于凭空消失）。
+  * 设计：docs/notes/implemented/architecture/2026-11-11-mcp-lazy-startup-and-tool-catalog-stability.md
+ */
+function shouldDeferStartup(serverName: string, mcp: ConfigMCP.Info): boolean {
+  if (mcp.type !== "local" || mcp.startup !== "lazy") return false
+  const cached = readMcpToolsCache(serverName)
+  return !!cached && cached.length > 0
+}
+
 // 260607 Red 从 exe 路径向上找 RedCode 项目根（用于 $REDCODE_ROOT 展开）
 let redcodeRoot: string | undefined
 function isRedcodeRootDir(dir: string): boolean {
@@ -247,6 +259,12 @@ const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).ann
 const StatusConnecting = Schema.Struct({ status: Schema.Literal("connecting") }).annotate({
   identifier: "MCPStatusConnecting",
 })
+// 261111 Karina 懒启动等待态：配置 startup:"lazy" 且有磁盘缓存的本地服务器，启动时既不 spawn
+// 也不进后台连接，工具定义从缓存进表。与 connecting 区分——后者是"正在连"，UI 不该把
+// deferred 显示成连接中或连接失败（用户会反复扳开关）。首次调用由 serverWaitConnected 触发连接。
+const StatusDeferred = Schema.Struct({ status: Schema.Literal("deferred") }).annotate({
+  identifier: "MCPStatusDeferred",
+})
 const StatusFailed = Schema.Struct({ status: Schema.Literal("failed"), error: Schema.String }).annotate({
   identifier: "MCPStatusFailed",
 })
@@ -262,6 +280,7 @@ export const Status = Schema.Union([
   StatusConnected,
   StatusDisabled,
   StatusConnecting,
+  StatusDeferred,
   StatusFailed,
   StatusNeedsAuth,
   StatusNeedsClientRegistration,
@@ -491,8 +510,20 @@ function abortableReconnect(bridge: EffectBridge.Shape, effect: Effect.Effect<vo
 // 261008 Red connecting 期间 s.status[name] 为 undefined；轮询到 connected 才放行，
 // failed/disabled/中止/超时返回 false（错误文案由调用方给）。create 失败与健康检查
 // 都收敛到 "failed"（682/771/785/1103），本模块从不写 "error"。
-function serverWaitConnected(s: State, serverName: string, deadlineMs: number) {
+function serverWaitConnected(
+  s: State,
+  serverName: string,
+  deadlineMs: number,
+  ensure?: () => void,
+) {
+  // 261111 Karina 懒启动：deferred 服务器不会自己连，首个调用在这里触发一次 connect()。
+  // 只触发一次，且是 fire-and-forget——状态推进交给 createAndStoreInState，本函数继续轮询。
+  let triggered = false
   return async (signal?: AbortSignal) => {
+    if (ensure && !triggered && s.status[serverName]?.status === "deferred") {
+      triggered = true
+      ensure()
+    }
     const deadline = Date.now() + deadlineMs
     while (Date.now() < deadline) {
       const status = s.status[serverName]?.status
@@ -1040,6 +1071,14 @@ export const layer = Layer.effect(
                 return
               }
 
+              // 261111 Karina 懒启动：不 spawn，工具定义由 tools() 的 cache-first 分支从磁盘缓存注入，
+              // 首次调用时 serverWaitConnected 触发 connect()。见 shouldDeferStartup 的判定条件。
+              if (shouldDeferStartup(key, mcp)) {
+                log.info("mcp deferred until first use", { key })
+                s.status[key] = { status: "deferred" }
+                return
+              }
+
               // 261031 Red 首次连接与重连共用所有权；见 docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md
               yield* createAndStoreInState(s, key, mcp)
             }),
@@ -1481,7 +1520,15 @@ export const layer = Layer.effect(
         const cachedBridge = yield* EffectBridge.make()
         const cachedReconnect = (signal?: AbortSignal) =>
           abortableReconnect(cachedBridge, reconnectServer(serverName), signal)
-        const waitUntilConnected = serverWaitConnected(s, serverName, cachedTimeout)
+        // 261111 Karina 懒启动：deferred 服务器首次被调用时按需连接。走 connect() 而非
+        // reconnectServer()——后者是断线重连策略（带退避），这里要的是"人工首连"语义，
+        // connect() 会清退避预算并复用 createAndStoreInState 的并发锁。
+        const ensureConnected = () => {
+          void abortableReconnect(cachedBridge, connect(serverName)).catch(() => {
+            // 连接失败由轮询收敛成 false，调用方按原契约抛 not connected
+          })
+        }
+        const waitUntilConnected = serverWaitConnected(s, serverName, cachedTimeout, ensureConnected)
         for (const mcpTool of cached) {
           if (allow && !allow.includes(mcpTool.name)) continue
           if (disabled?.includes(mcpTool.name)) continue

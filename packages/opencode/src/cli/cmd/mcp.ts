@@ -147,6 +147,10 @@ export const McpListCommand = effectCmd({
         // 261101 Red 后台连接进行中；不加分支会掉进下面的 failed else 误报成 ✗ failed
         statusIcon = "…"
         statusText = "connecting"
+      } else if (status.status === "deferred") {
+        // 261111 Karina 懒启动：配置 startup:"lazy" 且没被调用过，不算失败也不用等
+        statusIcon = "○"
+        statusText = "deferred (lazy, starts on first use)"
       } else if (status.status === "needs_auth") {
         statusIcon = "⚠"
         statusText = "needs authentication"
