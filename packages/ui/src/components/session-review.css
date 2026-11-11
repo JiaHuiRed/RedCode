@@ -247,6 +247,7 @@
     padding: 0;
     margin-right: 6px;
     border-radius: 999px;
+    corner-shape: round;
     border: 1px solid var(--icon-weaker);
     background: transparent;
     cursor: pointer;
@@ -265,6 +266,7 @@
     width: 6px;
     height: 6px;
     border-radius: 999px;
+    corner-shape: round;
     background: transparent;
   }
 

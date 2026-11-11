@@ -39,6 +39,7 @@
   width: 85.5%;
   height: 79%;
   border-radius: 50%;
+  corner-shape: round;
   pointer-events: auto;
   touch-action: none;
   user-select: none;

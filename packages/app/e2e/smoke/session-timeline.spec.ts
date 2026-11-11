@@ -421,7 +421,12 @@ async function selectHomeProject(page: Page, projectName: string) {
 async function navigateToSession(page: Page, directory: string, sessionId: string, expectedTitle: string) {
   await page.goto(`/${base64Encode(directory)}/session/${sessionId}`)
   await expect(page.locator("#session-chat-panel [data-session-title]")).toHaveCount(0)
-  await page.locator("#redcode-session-actions button").click()
+  // 261111 Red 槽位里除「更多选项」外还挂了布局预设的 Focus/Build/Review 三个按钮，
+  // 裸 button 选择器会撞 Playwright 严格模式（resolved to 4 elements），按角色名精确取。
+  await page
+    .locator("#redcode-session-actions")
+    .getByRole("button", { name: "More options", exact: true })
+    .click()
   await page.getByRole("menuitem", { name: "Rename", exact: true }).click()
   await expect(page.locator("#redcode-session-actions input")).toHaveValue(expectedTitle)
   await page.locator("#redcode-session-actions input").press("Escape")
