@@ -28,7 +28,7 @@ bun run script/check-control-bytes.ts
 # max_dimension），两次都是别的会话合并时才发现。脚本自己无副作用（见其头注释）。
 bun run check:openapi-drift
 # 261111 Red seed 漂移门禁：jsonc 与 seed 必须同步（key 集合 + 值，未登记即失败）。
-# 依赖本机 ~/.redcode/redcode.jsonc，CI 没有 live 配置所以只挂在这里；本机定制
+# 没有 ~/.redcode/redcode.jsonc 时自动跳过（全新 clone 不因此拦下 push）；本机定制
 # 登记在脚本的 LOCAL_OVERRIDES 里并写清理由。
 bun run check:config-shadowing
 # 261013 Red 全仓 typecheck 移出 pre-push：tsgo 崩溃回退 tsc 时是分钟级，每次 push 都付

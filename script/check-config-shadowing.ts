@@ -16,7 +16,7 @@
 import { homedir } from "os"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
-import { readFileSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -72,6 +72,13 @@ function load(path: string, optional = false): Record<string, unknown> {
 }
 
 const local = load(join(home, ".redcode", "redcode.local.jsonc"), true)
+// 261111 Red 仓库级门禁不依赖个人环境：全新 clone 没有 ~/.redcode/redcode.jsonc 时，
+// 原先 readFileSync 抛 ENOENT → exit 2 → pre-push 因 set -e 拦下 push。缺 live 配置
+// 直接跳过本机比对；有配置的开发环境照旧严格检查。
+if (!existsSync(join(home, ".redcode", "redcode.jsonc"))) {
+  console.log("[check-config-shadowing] 未找到 ~/.redcode/redcode.jsonc，跳过本机配置比对")
+  process.exit(0)
+}
 const main = load(join(home, ".redcode", "redcode.jsonc"))
 const seed = load(join(root, "seed", "redcode.home.jsonc"))
 if (failed) process.exit(2)
