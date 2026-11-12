@@ -335,6 +335,9 @@ export type FilePart = {
   filename?: string
   url: string
   source?: FilePartSource
+  metadata?: {
+    [key: string]: unknown
+  }
 }
 
 export type FilePartSource = FileSource | SymbolSource | ResourceSource

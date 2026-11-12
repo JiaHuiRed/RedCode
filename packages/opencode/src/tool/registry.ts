@@ -229,7 +229,16 @@ export const layer = Layer.effect(
                   ...(typeof result === "string" ? {} : result.metadata),
                   ...(view !== undefined ? { view } : {}),
                 }, id)
-                const attachments = typeof result === "string" ? undefined : result.attachments
+                // 261112 Red 插件图片与 MCP 同属外部来源：标记 untrusted，processor
+                // 跳过 image.normalize 的 CPU 解码。决策：
+                // docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
+                const attachments =
+                  typeof result === "string"
+                    ? undefined
+                    : result.attachments?.map((attachment) => ({
+                        ...attachment,
+                        metadata: { trust: "untrusted" },
+                      }))
                 const info = yield* agent.get(toolCtx.agent)
                 const out = yield* truncate.result(
                   { output, attachments },

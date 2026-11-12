@@ -873,7 +873,7 @@ export const layer = Layer.effect(
             const toolCall = yield* readToolCall(value.id)
             const rawOutput = toolResultOutput(value)
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
-              attachment.mime.startsWith("image/")
+              shouldNormalizeToolImage(attachment)
                 ? image.normalize(attachment).pipe(
                     Effect.catchIf(
                       (error) => error instanceof Image.ResizerUnavailableError,
@@ -1579,5 +1579,13 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Snippet.defaultLayer),
   ),
 )
+
+// 261112 Red 工具结果图片的信任分级：MCP/plugin 等外部来源带 trust:"untrusted"，
+// 跳过 CPU 解码（image.normalize）。第三方 payload 的解码/缩放是通用攻击面，
+// 只保留既有字节/token 闸门与 spill。
+// 决策：docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
+export function shouldNormalizeToolImage(attachment: { mime: string; metadata?: Record<string, unknown> }) {
+  return attachment.mime.startsWith("image/") && attachment.metadata?.trust !== "untrusted"
+}
 
 export * as SessionProcessor from "./processor"

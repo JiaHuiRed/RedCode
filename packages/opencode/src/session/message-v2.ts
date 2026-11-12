@@ -202,6 +202,10 @@ export const FilePart = Schema.Struct({
   filename: Schema.optional(Schema.String),
   url: Schema.String,
   source: Schema.optional(FilePartSource),
+  // 261112 Red 工具结果附件信任标记：MCP/plugin 等外部来源写 trust:"untrusted"，
+  // processor 对其跳过 image.normalize（不做 CPU 解码）。只影响运行时投影，不进模型输入。
+  // 决策：docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
 }).annotate({ identifier: "FilePart" })
 export type FilePart = Types.DeepMutable<Schema.Schema.Type<typeof FilePart>>
 

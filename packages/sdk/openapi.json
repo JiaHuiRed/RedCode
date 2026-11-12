@@ -13537,6 +13537,9 @@
           },
           "source": {
             "$ref": "#/components/schemas/FilePartSource"
+          },
+          "metadata": {
+            "type": "object"
           }
         },
         "required": ["id", "sessionID", "messageID", "type", "mime", "url"],

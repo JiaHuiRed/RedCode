@@ -313,6 +313,7 @@ describe("session.tools mcp resource tools", () => {
         }
 
         expect(output.attachments).toHaveLength(1)
+        expect(output.attachments[0]).toMatchObject({ metadata: { trust: "untrusted" } })
         expect(output.metadata.attachments).toBe(1)
         expect(output.output).toContain("[Binary MCP resource attached: foo://ok (image/png)]")
       }),

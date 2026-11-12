@@ -628,6 +628,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 type: "file",
                 mime: contentItem.mimeType,
                 url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
+                metadata: { trust: "untrusted" },
               })
             } else if (contentItem.type === "resource") {
               const { resource } = contentItem
@@ -642,6 +643,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                   mime: resource.mimeType ?? "application/octet-stream",
                   url: `data:${resource.mimeType ?? "application/octet-stream"};base64,${resource.blob}`,
                   filename: resource.uri,
+                  metadata: { trust: "untrusted" },
                 })
               }
             }
@@ -750,7 +752,13 @@ function formatMcpResourceContent(
   uri: string,
   content: { contents: unknown },
   accept: (mime: string, base64Bytes: number) => boolean,
-  attachments: { type: "file"; mime: string; url: string; filename?: string }[],
+  attachments: {
+    type: "file"
+    mime: string
+    url: string
+    filename?: string
+    metadata?: Record<string, unknown>
+  }[],
 ) {
   const items = (Array.isArray(content.contents) ? content.contents : [content.contents]).filter(
     (item): item is Record<string, unknown> => typeof item === "object" && item !== null,
@@ -788,6 +796,7 @@ function formatMcpResourceContent(
         mime,
         url: `data:${mime};base64,${item.blob}`,
         filename: itemUri,
+        metadata: { trust: "untrusted" },
       })
       continue
     }
