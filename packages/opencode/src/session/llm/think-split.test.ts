@@ -62,4 +62,28 @@ describe("ThinkTagScanner", () => {
     expect(s.feed("")).toEqual({ text: "", reasoning: "" })
     expect(s.flush()).toEqual({ text: "", reasoning: "" })
   })
+
+  test("routes an inline analysis/summary block to reasoning", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([s.feed("<analysis>分析"), s.feed("<summary>摘要</summary>正文"), s.flush()])
+    expect(out).toEqual({ text: "正文", reasoning: "分析<summary>摘要" })
+  })
+
+  test("keeps an unclosed analysis block out of the visible text", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([s.feed("<analysis>分析中"), s.flush()])
+    expect(out).toEqual({ text: "", reasoning: "分析中" })
+  })
+
+  test("ignores analysis tags mentioned mid-reply", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([s.feed("提到 "), s.feed("<analysis> 只是正文"), s.flush()])
+    expect(out).toEqual({ text: "提到 <analysis> 只是正文", reasoning: "" })
+  })
+
+  test("keeps a literal closing tag in the middle of a reply", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([s.feed("停在 "), s.feed("</summary>。")])
+    expect(out.text).toBe("停在 </summary>。")
+  })
 })

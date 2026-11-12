@@ -42,7 +42,7 @@ describe("system prompt routing", () => {
   // 261111 Red 声线由公共 Conversation 段与 Soul 承担，GPT Delta 不再重复。
   test("GPT Delta 继承公共交流契约与 soul", () => {
     expect(PROMPT_DEFAULT).toContain("# Conversation")
-    expect(PROMPT_DEFAULT).toContain("The bound Soul defines the conversational identity")
+    expect(PROMPT_DEFAULT).toContain("The bound Soul defines who you are")
     expect(PROMPT_GPT).toContain("Follow the common engineering contract and the bound Soul.")
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })
@@ -154,7 +154,7 @@ describe("shared agent contract", () => {
       expect(PROMPT_DEFAULT).toContain(section)
     expect(PROMPT_DEFAULT).toContain("provide investigation or explanation")
     // 钉的是交互判据被装配进公共提示词；措辞调整时同步更新，不拿它证明人格质量
-    expect(PROMPT_DEFAULT).toContain("do not open a response to criticism")
+    expect(PROMPT_DEFAULT).toContain("Agree when you actually agree")
     expect(PROMPT_DEFAULT).toContain("Delegation transfers ownership")
     expect(PROMPT_DEFAULT).toContain("Do not ask again for authorization already granted")
     expect(PROMPT_DEFAULT).toContain("Compaction is context maintenance, not a task boundary")
