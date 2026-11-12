@@ -23,6 +23,7 @@ import { Instruction } from "./instruction"
 import { get as getCanary, check as checkCanary } from "./canary"
 import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.md" with { type: "text" }
+import WORK_RULES from "./prompt/work-rules.md" with { type: "text" }
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -2131,12 +2132,7 @@ export const layer = Layer.effect(
           // 261007 Red 本段与相邻锚块（flash/step）是时效性补丁：新增或改动须登记
           // docs/prompt-patches.yml（固定前缀审计 §18-19），到期复核存废。
           // injection-registry: work-rules
-          system.push(
-            `▸ WORK RULES (CORE — must obey, never violate):
-  1. DO NOT INVENT CODE FACTS — inspect only an unknown path, API, or behavior that matters to the requested change.
-  2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
-  3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.`,
-          )
+          system.push(WORK_RULES)
           // 260929 Red 收窄到 step-3.x：铁律本是 step-3.7-flash 实测坑（无视 compress nudge
           // 不调用 compress）；step-5-preview 指令遵循已跟上，1M 窗口 + DCP 新线
           // （min 140k / max 220k）下不需要 MUST 级压迫，absoluteNudge 16k 收益档兜底。

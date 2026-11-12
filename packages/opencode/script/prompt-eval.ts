@@ -10,6 +10,9 @@ import type { Agent } from "../src/agent/agent"
 import type { MessageV2 } from "../src/session/message-v2"
 import type { Info as ConfigInfo } from "../src/config/config"
 import { cases, evaluate, type EvalCall, type EvalCase } from "./prompt-eval-cases"
+// 261112 Red Runtime-block sample: reuse the exact production WORK RULES template so the eval
+// can carry a controlled full-prefix sample (提案 §12.1 的「为既有评测补充受控完整前缀样本」).
+import WORK_RULES from "../src/session/prompt/work-rules.md" with { type: "text" }
 
 // 261001 Red Contract probes use real LLM requests but only virtual tools.
 // Decision: docs/notes/implemented/architecture/2026-10-01-fixed-prefix-contract.md.
@@ -26,6 +29,7 @@ const args = parseArgs({
     timeout: { type: "string", default: "120000" },
     tokens: { type: "string", default: "4096" },
     native: { type: "boolean", default: false },
+    runtime: { type: "boolean", default: false },
     requestDelay: { type: "string", default: "0" },
     responseBytes: { type: "string", default: "131072" },
   },
@@ -474,6 +478,9 @@ const program = Effect.gen(function* () {
         "The project is an isolated virtual JSON fixture. Available files: " +
           Object.keys(virtual.files).join(", ") +
           ". No tool can access the host; virtual git still requires user authorization.",
+        // 261112 Red Tail position mirrors production (work-rules sits after instructions/date,
+        // before anchors/memory/goal). ACTIVE GOAL is not sampled: the harness has no goal state.
+        ...(args.runtime ? [WORK_RULES] : []),
       ]
       const started = performance.now()
       let text = ""
@@ -596,6 +603,7 @@ const program = Effect.gen(function* () {
         definitions: virtual.definitions,
         limits,
         requestedRuntime: args.native ? "native-opt-in" : "sdk-default",
+        runtimeSample: args.runtime ? "work-rules" : "none",
         promptHash: createHash("sha256").update(prompt).digest("hex"),
         suiteHash,
         stimulusHash,

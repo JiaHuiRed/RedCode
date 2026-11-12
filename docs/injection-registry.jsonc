@@ -21,7 +21,7 @@
   "items": [
     // ---- prompt.ts 组装段（system.push，带回链注释）----
     { "id": "date-per-turn", "file": "packages/opencode/src/session/prompt.ts", "match": "Today's date: ${new Date().toDateString()}", "channel": "per-turn", "cap": "固定模板 + 日期字符串（~40 字节）", "stability": "每日一变，仅尾部作废", "push": true, "note": "260718 从 env 块移出" },
-    { "id": "work-rules", "file": "packages/opencode/src/session/prompt.ts", "match": "WORK RULES (CORE", "channel": "prefix", "cap": "固定文案 ~700 字节", "stability": "stable", "push": true, "note": "时效性补丁，登记 docs/prompt-patches.yml" },
+    { "id": "work-rules", "file": "packages/opencode/src/session/prompt/work-rules.md", "match": "WORK RULES (CORE", "channel": "prefix", "cap": "固定文案 ~700 字节", "stability": "stable", "push": true, "note": "时效性补丁，登记 docs/prompt-patches.yml；模板抽到 work-rules.md 供 prompt-eval --runtime 复用" },
     { "id": "anchor-compress-step", "file": "packages/opencode/src/session/prompt.ts", "match": "CONTEXT COMPRESSION (MUST follow", "channel": "conditional", "cap": "固定文案 ~600 字节", "stability": "按模型条件注入（step 非 5）", "push": true },
     { "id": "anchor-discipline-flash", "file": "packages/opencode/src/session/prompt.ts", "match": "REASONING DISCIPLINE (flash", "channel": "conditional", "cap": "固定文案 ~800 字节", "stability": "按模型条件注入", "push": true },
     { "id": "anchor-discipline-step", "file": "packages/opencode/src/session/prompt.ts", "match": "REASONING DISCIPLINE (step", "channel": "conditional", "cap": "固定文案 ~700 字节", "stability": "按模型条件注入", "push": true },
