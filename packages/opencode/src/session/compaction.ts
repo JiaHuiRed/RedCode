@@ -41,6 +41,51 @@ export const PRUNE_MINIMUM = 20_000
 export const PRUNE_PROTECT = 40_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const PRUNE_PROTECTED_TOOLS = ["skill"]
+// 261112 Red 快速回填熔断（ZCode v3.15.1 RC04 吸收，决策见
+// docs/notes/proposed/feature/2026-11-12-compact-rapid-refill-breaker.md）：
+// 连续两次在不足 3 个完整 tool turn 内重新达到阈值，第 3 次压缩前熔断——每次真压缩
+// 都是一次付费调用 + 前缀重建，压缩后几轮又填满等于白烧。
+export const RAPID_REFILL_TURNS = 3
+export const RAPID_REFILL_LIMIT = 3
+
+type RapidRefillState = { lastMessageID: MessageID; streak: number }
+
+// 进程内，重启清零；与 ZCode 的 runtime tracker 同语义，不持久化。
+const rapidRefill = new Map<SessionID, RapidRefillState>()
+
+export function countCompletedToolTurnsAfter(
+  messages: readonly MessageV2.WithParts[],
+  afterID: MessageID,
+) {
+  const index = messages.findIndex((message) => message.info.id === afterID)
+  // 边界已不在可见历史里：说明中间经历过裁剪/压缩，视为正常间隔，不参与熔断。
+  if (index < 0) return Number.MAX_SAFE_INTEGER
+  let turns = 0
+  for (let i = index + 1; i < messages.length; i++) {
+    const message = messages[i]!
+    if (message.info.role !== "assistant") continue
+    if (message.info.summary) continue
+    if (message.parts.some((part) => part.type === "tool" && part.state.status === "completed")) turns++
+  }
+  return turns
+}
+
+export function rapidRefillDecision(
+  state: RapidRefillState | undefined,
+  messages: readonly MessageV2.WithParts[],
+): { streak: number; turns: number; blocked: boolean } {
+  if (!state) return { streak: 1, turns: -1, blocked: false }
+  const turns = countCompletedToolTurnsAfter(messages, state.lastMessageID)
+  const streak = turns < RAPID_REFILL_TURNS ? state.streak + 1 : 1
+  return { streak, turns, blocked: streak >= RAPID_REFILL_LIMIT }
+}
+
+function noteRapidRefillSuccess(sessionID: SessionID, parentID: MessageID) {
+  rapidRefill.set(sessionID, {
+    lastMessageID: parentID,
+    streak: rapidRefill.get(sessionID)?.streak ?? 1,
+  })
+}
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 // 260817 Red 压缩全灭代价优化：8000 太小——长会话最近 2 轮通常几万 token，装不进 budget
@@ -687,6 +732,7 @@ export const layer = Layer.effect(
             text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
           })
         }
+        noteRapidRefillSuccess(input.sessionID, input.parentID)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
         return "continue" as const
@@ -739,6 +785,27 @@ export const layer = Layer.effect(
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") {
         throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
+      }
+      if (input.auto) {
+        const state = rapidRefill.get(input.sessionID)
+        const decision = rapidRefillDecision(state, input.messages)
+        if (decision.blocked) {
+          // 261112 Red 熔断只拒绝本轮压缩：不新增 marker/boundary、不改写历史；
+          // 显式失败优于无限付费压缩。
+          const failure = new MessageV2.ContextOverflowError({
+            message:
+              "上下文在压缩后快速回填，已停止自动压缩（compact_rapid_refill_breaker）。请清理上下文或更换模型。",
+          }).toObject()
+          log.warn("auto compaction circuit breaker", {
+            sessionID: input.sessionID,
+            parentID: input.parentID,
+            streak: decision.streak,
+            turns: decision.turns,
+          })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return "stop" as const
+        }
+        if (state) rapidRefill.set(input.sessionID, { ...state, streak: decision.streak })
       }
       // 260824 cc 置起「正在压缩」。这是 session.time.compacting 全仓唯一的写入点 ——
       // 此前该字段只有搬运与消费（TUI 侧边栏、GUI 看板徽标），两端因此永远不亮。
@@ -1054,6 +1121,7 @@ export const layer = Layer.effect(
             })
           }
         }
+        noteRapidRefillSuccess(input.sessionID, input.parentID)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
       }

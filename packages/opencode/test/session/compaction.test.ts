@@ -9,7 +9,14 @@ import { Image } from "@/image/image"
 import { Agent } from "../../src/agent/agent"
 import { Auth } from "../../src/auth"
 import { LLM } from "../../src/session/llm"
-import { SessionCompaction, appendFileTags, collectFiles, parseFileTags } from "../../src/session/compaction"
+import {
+  SessionCompaction,
+  appendFileTags,
+  collectFiles,
+  countCompletedToolTurnsAfter,
+  parseFileTags,
+  rapidRefillDecision,
+} from "../../src/session/compaction"
 import { Token } from "@/util/token"
 import * as Log from "@redcode-ai/core/util/log"
 import { Permission } from "../../src/permission"
@@ -2724,4 +2731,59 @@ describe("session.time.compacting", () => {
       }),
     ),
   )
+})
+
+// 261112 Red 快速回填熔断：纯函数层验证 turn 计数与 streak，不启动模型请求。
+describe("rapid refill breaker", () => {
+  const message = (id: string, role: "user" | "assistant", tool?: "completed" | "running") =>
+    ({
+      info: { id: MessageID.make(id), role, ...(role === "assistant" ? { summary: false } : {}) },
+      parts: tool ? [{ type: "tool", tool: "read", state: { status: tool } }] : [],
+    }) as unknown as MessageV2.WithParts
+
+  test("counts only completed tool turns after the boundary", () => {
+    const messages = [
+      message("msg_001", "user"),
+      message("msg_002", "assistant", "completed"),
+      message("msg_003", "assistant", "running"),
+      message("msg_004", "assistant", "completed"),
+    ]
+    expect(countCompletedToolTurnsAfter(messages, MessageID.make("msg_001"))).toBe(2)
+  })
+
+  test("treats a missing boundary as a normal interval", () => {
+    expect(countCompletedToolTurnsAfter([], MessageID.make("msg_001"))).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  test("breaker trips on the third rapid refill", () => {
+    const messages = [
+      message("msg_001", "user"),
+      message("msg_002", "assistant", "completed"),
+      message("msg_003", "assistant", "completed"),
+    ]
+    const boundary = MessageID.make("msg_001")
+    expect(rapidRefillDecision(undefined, messages)).toEqual({ streak: 1, turns: -1, blocked: false })
+    expect(rapidRefillDecision({ lastMessageID: boundary, streak: 1 }, messages)).toEqual({
+      streak: 2,
+      turns: 2,
+      blocked: false,
+    })
+    expect(rapidRefillDecision({ lastMessageID: boundary, streak: 2 }, messages)).toEqual({
+      streak: 3,
+      turns: 2,
+      blocked: true,
+    })
+  })
+
+  test("resets the streak after enough tool turns", () => {
+    const messages = [
+      message("msg_001", "user"),
+      ...["msg_002", "msg_003", "msg_004"].map((id) => message(id, "assistant", "completed")),
+    ]
+    expect(rapidRefillDecision({ lastMessageID: MessageID.make("msg_001"), streak: 2 }, messages)).toEqual({
+      streak: 1,
+      turns: 3,
+      blocked: false,
+    })
+  })
 })
