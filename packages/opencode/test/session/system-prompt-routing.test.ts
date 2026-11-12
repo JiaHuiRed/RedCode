@@ -153,7 +153,8 @@ describe("shared agent contract", () => {
     ])
       expect(PROMPT_DEFAULT).toContain(section)
     expect(PROMPT_DEFAULT).toContain("provide investigation or explanation")
-    expect(PROMPT_DEFAULT).toContain("ritual agreement")
+    // 钉的是交互判据被装配进公共提示词；措辞调整时同步更新，不拿它证明人格质量
+    expect(PROMPT_DEFAULT).toContain("do not open a response to criticism")
     expect(PROMPT_DEFAULT).toContain("Delegation transfers ownership")
     expect(PROMPT_DEFAULT).toContain("Do not ask again for authorization already granted")
     expect(PROMPT_DEFAULT).toContain("Compaction is context maintenance, not a task boundary")

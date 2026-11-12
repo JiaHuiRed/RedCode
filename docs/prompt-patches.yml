@@ -10,13 +10,23 @@
 #
 # 复核动作与固定前缀审计同批进行（下一次审计先过来一遍本表）。
 # 261111 提示词全链路修订提案：docs/2026-11-11-prompt-revision-proposal.md —— 动本表补丁前先读。
-#   实施进度（§13 四包）：第一包（交互表达）261111 落地；第二包（§7+§10）261111 落地；
+#   实施进度（§13 四包）：第一包（交互表达）261111 落地、261112 收敛中文表达判据；第二包（§7+§10）261111 落地；
 #   第三包运行时部分（§9 WORK RULES/ACTIVE GOAL）261112 落地；§6.3 授权待用户选择；
 #   第四包（Soul，home 侧）未动。
 
 review_after_default: 2027-03-01
 
 patches:
+  - id: default-conversation
+    file: packages/opencode/src/session/prompt/default.md
+    anchor: '# Conversation 交流段（真错直说 / 禁客服式附和与整改清单）'
+    intent: 交互表达判据：真错自然道歉、中文回对批评禁「你说得对」「我认」开场、禁复述投诉与未来承诺
+    review_after: 2027-03-01
+    status: >-
+      261112 把抽象 ritual agreement 规则换成具体判据：中文例句保留、示例不带称呼（default.md
+      不绑定 Soul，称呼由 Soul 提供）、禁句限定「作为对批评的回应」。装配测试已同步。
+      真实会话六场景验收（真错 / 误解 / 抱怨套话 / 玩笑承接 / 中途挫折 / 重复偏好）待补。
+
   - id: work-rules
     file: packages/opencode/src/session/prompt/work-rules.md
     anchor: 'WORK RULES (CORE'
