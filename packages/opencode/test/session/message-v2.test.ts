@@ -1745,7 +1745,7 @@ describe("session.message-v2.fromError", () => {
       },
       {
         code: "usage_not_included",
-        message: "To use Codex with your ChatGPT plan, upgrade to Plus: https://chatgpt.com/explore/plus.",
+        message: "要在这份 ChatGPT 套餐中使用 Codex，请先升级到 Plus：https://chatgpt.com/explore/plus",
       },
       {
         code: "invalid_prompt",
@@ -1892,7 +1892,8 @@ describe("session.message-v2.fromError", () => {
 
     expect(MessageV2.APIError.isInstance(result)).toBe(true)
     expect((result as MessageV2.APIError).data.isRetryable).toBe(true)
-    expect((result as MessageV2.APIError).data.message).toInclude("decompression")
+    expect((result as MessageV2.APIError).data.message).toInclude("解压失败")
+    expect((result as MessageV2.APIError).data.metadata?.code).toBe("ZlibError")
   })
 
   test("classifies ZlibError as AbortedError when abort context is provided", () => {
