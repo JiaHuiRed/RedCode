@@ -2131,6 +2131,10 @@ export const layer = Layer.effect(
           // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
           // 261007 Red 本段与相邻锚块（flash/step）是时效性补丁：新增或改动须登记
           // docs/prompt-patches.yml（固定前缀审计 §18-19），到期复核存废。
+          // 261112 Red 按提示词修订提案 §9.1 收敛：#1 防编造（owner: AGENTS 红线 + default.md
+          // 事实准确职责）与 #2 两次失败转向（owner: 全局 AGENTS 连续失败规则 + diagnose skill）
+          // 移出运行时；#3 保留意图改写为「尊重用户对任务的控制权」。261112 三家族 × 7 用例
+          // A/B（prompt-eval --runtime，基线/候选各一轮）实证后统一收敛，结果见台账。
           // injection-registry: work-rules
           system.push(WORK_RULES)
           // 260929 Red 收窄到 step-3.x：铁律本是 step-3.7-flash 实测坑（无视 compress nudge
@@ -2212,13 +2216,16 @@ export const layer = Layer.effect(
           // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
           // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
           // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
+          // 261112 Red 按提示词修订提案 §9.2：机械「连续 3 轮同条件」计数改为判断式——阻塞
+          // 以「已确立且需要用户输入/权限/外部变化」为准，不以轮数代替判断，也不把一次
+          // 临时失败当成永久阻塞。推进语义不变（authorized progress 内继续干、干完独立活）。
           const activeGoal = yield* goal.get(sessionID)
           if (activeGoal?.status === "active") {
             // injection-registry: active-goal
             system.push(
               `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
  <goal>${activeGoal.text}</goal>
- Blocked rules: only report a blocking condition after the SAME concrete condition has persisted for at least 3 consecutive turns with no progress, and state that concrete condition. Difficulty, uncertainty, or remaining useful work is NOT blocked — keep pushing.`,
+ Keep working toward the active goal while authorized progress is possible. Report a blocker when it is established and requires user input, access, or an external change. Finish independent work that remains possible; resume when the blocking condition changes.`,
             )
           }
           // 260629 Red inject per-session canary marker for prompt-injection detection.

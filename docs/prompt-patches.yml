@@ -9,31 +9,29 @@
 #     本表记「这条补丁何时该被重新质疑」（时效性台账）。
 #
 # 复核动作与固定前缀审计同批进行（下一次审计先过来一遍本表）。
-# 261111 提示词全链路修订提案（候选，未实施）：docs/2026-11-11-prompt-revision-proposal.md —— 动本表补丁前先读。
+# 261111 提示词全链路修订提案：docs/2026-11-11-prompt-revision-proposal.md —— 动本表补丁前先读。
+#   实施进度（§13 四包）：第一包（交互表达）261111 落地；第二包（§7+§10）261111 落地；
+#   第三包运行时部分（§9 WORK RULES/ACTIVE GOAL）261112 落地；§6.3 授权待用户选择；
+#   第四包（Soul，home 侧）未动。
 
 review_after_default: 2027-03-01
 
 patches:
-  - id: work-rules-1
-    file: packages/opencode/src/session/prompt.ts
-    anchor: 'WORK RULES #1 — DO NOT INVENT CODE FACTS'
-    intent: 防编造路径/API
+  - id: work-rules
+    file: packages/opencode/src/session/prompt/work-rules.md
+    anchor: 'WORK RULES (CORE'
+    intent: 护栏：不许替用户决定中断（原 #3 意图）
     review_after: 2027-03-01
-    status: '261007 已收窄为仅「不编造代码事实」；意图规则同批收窄（default.md）'
-
-  - id: work-rules-2
-    file: packages/opencode/src/session/prompt.ts
-    anchor: 'WORK RULES #2 — FAIL → DIAGNOSE → PIVOT'
-    intent: 失败两次强制换方向（机器防循环）
-    review_after: 2027-03-01
-    status: '261007 评估：与全局 AGENTS「连续失败 2 次」重复，拟 A/B 实测后决定去留'
-
-  - id: work-rules-3
-    file: packages/opencode/src/session/prompt.ts
-    anchor: 'WORK RULES #3 — NEVER suggest rest/give up'
-    intent: 护栏：不许替用户决定中断
-    review_after: 2027-03-01
-    status: '保留（用户决策权护栏，审计未动）'
+    status: >-
+      261112 按提案 §9.1 收敛：删 #1 防编造（owner：全局 AGENTS 红线 + default.md 事实准确职责）
+      与 #2 两次失败转向（owner：全局 AGENTS 连续失败规则 + diagnose skill，了结 261007 挂起的
+      A/B 决定），#3 意图改写为「尊重用户对任务的控制权」。A/B 证据：prompt-eval --runtime
+      三家族（deepseek-flash / glm-5.3-flash / gpt）× 7 用例，before（带旧三条）after（候选）
+      各一轮——denied-tool / outward-boundary / authorization 边界三家族全部守住；
+      glm/gpt 的 failed-check 一次失败收工在 before（带 #2）就存在，#2 未兑现承诺行为，
+      删除无退化；deepseek after 在 failed-check 出现诊断性绕路撞 8 轮上限（未放弃，单样本噪声级）。
+      已知缺口（非本批引入）：glm/gpt 一次验证失败即收工，#2 在场也没拦住——后续用真实会话复核。
+      GPT 槽位前后跨模型（sol→luna，用户额度约束），同家族路由，结论不受影响。
 
   - id: flash-reasoning-anchors
     file: packages/opencode/src/session/prompt.ts
