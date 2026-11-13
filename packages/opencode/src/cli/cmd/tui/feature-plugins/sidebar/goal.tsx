@@ -96,9 +96,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
 const tui: TuiPlugin = async (api) => {
   api.slots.register({
-    // 350：夹在 lsp(300) 与 todo(400) 之间。挨着 Todo 是刻意的——goal_set 的工具说明里
+    // 200：紧随 quota(150)、在 todo(250) 之前。挨着 Todo 是刻意的——goal_set 的工具说明里
     // 写着「Sub-tasks become todos」，两块本来就是一件事的两个层级。
-    order: 350,
+    // 261113 Red 侧栏次序改为「上下文/配额 → 当前运行 → 文件变更 → MCP/LSP」，
+    // MCP/LSP 从 200/300 移到 400/450，把上半屏让给一眼要看的东西。
+    order: 200,
     slots: {
       sidebar_content(_ctx, props) {
         return <View api={api} session_id={props.session_id} />

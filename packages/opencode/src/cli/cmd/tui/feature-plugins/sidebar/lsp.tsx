@@ -52,7 +52,7 @@ function View(props: { api: TuiPluginApi }) {
 
 const tui: TuiPlugin = async (api) => {
   api.slots.register({
-    order: 300,
+    order: 450,
     slots: {
       sidebar_content() {
         return <View api={api} />
