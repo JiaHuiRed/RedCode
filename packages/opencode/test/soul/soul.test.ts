@@ -14,6 +14,9 @@ const write = (file: string, content: string) => Effect.promise(() => Bun.write(
 
 const official = (body: string) => `---\n${body}\n---\n\n# 标题\n\n正文内容\n`
 
+// frontmatter 里若执行了代码，哨兵会被写到 globalThis；只读不改。
+const readProbe = (key: string) => (globalThis as unknown as Record<string, unknown>)[key]
+
 describe("soul registry", () => {
   it.instance("lists official souls sorted by filename, parsing metadata", () =>
     Effect.gen(function* () {
@@ -92,6 +95,27 @@ describe("soul registry", () => {
       yield* write(path.join(dir, "helper.md"), official("id: helper\nname: Full Name\ndisplay_name: Short Name"))
       const info = yield* (yield* Soul.Service).get("helper").pipe(Effect.provideService(Soul.directory, dir))
       expect(info?.commitPrefix).toBe("Short Name")
+    }),
+  )
+
+  // 261113 Red gray-matter 按首行 `---lang` 选引擎，内置 javascript 引擎走 eval：
+  // 非 YAML 语言标记必须在解析前被拒绝，而不是在字段校验阶段才失败（那时已经执行了）。
+  it.instance("refuses executable frontmatter languages without executing them", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const probe = "__red_soul_frontmatter_probe"
+      const payload = `globalThis["${probe}"] = "executed"`
+      yield* write(path.join(dir, "evil.md"), `---js\n${payload}\n---\n\n# x\nbody\n`)
+      // BOM 绕不过：gray-matter 入口先剥 BOM 再按语言选引擎，检测必须对齐
+      yield* write(path.join(dir, "evil-bom.md"), `\uFEFF---js\n${payload}\n---\n\n# x\nbody\n`)
+      const soul = yield* Soul.Service
+
+      const list = yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))
+      expect(list.map((item) => item.id)).toEqual([])
+      expect(readProbe(probe)).toBeUndefined()
+      const issues = yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))
+      expect(issues.filter((issue) => issue.message.includes("unsupported frontmatter language"))).toHaveLength(2)
     }),
   )
 
@@ -640,6 +664,30 @@ describe("soul create", () => {
         expect(error._tag).toBe("SoulInvalidInput")
       }
       expect(fs.existsSync(path.join(dir, "long.md"))).toBe(false)
+    }),
+  )
+
+  // 261113 Red 粘贴导入是最直接的外部输入入口：`---js` frontmatter 必须在解析前拒绝，
+  // 失败也不能落盘——解析副作用无法撤回，只靠后续字段校验拦不住。
+  it.instance("rejects executable frontmatter before parsing and never writes the file", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const probe = "__red_soul_frontmatter_probe"
+      const payload = `globalThis["${probe}"] = "executed"`
+
+      const error = yield* runCreate(dir, { markdown: `---js\n${payload}\n---\n\n# x\nbody\n` }).pipe(Effect.flip)
+      expect(error._tag).toBe("SoulInvalidInput")
+      expect((error as Soul.SoulInvalidInput).message).toContain("unsupported frontmatter language")
+      expect(readProbe(probe)).toBeUndefined()
+
+      const bomError = yield* runCreate(dir, { markdown: `\uFEFF---js\n${payload}\n---\n\n# x\nbody\n` }).pipe(Effect.flip)
+      expect(bomError._tag).toBe("SoulInvalidInput")
+      expect(readProbe(probe)).toBeUndefined()
+
+      // 失败在 mkdir 之前返回，目录可能尚不存在：无论哪种情况都不能有任何 .md 落盘
+      const written = fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => name.endsWith(".md")) : []
+      expect(written).toEqual([])
     }),
   )
 

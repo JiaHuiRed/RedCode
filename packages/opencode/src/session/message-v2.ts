@@ -1552,7 +1552,15 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
     }
     if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
       break
-    if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish && !msg.info.error)
+    // 261113 Red finish="unknown" 是估算 step-finish（重复中止/无供应商回执），不是供应商
+    // 确认的完成值；把它当成功边界会让截断摘要顶替正常摘要、原文从后续模型输入消失。
+    if (
+      msg.info.role === "assistant" &&
+      msg.info.summary &&
+      msg.info.finish &&
+      msg.info.finish !== "unknown" &&
+      !msg.info.error
+    )
       completed.add(msg.info.parentID)
   }
   result.reverse()
@@ -1571,6 +1579,11 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
           index > compactionIndex &&
           msg.info.role === "assistant" &&
           msg.info.summary &&
+          msg.info.finish &&
+          // 261113 Red 重排只接受确实成功的摘要：finish="unknown"（估算收尾）或带 error
+          // 的摘要不参与尾部重排，否则失败摘要把原文顶出模型输入。
+          msg.info.finish !== "unknown" &&
+          !msg.info.error &&
           msg.info.parentID === compaction.info.id,
       )
     : -1

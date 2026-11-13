@@ -2102,6 +2102,30 @@ describe("session.message-v2.latest", () => {
       expect(out.length).toBeGreaterThan(0)
       expect(pulled).toBeLessThanOrEqual(newestFirst.length)
     })
+
+    // 261113 Red 估算 step-finish（重复中止/无供应商回执）把摘要停在 finish="unknown"：
+    // 不是供应商确认的完成值，不能当成压缩成功边界折叠历史，也不能参与尾部重排——
+    // 否则截断摘要会把原文顶出后续模型输入。
+    test("finish=unknown 的摘要不折叠历史也不参与尾部重排", () => {
+      const unknownSummary: MessageV2.WithParts = {
+        info: { ...summaryAssistant.info, finish: "unknown" } as MessageV2.Assistant,
+        parts: summaryAssistant.parts,
+      }
+      const out = MessageV2.filterCompacted([
+        continueUser,
+        unknownSummary,
+        compactionUser,
+        overflowAssistant,
+        tailUser,
+      ])
+      expect(out.map((m) => m.info.id)).toEqual([
+        TAIL_USER,
+        OVERFLOW_ASSISTANT,
+        COMPACTION_USER,
+        SUMMARY_ASSISTANT,
+        CONTINUE_USER,
+      ])
+    })
   })
 })
 

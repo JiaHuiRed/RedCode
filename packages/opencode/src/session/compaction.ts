@@ -257,6 +257,11 @@ function commitFailure(error: unknown) {
   }, { cause: error })
 }
 
+// 261113 Red 压缩摘要的重复停止失败终态：文案与 prompt.ts 的普通对话路径同族，按压缩语境表述。
+function repeatLoopFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.TextLoopStoppedError({ message: "摘要生成陷入重复循环，已中止本次压缩" }).toObject()
+}
+
 function completedCompactions(messages: MessageV2.WithParts[]) {
   const users = new Map<MessageID, number>()
   for (let i = 0; i < messages.length; i++) {
@@ -268,7 +273,10 @@ function completedCompactions(messages: MessageV2.WithParts[]) {
 
   return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
     if (msg.info.role !== "assistant") return []
-    if (!msg.info.summary || !msg.info.finish || msg.info.error) return []
+    // 261113 Red finish 非空不代表成功：无供应商回执的估算 step-finish（重复中止等）会把
+    // 消息停在 finish="unknown"。只有确认过的完成值才算压缩成功，否则截断摘要会顶替
+    // 正常摘要、原文从后续模型输入消失。
+    if (!msg.info.summary || !msg.info.finish || msg.info.finish === "unknown" || msg.info.error) return []
     const userIndex = users.get(msg.info.parentID)
     if (userIndex === undefined) return []
     return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
@@ -681,6 +689,17 @@ export const layer = Layer.effect(
           system: snapshot ? [...snapshot.system] : [],
           messages, model,
         })
+        if (processor.stoppedByRepeatLoop && !processor.message.error) {
+          // 261113 Red 重复停止的摘要不是可用摘要：prompt.ts 的错误收尾只覆盖普通对话入口，
+          // 压缩直接调 processor.process()。不在这里落失败终态，估算 step-finish 会把消息停在
+          // finish="unknown" 无 error——历史投影会把它当成功边界，截断摘要顶替正常摘要。
+          const failure = repeatLoopFailure()
+          processor.message.error = failure
+          processor.message.finish = "error"
+          yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return "stop" as const
+        }
         if (result !== "continue" || processor.message.error) return "stop" as const
         mark("commit")
         const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
@@ -981,6 +1000,17 @@ export const layer = Layer.effect(
         }).toObject()
         processor.message.finish = "error"
         yield* session.updateMessage(processor.message)
+        return "stop"
+      }
+
+      if (processor.stoppedByRepeatLoop && !processor.message.error) {
+        // 261113 Red 与原生路径同一收口：重复停止必须先落失败终态并立即返回，不能让下面
+        // 的 tail_start_id 更新把截断摘要钉成成功边界（filterCompacted 会据此隐藏原文）。
+        const failure = repeatLoopFailure()
+        processor.message.error = failure
+        processor.message.finish = "error"
+        yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
         return "stop"
       }
 

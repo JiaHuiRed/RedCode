@@ -373,11 +373,29 @@ function optionalSingleLine(value: string | undefined, field: string): string | 
   return value === undefined ? undefined : singleLine(value, field)
 }
 
+// 261113 Red gray-matter 按首行 `---lang` 选择解析引擎，内置 javascript 引擎内部走 eval；
+// defaults 里 engines 是合并不是替换，配置层移除不了内置引擎，所以只能在 matter() 之前
+// 拒绝非 YAML 语言标记——否则特制 frontmatter 会在字段校验之前执行代码。
+// 语言检测细节对齐 gray-matter parseMatter：入口先剥 BOM，`---` 后到行首换行的整行 trim
+// 即语言名，第 4 个字符还是 `-` 时不算 frontmatter。
+function frontmatterLanguage(raw: string): string | undefined {
+  const body = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
+  if (!body.startsWith("---") || body.charAt(3) === "-") return undefined
+  const newline = body.search(/\r?\n/)
+  const line = newline === -1 ? body.slice(3) : body.slice(3, newline)
+  return line.trim() || undefined
+}
+
+const ALLOWED_FRONTMATTER_LANGUAGES = new Set(["yaml", "yml"])
+
 // 创建与 registry 共用同一套解析/校验：粘贴的 Markdown 必须能被 registry 原样识别。
 function validateDocument(raw: string):
   | { kind: "valid"; metadata: FileMetadata; content: string }
   | { kind: "legacy"; content: string }
   | { kind: "invalid"; message: string } {
+  const language = frontmatterLanguage(raw)
+  if (language && !ALLOWED_FRONTMATTER_LANGUAGES.has(language.toLowerCase()))
+    return { kind: "invalid", message: `unsupported frontmatter language "${language}"` }
   const parsed = parseText(raw)
   if (!parsed) return { kind: "invalid", message: "failed to parse frontmatter" }
   if (raw.startsWith("---") && !hasMetadata(parsed.data))
