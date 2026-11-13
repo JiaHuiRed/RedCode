@@ -31,9 +31,13 @@ RedCode 的触发链：`session/processor.ts:1056-1061`（usage 后 `isOverflow`
   assistant tool turn 数（assistant 消息含 `state.status === "completed"` 的 tool part）：
   - `< 3` → `streak += 1`
   - `>= 3` → `streak = 1`
-- `streak >= 3`（即第 3 次快速回填）→ 熔断：不创建摘要消息、不发模型请求，发布
-  `ContextOverflowError`（message 写明 `compact_rapid_refill_breaker`）与 warn 日志，
-  `process` 返回 `"stop"`。
+- `streak >= 3`（即第 3 次快速回填）→ 熔断：不发模型请求、不写 compaction
+  boundary，发布 `ContextOverflowError`（message 写明 `compact_rapid_refill_breaker`）与
+  warn 日志，并写一条 **failed summary**（`summary: true` + `error` + `time.completed`）
+  把 pending compaction task 标成失败；`process` 返回 `"stop"`。
+  failed summary 是 `MessageV2.latest` 的 `failedCompactions` 既有约定：没有它，旧 task
+  会在之后每个用户轮被 `tasks.pop()` 重新命中、再次熔断，用户消息永远到不了模型（换模型
+  也无效，261113 真实 `SessionPrompt.loop` 回归）。
 - 手动压缩（`auto === false`）不参与追踪，也不被熔断。
 
 阈值先按 ZCode 的经验值（3 turns / 3 次），常量集中放在 `compaction.ts` 顶部，便于观察后
@@ -50,7 +54,9 @@ RedCode 的触发链：`session/processor.ts:1056-1061`（usage 后 `isOverflow`
 ## 后果
 
 - 极端情况下会话会在第 3 次快速回填时明确失败，而不是无限压缩；用户需要主动清理上下文
-  或换模型。失败原因必须可见（日志 + bus 事件），不能静默卡住。
+  或换模型。失败原因必须可见（日志 + bus 事件），不能静默卡住。熔断请求本身失败，但
+  pending task 会被 failed summary 退休：下一次用户消息不再被旧 task 阻塞，模型切换也能
+  真正生效（上下文仍超限时由 provider 显式报错）。
 - `streak` 统计依赖「完成 tool turn」的判定；如果某轮工具调用全部失败，turn 数为 0，
   会更快触发熔断——这是有意的保守方向。
 - 需要真机观察阈值是否误杀正常的长任务（每轮工具调用密集、上下文本来就大的会话）。
@@ -71,3 +77,21 @@ RedCode 的触发链：`session/processor.ts:1056-1061`（usage 后 `isOverflow`
   第 3 次熔断、足量 turn 重置），全套 91 pass / 0 fail；`bun run typecheck` exit 0；
   `bun run test:smoke` exit 0。
 - 状态仍为 proposed：真机长会话上的阈值误杀情况尚未观察。
+
+### 261113 修复：熔断死锁与状态推进
+
+- 熔断时补写 failed summary（`summary: true`、`error`、`time.completed`、
+ `finish: "error"`），复用 `MessageV2.latest` 的 `failedCompactions` 约定退休 pending
+ compaction task；不写 boundary/tail、不发 `Event.Compacted`，也不会被
+ `filterCompacted` / `completedCompactions`（都要求 finish 且无 error）当成压缩成功。
+ 之前只发事件就 `return "stop"`，旧 task 留在消息里，真实 `SessionPrompt.loop` 会在
+ 每个后续用户轮先 `tasks.pop()` 到它，再次熔断并不进入模型步。
+- streak 改为只在压缩**成功**点写入（入口只读决策）：失败/中断不再累加，否则连续失败会
+ 被误判成连续快速回填；手动压缩完全不读写追踪状态（原实现会把手动压缩的边界写进去）。
+- turn 计数改按 `MessageV2.compareTime` 判时序（与 `latest` 同口径）：legacy 可见历史
+ `filterCompactedOrdered` 会把保留的 tail 排到压缩边界之后，按数组下标数会把旧轮次算成
+ 压缩后的新工作，默认 2 个 tail 加 1 个新轮就够 3，熔断实际永不触发。
+- 验证：`test/session/compaction.test.ts` 保留纯函数用例，新增真实 `SessionCompaction`
+ 用例（成功→失败→再尝试、手动压缩夹在自动压缩间、熔断退休 task）与真实
+ `SessionPrompt.loop` 用例（熔断后下一条用户消息能真实请求模型）。定向：
+ `bun test test/session/compaction.test.ts --timeout 30000 -t "breaker trips"`。

@@ -10,6 +10,7 @@ import { Agent } from "../../src/agent/agent"
 import { Auth } from "../../src/auth"
 import { LLM } from "../../src/session/llm"
 import {
+  RAPID_REFILL_TURNS,
   SessionCompaction,
   appendFileTags,
   collectFiles,
@@ -21,7 +22,7 @@ import { Token } from "@/util/token"
 import * as Log from "@redcode-ai/core/util/log"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
-import { provideTmpdirInstance, TestInstance } from "../fixture/fixture"
+import { provideTmpdirInstance, provideTmpdirServer, TestInstance } from "../fixture/fixture"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -30,9 +31,11 @@ import { SessionSummary } from "../../src/session/summary"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import type { Provider } from "@/provider/provider"
 import * as SessionProcessorModule from "../../src/session/processor"
+import { SessionPrompt } from "../../src/session/prompt"
 import { Snapshot } from "../../src/snapshot"
 import { ProviderTest } from "../fake/provider"
-import { testEffect } from "../lib/effect"
+import { TestLLMServer } from "../lib/llm-server"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { Skill } from "../../src/skill"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { TestConfig } from "../fixture/config"
@@ -100,6 +103,35 @@ function createModel(opts: {
 }
 
 const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000 }) })
+
+// 261113 Red 真实 SessionPrompt.loop 回归用 provider：模型指向 TestLLMServer。
+function breakerProviderCfg(url: string) {
+  return {
+    provider: {
+      test: {
+        name: "Test",
+        id: "test",
+        env: [],
+        npm: "@ai-sdk/openai-compatible",
+        models: {
+          "test-model": {
+            id: "test-model",
+            name: "Test Model",
+            attachment: false,
+            reasoning: false,
+            temperature: false,
+            tool_call: true,
+            release_date: "2025-01-01",
+            limit: { context: 100_000, output: 10_000 },
+            cost: { input: 0, output: 0 },
+            options: {},
+          },
+        },
+        options: { apiKey: "test-key", baseURL: url },
+      },
+    },
+  }
+}
 
 function createUserMessage(sessionID: SessionID, text: string, model: MessageV2.User["model"] = ref) {
   return Effect.gen(function* () {
@@ -276,6 +308,14 @@ const it = testEffect(env)
 
 const compactionEnv = Layer.mergeAll(SessionNs.defaultLayer, CrossSpawnSpawner.defaultLayer, Snippet.defaultLayer)
 const itCompaction = testEffect(compactionEnv)
+const promptEnv = Layer.mergeAll(
+  TestLLMServer.layer,
+  CrossSpawnSpawner.defaultLayer,
+  SessionNs.defaultLayer,
+  SessionCompaction.defaultLayer,
+  SessionPrompt.defaultLayer,
+)
+const itPrompt = testEffect(promptEnv)
 
 type CompactionProcessOptions = {
   result?: "continue" | "compact"
@@ -412,6 +452,21 @@ function autocontinue(enabled: boolean) {
     },
     list: () => Effect.succeed([]),
     init: () => Effect.void,
+  })
+}
+
+// 261113 Red 收集熔断 bus 事件：断言「没有发生熔断」比只看返回值更直接。
+function collectBreakerErrors(sessionID: SessionID) {
+  return Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const errors: string[] = []
+    const off = yield* bus.subscribeCallback(SessionNs.Event.Error, (evt) => {
+      if (evt.properties.sessionID !== sessionID) return
+      const error = JSON.stringify(evt.properties.error ?? "")
+      if (error.includes("compact_rapid_refill_breaker")) errors.push(error)
+    })
+    yield* Effect.addFinalizer(() => Effect.sync(off))
+    return errors
   })
 }
 
@@ -2229,8 +2284,319 @@ describe("session.compaction.process", () => {
       expect(part?.tail_start_id).toBe(keep.id)
     }).pipe(withCompaction({ config: cfg({ tail_turns: 2, preserve_recent_tokens: 500 }) })),
   )
+
+  // 261113 Red 熔断状态只能由「成功」推进：中间失败一次不能把下一次尝试算成第 3 次。
+  // 直接驱动真实 SessionCompaction service（不经过 prompt 循环），失败用真实 LLM 流错误触发。
+  itCompaction.instance(
+    "does not advance the rapid-refill streak when a compaction fails",
+    () => {
+      const stub = llm()
+      stub.push(reply("summary one"))
+      stub.push(
+        Stream.fromAsyncIterable(
+          {
+            async *[Symbol.asyncIterator]() {
+              yield LLMEvent.stepStart({ index: 0 })
+              throw new Error("compaction request failed")
+            },
+          },
+          (err) => err,
+        ),
+      )
+      stub.push(reply("summary two"))
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const breakerErrors = yield* collectBreakerErrors(session.id)
+
+        const first = yield* createUserMessage(session.id, "root")
+        const firstMessages = yield* ssn.messages({ sessionID: session.id })
+        const firstResult = yield* SessionCompaction.use.process({
+          parentID: first.id,
+          messages: firstMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        const second = yield* createUserMessage(session.id, "rapid retry")
+        const secondMessages = yield* ssn.messages({ sessionID: session.id })
+        const failedResult = yield* SessionCompaction.use.process({
+          parentID: second.id,
+          messages: secondMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        const third = yield* createUserMessage(session.id, "after the failure")
+        const thirdMessages = yield* ssn.messages({ sessionID: session.id })
+        const retryResult = yield* SessionCompaction.use.process({
+          parentID: third.id,
+          messages: thirdMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        expect(firstResult).toBe("continue")
+        expect(failedResult).toBe("stop")
+        expect(retryResult).toBe("continue")
+        expect(
+          all.some(
+            (message) =>
+              message.info.role === "assistant" && message.info.summary && message.info.parentID === third.id,
+          ),
+        ).toBe(true)
+        expect(breakerErrors).toEqual([])
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
+  )
+
+  // 261113 Red 手动压缩不参与追踪：边界不能被挪到手动压缩上，否则手动压缩之前已经
+  // 跑满阈值的 tool turn 会被排除，下一次自动压缩被误判成快速回填。
+  itCompaction.instance(
+    "does not move the rapid-refill boundary on manual compaction",
+    () => {
+      const stub = llm()
+      stub.push(reply("auto one"))
+      stub.push(reply("auto two"))
+      stub.push(reply("manual"))
+      stub.push(reply("auto three"))
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const test = yield* TestInstance
+        const session = yield* ssn.create({})
+        const breakerErrors = yield* collectBreakerErrors(session.id)
+
+        const first = yield* createUserMessage(session.id, "root")
+        const firstMessages = yield* ssn.messages({ sessionID: session.id })
+        const firstResult = yield* SessionCompaction.use.process({
+          parentID: first.id,
+          messages: firstMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+        expect(firstResult).toBe("continue")
+
+        const second = yield* createUserMessage(session.id, "rapid refill")
+        const secondMessages = yield* ssn.messages({ sessionID: session.id })
+        const secondResult = yield* SessionCompaction.use.process({
+          parentID: second.id,
+          messages: secondMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+        expect(secondResult).toBe("continue")
+
+        // 第二次压缩之后跑满阈值量的完整 tool turn：它们属于上次自动压缩边界之后。
+        for (let index = 0; index < RAPID_REFILL_TURNS; index++) {
+          const turn = yield* createAssistantMessage(session.id, second.id, test.directory)
+          yield* ssn.updatePart({
+            id: PartID.ascending(),
+            messageID: turn.id,
+            sessionID: session.id,
+            type: "tool",
+            callID: `call-${index}`,
+            tool: "read",
+            state: {
+              status: "completed",
+              input: {},
+              output: "ok",
+              title: "done",
+              metadata: {},
+              time: { start: Date.now(), end: Date.now() },
+            },
+          })
+        }
+
+        const manual = yield* createUserMessage(session.id, "manual compaction")
+        const manualMessages = yield* ssn.messages({ sessionID: session.id })
+        const manualResult = yield* SessionCompaction.use.process({
+          parentID: manual.id,
+          messages: manualMessages,
+          sessionID: session.id,
+          auto: false,
+        })
+        expect(manualResult).toBe("continue")
+
+        const after = yield* createUserMessage(session.id, "after manual")
+        const afterMessages = yield* ssn.messages({ sessionID: session.id })
+        const result = yield* SessionCompaction.use.process({
+          parentID: after.id,
+          messages: afterMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        expect(result).toBe("continue")
+        expect(breakerErrors).toEqual([])
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
+  )
+
+  // 261113 Red 熔断必须显式失败，但不能把 pending compaction task 永久留在队列里：
+  // 真实 SessionPrompt.loop 会先 pop 旧 task，导致用户消息永远到不了模型。
+  // 修复：熔断时写既有约定的 failed summary（latest 的 failedCompactions 据此退休 task），
+  // 只标失败、不写 compaction boundary。
+  itCompaction.instance(
+    "retires the compaction task after the breaker trips",
+    () => {
+      const stub = llm()
+      stub.push(reply("auto one"))
+      stub.push(reply("auto two"))
+
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const bus = yield* Bus.Service
+        const session = yield* ssn.create({})
+        const breakerErrors = yield* collectBreakerErrors(session.id)
+
+        const first = yield* createUserMessage(session.id, "root")
+        const firstMessages = yield* ssn.messages({ sessionID: session.id })
+        yield* SessionCompaction.use.process({
+          parentID: first.id,
+          messages: firstMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        const second = yield* createUserMessage(session.id, "rapid refill")
+        const secondMessages = yield* ssn.messages({ sessionID: session.id })
+        yield* SessionCompaction.use.process({
+          parentID: second.id,
+          messages: secondMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+
+        // 前两次成功压缩本来就会发 Compacted；只观察熔断这一步是否被误当成功。
+        const compacted: string[] = []
+        const offCompacted = yield* bus.subscribeCallback(SessionCompaction.Event.Compacted, (evt) => {
+          if (evt.properties.sessionID === session.id) compacted.push(evt.properties.sessionID)
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(offCompacted))
+
+        // 第三次自动压缩：真实 create 出 pending compaction 用户消息，process 在入口熔断。
+        yield* SessionCompaction.use.create({
+          sessionID: session.id,
+          agent: "build",
+          model: ref,
+          auto: true,
+        })
+        const pending = (yield* ssn.messages({ sessionID: session.id })).at(-1)
+        if (!pending || pending.info.role !== "user") throw new Error("expected a pending compaction message")
+        const blockedMessages = yield* ssn.messages({ sessionID: session.id })
+        const blocked = yield* SessionCompaction.use.process({
+          parentID: pending.info.id,
+          messages: blockedMessages,
+          sessionID: session.id,
+          auto: true,
+        })
+        expect(blocked).toBe("stop")
+        // bus.subscribeCallback 在 fork 出的 scoped fiber 里异步投递
+        // （src/bus/index.ts on(): Stream.runForEach + Promise.resolve().then），
+        // process 返回时回调可能还没跑；等事件真正到达后再断言数量。
+        yield* pollWithTimeout(
+          Effect.sync(() => (breakerErrors.length >= 1 ? true : undefined)),
+          "breaker event was not delivered",
+        )
+        expect(breakerErrors).toHaveLength(1)
+
+        // 旧 pending 用户消息保留（不删用户消息），失败的 summary 挂在它下面。
+        const after = yield* ssn.messages({ sessionID: session.id })
+        expect(after.some((message) => message.info.id === pending.info.id)).toBe(true)
+        const failed = after.findLast(
+          (message) => message.info.role === "assistant" && message.info.parentID === pending.info.id,
+        )
+        if (!failed || failed.info.role !== "assistant") throw new Error("expected a failed summary marker")
+        expect(failed.info.summary).toBe(true)
+        expect(failed.info.finish).toBe("error")
+        expect(failed.info.time.completed).toBeDefined()
+        expect(failed.info.error).toBeDefined()
+        expect(JSON.stringify(failed.info.error)).toContain("compact_rapid_refill_breaker")
+
+        // 不误当压缩成功：marker 没有 boundary/tail，也没有 compacted 事件。
+        const marker = after.find((message) => message.info.id === pending.info.id)
+        const part = marker?.parts.find((item): item is MessageV2.CompactionPart => item.type === "compaction")
+        expect(part?.tail_start_id).toBeUndefined()
+        expect(part?.tokens_after).toBeUndefined()
+        expect(compacted).toEqual([])
+
+        // 下一次用户轮：failed summary 让 latest() 退休旧 task，不再重复命中。
+        yield* createUserMessage(session.id, "next question")
+        const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+        expect(MessageV2.latest(msgs).tasks.some((task) => task.type === "compaction")).toBe(false)
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
+  )
 })
 
+// 261113 Red 快速回填熔断的真实 loop 回归：熔断后的 pending compaction task 不能在
+// 下一次用户消息时继续被 tasks.pop() 命中——否则用户消息永远到不了模型，换模型也无效。
+describe("session.compaction rapid-refill breaker loop", () => {
+  itPrompt.live(
+    "the next user turn reaches the model after the breaker trips",
+    () =>
+      provideTmpdirServer(
+        ({ llm }) =>
+          Effect.gen(function* () {
+            const ssn = yield* SessionNs.Service
+            const compact = yield* SessionCompaction.Service
+            const prompt = yield* SessionPrompt.Service
+            const session = yield* ssn.create({ title: "breaker loop regression" })
+
+            // 两次成功的自动压缩：第一次建立边界，第二次构成快速回填。
+            const first = yield* createUserMessage(session.id, "root")
+            yield* llm.text("summary one")
+            yield* compact.process({
+              parentID: first.id,
+              messages: yield* ssn.messages({ sessionID: session.id }),
+              sessionID: session.id,
+              auto: true,
+            })
+
+            const second = yield* createUserMessage(session.id, "rapid refill")
+            yield* llm.text("summary two")
+            yield* compact.process({
+              parentID: second.id,
+              messages: yield* ssn.messages({ sessionID: session.id }),
+              sessionID: session.id,
+              auto: true,
+            })
+
+            // 第三次自动压缩：真实 create 出 pending compaction task，process 在入口熔断。
+            yield* compact.create({ sessionID: session.id, agent: "build", model: ref, auto: true })
+            const pending = (yield* ssn.messages({ sessionID: session.id })).at(-1)
+            if (!pending || pending.info.role !== "user") throw new Error("expected a pending compaction message")
+            const blocked = yield* compact.process({
+              parentID: pending.info.id,
+              messages: yield* ssn.messages({ sessionID: session.id }),
+              sessionID: session.id,
+              auto: true,
+            })
+            expect(blocked).toBe("stop")
+
+            // 用户主动发送下一条消息：loop 必须先退休旧 task，再真实请求模型。
+            yield* createUserMessage(session.id, "please answer")
+            yield* llm.text("assistant reply after breaker")
+            const result = yield* prompt.loop({ sessionID: session.id })
+
+            expect(result.info.role).toBe("assistant")
+            expect(
+              result.parts.some(
+                (part) => part.type === "text" && part.text.includes("assistant reply after breaker"),
+              ),
+            ).toBe(true)
+            expect(yield* llm.calls).toBe(3)
+          }),
+        { git: true, config: (url) => breakerProviderCfg(url) },
+      ),
+  )
+})
 describe("util.token.estimate", () => {
   test("estimates tokens from text (4 chars per token)", () => {
     const text = "x".repeat(4000)
@@ -2735,9 +3101,14 @@ describe("session.time.compacting", () => {
 
 // 261112 Red 快速回填熔断：纯函数层验证 turn 计数与 streak，不启动模型请求。
 describe("rapid refill breaker", () => {
-  const message = (id: string, role: "user" | "assistant", tool?: "completed" | "running") =>
+  const message = (
+    id: string,
+    role: "user" | "assistant",
+    tool?: "completed" | "running",
+    created = Number(id.replace(/\D/g, "")),
+  ) =>
     ({
-      info: { id: MessageID.make(id), role, ...(role === "assistant" ? { summary: false } : {}) },
+      info: { id: MessageID.make(id), role, time: { created }, ...(role === "assistant" ? { summary: false } : {}) },
       parts: tool ? [{ type: "tool", tool: "read", state: { status: tool } }] : [],
     }) as unknown as MessageV2.WithParts
 
@@ -2784,6 +3155,33 @@ describe("rapid refill breaker", () => {
       streak: 1,
       turns: 3,
       blocked: false,
+    })
+  })
+
+  // legacy filterCompactedOrdered 把保留的旧 tail 重排到压缩边界和摘要之后
+  // （message-v2.ts filterCompactedOrdered）；按下标数会把 tail 的旧轮次算成新工作。
+  test("counts chronologically when the retained tail follows the boundary", () => {
+    const messages = [
+      message("msg_010", "user", undefined, 100),
+      message("msg_011", "assistant", undefined, 110),
+      message("msg_002", "assistant", "completed", 80),
+      message("msg_003", "assistant", "completed", 90),
+      message("msg_020", "assistant", "completed", 120),
+    ]
+    expect(countCompletedToolTurnsAfter(messages, MessageID.make("msg_010"))).toBe(1)
+  })
+
+  test("retained tail turns do not reset the streak", () => {
+    const messages = [
+      message("msg_010", "user", undefined, 100),
+      message("msg_002", "assistant", "completed", 80),
+      message("msg_003", "assistant", "completed", 90),
+      message("msg_020", "assistant", "completed", 120),
+    ]
+    expect(rapidRefillDecision({ lastMessageID: MessageID.make("msg_010"), streak: 2 }, messages)).toEqual({
+      streak: 3,
+      turns: 1,
+      blocked: true,
     })
   })
 })

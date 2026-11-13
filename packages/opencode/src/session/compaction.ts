@@ -57,14 +57,18 @@ export function countCompletedToolTurnsAfter(
   messages: readonly MessageV2.WithParts[],
   afterID: MessageID,
 ) {
-  const index = messages.findIndex((message) => message.info.id === afterID)
+  const boundary = messages.find((message) => message.info.id === afterID)
   // 边界已不在可见历史里：说明中间经历过裁剪/压缩，视为正常间隔，不参与熔断。
-  if (index < 0) return Number.MAX_SAFE_INTEGER
+  if (!boundary) return Number.MAX_SAFE_INTEGER
+  // 261113 Red 可见历史不是时序：legacy 压缩把保留的 tail 排到压缩边界之后
+  // （message-v2 filterCompactedOrdered 的重排）。按下标数「边界之后」会把 tail 的
+  // 旧轮次算成压缩后的新工作——默认 2 个 tail 加 1 个新轮就够 3，streak 被提前重置，
+  // 熔断永不触发。改按 compareTime 判先后，与 MessageV2.latest 同口径。
   let turns = 0
-  for (let i = index + 1; i < messages.length; i++) {
-    const message = messages[i]!
+  for (const message of messages) {
     if (message.info.role !== "assistant") continue
     if (message.info.summary) continue
+    if (MessageV2.compareTime(message.info, boundary.info) <= 0) continue
     if (message.parts.some((part) => part.type === "tool" && part.state.status === "completed")) turns++
   }
   return turns
@@ -80,11 +84,10 @@ export function rapidRefillDecision(
   return { streak, turns, blocked: streak >= RAPID_REFILL_LIMIT }
 }
 
-function noteRapidRefillSuccess(sessionID: SessionID, parentID: MessageID) {
-  rapidRefill.set(sessionID, {
-    lastMessageID: parentID,
-    streak: rapidRefill.get(sessionID)?.streak ?? 1,
-  })
+// 261113 Red streak 只在压缩成功后写入：入口只读决策，失败/中断/熔断都不推进状态，
+// 否则连续失败会被当成连续快速回填（设计文档：每次 auto 压缩成功才记录）。
+function noteRapidRefillSuccess(sessionID: SessionID, parentID: MessageID, streak: number) {
+  rapidRefill.set(sessionID, { lastMessageID: parentID, streak })
 }
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
@@ -519,6 +522,8 @@ export const layer = Layer.effect(
       messages: MessageV2.WithParts[]
       sessionID: SessionID
       auto: boolean
+      // 261113 Red 由入口决策传入，成功时记录；手动压缩为 undefined。
+      rapidRefillStreak?: number
     }) {
       const startedAt = Date.now()
       // 261013 Red Log-only stage evidence; no model-visible or budget changes.
@@ -732,7 +737,8 @@ export const layer = Layer.effect(
             text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
           })
         }
-        noteRapidRefillSuccess(input.sessionID, input.parentID)
+        if (input.rapidRefillStreak !== undefined)
+          noteRapidRefillSuccess(input.sessionID, input.parentID, input.rapidRefillStreak)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
         return "continue" as const
@@ -786,26 +792,53 @@ export const layer = Layer.effect(
       if (!parent || parent.info.role !== "user") {
         throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
       }
-      if (input.auto) {
-        const state = rapidRefill.get(input.sessionID)
-        const decision = rapidRefillDecision(state, input.messages)
-        if (decision.blocked) {
-          // 261112 Red 熔断只拒绝本轮压缩：不新增 marker/boundary、不改写历史；
-          // 显式失败优于无限付费压缩。
-          const failure = new MessageV2.ContextOverflowError({
-            message:
-              "上下文在压缩后快速回填，已停止自动压缩（compact_rapid_refill_breaker）。请清理上下文或更换模型。",
-          }).toObject()
-          log.warn("auto compaction circuit breaker", {
-            sessionID: input.sessionID,
-            parentID: input.parentID,
-            streak: decision.streak,
-            turns: decision.turns,
-          })
-          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
-          return "stop" as const
-        }
-        if (state) rapidRefill.set(input.sessionID, { ...state, streak: decision.streak })
+      // 261113 Red 手动压缩不参与追踪：既不读也不写熔断状态（设计文档）。
+      // 入口只算决策；streak 在压缩成功后由 noteRapidRefillSuccess 写入，
+      // 失败/中断/熔断都不推进状态。
+      const rapidRefillCheck = input.auto
+        ? rapidRefillDecision(rapidRefill.get(input.sessionID), input.messages)
+        : undefined
+      if (rapidRefillCheck && rapidRefillCheck.blocked) {
+        // 261112 Red 熔断只拒绝本轮压缩：不写 compaction boundary、不改写历史；
+        // 显式失败优于无限付费压缩。
+        const failure = new MessageV2.ContextOverflowError({
+          message:
+            "上下文在压缩后快速回填，已停止自动压缩（compact_rapid_refill_breaker）。请清理上下文或更换模型。",
+        }).toObject()
+        log.warn("auto compaction circuit breaker", {
+          sessionID: input.sessionID,
+          parentID: input.parentID,
+          streak: rapidRefillCheck.streak,
+          turns: rapidRefillCheck.turns,
+        })
+        // 261113 Red 必须把 pending compaction task 标成「失败」，不能只发事件就返回：
+        // MessageV2.latest 只把 assistant.summary && error && time.completed 的 failed
+        // summary 视为失败压缩（message-v2.ts 的 failedCompactions），否则该 task 会在之后
+        // 每个用户轮被 tasks.pop() 重新命中、再次熔断，用户消息永远到不了模型（换模型也无效）。
+        // 这不是压缩成功：不写 boundary/tail、不折叠历史；filterCompacted 与
+        // completedCompactions 都要求 finish 且无 error，失败标记不会被当成压缩结果。
+        const now = Date.now()
+        const context = yield* InstanceState.context
+        yield* session.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          mode: "compaction",
+          agent: "compaction",
+          variant: parent.info.model.variant,
+          summary: true,
+          path: { cwd: context.directory, root: context.worktree },
+          cost: 0,
+          tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+          modelID: parent.info.model.modelID,
+          providerID: parent.info.model.providerID,
+          time: { created: now, completed: now },
+          finish: "error",
+          error: failure,
+        })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return "stop" as const
       }
       // 260824 cc 置起「正在压缩」。这是 session.time.compacting 全仓唯一的写入点 ——
       // 此前该字段只有搬运与消费（TUI 侧边栏、GUI 看板徽标），两端因此永远不亮。
@@ -813,7 +846,8 @@ export const layer = Layer.effect(
       // 给它挂个"压缩中"只会闪一下，没有信息量。
      yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
      const startedAt = Date.now()
-      if ((yield* config.get()).compaction?.native?.enabled) return yield* processNative(input)
+      if ((yield* config.get()).compaction?.native?.enabled)
+        return yield* processNative({ ...input, rapidRefillStreak: rapidRefillCheck?.streak })
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
@@ -1121,7 +1155,8 @@ export const layer = Layer.effect(
             })
           }
         }
-        noteRapidRefillSuccess(input.sessionID, input.parentID)
+        if (rapidRefillCheck !== undefined)
+          noteRapidRefillSuccess(input.sessionID, input.parentID, rapidRefillCheck.streak)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
       }
