@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 
 const toasts: Array<{ id: number; options: any }> = []
 const dismissed: number[] = []
@@ -19,9 +20,9 @@ mock.module("@redcode-ai/ui/toast", () => ({
 
 const { createSDKNotificationToasts } = await import("./notification-toasts")
 
-type AskedEvent = {
+type AppEvent = {
   name: string
-  details: { type: string; properties: { sessionID: string; id?: string } }
+  details: { type: string; properties: Record<string, unknown> }
 }
 
 type SetupOptions = {
@@ -34,13 +35,40 @@ type SetupOptions = {
   autoResponds?: boolean
 }
 
-const asked = (sessionID: string, type = "question.asked", name = "/project", id?: string): AskedEvent => ({
+const asked = (sessionID: string, type = "question.asked", name = "/project", id?: string): AppEvent => ({
   name,
   details: { type, properties: { sessionID, ...(id === undefined ? {} : { id }) } },
 })
 
+type LoopType = "ngram" | "nudge" | "replan" | "stop"
+
+const loop = (sessionID: string, type: LoopType = "stop", name = "/project"): AppEvent => ({
+  name,
+  details: { type: "session.loop_detected", properties: { sessionID, type, textLen: 1200 } },
+})
+
+const loopError = (sessionID: string, name = "/project"): AppEvent => ({
+  name,
+  details: {
+    type: "session.error",
+    properties: {
+      sessionID,
+      error: { name: "TextLoopStoppedError", data: { message: "模型输出陷入重复循环，已停止本轮生成" } },
+    },
+  },
+})
+
+const errored = (sessionID: string, name = "/project"): AppEvent => ({
+  name,
+  details: {
+    type: "session.error",
+    properties: { sessionID, error: { name: "UnknownError", data: { message: "boom" } } },
+  },
+})
+
 const setup = (options: SetupOptions = {}) => {
-  let dispatch: ((event: AskedEvent) => unknown) | undefined
+  let dispatch: ((event: AppEvent) => unknown) | undefined
+  const translations: Array<{ key: string; params?: Record<string, string | number | boolean> }> = []
   const [currentSession, setCurrentSession] = createSignal(options.currentSession ?? "active")
   const [directory, setDirectory] = createSignal(options.directory ?? "/project")
   const navigations: string[] = []
@@ -53,7 +81,7 @@ const setup = (options: SetupOptions = {}) => {
     createSDKNotificationToasts({
       globalSDK: {
         event: {
-          listen: (listener: (event: AskedEvent) => unknown) => {
+          listen: (listener: (event: AppEvent) => unknown) => {
             dispatch = listener
             return () => {
               dispatch = undefined
@@ -61,7 +89,13 @@ const setup = (options: SetupOptions = {}) => {
           },
         },
       },
-      language: { t: (key: string) => key, intl: () => "en" },
+      language: {
+        t: (key: string, params?: Record<string, string | number | boolean>) => {
+          translations.push({ key, params })
+          return key
+        },
+        intl: () => "en",
+      },
       permission: { autoResponds: () => options.autoResponds ?? false },
       settings: {
         sounds: { permissionsEnabled: () => false, permissions: () => undefined },
@@ -93,7 +127,7 @@ const setup = (options: SetupOptions = {}) => {
   disposers.add(dispose)
 
   return {
-    emit: (event: AskedEvent) => dispatch?.(event),
+    emit: (event: AppEvent) => dispatch?.(event),
     dispose: () => {
       disposers.delete(dispose)
       dispose()
@@ -101,6 +135,7 @@ const setup = (options: SetupOptions = {}) => {
     setCurrentSession,
     setDirectory,
     navigations,
+    translations,
     notifyCalls: () => notifyCalls,
   }
 }
@@ -234,5 +269,151 @@ describe("SDK notification toasts", () => {
     await app.emit(asked("target", "permission.asked"))
     expect(app.notifyCalls()).toBe(0)
     expect(toasts).toHaveLength(0)
+  })
+
+  test("loop toast uses the event session and project and navigates to it", async () => {
+    const app = setup({ currentSession: "active", sessions: [{ id: "active", title: "Active" }] })
+    await app.emit(loop("child", "stop", "/other-project"))
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].options.title).toBe("notification.loopDetected.stopped.title")
+    const description = app.translations.find((entry) => entry.key === "notification.loopDetected.stopped.description")
+    expect(description?.params).toEqual({
+      sessionTitle: "child",
+      projectName: "/other-project",
+      type: "stop",
+    })
+    toasts[0].options.actions[0].onClick()
+    expect(app.navigations).toEqual([`/${base64Encode("/other-project")}/session/child`])
+  })
+
+  test("loop toast falls back to the full session id when the session has no title", async () => {
+    const app = setup({ sessions: [{ id: "ses_0123456789abcdef", title: "  " }] })
+    await app.emit(loop("ses_0123456789abcdef", "nudge"))
+    const description = app.translations.find((entry) => entry.key === "notification.loopDetected.description")
+    expect(description?.params?.sessionTitle).toBe("ses_0123456789abcdef")
+  })
+
+  test("distinguishes subagent sessions and worktrees that share a prefix", async () => {
+    const app = setup({
+      sessions: [
+        { id: "ses_ffe5e2d0aaaa", title: "" },
+        { id: "ses_ffe5e2d0bbbb", title: "" },
+      ],
+    })
+    await app.emit(loop("ses_ffe5e2d0aaaa", "stop", "/worktrees/alpha/RedCode"))
+    await app.emit(loop("ses_ffe5e2d0bbbb", "stop", "/worktrees/beta/RedCode"))
+    const labels = app.translations
+      .filter((entry) => entry.key === "notification.loopDetected.stopped.description")
+      .map((entry) => entry.params)
+    expect(labels).toEqual([
+      { sessionTitle: "ses_ffe5e2d0aaaa", projectName: "/worktrees/alpha/RedCode", type: "stop" },
+      { sessionTitle: "ses_ffe5e2d0bbbb", projectName: "/worktrees/beta/RedCode", type: "stop" },
+    ])
+  })
+
+  test("loop toast distinguishes real stops from advisory recoveries", async () => {
+    const app = setup()
+    await app.emit(loop("target", "ngram"))
+    await app.emit(loop("target", "stop"))
+    await app.emit(loop("target", "nudge"))
+    await app.emit(loop("target", "replan"))
+    expect(toasts.map((toast) => toast.options.title)).toEqual([
+      "notification.loopDetected.stopped.title",
+      "notification.loopDetected.stopped.title",
+      "notification.loopDetected.title",
+      "notification.loopDetected.title",
+    ])
+    const types = app.translations.filter((entry) => entry.params?.type).map((entry) => entry.params?.type)
+    expect(types).toEqual(["N-gram", "stop", "nudge", "replan"])
+  })
+
+  test("loop toast identifies the current session from the event instead of guessing", async () => {
+    const app = setup({ currentSession: "active", sessions: [{ id: "active", title: "Active" }] })
+    await app.emit(loop("active", "replan"))
+    expect(toasts).toHaveLength(1)
+    const description = app.translations.find((entry) => entry.key === "notification.loopDetected.description")
+    expect(description?.params?.sessionTitle).toBe("Active (active)")
+  })
+
+  test("suppresses repeated loop events of the same type for one session", async () => {
+    const app = setup()
+    await app.emit(loop("target", "ngram"))
+    await app.emit(loop("target", "ngram"))
+    await app.emit(loop("other", "ngram"))
+    expect(toasts).toHaveLength(2)
+  })
+
+  test("keeps the loop toast when the loop's own error follows it", async () => {
+    const app = setup()
+    await app.emit(loop("target", "ngram"))
+    const toastID = toasts[0].id
+    await app.emit(loopError("target"))
+    expect(dismissed).toEqual([])
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].id).toBe(toastID)
+    expect(toasts[0].options.title).toBe("notification.loopDetected.stopped.title")
+  })
+
+  test("replaces an advisory loop toast when a real stop error arrives without a stop event", async () => {
+    const app = setup()
+    await app.emit(loop("target", "nudge"))
+    expect(toasts[0].options.title).toBe("notification.loopDetected.title")
+    const nudgeToastID = toasts[0].id
+    await app.emit(loopError("target"))
+    expect(dismissed).toEqual([nudgeToastID])
+    expect(toasts).toHaveLength(2)
+    expect(toasts[1].options.title).toBe("notification.loopDetected.stopped.title")
+    const description = app.translations.find(
+      (entry) => entry.key === "notification.loopDetected.stopped.errorDescription",
+    )
+    expect(description?.params).toEqual({ sessionTitle: "Target (target)", projectName: "/project" })
+    toasts[1].options.actions[0].onClick()
+    expect(app.navigations).toEqual([`/${base64Encode("/project")}/session/target`])
+  })
+
+  test("shows a locatable loop toast when the loop error arrives before the event", async () => {
+    const app = setup()
+    await app.emit(loopError("target"))
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].options.title).toBe("notification.loopDetected.stopped.title")
+    const fallback = app.translations.find(
+      (entry) => entry.key === "notification.loopDetected.stopped.errorDescription",
+    )
+    expect(fallback?.params).toEqual({ sessionTitle: "Target (target)", projectName: "/project" })
+    await app.emit(loop("target", "stop"))
+    expect(toasts).toHaveLength(2)
+    expect(dismissed).toEqual([toasts[0].id])
+    const description = app.translations.find((entry) => entry.key === "notification.loopDetected.stopped.description")
+    expect(description?.params).toEqual({ sessionTitle: "Target (target)", projectName: "/project", type: "stop" })
+  })
+
+  test("ordinary errors do not dismiss or suppress the loop reminder", async () => {
+    const app = setup()
+    await app.emit(loop("target", "stop"))
+    await app.emit(errored("target"))
+    expect(dismissed).toEqual([])
+    expect(toasts).toHaveLength(1)
+    await app.emit(loop("target", "nudge"))
+    expect(toasts).toHaveLength(2)
+    toasts[1].options.actions[0].onClick()
+    expect(app.navigations[0]).toContain("/session/target")
+  })
+
+  test("ordinary error before a loop event does not hide the loop toast", async () => {
+    const app = setup()
+    await app.emit(errored("target"))
+    expect(toasts).toHaveLength(0)
+    await app.emit(loop("target", "replan"))
+    expect(toasts).toHaveLength(1)
+    expect(toasts[0].options.title).toBe("notification.loopDetected.title")
+  })
+
+  test("dismisses the loop toast after navigating to the session", async () => {
+    const app = setup()
+    await app.emit(loop("target", "stop"))
+    const toastID = toasts[0].id
+    app.setCurrentSession("target")
+    await Promise.resolve()
+    expect(dismissed).toEqual([toastID])
   })
 })
