@@ -934,6 +934,41 @@ export const dict = {
   "settings.personalization.copyPath": "パスをコピー",
   "settings.personalization.openPath": "ファイルを開く",
   "settings.personalization.pathCopied": "Soul のパスをコピーしました。",
+  "settings.personalization.create.title": "Soul を作成",
+  "settings.personalization.create.description":
+    "完全な Soul ファイル（frontmatter と本文）を貼り付けてサーバー側で検証・作成するか、項目を入力します。作成しても既定の Soul と現在のセッションは変わりません。",
+  "settings.personalization.create.modeLabel": "作成方法",
+  "settings.personalization.create.modeMarkdown": "Soul を貼り付け",
+  "settings.personalization.create.modeFields": "項目を入力",
+  "settings.personalization.create.markdownLabel": "Soul Markdown",
+  "settings.personalization.create.markdownDescription":
+    "YAML frontmatter（id、name、任意で display_name、commit_prefix、avatar、description）を含むファイル全体を貼り付けてください。サーバーが既存の Soul ファイルと同じ規則で検証します。",
+  "settings.personalization.create.markdownPlaceholder":
+    "---\nid: chi\nname: Chi\ndisplay_name: 赤\ncommit_prefix: Chi\n---\n\n# 赤\n\n人格と口調……",
+  "settings.personalization.create.markdownSubmit": "Markdown から作成",
+  "settings.personalization.create.idLabel": "ID",
+  "settings.personalization.create.idPlaceholder": "chi",
+  "settings.personalization.create.idDescription": "小文字の安定 ID：a-z、0-9、-、_。",
+  "settings.personalization.create.nameLabel": "名前",
+  "settings.personalization.create.displayNameLabel": "表示名",
+  "settings.personalization.create.commitPrefixLabel": "コミットプレフィックス",
+  "settings.personalization.create.avatarLabel": "アバター識別子",
+  "settings.personalization.create.avatarDescription":
+    "任意のメタデータ識別子。チャット画像は作成後に Soul の詳細でローカル画像として選びます。",
+  "settings.personalization.create.descriptionLabel": "説明",
+  "settings.personalization.create.descriptionHint": "1 行、最大 256 バイト。",
+  "settings.personalization.create.contentLabel": "Markdown 本文",
+  "settings.personalization.create.contentPlaceholder": "# 名前\n\n人格と口調……",
+  "settings.personalization.create.fieldsSubmit": "Soul を作成",
+  "settings.personalization.create.submitting": "作成中…",
+  "settings.personalization.create.idRequired": "ID を入力してください。",
+  "settings.personalization.create.idInvalid": "小文字の英字、数字、-、_ のみを使用し、英字または数字で始めてください。",
+  "settings.personalization.create.nameRequired": "名前を入力してください。",
+  "settings.personalization.create.contentRequired": "Markdown 本文を入力してください。",
+  "settings.personalization.create.markdownRequired": "先に完全な Soul Markdown を貼り付けてください。",
+  "settings.personalization.create.failed": "この Soul を作成できませんでした。",
+  "settings.personalization.create.created":
+    "Soul「{{name}}」を作成しました。選択済みです。既定の Soul と現在のセッションは変更されていません。",
 
   "settings.agents.title": "エージェント",
   "settings.agents.description":
@@ -1159,7 +1194,12 @@ export const dict = {
   "error.page.action.exportLogs": "ログをエクスポート",
   "notification.loopDetected.title": "繰り返し出力を検出",
   "notification.loopDetected.description":
-    "モデルが同じ内容を繰り返していました（{{type}}）。自動リカバリーを適用しました。",
+    "{{projectName}} の {{sessionTitle}} で繰り返し出力（{{type}}）を検出しました。修正プロンプトを注入し、モデルは続行します。",
+  "notification.loopDetected.stopped.title": "繰り返し出力を停止しました",
+  "notification.loopDetected.stopped.description":
+    "{{projectName}} の {{sessionTitle}} で繰り返し出力（{{type}}）を検出しました。この実行を停止しました。",
+  "notification.loopDetected.stopped.errorDescription":
+    "{{projectName}} の {{sessionTitle}} で繰り返し出力を検出しました。この実行を停止しました。",
   "notification.compacted.title": "コンテキストを圧縮しました",
   "notification.compacted.description": "{{before}} から {{after}} に圧縮しました",
   "home.title": "ホーム",

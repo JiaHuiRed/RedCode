@@ -604,7 +604,13 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "notification.loopDetected.title": "Repetitive output detected",
-  "notification.loopDetected.description": "The model was repeating itself ({{type}}). Auto-recovery applied.",
+  "notification.loopDetected.description":
+    "{{sessionTitle}} in {{projectName}} — repeated output ({{type}}); a correction prompt was injected and the model continues.",
+  "notification.loopDetected.stopped.title": "Repetitive output stopped",
+  "notification.loopDetected.stopped.description":
+    "{{sessionTitle}} in {{projectName}} — repeated output ({{type}}); the run was stopped.",
+  "notification.loopDetected.stopped.errorDescription":
+    "{{sessionTitle}} in {{projectName}} — repeated output was detected; the run was stopped.",
   "notification.compacted.title": "Context compressed",
   "notification.compacted.description": "Compacted from {{before}} to {{after}}",
   "notification.permission.title": "Permission required",
@@ -1235,6 +1241,41 @@ export const dict = {
   "settings.personalization.copyPath": "Copy path",
   "settings.personalization.openPath": "Open file",
   "settings.personalization.pathCopied": "Soul path copied.",
+  "settings.personalization.create.title": "Create a Soul",
+  "settings.personalization.create.description":
+    "Paste a complete Soul file (frontmatter and body) and let the server validate and create it, or fill the fields manually. Creating a Soul never changes the default Soul or the current session.",
+  "settings.personalization.create.modeLabel": "Creation mode",
+  "settings.personalization.create.modeMarkdown": "Paste complete Soul",
+  "settings.personalization.create.modeFields": "Fill fields",
+  "settings.personalization.create.markdownLabel": "Soul Markdown",
+  "settings.personalization.create.markdownDescription":
+    "Paste the whole file, including the YAML frontmatter (id, name and optional display_name, commit_prefix, avatar, description). The server applies the same rules as for existing Soul files.",
+  "settings.personalization.create.markdownPlaceholder":
+    "---\nid: chi\nname: Chi\ndisplay_name: Chi\ncommit_prefix: Chi\n---\n\n# Chi\n\nPersonality and tone…",
+  "settings.personalization.create.markdownSubmit": "Create from Markdown",
+  "settings.personalization.create.idLabel": "ID",
+  "settings.personalization.create.idPlaceholder": "chi",
+  "settings.personalization.create.idDescription": "Stable lowercase ID: a-z, 0-9, - and _.",
+  "settings.personalization.create.nameLabel": "Name",
+  "settings.personalization.create.displayNameLabel": "Display name",
+  "settings.personalization.create.commitPrefixLabel": "Commit prefix",
+  "settings.personalization.create.avatarLabel": "Avatar identifier",
+  "settings.personalization.create.avatarDescription":
+    "Optional metadata identifier. The chat image itself is chosen locally in the Soul details after creation.",
+  "settings.personalization.create.descriptionLabel": "Description",
+  "settings.personalization.create.descriptionHint": "Single line, up to 256 bytes.",
+  "settings.personalization.create.contentLabel": "Markdown body",
+  "settings.personalization.create.contentPlaceholder": "# Name\n\nPersonality and tone…",
+  "settings.personalization.create.fieldsSubmit": "Create Soul",
+  "settings.personalization.create.submitting": "Creating…",
+  "settings.personalization.create.idRequired": "Enter an ID.",
+  "settings.personalization.create.idInvalid": "Use lowercase letters, digits, - and _; start with a letter or digit.",
+  "settings.personalization.create.nameRequired": "Enter a name.",
+  "settings.personalization.create.contentRequired": "Enter the Markdown body.",
+  "settings.personalization.create.markdownRequired": "Paste the complete Soul Markdown first.",
+  "settings.personalization.create.failed": "Could not create this Soul.",
+  "settings.personalization.create.created":
+    "Created Soul “{{name}}”. It is selected; the default Soul and the current session are unchanged.",
 
   "settings.agents.title": "Agents",
   "settings.agents.description":

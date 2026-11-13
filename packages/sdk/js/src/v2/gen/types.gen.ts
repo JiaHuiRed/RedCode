@@ -255,6 +255,7 @@ export type StepFinishPart = {
   reason: string
   snapshot?: string
   cost: number
+  estimated?: boolean
   currency?: "USD" | "CNY"
   tokens: {
     total?: number
@@ -470,6 +471,7 @@ export type AssistantMessage = {
     | ContextOverflowError
     | ContentFilterError
     | ToolFailureStoppedError
+    | TextLoopStoppedError
     | ApiError
   parentID: string
   modelID: string
@@ -499,6 +501,13 @@ export type AssistantMessage = {
   finish?: string
   routedVia?: string
   contextLevel?: "ok" | "soft" | "prune" | "compact"
+}
+
+export type TextLoopStoppedError = {
+  name: "TextLoopStoppedError"
+  data: {
+    message: string
+  }
 }
 
 export type ToolFailureStoppedError = {
@@ -4868,6 +4877,7 @@ export type EventSessionError = {
       | ContextOverflowError
       | ContentFilterError
       | ToolFailureStoppedError
+      | TextLoopStoppedError
       | ApiError
   }
 }
@@ -8910,6 +8920,55 @@ export type SoulListResponses = {
 }
 
 export type SoulListResponse = SoulListResponses[keyof SoulListResponses]
+
+export type SoulCreateData = {
+  body?: {
+    id?: string
+    name?: string
+    displayName?: string
+    commitPrefix?: string
+    avatar?: string
+    description?: string
+    content?: string
+    markdown?: string
+  }
+  path?: never
+  query?: never
+  url: "/soul"
+}
+
+export type SoulCreateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type SoulCreateError = SoulCreateErrors[keyof SoulCreateErrors]
+
+export type SoulCreateResponses = {
+  /**
+   * Created Soul summary
+   */
+  200: {
+    id: string
+    name: string
+    displayName: string
+    commitPrefix: string
+    avatar?: string
+    description?: string
+  }
+}
+
+export type SoulCreateResponse = SoulCreateResponses[keyof SoulCreateResponses]
 
 export type SoulGetData = {
   body?: never

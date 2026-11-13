@@ -866,6 +866,69 @@ const scenarios: Scenario[] = [
     )
   }),
   http.protected
+    .post("/soul", "soul.create")
+    .mutating()
+    .at((ctx) => ({
+      path: "/soul",
+      headers: ctx.headers(),
+      body: {
+        id: "httpapi-created-soul",
+        name: "HTTP API Created",
+        displayName: "Created",
+        description: "created through the exerciser",
+        content: "# Created\n\nBody\n",
+      },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === "httpapi-created-soul", "created Soul should return its id")
+      check(body.displayName === "Created", "created Soul should return normalized metadata")
+      check(body.commitPrefix === "Created", "created Soul should fall back to display name for attribution")
+    }),
+  http.protected
+    .post("/soul", "soul.create.markdown")
+    .mutating()
+    .at((ctx) => ({
+      path: "/soul",
+      headers: ctx.headers(),
+      body: { markdown: "---\nid: httpapi-pasted-soul\nname: 'Pasted: Soul'\n---\n\n# Pasted\n\nBody\n" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === "httpapi-pasted-soul", "pasted Markdown should be parsed by the registry")
+      check(body.name === "Pasted: Soul", "pasted Markdown should preserve YAML metadata")
+    }),
+  http.protected
+    .post("/soul", "soul.create.conflict")
+    .mutating()
+    .at((ctx) => ({
+      path: "/soul",
+      headers: ctx.headers(),
+      body: { id: "httpapi-created-soul", name: "Again", content: "body" },
+    }))
+    .status(409),
+  http.protected
+    .post("/soul", "soul.create.invalid")
+    .at((ctx) => ({
+      path: "/soul",
+      headers: ctx.headers(),
+      body: { id: "Bad ID", name: "Invalid", content: "body" },
+    }))
+    .status(400),
+  http.protected
+    .post("/soul", "soul.create.mixed")
+    .at((ctx) => ({
+      path: "/soul",
+      headers: ctx.headers(),
+      body: {
+        id: "httpapi-mixed-soul",
+        name: "Mixed",
+        content: "body",
+        markdown: "---\nid: httpapi-mixed-soul\nname: Mixed\n---\n\nbody\n",
+      },
+    }))
+    .status(400),
+  http.protected
     .get("/soul/{id}", "soul.get")
     .seeded(() =>
       Effect.promise(async () => {

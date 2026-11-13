@@ -48,6 +48,7 @@ function service(initial?: Info) {
     issues: () => Effect.succeed([]),
     details: () => Effect.die(new Error("Session tests must not read GUI Soul details")),
     defaultForClient: () => Effect.succeed(defaultID),
+    create: () => Effect.die(new Error("Session tests must not create Souls")),
     get: (id) => {
       return Effect.succeed(id === current?.id ? current : undefined)
     },

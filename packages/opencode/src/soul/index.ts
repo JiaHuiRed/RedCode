@@ -4,7 +4,7 @@
 // 设计与实现记录：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md、
 // docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md。
 import { Global } from "@redcode-ai/core/global"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import fs from "node:fs"
 import path from "node:path"
 import matter from "gray-matter"
@@ -19,9 +19,40 @@ import {
   type Details,
   type MetadataSource,
 } from "./schema"
-import { readLegacyDefaults } from "./migration"
+import { readLegacyDefaults, writeSoulIfAbsent } from "./migration"
 
 export * from "./schema"
+
+export type CreateStructuredInput = {
+  id: string
+  name: string
+  displayName?: string
+  commitPrefix?: string
+  avatar?: string
+  description?: string
+  content: string
+}
+
+export type CreateMarkdownInput = {
+  markdown: string
+}
+
+export type CreateInput = CreateStructuredInput | CreateMarkdownInput
+
+// 261113 Red 创建失败分三类：无效输入（400）、ID/文件冲突（409）、落盘失败（IO），由 HTTP 层映射。
+export class SoulInvalidInput extends Schema.TaggedError<SoulInvalidInput>()("SoulInvalidInput", {
+  message: Schema.String,
+  field: Schema.optional(Schema.String),
+}) {}
+
+export class SoulConflict extends Schema.TaggedError<SoulConflict>()("SoulConflict", {
+  message: Schema.String,
+  path: Schema.optional(Schema.String),
+}) {}
+
+export class SoulIO extends Schema.TaggedError<SoulIO>()("SoulIO", {
+  message: Schema.String,
+}) {}
 
 // 目录走 Context.Reference（包规范：配置路径可测）：测试用 Layer.succeed 覆盖。
 export const directory = Context.Reference<string>("opencode/Soul.directory", {
@@ -34,6 +65,7 @@ export interface Interface {
   readonly get: (id: string) => Effect.Effect<Info | undefined>
   readonly details: (id: string) => Effect.Effect<Details | undefined>
   readonly defaultForClient: (client: string) => Effect.Effect<string>
+  readonly create: (input: CreateInput) => Effect.Effect<Summary, SoulInvalidInput | SoulConflict | SoulIO>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Soul") {}
@@ -81,7 +113,29 @@ export const layer = Layer.effect(
       )
     })
 
-    return Service.of({ list, issues, get, details, defaultForClient })
+    const create = Effect.fn("Soul.create")(function* (input: CreateInput) {
+      const dir = yield* directory
+      const prepared = prepareCreate(input)
+      if (prepared instanceof SoulInvalidInput) return yield* prepared
+      const target = path.join(dir, `${prepared.id}.md`)
+      const ioError = (error: unknown) =>
+        new SoulIO({ message: `could not create Soul "${prepared.id}": ${errorMessage(error)}` })
+      // 261113 Red 唯一性以 metadata.id 为准：同 ID 换了文件名也算冲突。
+      const existing = yield* Effect.try({
+        try: () => {
+          fs.mkdirSync(dir, { recursive: true })
+          return scan(dir).items.find((item) => item.summary.id === prepared.id)
+        },
+        catch: ioError,
+      })
+      if (existing)
+        return yield* new SoulConflict({ message: `Soul "${prepared.id}" already exists`, path: existing.path })
+      const written = yield* Effect.try({ try: () => writeSoulIfAbsent(target, prepared.markdown), catch: ioError })
+      if (!written) return yield* new SoulConflict({ message: `Soul "${prepared.id}" already exists`, path: target })
+      return prepared.summary
+    })
+
+    return Service.of({ list, issues, get, details, defaultForClient, create })
   }),
 )
 
@@ -162,56 +216,13 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
       issues.push({ path: file, message: `exceeds ${MAX_SOUL_BYTES} bytes` })
       continue
     }
-    const parsed = parseText(raw)
-    if (!parsed) {
-      issues.push({ path: file, message: "failed to parse frontmatter" })
+    const parsed = validateDocument(raw)
+    if (parsed.kind === "invalid") {
+      issues.push({ path: file, message: parsed.message })
       continue
     }
-    if (raw.startsWith("---") && !hasMetadata(parsed.data)) {
-      issues.push({ path: file, message: "invalid or incomplete metadata" })
-      continue
-    }
-    const description =
-      typeof parsed.data === "object" && parsed.data !== null
-        ? (parsed.data as Record<string, unknown>).description
-        : undefined
-    if (
-      typeof description === "string" &&
-      (Buffer.byteLength(description.trim(), "utf8") > MAX_SOUL_DESCRIPTION_BYTES || /[\r\n]/.test(description.trim()))
-    ) {
-      issues.push({
-        path: file,
-        message: /[\r\n]/.test(description.trim())
-          ? "description must be a single line"
-          : `description exceeds ${MAX_SOUL_DESCRIPTION_BYTES} UTF-8 bytes`,
-      })
-      continue
-    }
-    if (parsed.content.trim() === "") {
-      issues.push({ path: file, message: "empty content" })
-      continue
-    }
-
-    // 有完整 metadata 但 id 不合法：明示错误（设计 §39 的 invalid id），不走文件名兼容。
-    if (hasMetadata(parsed.data) && !isMetadata(parsed.data)) {
-      issues.push({ path: file, message: "invalid or incomplete metadata" })
-      continue
-    }
-    if (isMetadata(parsed.data) && !ID_PATTERN.test(parsed.data.id)) {
-      issues.push({ path: file, message: `invalid id "${parsed.data.id}"` })
-      continue
-    }
-    const metadata = isMetadata(parsed.data) ? parsed.data : undefined
-    const summary = metadata
-      ? {
-          id: metadata.id,
-          name: metadata.name,
-          displayName: metadata.display_name ?? metadata.name,
-          commitPrefix: metadata.commit_prefix ?? metadata.display_name ?? metadata.name,
-          avatar: metadata.avatar,
-          ...(metadata.description ? { description: metadata.description.trim() } : {}),
-        }
-      : legacySummary(file, parsed.content)
+    const metadata = parsed.kind === "valid" ? parsed.metadata : undefined
+    const summary = metadata ? summaryFrom(metadata) : legacySummary(file, parsed.content)
     if (!summary) {
       issues.push({ path: file, message: "invalid frontmatter: missing id" })
       continue
@@ -271,14 +282,138 @@ function hasMetadata(data: unknown): boolean {
   return typeof data === "object" && data !== null && Object.keys(data).length > 0
 }
 
-function isMetadata(data: unknown): data is {
+type FileMetadata = {
   id: string
   name: string
   display_name?: string
   commit_prefix?: string
   avatar?: string
   description?: string
-} {
+}
+
+type Prepared = { id: string; summary: Summary; markdown: string }
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function invalid(message: string, field?: string) {
+  return new SoulInvalidInput({ message, ...(field === undefined ? {} : { field }) })
+}
+
+function prepareCreate(input: CreateInput): Prepared | SoulInvalidInput {
+  return "markdown" in input ? prepareMarkdown(input.markdown) : prepareStructured(input)
+}
+
+function prepareMarkdown(markdown: string): Prepared | SoulInvalidInput {
+  if (typeof markdown !== "string" || markdown.trim() === "") return invalid("markdown must not be empty", "markdown")
+  if (Buffer.byteLength(markdown, "utf8") > MAX_SOUL_BYTES)
+    return invalid(`Soul file exceeds ${MAX_SOUL_BYTES} bytes`, "markdown")
+  const parsed = validateDocument(markdown)
+  if (parsed.kind === "invalid") return invalid(parsed.message, "markdown")
+  // 无 frontmatter 的旧格式只能靠文件名取 id；一次粘贴没有文件名，必须显式给出 id/name。
+  if (parsed.kind === "legacy") return invalid("frontmatter with id and name is required", "markdown")
+  return { id: parsed.metadata.id, summary: summaryFrom(parsed.metadata), markdown }
+}
+
+function prepareStructured(input: CreateStructuredInput): Prepared | SoulInvalidInput {
+  if (!ID_PATTERN.test(input.id)) return invalid(`invalid id "${input.id}"`, "id")
+  if (typeof input.name !== "string") return invalid("name must not be empty", "name")
+  const name = singleLine(input.name, "name")
+  if (name instanceof SoulInvalidInput) return name
+  const displayName = optionalSingleLine(input.displayName, "displayName")
+  if (displayName instanceof SoulInvalidInput) return displayName
+  const commitPrefix = optionalSingleLine(input.commitPrefix, "commitPrefix")
+  if (commitPrefix instanceof SoulInvalidInput) return commitPrefix
+  const avatar = optionalSingleLine(input.avatar, "avatar")
+  if (avatar instanceof SoulInvalidInput) return avatar
+  const description = optionalSingleLine(input.description, "description")
+  if (description instanceof SoulInvalidInput) return description
+  if (description !== undefined && Buffer.byteLength(description, "utf8") > MAX_SOUL_DESCRIPTION_BYTES)
+    return invalid(`description exceeds ${MAX_SOUL_DESCRIPTION_BYTES} UTF-8 bytes`, "description")
+  if (typeof input.content !== "string" || input.content.trim() === "")
+    return invalid("content must not be empty", "content")
+
+  const metadata: Array<[string, string | undefined]> = [
+    ["id", input.id],
+    ["name", name],
+    ["display_name", displayName],
+    ["commit_prefix", commitPrefix],
+    ["avatar", avatar],
+    ["description", description],
+  ]
+  // JSON 字符串字面量同时是合法的 YAML 双引号标量：冒号、井号、引号、反斜杠都不会破坏 frontmatter。
+  const lines = metadata.flatMap(([key, value]) => (value === undefined ? [] : [`${key}: ${JSON.stringify(value)}`]))
+  const body = input.content.endsWith("\n") ? input.content : `${input.content}\n`
+  const markdown = `---\n${lines.join("\n")}\n---\n\n${body}`
+  if (Buffer.byteLength(markdown, "utf8") > MAX_SOUL_BYTES)
+    return invalid(`Soul file exceeds ${MAX_SOUL_BYTES} bytes`, "content")
+  return {
+    id: input.id,
+    markdown,
+    summary: summaryFrom({
+      id: input.id,
+      name,
+      display_name: displayName,
+      commit_prefix: commitPrefix,
+      avatar,
+      description,
+    }),
+  }
+}
+
+function singleLine(value: string, field: string): string | SoulInvalidInput {
+  const trimmed = value.trim()
+  if (trimmed === "") return invalid(`${field} must not be empty`, field)
+  if (/[\r\n]/.test(trimmed)) return invalid(`${field} must be a single line`, field)
+  return trimmed
+}
+
+function optionalSingleLine(value: string | undefined, field: string): string | undefined | SoulInvalidInput {
+  return value === undefined ? undefined : singleLine(value, field)
+}
+
+// 创建与 registry 共用同一套解析/校验：粘贴的 Markdown 必须能被 registry 原样识别。
+function validateDocument(raw: string):
+  | { kind: "valid"; metadata: FileMetadata; content: string }
+  | { kind: "legacy"; content: string }
+  | { kind: "invalid"; message: string } {
+  const parsed = parseText(raw)
+  if (!parsed) return { kind: "invalid", message: "failed to parse frontmatter" }
+  if (raw.startsWith("---") && !hasMetadata(parsed.data))
+    return { kind: "invalid", message: "invalid or incomplete metadata" }
+  const description =
+    typeof parsed.data === "object" && parsed.data !== null
+      ? (parsed.data as Record<string, unknown>).description
+      : undefined
+  if (typeof description === "string") {
+    const trimmed = description.trim()
+    if (/[\r\n]/.test(trimmed)) return { kind: "invalid", message: "description must be a single line" }
+    if (Buffer.byteLength(trimmed, "utf8") > MAX_SOUL_DESCRIPTION_BYTES)
+      return { kind: "invalid", message: `description exceeds ${MAX_SOUL_DESCRIPTION_BYTES} UTF-8 bytes` }
+  }
+  if (parsed.content.trim() === "") return { kind: "invalid", message: "empty content" }
+  // 有完整 metadata 但 id 不合法：明示错误（设计 §39 的 invalid id），不走文件名兼容。
+  if (hasMetadata(parsed.data) && !isMetadata(parsed.data))
+    return { kind: "invalid", message: "invalid or incomplete metadata" }
+  if (isMetadata(parsed.data) && !ID_PATTERN.test(parsed.data.id))
+    return { kind: "invalid", message: `invalid id "${parsed.data.id}"` }
+  if (!isMetadata(parsed.data)) return { kind: "legacy", content: parsed.content }
+  return { kind: "valid", metadata: parsed.data, content: parsed.content }
+}
+
+function summaryFrom(metadata: FileMetadata): Summary {
+  return {
+    id: metadata.id,
+    name: metadata.name,
+    displayName: metadata.display_name ?? metadata.name,
+    commitPrefix: metadata.commit_prefix ?? metadata.display_name ?? metadata.name,
+    avatar: metadata.avatar,
+    ...(metadata.description ? { description: metadata.description.trim() } : {}),
+  }
+}
+
+function isMetadata(data: unknown): data is FileMetadata {
   if (typeof data !== "object" || data === null) return false
   const value = data as Record<string, unknown>
   if (

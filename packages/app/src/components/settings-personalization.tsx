@@ -1,6 +1,6 @@
 import { Button } from "@redcode-ai/ui/button"
 import { TextField } from "@redcode-ai/ui/text-field"
-import { useQuery } from "@tanstack/solid-query"
+import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { useParams } from "@solidjs/router"
 import { createMemo, For, Show, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -14,6 +14,37 @@ import { decode64 } from "@/utils/base64"
 import { SoulAvatar } from "./soul-avatar"
 import { SoulAvatarPicker } from "./soul-avatar-picker"
 
+// POST /soul（operationId soul.create）接受两种 JSON body：结构化字段，或 { markdown } 整份 Soul 文件。
+// SDK 由服务端路由生成；这里按现有 SDK 的扁平 body 参数模式调用，不在浏览器里重复解析 YAML。
+export type SoulCreateInput =
+  | { markdown: string }
+  | {
+      id: string
+      name: string
+      displayName?: string
+      commitPrefix?: string
+      avatar?: string
+      description?: string
+      content: string
+    }
+
+export type SoulCreated = { id: string; name?: string; displayName?: string }
+
+// 与服务端 soul/schema 的 ID_PATTERN 一致：小写、数字、- 与 _。
+const SOUL_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
+
+// HTTP 错误体是 JSON 对象而非 Error 实例（hey-api 直接 throw 解析结果），按边界提取可读文案。
+function errorMessage(error: unknown): string | undefined {
+  if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  if (typeof error !== "object" || error === null) return undefined
+  const value = error as { message?: unknown; error?: unknown; data?: { message?: unknown } }
+  if (typeof value.message === "string" && value.message) return value.message
+  if (typeof value.error === "string" && value.error) return value.error
+  if (typeof value.data?.message === "string" && value.data.message) return value.data.message
+  return undefined
+}
+
 export const SettingsPersonalization: Component = () => {
   const language = useLanguage()
   const settings = useSettings()
@@ -22,6 +53,7 @@ export const SettingsPersonalization: Component = () => {
   const server = useServer()
   const sync = useServerSync()
   const params = useParams()
+  const queryClient = useQueryClient()
   const [view, setView] = createStore({ selectedId: "", search: "", feedback: "", error: "" })
 
   const souls = useQuery(() => ({
@@ -109,6 +141,16 @@ export const SettingsPersonalization: Component = () => {
     )
   }
 
+  const createSoul = async (input: SoulCreateInput) => {
+    const created = (await sdk.client.soul.create(input, { throwOnError: true })).data
+    // 新 Soul 写盘后先刷新注册表再选中；默认 Soul 与当前会话绑定都不动。
+    await souls.refetch()
+    void issues.refetch()
+    setView({ selectedId: created.id, search: "", error: "", feedback: "" })
+    void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "detail", created.id] })
+    return created
+  }
+
   return (
     <div class="flex h-full flex-col overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10">
       <header class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
@@ -191,6 +233,17 @@ export const SettingsPersonalization: Component = () => {
             </p>
           </Show>
           <p aria-live="polite" class="text-12-regular text-text-success-base">{view.feedback}</p>
+        </section>
+
+        <section
+          aria-label={language.t("settings.personalization.create.title")}
+          class="flex flex-col gap-4 rounded-lg border border-border-weak-base bg-surface-base p-4"
+        >
+          <div class="flex flex-col gap-1">
+            <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.create.title")}</h3>
+            <p class="text-12-regular text-text-weak">{language.t("settings.personalization.create.description")}</p>
+          </div>
+          <SoulCreateForm create={createSoul} />
         </section>
 
         <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,0.85fr)_minmax(0,1.5fr)]">
@@ -373,3 +426,230 @@ const DetailField: Component<{ label: string; value?: string; source: string }> 
     <dd class="mt-1 break-words text-14-regular text-text-strong">{props.value || "—"}</dd>
   </div>
 )
+
+export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Promise<SoulCreated> }> = (props) => {
+  const language = useLanguage()
+  const [state, setState] = createStore({
+    mode: "markdown" as "markdown" | "fields",
+    markdown: "",
+    id: "",
+    name: "",
+    displayName: "",
+    commitPrefix: "",
+    avatar: "",
+    description: "",
+    content: "",
+    busy: false,
+    error: "",
+    message: "",
+    fieldErrors: { id: "", name: "", content: "" },
+  })
+
+  // 所有提交共用：busy 期间直接返回（按钮已 disabled，这里是第二道闸）；失败保留输入。
+  const submit = async (input: SoulCreateInput) => {
+    if (state.busy) return
+    setState({ busy: true, error: "", message: "" })
+    try {
+      const created = await props.create(input)
+      setState({
+        busy: false,
+        markdown: "",
+        id: "",
+        name: "",
+        displayName: "",
+        commitPrefix: "",
+        avatar: "",
+        description: "",
+        content: "",
+        fieldErrors: { id: "", name: "", content: "" },
+        message: language.t("settings.personalization.create.created", {
+          name: created.displayName || created.name || created.id,
+        }),
+      })
+    } catch (error) {
+      setState({
+        busy: false,
+        error: errorMessage(error) ?? language.t("settings.personalization.create.failed"),
+      })
+    }
+  }
+
+  const submitMarkdown = (event: SubmitEvent) => {
+    event.preventDefault()
+    if (!state.markdown.trim()) {
+      setState({ error: language.t("settings.personalization.create.markdownRequired"), message: "" })
+      return
+    }
+    // 整份原文直接交给服务端按同一套 frontmatter 规则解析，不在浏览器里拆分字段。
+    void submit({ markdown: state.markdown })
+  }
+
+  const submitFields = (event: SubmitEvent) => {
+    event.preventDefault()
+    const id = state.id.trim()
+    const name = state.name.trim()
+    const content = state.content.trim()
+    const fieldErrors = {
+      id: !id
+        ? language.t("settings.personalization.create.idRequired")
+        : SOUL_ID_PATTERN.test(id)
+          ? ""
+          : language.t("settings.personalization.create.idInvalid"),
+      name: name ? "" : language.t("settings.personalization.create.nameRequired"),
+      content: content ? "" : language.t("settings.personalization.create.contentRequired"),
+    }
+    setState({ fieldErrors, error: "", message: "" })
+    if (fieldErrors.id || fieldErrors.name || fieldErrors.content) return
+    void submit({
+      id,
+      name,
+      displayName: state.displayName.trim() || undefined,
+      commitPrefix: state.commitPrefix.trim() || undefined,
+      avatar: state.avatar.trim() || undefined,
+      description: state.description.trim() || undefined,
+      content,
+    })
+  }
+
+  return (
+    <div class="flex flex-col gap-3">
+      <div
+        role="group"
+        aria-label={language.t("settings.personalization.create.modeLabel")}
+        class="flex flex-wrap gap-2"
+      >
+        <Button
+          type="button"
+          size="small"
+          variant={state.mode === "markdown" ? "secondary" : "ghost"}
+          aria-pressed={state.mode === "markdown"}
+          disabled={state.busy}
+          onClick={() => setState({ mode: "markdown", error: "" })}
+        >
+          {language.t("settings.personalization.create.modeMarkdown")}
+        </Button>
+        <Button
+          type="button"
+          size="small"
+          variant={state.mode === "fields" ? "secondary" : "ghost"}
+          aria-pressed={state.mode === "fields"}
+          disabled={state.busy}
+          onClick={() => setState({ mode: "fields", error: "" })}
+        >
+          {language.t("settings.personalization.create.modeFields")}
+        </Button>
+      </div>
+      <Show when={state.mode === "markdown"}>
+        <form class="flex flex-col gap-3" onSubmit={submitMarkdown}>
+          <TextField
+            label={language.t("settings.personalization.create.markdownLabel")}
+            description={language.t("settings.personalization.create.markdownDescription")}
+            placeholder={language.t("settings.personalization.create.markdownPlaceholder")}
+            value={state.markdown}
+            onChange={(value) => setState({ markdown: value, error: "" })}
+            disabled={state.busy}
+            multiline
+            spellcheck={false}
+            autocomplete="off"
+            class="max-h-80 overflow-y-auto font-mono text-12-regular"
+          />
+          <div class="flex flex-wrap items-center gap-3">
+            <Button type="submit" size="small" disabled={state.busy}>
+              {language.t(
+                state.busy
+                  ? "settings.personalization.create.submitting"
+                  : "settings.personalization.create.markdownSubmit",
+              )}
+            </Button>
+          </div>
+        </form>
+      </Show>
+      <Show when={state.mode === "fields"}>
+        <form class="flex flex-col gap-3" onSubmit={submitFields}>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextField
+              label={language.t("settings.personalization.create.idLabel")}
+              description={language.t("settings.personalization.create.idDescription")}
+              placeholder={language.t("settings.personalization.create.idPlaceholder")}
+              value={state.id}
+              onChange={(value) => setState({ id: value, error: "", fieldErrors: { ...state.fieldErrors, id: "" } })}
+              error={state.fieldErrors.id}
+              validationState={state.fieldErrors.id ? "invalid" : undefined}
+              disabled={state.busy}
+              spellcheck={false}
+              autocomplete="off"
+            />
+            <TextField
+              label={language.t("settings.personalization.create.nameLabel")}
+              value={state.name}
+              onChange={(value) => setState({ name: value, error: "", fieldErrors: { ...state.fieldErrors, name: "" } })}
+              error={state.fieldErrors.name}
+              validationState={state.fieldErrors.name ? "invalid" : undefined}
+              disabled={state.busy}
+              autocomplete="off"
+            />
+            <TextField
+              label={language.t("settings.personalization.create.displayNameLabel")}
+              value={state.displayName}
+              onChange={(value) => setState({ displayName: value, error: "" })}
+              disabled={state.busy}
+              autocomplete="off"
+            />
+            <TextField
+              label={language.t("settings.personalization.create.commitPrefixLabel")}
+              value={state.commitPrefix}
+              onChange={(value) => setState({ commitPrefix: value, error: "" })}
+              disabled={state.busy}
+              autocomplete="off"
+            />
+            <TextField
+              label={language.t("settings.personalization.create.avatarLabel")}
+              description={language.t("settings.personalization.create.avatarDescription")}
+              value={state.avatar}
+              onChange={(value) => setState({ avatar: value, error: "" })}
+              disabled={state.busy}
+              spellcheck={false}
+              autocomplete="off"
+            />
+            <TextField
+              label={language.t("settings.personalization.create.descriptionLabel")}
+              description={language.t("settings.personalization.create.descriptionHint")}
+              value={state.description}
+              onChange={(value) => setState({ description: value, error: "" })}
+              disabled={state.busy}
+            />
+          </div>
+          <TextField
+            label={language.t("settings.personalization.create.contentLabel")}
+            placeholder={language.t("settings.personalization.create.contentPlaceholder")}
+            value={state.content}
+            onChange={(value) => setState({ content: value, error: "", fieldErrors: { ...state.fieldErrors, content: "" } })}
+            error={state.fieldErrors.content}
+            validationState={state.fieldErrors.content ? "invalid" : undefined}
+            disabled={state.busy}
+            multiline
+            spellcheck={false}
+            class="min-h-32 max-h-60 overflow-y-auto font-mono text-12-regular"
+          />
+          <div class="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="small" disabled={state.busy}>
+              {language.t(
+                state.busy
+                  ? "settings.personalization.create.submitting"
+                  : "settings.personalization.create.fieldsSubmit",
+              )}
+            </Button>
+          </div>
+        </form>
+      </Show>
+      <p data-testid="soul-create-message" aria-live="polite" class="text-12-regular text-text-success-base">
+        {state.message}
+      </p>
+      <Show when={state.error}>
+        <p data-testid="soul-create-error" role="alert" class="text-12-regular text-text-danger-base">
+          {state.error}
+        </p>
+      </Show>
+    </div>
+  )
+}

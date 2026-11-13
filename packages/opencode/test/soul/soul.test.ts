@@ -5,6 +5,7 @@ import fs from "node:fs"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
 import { Soul } from "@/soul"
+import { MAX_SOUL_BYTES } from "@/soul/schema"
 import { migrateLegacySouls } from "@/soul/migration"
 
 const it = testEffect(Layer.mergeAll(Soul.defaultLayer))
@@ -494,6 +495,163 @@ describe("soul registry", () => {
       const soul = yield* Soul.Service
       expect(yield* soul.defaultForClient("tui")).toBe("karina")
       expect(yield* soul.defaultForClient("desktop")).toBe("yuqi")
+    }),
+  )
+})
+
+describe("soul create", () => {
+  const runCreate = (dir: string, input: Soul.CreateInput) =>
+    Effect.flatMap(Soul.Service, (soul) => soul.create(input).pipe(Effect.provideService(Soul.directory, dir)))
+
+  it.instance("creates a structured Soul, returns its summary, and leaves defaults untouched", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const soul = yield* Soul.Service
+
+      const created = yield* runCreate(dir, {
+        id: "new-soul",
+        name: "New: Soul #1",
+        displayName: 'Quoted "Name"',
+        commitPrefix: "NewTag",
+        avatar: "avatar-key",
+        description: "  short description  ",
+        content: "# Body\n\nHello: world\n",
+      })
+
+      expect(created).toEqual({
+        id: "new-soul",
+        name: "New: Soul #1",
+        displayName: 'Quoted "Name"',
+        commitPrefix: "NewTag",
+        avatar: "avatar-key",
+        description: "short description",
+      })
+      const raw = fs.readFileSync(path.join(dir, "new-soul.md"), "utf8")
+      expect(raw).toContain('id: "new-soul"')
+      expect(raw).toContain('name: "New: Soul #1"')
+      expect(raw).toContain('display_name: "Quoted \\"Name\\""')
+      expect(raw).toContain("\n\n# Body\n\nHello: world\n")
+
+      const info = yield* soul
+        .get("new-soul")
+        .pipe(Effect.provideService(Soul.directory, dir))
+      expect(info).toMatchObject({
+        id: "new-soul",
+        name: "New: Soul #1",
+        displayName: 'Quoted "Name"',
+        commitPrefix: "NewTag",
+        content: "# Body\n\nHello: world",
+        path: path.join(dir, "new-soul.md"),
+      })
+      expect(yield* soul.defaultForClient("desktop").pipe(Effect.provideService(Soul.directory, dir))).toBe("yuqi")
+    }),
+  )
+
+  it.instance("refuses to overwrite an existing Soul with the same id", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const input = { id: "duplicate", name: "First", content: "first body" }
+      yield* runCreate(dir, input)
+      const before = fs.readFileSync(path.join(dir, "duplicate.md"), "utf8")
+
+      const error = yield* runCreate(dir, { ...input, name: "Second", content: "second body" }).pipe(Effect.flip)
+      expect(error._tag).toBe("SoulConflict")
+      expect(error.message).toContain("already exists")
+      expect(fs.readFileSync(path.join(dir, "duplicate.md"), "utf8")).toBe(before)
+    }),
+  )
+
+  it.instance("refuses an id already registered under a different filename", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "alias.md"), official("id: taken\nname: Taken"))
+
+      const error = yield* runCreate(dir, { id: "taken", name: "Other", content: "body" }).pipe(Effect.flip)
+      expect(error._tag).toBe("SoulConflict")
+      expect((error as Soul.SoulConflict).path).toBe(path.join(dir, "alias.md"))
+      expect(fs.existsSync(path.join(dir, "taken.md"))).toBe(false)
+    }),
+  )
+
+  it.instance("rejects invalid structured input with a field-specific error", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const cases: [Soul.CreateStructuredInput, string][] = [
+        [{ id: "Bad ID", name: "X", content: "body" }, "id"],
+        [{ id: "blank-name", name: "   ", content: "body" }, "name"],
+        [{ id: "blank-display", name: "X", displayName: "  ", content: "body" }, "displayName"],
+        [{ id: "empty-body", name: "X", content: " \n" }, "content"],
+        [{ id: "long-desc", name: "X", description: "你".repeat(86), content: "body" }, "description"],
+        [{ id: "multi-desc", name: "X", description: "first\nsecond", content: "body" }, "description"],
+        [{ id: "too-big", name: "X", content: "x".repeat(MAX_SOUL_BYTES) }, "content"],
+      ]
+
+      for (const [input, field] of cases) {
+        const error = yield* runCreate(dir, input).pipe(Effect.flip)
+        expect(error._tag).toBe("SoulInvalidInput")
+        expect((error as Soul.SoulInvalidInput).field).toBe(field)
+        expect(fs.existsSync(path.join(dir, `${input.id}.md`))).toBe(false)
+      }
+    }),
+  )
+
+  it.instance("accepts a complete Markdown document verbatim", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const markdown = `---\nid: "pasted-soul"\nname: "Pasted: Soul #1"\ndisplay_name: "Pasted"\ndescription: "a: b # c"\n---\n\n# Heading\n\nBody: with colon\n`
+      const soul = yield* Soul.Service
+
+      const created = yield* runCreate(dir, { markdown })
+      expect(created).toEqual({
+        id: "pasted-soul",
+        name: "Pasted: Soul #1",
+        displayName: "Pasted",
+        commitPrefix: "Pasted",
+        avatar: undefined,
+        description: "a: b # c",
+      })
+      expect(fs.readFileSync(path.join(dir, "pasted-soul.md"), "utf8")).toBe(markdown)
+      expect(
+        (yield* soul.get("pasted-soul").pipe(Effect.provideService(Soul.directory, dir)))?.content,
+      ).toBe("# Heading\n\nBody: with colon")
+    }),
+  )
+
+  it.instance("rejects Markdown the registry cannot parse or would not list", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const cases = [
+        "# Just body\n",
+        official('id: "Bad ID"\nname: Bad'),
+        official("id: unknown\nname: Unknown\nlegacy_client: tui"),
+        "---\nid: empty\nname: Empty\n---\n\n   \n",
+        official(`id: long\nname: Long\ndescription: '${"你".repeat(86)}'`),
+        "x".repeat(MAX_SOUL_BYTES + 1),
+      ]
+
+      for (const markdown of cases) {
+        const error = yield* runCreate(dir, { markdown }).pipe(Effect.flip)
+        expect(error._tag).toBe("SoulInvalidInput")
+      }
+      expect(fs.existsSync(path.join(dir, "long.md"))).toBe(false)
+    }),
+  )
+
+  it.instance("reports registry IO failures separately from invalid input", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(dir, "not a directory")
+
+      const error = yield* runCreate(dir, { id: "io-soul", name: "IO", content: "body" }).pipe(Effect.flip)
+      expect(error._tag).toBe("SoulIO")
+      expect(error.message).toContain('could not create Soul "io-soul"')
     }),
   )
 })

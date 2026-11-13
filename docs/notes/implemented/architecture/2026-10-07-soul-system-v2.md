@@ -75,3 +75,16 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 - 浏览器验收（真实 app 源码 + 隔离 fixture，见 `.redcode/temp/soul-gui-fixture.ts`，不触 live home/DB/源 MD/照片，无模型调用）：默认卡/可搜索阵容/详情 sources/路径复制/正文预览、默认与会话双徽章、切换默认即时生效且当前会话不变；头像上传 PNG/WebP 成功、坏图拒绝且保留旧图、移除后时间线同 ID 同步换图；issues 结构化列表、空列表引导、registry 500 与详情 404 均可重试恢复；800px 窄窗口无横向溢出；页面错误监听为空（一次 ResizeObserver loop 提示，复载未复现，不判缺陷）。Electron 打包与 live 模型人格回复仍不在本批范围。
 
 本批模型可见四问：① 没有改人格正文、提示词包装、工具 schema 或工具输出；只增加 GUI 只读 HTTP 数据与本地媒体。② 固定前缀 token 增量为零。③ 模型前缀逐字节不变，无 KV cache 失效。④ 没有新增模型注入项，原人格预算与持久日志链不变。
+
+## 261113 修正：允许新建（对 V1A 只读边界的有意扩展）
+
+用户实需是在 GUI 里加一个人格，而当时只能手写 `~/.redcode/souls/*.md`。本批新增 `POST /soul`（operationId `soul.create`）与个性化页新建表单，范围仍是最小写面：
+
+- **只创建**：不覆盖、不编辑、不删除。目标文件名由服务端按合法 ID 生成（客户端不传路径），`wx` 独占创建；同 ID 已存在于任意文件名一律 409，绝不静默改名或覆盖。
+- **同源校验**：写前用 Registry 同一套解析器验证最终文档（ID_PATTERN、16 KiB 总字节、description 单行且 ≤256 UTF-8 字节、正文非空、frontmatter 完整）；失败返回字段级 400，不落半成品。
+- **两种输入**：结构化字段 + 正文，或一整份含 YAML frontmatter 的 Markdown 原文（服务端解析，浏览器不重复实现 YAML）。混合载荷 400。
+- **payload 形状权衡**：OpenAPI 层是宽松对象而非 `oneOf`——生成器会把互斥联合降级成「所有字段可选、Never 变 unknown」，SDK 类型两个分支都无法满足。互斥与必填改在 handler 的 `toCreateInput` 显式判定，运行时严格性不变，换取生成客户端真正可用。
+- **不影响现有语义**：创建不热切当前会话、不改默认 Soul、不改会话固定版本规则。
+- 验证：`test/soul/soul.test.ts` + `test/session/soul.test.ts` 46 pass；`test/server/httpapi-soul.test.ts` 6 pass；opencode 与 app typecheck 通过；`check:openapi-drift` 通过。GUI 视觉验收未做。
+
+模型可见四问：① 人格正文、提示词、工具 schema/输出均未改。② 固定前缀 token 增量为零。③ 前缀逐字节不变，无 KV cache 失效。④ 无新增模型注入项；新建的 Soul 只影响之后的新会话。

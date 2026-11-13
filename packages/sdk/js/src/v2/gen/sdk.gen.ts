@@ -241,6 +241,8 @@ import type {
   SessionUpdateResponses,
   SessionUsageErrors,
   SessionUsageResponses,
+  SoulCreateErrors,
+  SoulCreateResponses,
   SoulDefaultErrors,
   SoulDefaultResponses,
   SoulGetErrors,
@@ -4672,6 +4674,53 @@ export class Soul extends HeyApiClient {
     return (options?.client ?? this.client).get<SoulListResponses, SoulListErrors, ThrowOnError>({
       url: "/soul",
       ...options,
+    })
+  }
+
+  /**
+   * Create a Soul
+   *
+   * Create a Soul in the global registry without overwriting existing files. Send either structured metadata plus content, or a complete Markdown document whose YAML frontmatter and body are validated by the registry parser. Creation never changes the current session or the default Soul.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      id?: string
+      name?: string
+      displayName?: string
+      commitPrefix?: string
+      avatar?: string
+      description?: string
+      content?: string
+      markdown?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "id" },
+            { in: "body", key: "name" },
+            { in: "body", key: "displayName" },
+            { in: "body", key: "commitPrefix" },
+            { in: "body", key: "avatar" },
+            { in: "body", key: "description" },
+            { in: "body", key: "content" },
+            { in: "body", key: "markdown" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SoulCreateResponses, SoulCreateErrors, ThrowOnError>({
+      url: "/soul",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

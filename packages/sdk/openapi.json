@@ -9308,6 +9308,120 @@
             "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.list({\n  ...\n})"
           }
         ]
+      },
+      "post": {
+        "tags": ["soul"],
+        "operationId": "soul.create",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Created Soul summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "commitPrefix": {
+                      "type": "string"
+                    },
+                    "avatar": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id", "name", "displayName", "commitPrefix"],
+                  "additionalProperties": false,
+                  "description": "Created Soul summary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a Soul in the global registry without overwriting existing files. Send either structured metadata plus content, or a complete Markdown document whose YAML frontmatter and body are validated by the registry parser. Creation never changes the current session or the default Soul.",
+        "summary": "Create a Soul",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "commitPrefix": {
+                    "type": "string"
+                  },
+                  "avatar": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "markdown": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.create({\n  ...\n})"
+          }
+        ]
       }
     },
     "/soul/{id}": {
@@ -13296,6 +13410,9 @@
           "cost": {
             "type": "number"
           },
+          "estimated": {
+            "type": "boolean"
+          },
           "currency": {
             "type": "string",
             "enum": ["USD", "CNY"]
@@ -13949,6 +14066,9 @@
                 "$ref": "#/components/schemas/ToolFailureStoppedError"
               },
               {
+                "$ref": "#/components/schemas/TextLoopStoppedError"
+              },
+              {
                 "$ref": "#/components/schemas/APIError"
               }
             ]
@@ -14055,6 +14175,27 @@
           "cost",
           "tokens"
         ],
+        "additionalProperties": false
+      },
+      "TextLoopStoppedError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["TextLoopStoppedError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "ToolFailureStoppedError": {
@@ -26487,6 +26628,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ToolFailureStoppedError"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TextLoopStoppedError"
                   },
                   {
                     "$ref": "#/components/schemas/APIError"
