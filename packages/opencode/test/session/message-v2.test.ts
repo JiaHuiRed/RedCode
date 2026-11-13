@@ -307,6 +307,98 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  // 261114 Red 跨天注入用例：本地构造日期（正午时刻，避开任何时区的 DST 窗口），
+  //   断言不依赖机器时区。决策见 message-v2.ts 注释与对应 note。
+  const localDate = (year: number, month: number, day: number, hour = 12) =>
+    new Date(year, month - 1, day, hour, 0, 0).getTime()
+
+  test("inserts a date-change notice when the session crosses midnight", async () => {
+    const firstUser = "m-day1-user"
+    const firstAssistant = "m-day1-assistant"
+    const secondUser = "m-day2-user"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: { ...userInfo(firstUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 13) } },
+        parts: [{ ...basePart(firstUser, "p1"), type: "text", text: "friday task" }] as MessageV2.Part[],
+      },
+      {
+        info: { ...assistantInfo(firstAssistant, firstUser), time: { created: localDate(2026, 11, 13) } },
+        parts: [{ ...basePart(firstAssistant, "p1"), type: "text", text: "friday answer" }] as MessageV2.Part[],
+      },
+      {
+        info: { ...userInfo(secondUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 14) } },
+        parts: [{ ...basePart(secondUser, "p2"), type: "text", text: "saturday task" }] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "friday task" }] },
+      { role: "assistant", content: [{ type: "text", text: "friday answer" }] },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "[date changed: the previous turn happened on Fri Nov 13 2026; it is now Sat Nov 14 2026]",
+          },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "saturday task" }] },
+    ])
+  })
+
+  test("no date-change notice within the same day", async () => {
+    const firstUser = "m-morning-user"
+    const firstAssistant = "m-morning-assistant"
+    const secondUser = "m-evening-user"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: { ...userInfo(firstUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 14) } },
+        parts: [{ ...basePart(firstUser, "p1"), type: "text", text: "morning task" }] as MessageV2.Part[],
+      },
+      {
+        info: { ...assistantInfo(firstAssistant, firstUser), time: { created: localDate(2026, 11, 14) } },
+        parts: [{ ...basePart(firstAssistant, "p1"), type: "text", text: "morning answer" }] as MessageV2.Part[],
+      },
+      {
+        info: { ...userInfo(secondUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 14, 23) } },
+        parts: [{ ...basePart(secondUser, "p2"), type: "text", text: "evening task" }] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "morning task" }] },
+      { role: "assistant", content: [{ type: "text", text: "morning answer" }] },
+      { role: "user", content: [{ type: "text", text: "evening task" }] },
+    ])
+  })
+
+  test("fully filtered user turn still advances the date baseline", async () => {
+    const firstUser = "m-baseline-user"
+    const ghostUser = "m-ghost-user"
+    const secondUser = "m-after-ghost-user"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: { ...userInfo(firstUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 13) } },
+        parts: [{ ...basePart(firstUser, "p1"), type: "text", text: "friday task" }] as MessageV2.Part[],
+      },
+      {
+        // 空文本 user 轮：不占模型上下文，但跨天判定仍以它的日期为基准
+        info: { ...userInfo(ghostUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 14) } },
+        parts: [{ ...basePart(ghostUser, "p2"), type: "text", text: "" }] as MessageV2.Part[],
+      },
+      {
+        info: { ...userInfo(secondUser), model: { providerID, modelID: ModelID.make("test-model") }, time: { created: localDate(2026, 11, 14) } },
+        parts: [{ ...basePart(secondUser, "p3"), type: "text", text: "saturday task" }] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "friday task" }] },
+      { role: "user", content: [{ type: "text", text: "saturday task" }] },
+    ])
+  })
+
   test("strips cross-model reasoning instead of demoting it to text", async () => {
     const userID = "m-xmodel-user"
     const assistantID = "m-xmodel-assistant"
@@ -1715,6 +1807,103 @@ describe("session.message-v2.toModelMessage", () => {
     expect(result).toHaveLength(1)
     const texts = (result[0].content as any[]).filter((p) => p.type === "text")
     expect(texts.map((t) => t.text)).toStrictEqual(["", "hello"])
+  })
+})
+
+describe("session.message-v2.continuable", () => {
+  // 261114 Red 续写资格判定用例。规则：finish="length" 或 AbortedError 中止、
+  //   尾段（跳过 step-finish 记账件）为非空正文、无 pending/running 工具。
+  const msg = (
+    parts: MessageV2.Part[],
+    finish?: string,
+    error?: MessageV2.Assistant["error"],
+  ) =>
+    ({
+      ...assistantInfo("m-x", "m-parent", error),
+      ...(finish === undefined ? {} : { finish }),
+      parts,
+    }) as unknown as MessageV2.Assistant & { parts: MessageV2.Part[] }
+
+  const text = (s: string) => [{ ...basePart("m-x", "p1"), type: "text", text: s }] as MessageV2.Part[]
+  const stepFinish = [
+    {
+      ...basePart("m-x", "sf"),
+      type: "step-finish",
+      reason: "length",
+      snapshot: "h",
+      tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      cost: 0,
+    },
+  ] as MessageV2.Part[]
+  const toolPart = (status: "pending" | "running" | "completed") =>
+    ({
+      ...basePart("m-x", "t1"),
+      type: "tool",
+      callID: "call-1",
+      tool: "bash",
+      state:
+        status === "completed"
+          ? { status, input: {}, output: "ok", title: "Bash", metadata: {}, time: { start: 0, end: 1 } }
+          : status === "pending"
+            ? { status, input: {}, raw: "" }
+            : { status, input: {}, time: { start: 0 } },
+    }) as MessageV2.Part
+  const aborted = new MessageV2.AbortedError({ message: "aborted" }).toObject() as MessageV2.Assistant["error"]
+
+  test("length truncation with trailing text is continuable", () => {
+    expect(MessageV2.continuable(msg([...text("partial answer"), ...stepFinish], "length"))).toBe(true)
+  })
+
+  test("earlier completed tools do not block continuation", () => {
+    expect(
+      MessageV2.continuable(msg([...text("step one"), ...stepFinish, ...text("partial answer")], "length")),
+    ).toBe(true)
+  })
+
+  test("user abort with trailing text is continuable", () => {
+    expect(MessageV2.continuable(msg([...text("partial answer")], undefined, aborted))).toBe(true)
+  })
+
+  test("normal completion is not continuable", () => {
+    expect(MessageV2.continuable(msg(text("done"), "stop"))).toBe(false)
+  })
+
+  test("no finish and no abort is not continuable", () => {
+    expect(MessageV2.continuable(msg(text("partial answer")))).toBe(false)
+  })
+
+  test("truncation mid-tool-declaration is not continuable", () => {
+    expect(MessageV2.continuable(msg([...text("using tool"), toolPart("pending")], "length"))).toBe(false)
+    expect(MessageV2.continuable(msg([...text("using tool"), toolPart("running")], "length"))).toBe(false)
+  })
+
+  test("truncation inside reasoning is not continuable", () => {
+    expect(
+      MessageV2.continuable(msg(
+        [
+          ...stepFinish,
+          { ...basePart("m-x", "r1"), type: "reasoning", text: "thinking", time: { start: 0 } },
+        ],
+        "length",
+      )),
+    ).toBe(false)
+  })
+
+  test("synthetic notice tail does not count as answer text", () => {
+    expect(
+      MessageV2.continuable(msg(
+        [...text("partial"), { ...basePart("m-x", "p2"), type: "text", text: "[RedCode] notice", synthetic: true }],
+        "length",
+      )),
+    ).toBe(false)
+  })
+
+  test("bookkeeping-only message is not continuable", () => {
+    expect(MessageV2.continuable(msg(stepFinish, "length"))).toBe(false)
+  })
+
+  test("blank text tail is not continuable", () => {
+    expect(MessageV2.continuable(msg([...stepFinish, ...text("   ")], "length"))).toBe(false)
   })
 })
 

@@ -883,6 +883,14 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
   //   （会话启动/续接、模型切换、压缩边界——stitchModelMessages 的缓存前缀只认重建），
   //   不在轮中主动打缓存：一张图重读走缓存价，为驱逐提前 bust 一次是全量 miss，得不偿失。
   const evictedMedia = markEvictedMedia(input, options?.keepRecentMedia)
+  // 261114 Red 跨天日期变更带内注入（决策 B）：system 尾部每轮只报「今天」（prompt.ts
+  //   date-per-turn），跨零点/隔天续跑的会话里，模型对「前几轮发生在昨天」没有任何带内
+  //   信号——部件时间戳不进上下文。相邻两轮 user 消息的本地日期不同时，在后一轮前插
+  //   一条合成 user 通知。纯派生自 time.created：不落库、字节确定，边界只在跨天那轮
+  //   出现一次、之后逐字节稳定（缓存只在该轮失效一次）；未跨天零字节。格式与
+  //   system 尾部的 toDateString() 同源，与下方 model changed 通知同一先例。
+  //   决策与模型可见四问：docs/notes/proposed/feature/2026-11-14-continue-eligibility-and-date-change-notice.md
+  let previousUserDate: string | undefined
   for (const msg of input) {
     // 260707 Red toUIMessages 同步遍历全部历史消息（含 truncateToolOutput 等重活），
     //   长会话下这个循环本身是一次性同步跑完、中间没有任何让出点——之前 260706 的
@@ -893,6 +901,7 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
     if (msg.parts.length === 0) continue
 
     if (msg.info.role === "user") {
+      const userDate = new Date(msg.info.time.created).toDateString()
       const userMessage: UIMessage = {
         id: msg.info.id,
         role: "user",
@@ -944,6 +953,19 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
         }
       }
       if (userMessage.parts.length > 0) {
+        // 跨天边界在前：先时间线、后身份，两个合成通知都只在实际出站的 user 轮前出现。
+        if (previousUserDate && previousUserDate !== userDate) {
+          result.push({
+            id: MessageID.ascending(),
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: `[date changed: the previous turn happened on ${previousUserDate}; it is now ${userDate}]`,
+              },
+            ],
+          })
+        }
         const selectedModel = msg.info.model
         // 260910 Red: preserve model identity at the historical switch boundary. Provider
         // metadata is deliberately stripped across models below, so the target model needs
@@ -968,6 +990,9 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
         }
         result.push(userMessage)
       }
+      // 全空 user 轮（附件全被忽略等）不占模型上下文，但它确实发生过：
+      // 下一轮的跨天判定仍以它的本地日期为基准。
+      previousUserDate = userDate
     }
 
     if (msg.info.role === "assistant") {
@@ -1176,6 +1201,42 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
     tools: Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }])),
   }
 })
+
+// 261114 Red 续写资格判定（决策 A，chat-demo 调研）。输出被 max_tokens 硬切
+//   （finish="length"）或被用户主动停止（AbortedError）且尾段落在正文文本上时，
+//   该 assistant 消息可作为续写请求的末尾 prefill 原样回传。
+//   是消息已持久化状态的纯函数——LLM 层的 DeepSeek 自动续写（llm.ts
+//   withContinuation，限 DeepSeek 家族且不续工具轮）耗尽后仍会以 finish="length"
+//   落库，非 DeepSeek 模型则完全没有续写路径，这是判定存在的前提。
+//   与 chat-demo 的差异（决策依据，见对应 note）：它把资格写进流式期的 prefix
+//   标记，因为其规则依赖「服务端签名块不可重放 + 导入数据不可信」两个策略；
+//   RedCode 的 tool part 原生可重放、判据全部落库，读时纯派生与写时固化等价，
+//   而落库点家族（prompt.ts 收尾 5 处 + processor）远大于一个纯函数的维护面。
+//   三道门槛：收尾形态（length/中止）、尾段形态（跳过 step-finish 记账件后必须是
+//   非空正文，synthetic 通知/ignored 不算）、无悬空工具（pending/running 的 tool
+//   part 意味着截断点在工具声明上，prefill 回传会违反配对协议）。
+//   note：docs/notes/proposed/feature/2026-11-14-continue-eligibility-and-date-change-notice.md
+export function continuable(message: Assistant & { parts: Part[] }): boolean {
+  if (message.finish === "length") {
+    // 输出上限截断，唯一可续写的正常收尾形态
+  } else if (message.error && AbortedError.isInstance(message.error)) {
+    // 用户主动停止：已落库的正文允许续写（chat-demo 同规则）；其他 error
+    // （content-filter、TextLoopStopped 等）一律不可续
+  } else {
+    return false
+  }
+  let tailText = false
+  for (let i = message.parts.length - 1; i >= 0; i--) {
+    const part = message.parts[i]
+    if (part.type === "step-finish") continue
+    tailText = part.type === "text" && !part.synthetic && !part.ignored && !!part.text.trim()
+    break
+  }
+  if (!tailText) return false
+  return !message.parts.some(
+    (part) => part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"),
+  )
+}
 
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
