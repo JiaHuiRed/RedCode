@@ -78,8 +78,30 @@ export function fallbackSanitization(content: string): string {
   return content.replace(frontmatter, () => processed)
 }
 
+// 261113 Red gray-matter 按 frontmatter 首行语言标记选择解析引擎，内置 javascript 引擎
+// 内部走 eval；defaults 对 engines 是合并不是替换，配置层移除不了内置引擎，所以只能在
+// matter() 之前拒绝非 YAML 标记。agent / command / skill 的 markdown 配置与 Soul 原文导入
+// 共用这一处判定，避免两份实现漂移。
+// 检测细节对齐上游 parseMatter：入口先剥 BOM，`---` 后到行首换行的整行 trim 即语言名，
+// 第 4 个字符还是 `-` 时不算 frontmatter。返回不支持的语言名，支持或没有标记时返回 undefined。
+export function unsupportedFrontmatterLanguage(raw: string): string | undefined {
+  const body = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
+  if (!body.startsWith("---") || body.charAt(3) === "-") return undefined
+  const newline = body.search(/\r?\n/)
+  const language = (newline === -1 ? body.slice(3) : body.slice(3, newline)).trim()
+  if (!language) return undefined
+  const normalized = language.toLowerCase()
+  return normalized === "yaml" || normalized === "yml" ? undefined : language
+}
+
 export async function parse(filePath: string) {
   const template = await Filesystem.readText(filePath)
+  const language = unsupportedFrontmatterLanguage(template)
+  if (language)
+    throw new FrontmatterError({
+      path: filePath,
+      message: `${filePath}: Unsupported frontmatter language "${language}"; only YAML frontmatter is allowed`,
+    })
 
   try {
     const md = matter(template)

@@ -1,5 +1,43 @@
 import { expect, test, describe } from "bun:test"
+import path from "node:path"
 import { ConfigMarkdown } from "@/config/markdown"
+import { tmpdir } from "../fixture/fixture"
+
+describe("ConfigMarkdown: frontmatter language allowlist", () => {
+  // 261113 Red gray-matter 内置 javascript 引擎走 eval，且 engines 是合并而非替换，
+  // 配置层移除不掉。agent / command / skill 三处消费者都经 parse()，这里收口一次。
+  const readProbe = (key: string) => (globalThis as unknown as Record<string, unknown>)[key]
+
+  test("rejects javascript frontmatter without executing it", async () => {
+    await using tmp = await tmpdir()
+    const probe = "__red_markdown_js_probe"
+    const file = path.join(tmp.path, "agent.md")
+    await Bun.write(file, `---js\nglobalThis["${probe}"] = "executed"\n---\n\nbody\n`)
+
+    await expect(ConfigMarkdown.parse(file)).rejects.toThrow("Unsupported frontmatter language")
+    expect(readProbe(probe)).toBeUndefined()
+  })
+
+  test("rejects javascript frontmatter behind a BOM", async () => {
+    await using tmp = await tmpdir()
+    const probe = "__red_markdown_bom_probe"
+    const file = path.join(tmp.path, "command.md")
+    await Bun.write(file, `\uFEFF---js\nglobalThis["${probe}"] = "executed"\n---\n\nbody\n`)
+
+    await expect(ConfigMarkdown.parse(file)).rejects.toThrow("Unsupported frontmatter language")
+    expect(readProbe(probe)).toBeUndefined()
+  })
+
+  test("accepts explicit yaml and yml markers", async () => {
+    await using tmp = await tmpdir()
+    for (const language of ["yaml", "yml"]) {
+      const file = path.join(tmp.path, `${language}.md`)
+      await Bun.write(file, `---${language}\ndescription: ok\n---\n\nbody\n`)
+      const parsed = await ConfigMarkdown.parse(file)
+      expect(parsed.data.description).toBe("ok")
+    }
+  })
+})
 
 describe("ConfigMarkdown: normal template", () => {
   const template = `This is a @valid/path/to/a/file and it should also match at
