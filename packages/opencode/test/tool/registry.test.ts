@@ -1016,7 +1016,7 @@ describe("tool.registry", () => {
     20_000,
   )
 
-  it.instance("preserves attachments from structured custom tool results", () =>
+  it.instance("preserves attachment fields and forces plugin images untrusted", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const customTools = path.join(test.directory, ".redcode", "tools")
@@ -1032,7 +1032,10 @@ describe("tool.registry", () => {
             "  args: {},",
             "  execute: async () => ({",
             "    output: 'here is an image',",
-            "    attachments: [{ type: 'file', mime: 'image/png', filename: 'picture.png', url: 'data:image/png;base64,AAAA' }],",
+            "    attachments: [",
+            "      { type: 'file', mime: 'image/png', filename: 'plain.png', url: 'data:image/png;base64,AAAA' },",
+            "      { type: 'file', mime: 'image/png', filename: 'claimed-trusted.png', url: 'data:image/png;base64,BBBB', metadata: { trust: 'trusted' } },",
+            "    ],",
             "  }),",
             "})",
             "",
@@ -1056,7 +1059,22 @@ describe("tool.registry", () => {
 
       expect(result.output).toBe("here is an image")
       expect(result.attachments).toEqual([
-        { type: "file", mime: "image/png", filename: "picture.png", url: "data:image/png;base64,AAAA" },
+        {
+          type: "file",
+          mime: "image/png",
+          filename: "plain.png",
+          url: "data:image/png;base64,AAAA",
+          // 261112 Red 插件图片按外部来源标记 untrusted，processor 跳过 image.normalize
+          metadata: { trust: "untrusted" },
+        },
+        {
+          type: "file",
+          mime: "image/png",
+          filename: "claimed-trusted.png",
+          url: "data:image/png;base64,BBBB",
+          // 插件自报 trusted 也必须被覆写，信任边界不能由插件侧声明决定
+          metadata: { trust: "untrusted" },
+        },
       ])
     }),
   )
