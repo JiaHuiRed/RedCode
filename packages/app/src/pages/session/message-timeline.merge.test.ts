@@ -25,7 +25,14 @@ function makeTurnRows(id: string, parts: number): Row[] {
   for (let k = 0; k < parts; k++) {
     const ref: PartRef = { messageID: `assistant-${id}`, partID: `${id}-${k}` }
     const group: PartGroup = { key: `${id}:${k}`, type: "part", ref }
-    rows.push(new TimelineRow.AssistantPart({ userMessageID: id, group, previousAssistantPart: k > 0 }))
+    rows.push(
+      new TimelineRow.AssistantPart({
+        userMessageID: id,
+        group,
+        previousAssistantPart: k > 0,
+        repeatSignature: k > 0,
+      }),
+    )
   }
   return rows
 }

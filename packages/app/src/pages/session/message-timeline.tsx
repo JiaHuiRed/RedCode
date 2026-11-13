@@ -2046,7 +2046,10 @@ export function MessageTimeline(props: {
                 <ChiCodingSticker />
               </Show>
               <div data-slot="session-turn-assistant-row">
-                <div data-slot="session-turn-assistant-avatar">
+                <div
+                  data-slot="session-turn-assistant-avatar"
+                  data-continuation={assistantPartRow().repeatSignature || undefined}
+                >
                   <SoulAvatar
                     id={info()?.soul}
                     soul={soulList.data?.find((soul) => soul.id === info()?.soul)}

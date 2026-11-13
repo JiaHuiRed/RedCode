@@ -163,6 +163,7 @@ describe("TimelineRow.equals — 载重假设：结构比较而非引用比较",
       userMessageID: "u1",
       group: { key: "part:m1:p1", type: "part", ref: { messageID: "m1", partID: "p1" } },
       previousAssistantPart: previous,
+      repeatSignature: false,
     })
 
   test("group 是两个不同对象但结构相同 → 相等", () => {
@@ -228,6 +229,7 @@ describe("TimelineRow.reuse — 引用语义", () => {
       userMessageID: "u1",
       group: { key: `part:m1:${id}`, type: "part", ref: { messageID: "m1", partID: id } },
       previousAssistantPart: previous,
+      repeatSignature: false,
     })
 
   test("没有 previous 时原样返回新数组", () => {
@@ -585,5 +587,39 @@ test("最新压缩 marker 变化只重算压缩轮，普通历史不订阅压缩
     } finally {
       dispose()
     }
+  })
+})
+
+// 261113 Red 连续工作段署名：正文是边界，工具/思考之间才省略。
+describe("AssistantPart.repeatSignature — 连续工作段", () => {
+  const build = (parts: Part[]) =>
+    Timeline.constructMessageRows(
+      userMessage("u1", 1),
+      () => parts,
+      [assistantMessage("a1", 2, "u1")],
+      0,
+      true,
+      "idle",
+      false,
+    ).filter((row): row is Extract<TimelineRow, { _tag: "AssistantPart" }> => row._tag === "AssistantPart")
+
+  test("text → tool → tool → text：只有第二个工具延续署名", () => {
+    const rows = build([textPart("p1", "a1"), toolPart("p2", "a1"), toolPart("p3", "a1"), textPart("p4", "a1")])
+    expect(rows.map((row) => row.repeatSignature)).toEqual([false, false, true, false])
+  })
+
+  test("text → text：两段正文各自署名", () => {
+    const rows = build([textPart("p1", "a1"), textPart("p2", "a1")])
+    expect(rows.map((row) => row.repeatSignature)).toEqual([false, false])
+  })
+
+  test("tool → tool → text：正文出现即恢复署名", () => {
+    const rows = build([toolPart("p1", "a1"), toolPart("p2", "a1"), textPart("p3", "a1")])
+    expect(rows.map((row) => row.repeatSignature)).toEqual([false, true, false])
+  })
+
+  test("每轮从 false 起步（返回值只覆盖 assistant part，不受上一轮影响）", () => {
+    const rows = build([toolPart("p1", "a1")])
+    expect(rows.map((row) => row.repeatSignature)).toEqual([false])
   })
 })

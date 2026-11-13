@@ -12,8 +12,11 @@
   overflow-wrap: break-word;
   color: var(--text-strong);
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-base); /* 14px */
-  line-height: 160%;
+  /* 261113 Red 阅读排版：正文比控件大一档（基准 14 → 15），行高 165%。
+     calc 跟 settings.appearance.fontSize 的等比缩放走（--font-size-base 已被缩放），
+     不用固定 px 才能让字号设置对正文继续生效。代码块仍单独一档（.shiki 13px）。 */
+  font-size: calc(var(--font-size-base) + 1px);
+  line-height: 165%;
 
   /* Spacing for flow */
   > *:first-child {
@@ -30,7 +33,7 @@
   h4,
   h5,
   h6 {
-    font-size: 14px;
+    font-size: calc(var(--font-size-base) + 1px);
     color: var(--text-strong);
     font-weight: var(--font-weight-medium);
     margin-top: 0px;
@@ -244,7 +247,7 @@
     width: 100%;
     border-collapse: collapse;
     margin: 24px 0;
-    font-size: var(--font-size-base);
+    font-size: calc(var(--font-size-base) + 1px);
     display: block;
     overflow-x: auto;
   }

@@ -1,12 +1,12 @@
 {
   "$schema": "https://redcode.dev/desktop-theme.json",
   "name": "RedCode",
-  "id": "opencode",
+  "id": "redcode",
   "light": {
     "palette": {
-      "neutral": "#ffffff",
-      "ink": "#1a1a1a",
-      "primary": "#3b7dd8",
+      "neutral": "#f0ece7",
+      "ink": "#282a30",
+      "primary": "#a33e34",
       "accent": "#d68c27",
       "success": "#3d9a57",
       "warning": "#d68c27",
@@ -16,7 +16,15 @@
       "diffDelete": "#f52a65"
     },
     "overrides": {
-      "text-weak": "#8a8a8a",
+      "background-base": "#f1efea",
+      "background-stronger": "#faf9f6",
+      "surface-base": "#f5f3ee",
+      "text-strong": "#282a30",
+      "text-base": "#626973",
+      "text-weak": "#666d77",
+      "surface-brand-base": "#a33e34",
+      "surface-brand-hover": "#8f322a",
+      "text-on-brand-base": "#ffffff",
       "syntax-comment": "#8a8a8a",
       "syntax-keyword": "#d68c27",
       "syntax-string": "#3d9a57",
@@ -46,9 +54,9 @@
   },
   "dark": {
     "palette": {
-      "neutral": "#0a0a0a",
-      "ink": "#eeeeee",
-      "primary": "#fab283",
+      "neutral": "#282b30",
+      "ink": "#ece9e2",
+      "primary": "#de786b",
       "accent": "#9d7cd8",
       "success": "#7fd88f",
       "warning": "#f5a742",
@@ -58,7 +66,15 @@
       "diffDelete": "#e26a75"
     },
     "overrides": {
-      "text-weak": "#808080",
+      "background-base": "#17191d",
+      "background-stronger": "#202329",
+      "surface-base": "#232730",
+      "text-strong": "#ece9e2",
+      "text-base": "#adb3bc",
+      "text-weak": "#828a95",
+      "surface-brand-base": "#de786b",
+      "surface-brand-hover": "#e8897c",
+      "text-on-brand-base": "#1a1c20",
       "syntax-comment": "#808080",
       "syntax-keyword": "#9d7cd8",
       "syntax-string": "#7fd88f",

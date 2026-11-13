@@ -241,6 +241,31 @@ export function Session() {
     if (all.length <= win) return all
     return all.slice(-win)
   })
+
+  // 261113 Red 连续工作段不重复署名：同一 user turn 内连续、同 agent/model 的 assistant
+  // 消息只由第一条显示署名行。判定用 parentID + agent/provider/model，不按文本相邻猜；
+  // 压缩消息与 user 消息都算边界（它们在界面上本来就另起一段）。
+  const continuationMessages = createMemo(() => {
+    const result = new Set<string>()
+    let previous: AssistantMessageInfo | undefined
+    for (const message of messages()) {
+      if (message.role !== "assistant" || message.mode === "compaction") {
+        previous = undefined
+        continue
+      }
+      if (
+        previous &&
+        previous.parentID === message.parentID &&
+        previous.agent === message.agent &&
+        previous.providerID === message.providerID &&
+        previous.modelID === message.modelID
+      ) {
+        result.add(message.id)
+      }
+      previous = message
+    }
+    return result
+  })
   const hiddenMessageCount = createMemo(() => Math.max(0, messages().length - messageWindowSize()))
 
   const permissions = createMemo(() => {
@@ -1731,6 +1756,7 @@ export function Session() {
                         >
                           <AssistantMessage
                             last={lastAssistant()?.id === message.id}
+                            showSignature={!continuationMessages().has(message.id)}
                             message={message as AssistantMessageInfo}
                             parts={sync.data.part[message.id] ?? []}
                           />
@@ -2161,7 +2187,13 @@ function apiRetryHint(error: unknown): string | undefined {
   return "网关可能瞬时拒绝：稍后可重试同模型"
 }
 
-export function AssistantMessage(props: { message: AssistantMessageInfo; parts: Part[]; last: boolean }) {
+export function AssistantMessage(props: {
+  message: AssistantMessageInfo
+  parts: Part[]
+  last: boolean
+  /** 261113 Red 同一连续工作段里的后续消息不重复署名，见 continuationMessages。 */
+  showSignature?: boolean
+}) {
   const ctx = use()
   const local = useLocal()
   const { theme } = useTheme()
@@ -2203,13 +2235,24 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
 
   const childShortcut = useCommandShortcut("session.child.first")
 
+  // 261113 Red 署名延续判据与 GUI 对齐：同一工作段里只有「工具接着工具」才省略署名，
+  // 正文出现就是新的一段说话。整轮只署一次会切得过粗——一串工具调用后模型再开口，
+  // 界面上读不出是谁在说。
+  const showSignature = createMemo(
+    () =>
+      props.showSignature !== false ||
+      props.parts.some((part) => part.type === "text" && part.text.trim().length > 0),
+  )
+
   return (
     <>
-      <box flexDirection="row" paddingLeft={1}>
-        <text fg={theme.accent}>
-          {(local.soul.label(sync.session.get(props.message.sessionID)?.soul) ?? local.displayName.agent) + ": "}
-        </text>
-      </box>
+      <Show when={showSignature()}>
+        <box flexDirection="row" paddingLeft={1}>
+          <text fg={theme.accent}>
+            {(local.soul.label(sync.session.get(props.message.sessionID)?.soul) ?? local.displayName.agent) + ": "}
+          </text>
+        </box>
+      </Show>
       <For each={props.parts}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])

@@ -941,6 +941,11 @@
 
 [data-component="tool-part-wrapper"] {
   width: 100%;
+  /* 261113 Red 页边工作记录：工具段不再靠气泡/卡片区分，改用一条很淡的窄边线
+     + 一档缩进。边线只标记「这是工作记录不是正文」，读起来仍是一列文本，
+     不抢正文的阅读面。分组边界仍由 TimelineRow 的轮次归属决定，不在这里猜。 */
+  border-left: 1px solid var(--border-weaker-base);
+  padding-left: 10px;
 }
 
 [data-component="dock-prompt"][data-kind="permission"] {

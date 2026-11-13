@@ -129,6 +129,13 @@
     padding-top: 4px;
   }
 
+  /* 261113 Red 连续工作段不重复署名：同一轮里从第二个 assistant part 起，
+     头像仍然占位（保证正文左边缘不变），但不再显示——此前每个 part 都画一次
+     同一个 64px 头像，一长串工具调用看起来像同一个人在反复自我介绍。 */
+  [data-slot="session-turn-assistant-avatar"][data-continuation] {
+    visibility: hidden;
+  }
+
   /* 260812 Red 聊天头像加大到 64px（哥哥拍板），只作用于消息气泡 */
   [data-slot="session-turn-assistant-avatar"] [data-component="avatar"] {
     width: 4rem;

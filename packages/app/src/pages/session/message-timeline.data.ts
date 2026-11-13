@@ -32,6 +32,12 @@ export type TimelineRowMap = {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    /**
+     * 261113 Red 同一连续工作段不重复署名：只有「工具/思考接着工具/思考」才算延续段。
+     * 正文（text）是边界——模型开口就是新的一段说话，重新署名。
+     * 此前按「整轮只署一次」切，一长串工具调用左侧空掉一整列，读起来像没加载完。
+     */
+    repeatSignature: boolean
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -64,6 +70,7 @@ export namespace TimelineRow {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    repeatSignature: boolean
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
@@ -302,6 +309,14 @@ export namespace Timeline {
           ]
         : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
 
+    // 261113 Red 署名延续判据：正文是边界，工具/思考之间才算同一工作段。
+    // 用 part 类型表一次 O(n)，不按文本内容或相邻猜测。
+    const partTypeByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part.type] as const))
+    const groupKind = (group: PartGroup): "text" | "work" => {
+      if (group.type === "context") return "work"
+      return partTypeByID.get(group.ref.partID) === "text" ? "text" : "work"
+    }
+
     if (comments.length > 0)
       rows.push(
         new TimelineRow.CommentStrip({
@@ -352,8 +367,11 @@ export namespace Timeline {
     const truncated = assistantMessages.at(-1)?.finish === "length"
 
     let assistantGroupIndex = 0
+    let previousGroupKind: "text" | "work" | undefined
     assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
+        // 中断分割线自己就是边界，两侧不共享署名
+        previousGroupKind = undefined
         rows.push(
           new TimelineRow.TurnDivider({
             userMessageID: userMessage.id,
@@ -363,6 +381,7 @@ export namespace Timeline {
         return
       }
 
+      const kind = groupKind(item.group)
       rows.push(
         // 260822 cc 这里原本还带一个 lastAssistantPart 字段，**全仓没有任何地方读它**
         //   （组件判断"是不是本轮最后一组"用的是 message-timeline.tsx:1178 那个响应式
@@ -375,8 +394,10 @@ export namespace Timeline {
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
+          repeatSignature: previousGroupKind === "work" && kind === "work",
         }),
       )
+      previousGroupKind = kind
       assistantGroupIndex += 1
     })
 
