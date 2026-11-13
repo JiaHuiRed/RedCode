@@ -14162,6 +14162,10 @@
           "contextLevel": {
             "type": "string",
             "enum": ["ok", "soft", "prune", "compact"]
+          },
+          "selectedChildID": {
+            "type": "string",
+            "pattern": "^msg"
           }
         },
         "required": [
@@ -14478,6 +14482,14 @@
             "additionalProperties": {
               "type": "boolean"
             }
+          },
+          "parentID": {
+            "type": "string",
+            "pattern": "^msg"
+          },
+          "selectedChildID": {
+            "type": "string",
+            "pattern": "^msg"
           }
         },
         "required": ["id", "sessionID", "role", "time", "agent", "model"],

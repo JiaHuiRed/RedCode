@@ -27,6 +27,7 @@ import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@redcode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
+import { visiblePath } from "./message-tree"
 import * as ContextCompaction from "./context-compaction"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -1144,6 +1145,9 @@ export const layer: Layer.Layer<
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
+        // 261114 Red limit 路径不走树投影：可见路径的尾部要从 root 走链才知道，而
+        //   limit 恰恰是为了不读全会话。Phase 1 数据里没有分支，线性尾 = 可见尾；
+        //   Phase 2 写入分支后，limit 语义须重新定义（尾分支片段）。
         return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit })).items
       }
 
@@ -1160,7 +1164,11 @@ export const layer: Layer.Layer<
         if (!page.more || !page.cursor) break
         before = page.cursor
       }
-      return result.reverse()
+      // 261114 Red 消息树分支（Phase 1）：线性历史（无显式树字段）原序返回；物化
+      //   树指针的会话沿 selectedChildID 走可见路径。对存量数据两者恒等且零变更，
+      //   全仓行为不变；Phase 2 起分支写入后这里成为「读当前分支」的咽喉点。
+      //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+      return visiblePath(result.reverse())
     })
 
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {

@@ -426,6 +426,17 @@ export const User = Schema.Struct({
   }),
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  // 261114 Red 消息树分支（Phase 1，chat-demo 调研）：分支字段进消息 data JSON，
+  //   不是 SQL 列——消息行本就是 JSON blob（与 delivery/revert 同构），加列等于
+  //   双份存储还要保持同步。可选 + 存量行缺省 = 零迁移；读取侧按「无显式树字段
+  //   = 线性历史」惰性规范化（message-tree.ts），老会话行为不变。
+  //   parentID = 线性序上的前一条消息（任何角色；assistant 侧同名字段已存在，
+  //   语义即触发的 user 消息，树父链天然成立，无需新字段）。
+  //   selectedChildID = 分支选择指针：当前选中的下一条消息，展示与请求上下文
+  //   共用这条可见路径。Phase 1 只读不写。
+  //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+  parentID: Schema.optional(MessageID),
+  selectedChildID: Schema.optional(MessageID),
 }).annotate({ identifier: "UserMessage" })
 export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
 
@@ -584,6 +595,11 @@ export const Assistant = Schema.Struct({
   // 由服务端算好发出来，不让客户端复刻 ceiling()/maxOutputTokens() 那张按模型家族
   // 匹配的表——复刻等于两处维护，加一个模型漏一处、颜色就悄悄偏。
   contextLevel: Schema.optional(Schema.Literals(["ok", "soft", "prune", "compact"])),
+  // 261114 Red 消息树分支（Phase 1）：分支选择指针，语义与 User.selectedChildID 相同
+  // （见 UserMessage 注释）。树父链不需要新字段——本消息的 parentID（触发的 user）
+  // 就是树父。Phase 1 只读不写。
+  // 决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+  selectedChildID: Schema.optional(MessageID),
 }).annotate({ identifier: "AssistantMessage" })
 export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
   error?: AssistantError

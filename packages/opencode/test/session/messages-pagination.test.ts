@@ -598,6 +598,43 @@ describe("Session.messages", () => {
     ),
   )
 
+  // 261114 Red 消息树分支（Phase 1）：无分支数据读出即线性序，且不派生任何树字段
+  //   （读侧零变更，物化是 Phase 2 写入契约）；带显式分支字段的数据只返回选中链。
+  it.instance("keeps branchless history byte-identical without deriving tree fields", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const u1 = yield* addUser(sessionID, "q1")
+        const a1 = yield* addAssistant(sessionID, u1)
+        const u2 = yield* addUser(sessionID, "q2")
+        const result = yield* session.messages({ sessionID })
+        expect(result.map((item) => item.info.id)).toEqual([u1, a1, u2])
+        for (const item of result) {
+          expect(item.info).not.toHaveProperty("selectedChildID")
+          if (item.info.role === "user" && item.info.id !== u1) {
+            expect(item.info).not.toHaveProperty("parentID")
+          }
+        }
+      }),
+    ),
+  )
+
+  it.instance("returns the selected branch when tree fields are explicit", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const u1 = yield* addUser(sessionID, "q1")
+        const a1 = yield* addAssistant(sessionID, u1)
+        const a2 = yield* addAssistant(sessionID, u1)
+        // Phase 2 的写入形态：把 u1 的选中指针改到 a2（重新生成的新回答）
+        const u1msg = yield* MessageV2.get({ sessionID, messageID: u1 }).pipe(Effect.orDie)
+        if (u1msg.info.role !== "user") throw new Error("unreachable")
+        yield* session.updateMessage({ ...u1msg.info, selectedChildID: a2 } as MessageV2.Info)
+        const result = yield* session.messages({ sessionID })
+        // 被弃的 a1 从可见路径消失，选中链 [u1, a2] 保留
+        expect(result.map((item) => item.info.id)).toEqual([u1, a2])
+      }),
+    ),
+  )
+
   it.instance("fails with NotFoundError for non-existent session", () =>
     Effect.gen(function* () {
       const session = yield* SessionNs.Service

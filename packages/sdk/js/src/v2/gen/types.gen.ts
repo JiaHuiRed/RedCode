@@ -502,6 +502,7 @@ export type AssistantMessage = {
   finish?: string
   routedVia?: string
   contextLevel?: "ok" | "soft" | "prune" | "compact"
+  selectedChildID?: string
 }
 
 export type SummaryTruncatedError = {
@@ -602,6 +603,8 @@ export type UserMessage = {
   tools?: {
     [key: string]: boolean
   }
+  parentID?: string
+  selectedChildID?: string
 }
 
 export type OutputFormat = OutputFormatText | OutputFormatJsonSchema

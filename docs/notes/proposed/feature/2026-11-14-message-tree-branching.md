@@ -1,6 +1,7 @@
 # 消息树分支：parentId + selectedChildId 单指针树
 
-状态:proposed
+状态:proposed(Phase 1 已于 2026-11-14 实现并落地,实现记录与两处形态
+修正见文末;Phase 2-4 未动工)
 
 ## 问题
 
@@ -28,6 +29,10 @@ selectedChildId 走出当前路径,**展示与请求上下文共用这一条路�
 `root_message_id`。分四期落地,每期独立可验证、独立可停:
 
 **Phase 1 — 纯增量 schema,零行为变化**
+
+> 2026-11-14 落地修正:分支字段进 data JSON 而非 SQL 列;读路径不做
+> 惰性规范化,改为「线性原序返回 + 物化是写入契约」,理由见文末
+> 实现记录。本节保留原文以记录提案时的思路。
 - MessageV2.Message 类型 + MessageTable 加列(SQLite ADD COLUMN,可空,无回填)。
 - 读路径惰性规范化(对应 demo 的 `normalizeSession`):首次读取会话消息时,
   对没有 parent_id 的旧消息按 MessageID 顺序推导 `parentId = 前一条`、
@@ -80,6 +85,73 @@ selectedChildId 走出当前路径,**展示与请求上下文共用这一条路�
   `sessions.messages()` 的调用方,统计类调用方改走显式的全量查询。
 - 惰性规范化意味着"老会话与新会话"在读路径上多一个分支判断;若未来做
   写回迁移,必须保证幂等。
-- 立项来源:DeepSeek chat-demo 调研(2026-11-14)。实现后本 note 移入
-  `implemented/feature/`,Phase 2 落地时在本文追加实现记录并回链
-  CHANGELOG。
+- 立项来源:DeepSeek chat-demo 调研(2026-11-14)。Phase 2 落地时在本文
+  追加实现记录并回链 CHANGELOG,整体移入 `implemented/feature/`。
+
+## 实现记录(2026-11-14,Phase 1)
+
+### 形态修正一:分支字段进 data JSON,不是 SQL 列
+
+原文写「MessageTable 加列」。落地发现消息行本就是 JSON blob
+(`MessageTable.data` 是 `mode:"json"` 的整包 Info,列上只有 id/session_id/
+Timestamps + json_extract 投影索引)——SQL 列等于双份存储还要保持同步。
+分支字段进 Info schema(可选):`User.parentID`、双侧 `selectedChildID`;
+`Assistant.parentID` **已存在且语义正好是树父**(触发的 user 消息),
+无需新字段。存量行缺省 = 零迁移。会话级 root_message_id 同样不需要:
+root = 时序上第一条无树父的 user,Phase 2 的重根问题(编辑首条消息)
+到时再议。
+
+### 形态修正二:读侧零变更,物化是写入契约(否决读时派生)
+
+原文的「读路径惰性规范化(demo 的 normalizeSession)」实现后否决:派生
+字段泄漏进「规范读 vs 原始读」的对比(compaction 套件 6 例实测撞上
+`ContextCompaction.getRaw` vs `messages()` 的 toEqual),并存在随 info
+回写落库、把线性会话误判成树模式的隐患。改为:
+
+- **线性历史**(无任何显式树字段,存量数据全如此):`visiblePath` 原序
+  返回**同一数组引用**,零分配、零派生、零变更——全仓行为逐字节不变。
+- **树模式**(任一显式树字段):沿 selectedChildID 严格走链,悬空指针与
+  环按「步数上界=消息数」自然终止,不需要防环结构。
+- **物化义务在写入方**:首次落分支前,把当前可见路径整条链的指针补成
+  显式字段(一次性),此后该会话所有消息必须带全双字段,不允许半物化。
+  判定入口 `hasExplicitBranches()` 已在 message-tree.ts 导出。
+- demo 需要读时规范化是因为它的数据全在内存、无「读出即写回」边界;
+  RedCode 的消息要进 SQLite 与 OpenAPI,派生与存储的边界必须干净。
+
+### 落地面
+
+- `src/session/message-tree.ts`(新):`hasExplicitBranches()` +
+  `visiblePath()` 纯函数,模块独立缘由同 summary-complete.ts。
+- `src/session/session.ts`:`Session.messages` 全量路径接入
+  `visiblePath`——这是 Phase 2「读当前分支」的主咽喉点。limit 路径
+  不投影(可见路径的尾段要从 root 走链才知道,limit 恰恰为不读全库;
+  Phase 1 无分支故线性尾=可见尾,Phase 2 需重新定义 limit 语义)。
+- Schema:`message-v2.ts` User/Assistant 加三个可选字段;SDK 重生成
+  (两条命令),openapi.json +305 字节。
+- **调用方审计结论**(messages() 语义 = 可见路径后):全量消费方 14 处,
+  Phase 1 下行为不变。Phase 2 需复核的:统计类(`cli/cmd/stats.ts`、
+  cost 记账)应显式走全量而非可见路径;`share-next.ts`/`cli/cmd/export.ts`
+  导出按可见路径是合理语义(导出「当前分支」)但要在 Phase 2 拍板;
+  ACP(`acp/agent.ts`/`usage.ts`)与 HTTP handlers 消费可见路径。
+- **不经过 messages() 的旁路**(Phase 2 清单):prompt 主循环走
+  `MessageV2.filterCompactedEffect`——其输出是模型消费序(压缩重排,
+  非时序),规范化/投影必须发生在重排之前的规范序上;GUI 分页路由
+  (handlers/session.ts 直连 `MessageV2.page`)与
+  `latestCompactionCursor`、`findMessage` 同理,树模式下都要按可见
+  路径重新推敲。
+
+### 验证
+
+message-tree 纯函数 10 例 + messages-pagination(DB 级:无分支逐字节
+等价 + 显式指针选中链)+ compaction 101 + session/schema-decoding/
+revert-compact/processor-effect 76 + prompt 123,全绿;typecheck 0;
+check:openapi-drift 一致(SDK 已重生成)。
+
+### Phase 2 开工清单(下会话)
+
+1. `appendBranch`/`selectVersion` 写入侧(message-tree.ts 扩展)+
+   首次物化契约。
+2. revert 语义收敛为分支切换;unrevert 双轨退役。
+3. prompt 咽喉点(filterCompacted 之前)接入可见路径;limit 语义与
+   GUI 分页路由按树语义重定义;`latestCompactionCursor` 树化复核。
+4. 客户端切换器(TUI/GUI)与 sync 事件。
