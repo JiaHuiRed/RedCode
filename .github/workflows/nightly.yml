@@ -67,7 +67,7 @@ jobs:
         # （蕴含 --isolate），2 匹配 4 核 runner 留余量给各文件自起的 server。
         run: bun turbo test:ci --concurrency=1 --continue=always
         env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+          REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
 
       - name: Publish unit reports
         if: always()
@@ -97,7 +97,7 @@ jobs:
       run:
         shell: bash
     env:
-      OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+      REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

@@ -52,7 +52,7 @@ jobs:
         working-directory: packages/opencode
         run: bun run test:smoke
         env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+          REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
 
       - name: Publish smoke report
         if: always()
