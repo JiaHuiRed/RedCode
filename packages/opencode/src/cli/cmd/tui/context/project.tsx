@@ -6,7 +6,8 @@ import { useSDK } from "./sdk"
 
 type WorkspaceStatus = "connected" | "connecting" | "disconnected" | "error"
 
-export const { use: useProject, provider: ProjectProvider } = createSimpleContext({
+// 261113 Red 导出 context 供测试喂假值（同 kv.tsx 260911、helper.tsx 260828 的理由）。
+export const { use: useProject, provider: ProjectProvider, context: projectContext } = createSimpleContext({
   name: "Project",
   init: (props: { workspace?: string }) => {
     const sdk = useSDK()

@@ -20,6 +20,7 @@ import * as ProviderError from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
+import { isCompleteSummary } from "./summary-complete"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
@@ -1515,14 +1516,9 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
   }
 })
 
-// 261113 Red 压缩成功边界判定：finish 有值不代表摘要完整。
-//   "unknown" 是无供应商回执的估算 step-finish（自动中止/流断），
-//   "length"  是输出撞上长度上限被截断。
-// 两者都可能只留下半份摘要；把它当成功边界，被压缩的原文就会从后续模型输入里消失。
-// 压缩提交入口（compaction.ts）与历史投影（本文件两处调用）必须共用这一判据。
-export function isCompleteSummary(info: { finish?: string; error?: unknown }): boolean {
-  return !!info.finish && info.finish !== "unknown" && info.finish !== "length" && !info.error
-}
+// 261113 Red 判据见 ./summary-complete.ts —— 独立成模块供 TUI 复用（不拖模型/数据库依赖）。
+// 这里 re-export，保持 MessageV2.isCompleteSummary 的调用方不变。
+export { isCompleteSummary }
 
 export function filterCompacted(msgs: Iterable<WithParts>) {
   // 260824 Red: 循环从新往回扫依赖 chrono 逆序输入，但 compaction.ts 的 estimate 回填

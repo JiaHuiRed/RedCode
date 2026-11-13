@@ -10,7 +10,8 @@ type Exit = ((reason?: unknown) => Promise<void>) & {
   }
 }
 
-export const { use: useExit, provider: ExitProvider } = createSimpleContext({
+// 261113 Red 导出 context 供测试喂假值（同 kv.tsx 260911、helper.tsx 260828 的理由）。
+export const { use: useExit, provider: ExitProvider, context: exitContext } = createSimpleContext({
   name: "Exit",
   init: (input: { onBeforeExit?: () => Promise<void>; onExit?: () => Promise<void> }) => {
     const renderer = useRenderer()

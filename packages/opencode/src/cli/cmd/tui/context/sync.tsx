@@ -61,6 +61,7 @@ import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
 import { createQuestionRecovery } from "./question-recovery"
+import { isCompleteSummary } from "@/session/summary-complete"
 import { useProjectNavigation } from "./project-navigation"
 
 export const {
@@ -198,10 +199,6 @@ export const {
       return sessions.toSorted((a, b) => a.id.localeCompare(b.id))
     }
 
-    function listSessions() {
-      return sdk.client.session.list(sessionListParams()).then((x) => sortedSessions(x.data ?? []))
-    }
-
     // 261113 Red bootstrap 的 session 列表是 complete 的判据：未设 throwOnError 时 HTTP 500
     // 会返回 { error }，被 `?? []` 当成空列表写进 store（把已有会话抹掉、还把失败伪装成成功）。
     // 这里改成会 reject 的版本，由 current 按 endpoint 记失败并保留既有数据。
@@ -323,11 +320,27 @@ export const {
           serverConnections += 1
           if (serverConnections > 1) {
             reconcileCurrentSession()
-            void questionRecovery.recover().catch((error) => {
-              Log.Default.warn("tui question recovery failed", {
-                error: error instanceof Error ? error.message : String(error),
-              })
-            })
+            // 261113 Red 重连与 bootstrap 共用同一组恢复门禁：SSE 不补发事件，断线期间
+            // 新产生的权限/提问和会话状态只能在重连后从服务端快照拉回来；漏掉权限恢复
+            // 的表现是模型在等批准、界面上却没有可点的弹窗。任一快照落地都重新播种
+            // 活动摘要，侧栏 busy/waiting 不停在断线前的旧值。
+            for (const [name, recovery] of [
+              ["question.list", questionRecovery],
+              ["permission.list", permissionRecovery],
+              ["session.status", sessionStatusRecovery],
+            ] as const) {
+              void recovery.recover().then(
+                () => {
+                  if (live) seedNavigation()
+                },
+                (error) => {
+                  Log.Default.warn("tui reconnect recovery failed", {
+                    endpoint: name,
+                    error: error instanceof Error ? error.message : String(error),
+                  })
+                },
+              )
+            }
           }
           break
         }
@@ -964,14 +977,16 @@ export const {
       const loaded = store.message[sessionID] ?? []
       const oldest = loaded[0]
       if (!oldest) return false
-      if (oldest.role === "assistant" && oldest.summary) return false
+      if (oldest.role === "assistant" && isCompleteSummary(oldest)) return false
       const page = await sdk.client.session.messages(
         { sessionID, limit: 100, before: oldest.id },
         { throwOnError: true },
       )
       const items = page.data ?? []
       if (!items.length) return false
-      const boundary = items.findIndex((item) => item.info.role === "assistant" && item.info.summary)
+      // 261113 Red 边界必须是「完整」摘要：finish="length"/"unknown" 的失败摘要没真正
+      // 压缩掉前面的原文，把它当起点会让更早的记录翻不出来。
+      const boundary = items.findIndex((item) => item.info.role === "assistant" && isCompleteSummary(item.info))
       const known = new Set(loaded.map((message) => message.id))
       const older = (boundary >= 0 ? items.slice(boundary + 1) : items).filter((item) => !known.has(item.info.id))
       if (older.length) {
@@ -1008,8 +1023,15 @@ export const {
           return sessionListQuery()
         },
         async refresh() {
-          const list = await listSessions()
-          setStore("session", reconcile(list))
+          // 261113 Red 刷新与启动共用同一条会 reject 的请求路径：失败时保留旧列表，
+          // 不把 { error } 当成空数组写进 store（已有会话会从侧栏消失，直到下次同步成功）。
+          const list = await fetchSessions().catch((error) => {
+            Log.Default.warn("tui session list refresh failed", {
+              error: error instanceof Error ? error.message : String(error),
+            })
+            return undefined
+          })
+          if (list !== undefined) setStore("session", reconcile(list))
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)

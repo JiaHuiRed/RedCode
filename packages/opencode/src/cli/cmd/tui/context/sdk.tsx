@@ -27,7 +27,8 @@ export function createSseWatchdog(options: { timeout: number; interval: number; 
   }
 }
 
-export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
+// 261113 Red 导出 context 供测试喂假值（同 kv.tsx 260911、helper.tsx 260828 的理由）。
+export const { use: useSDK, provider: SDKProvider, context: sdkContext } = createSimpleContext({
   name: "SDK",
   init: (props: {
     url: string
