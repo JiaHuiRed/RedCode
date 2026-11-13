@@ -36,6 +36,7 @@ export type TimelineRowMap = {
      * 261113 Red 同一连续工作段不重复署名：只有「工具/思考接着工具/思考」才算延续段。
      * 正文（text）是边界——模型开口就是新的一段说话，重新署名。
      * 此前按「整轮只署一次」切，一长串工具调用左侧空掉一整列，读起来像没加载完。
+     * 决策与配色 seed 反解 → docs/notes/implemented/feature/2026-11-13-ui-redesign-phase-1-2.md。
      */
     repeatSignature: boolean
   }
