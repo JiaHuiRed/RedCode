@@ -1597,11 +1597,31 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
 // 这里 re-export，保持 MessageV2.isCompleteSummary 的调用方不变。
 export { isCompleteSummary }
 
-export function filterCompacted(msgs: Iterable<WithParts>) {
+export function filterCompacted(msgs: Iterable<WithParts>, chain?: ChainWalk) {
   // 260824 Red: 循环从新往回扫依赖 chrono 逆序输入，但 compaction.ts 的 estimate 回填
   // 传入的是正序/展示序（[parent, summary, tail, 后续]），折叠因此从不生效 → 分割线
   // before/after 恒为全量估算。按 compareTime 归一化为逆序后任意输入顺序都稳定。
-  return filterCompactedOrdered([...msgs].sort((a, b) => compareTime(b.info, a.info)))
+  return filterCompactedOrdered([...msgs].sort((a, b) => compareTime(b.info, a.info)), chain)
+}
+
+// 261114 Red 消息树分支：可见路径的流式走链状态。wanted 从会话级叶指针出发，
+//   每命中一条链成员就沿它的 parentID 下降——与 newest-first 流式读同构，且压缩
+//   边界的 break 天然终止走链（边界以下已折叠进摘要，链不必再走）。不走链
+//   （chain 缺省）行为与旧版完全一致。决策：
+//   docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+export type ChainWalk = {
+  /** 当前期待的链成员 id；从叶指针开始，命中后沿 parentID 下降 */
+  wanted: MessageID | undefined
+  /**
+   * 降链前的改道（全函数：非覆盖段原样返回）：DCP 块覆盖的链成员在 stream 层
+   * 就被跳过（covered 下推），wanted 若落进覆盖段会永远等不到匹配、链走卡死。
+   * 改道表把覆盖段的成员直接指到该块的 anchor（范围最旧一条、被流过滤器豁免、
+   * 必须在输出里承载块摘要的位置），走链于是越过整段折叠区。legacy 路径无
+   * 覆盖段，不传。
+   */
+  skip?: (id: MessageID) => MessageID
+  /** 扫描耗尽仍没走到 root（链上有缺失/未物化消息）时的告警钩子；静默吞掉引用违反本仓红线 */
+  onStall?: (wanted: MessageID) => void
 }
 
 /**
@@ -1617,15 +1637,31 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
  *
  * ⚠️ 逆序是**前置条件不是建议**：顺序错了会让下面的 break 提前命中，静默少喂消息给模型。
  * 数组入参一律走 {@link filterCompacted}，那里会先归一化。
+ *
+ * 261114 Red chain 传入时只保留链成员（其余分支的消息连 part 都不读语义上也成立，
+ * 但这里在已水合的流上过滤，与 covered 下推同层）；边界 break 与链走共享一趟扫描。
  */
-export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
+export function filterCompactedOrdered(ordered: Iterable<WithParts>, chain?: ChainWalk) {
   const result = [] as WithParts[]
   const completed = new Set<string>()
   let retain: MessageID | undefined
+  let terminated = false
   for (const msg of ordered) {
+    if (chain) {
+      // 树模式：只保留可见路径成员。wanted 命中后沿 parentID 下降（覆盖段按
+      // skip 改道直达 anchor）；其余（其他分支）跳过。wanted 为 undefined 表示
+      // 已走到 root——理论上流也该到头了，继续扫只是兜底（别名/乱序脏数据），
+      // 不再有成员可命中。
+      if (msg.info.id !== chain.wanted) continue
+      chain.wanted = msg.info.parentID && chain.skip ? chain.skip(msg.info.parentID) : msg.info.parentID
+      // skip 是全函数（非覆盖段原样返回），此处 wanted 至多变成 undefined（走到 root）
+    }
     result.push(msg)
     if (retain) {
-      if (msg.info.id === retain) break
+      if (msg.info.id === retain) {
+        terminated = true
+        break
+      }
       continue
     }
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
@@ -1633,18 +1669,30 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
       if (!part) continue
       // 261010 Red 原生范围投影由检查点账本拥有，不借 legacy 的单一截断边界裁原文。
       if (part.native) continue
-      if (!part.tail_start_id) break
+      if (!part.tail_start_id) {
+        terminated = true
+        break
+      }
       retain = part.tail_start_id
-      if (msg.info.id === retain) break
+      if (msg.info.id === retain) {
+        terminated = true
+        break
+      }
       continue
     }
-    if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
+    if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction")) {
+      terminated = true
       break
+    }
     // 261113 Red finish 有值不代表摘要是完整的：估算 step-finish（"unknown"）与被长度
     // 上限截断（"length"）都会让半份摘要冒充成功边界，把原文从后续模型输入里顶掉。
     if (msg.info.role === "assistant" && msg.info.summary && isCompleteSummary(msg.info))
       completed.add(msg.info.parentID)
   }
+  // 261114 Red 扫描耗尽却没到 root 也没碰到边界 = 链上有缺失（写入方漏接线或
+  //   物化残缺）。不静默：响一声，带着断点 id 让排查有起点。上下文按已收集的
+  //   链前缀继续用——可用性优先，但缺口必须可见。
+  if (chain && !terminated && chain.wanted !== undefined) chain.onStall?.(chain.wanted)
   result.reverse()
   const compactionIndex = result.findLastIndex(
     (msg) =>
@@ -1679,9 +1727,9 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
   return result
 }
 
-export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
+export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID, chain?: ChainWalk) {
   // stream() 已是逆序（新→旧），直接走 Ordered 那条，扫到压缩边界就不再翻页。
-  return filterCompactedOrdered(stream(sessionID))
+  return filterCompactedOrdered(stream(sessionID), chain)
 })
 
 // 260814 Red 消息先后一律用 compareTime（time.created + ID tie-break），ID 只做 identity。

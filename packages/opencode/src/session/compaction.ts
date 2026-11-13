@@ -1201,7 +1201,10 @@ export const layer = Layer.effect(
         if (compactionPart) {
           // 261108 Red 审计 RC-P2-07：filterCompactedEffect 从最新一页往回扫，命中本次
           // 压缩边界就停；此前先 session.messages() 全量载入再过滤，1 万条会话要读 200 页。
-          const after = yield* MessageV2.filterCompactedEffect(input.sessionID)
+          // 261114 Red 树会话带链走（与 prompt 同视图）；线性/未物化会话 visibleChain
+          // 返回 undefined，行为不变。
+          const chain = yield* session.visibleChain(input.sessionID)
+          const after = yield* MessageV2.filterCompactedEffect(input.sessionID, chain)
           const tokensAfter = yield* estimate({ messages: after, model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({

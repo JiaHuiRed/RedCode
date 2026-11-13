@@ -149,9 +149,51 @@ check:openapi-drift 一致(SDK 已重生成)。
 
 ### Phase 2 开工清单(下会话)
 
-1. `appendBranch`/`selectVersion` 写入侧(message-tree.ts 扩展)+
-   首次物化契约。
-2. revert 语义收敛为分支切换;unrevert 双轨退役。
-3. prompt 咽喉点(filterCompacted 之前)接入可见路径;limit 语义与
-   GUI 分页路由按树语义重定义;`latestCompactionCursor` 树化复核。
-4. 客户端切换器(TUI/GUI)与 sync 事件。
+1. ~~`appendBranch`/`selectVersion` 写入侧~~ ✅ 2026-11-14(1fa319d1)。
+2. ~~读侧:prompt 咽喉点/叶指针/链式过滤~~ ✅ 2026-11-14(见下 2c 实现记录)。
+3. 写入方接线(2b):prompt/compaction 的消息创建点改 appendBranch 语义
+   (新消息 parentID=当前叶、旧叶 selectedChildID 改指、会话叶指针推进),
+   首写先 materialize;edit-resend/regenerate 改落分支而非截断。
+4. revert 收敛(2d):分支切换 + Snapshot patch 文件恢复;unrevert 双轨退役。
+5. 客户端切换器(Phase 3):TUI/GUI ‹2/3› 切换、sync 事件、GUI 分页语义
+   (handlers/messages 直连 page 与 limit 路径树化)。
+
+### Phase 2 实现记录(2026-11-14,2c 读侧)
+
+**会话级叶指针,不是 root 指针。** prompt 咽喉点的压缩 early-stop 是
+newest-first 流式读:从叶沿 parentID 反向收集与分页天然组合,链碰到压缩
+边界即停;root 指针的正向走链要全量读,会杀掉 261017 那次读下推的优化
+(实测 53 页→14 页)。叶指针也不可从消息行推导:切走后废弃分支的内部
+选中指针原样保留(demo 的「恢复该版本已选后续」语义),「最新合格消息」
+会是废弃叶——`leaf_message_id` 列 + 迁移 backfill(存量线性会话取时序
+最新一条),写入方 2b 起维护。
+
+**链走与压缩边界共享一趟扫描。** 不做独立 chainFilter 生成器(它会绕过
+filterCompactedOrdered 的边界 break,把折叠区以下全部读完,early-stop
+失效),而是给 `filterCompactedOrdered` 加可选 `ChainWalk` 状态:wanted
+从叶出发,命中即沿 parentID 下降,边界 break 天然终止;扫描耗尽没到 root
+也没碰边界 = 链上有缺失,onStall 响一声(静默吞引用违反本仓红线),上下文
+按已收集前缀继续用——可用性优先、缺口必须可见。
+
+**DCP 覆盖段改道。** native 路径的 covered 下推让覆盖段成员在 stream 层
+就不出现,wanted 落进覆盖段会永远等不到匹配。`ChainWalk.skip` 改道表把
+覆盖段成员直接指到该块的 anchor——anchor = 范围最旧一条
+(`commit` 的 `selected[0]`),被流过滤器豁免、必须在输出里承载块摘要。
+legacy 路径无覆盖段,不传 skip。
+
+**物化门。** `Session.visibleChain`:叶指针缺失(新会话)或叶消息未带
+显式树指针(升级 backfill 后还没写入过的存量会话)→ undefined → 调用方
+退回线性全量,逐字节旧行为。这是安全阀:链走只认显式指针,半物化数据
+会让上下文静默截断。写入方 2b 的「首写先 materialize」契约保证活跃
+会话在第一次写后就完整物化。
+
+接入点:`prompt.ts` 主循环(legacy + native 两路)、
+`compaction.ts` 压缩后校验(RC-P2-07 路径,与 prompt 同视图);
+`Session.messages` 全量路径走 visibleChain 反向走链。
+GUI messages 路由的分页与 limit 语义留给 Phase 3(与切换器一起设计)。
+
+验证:message-tree 27 例(链走 5:线性等价/分支排除/边界+tail/stall/
+detour);compaction+prompt 224、native/context/session/processor/
+pagination 139 全绿;typecheck 0。模型可见四问:无注入变化(链走只改
+「读哪些消息」,不新增内容;无分支数据链走=线性,出站序列逐字节不变);
+token/KV cache/上限均无影响。

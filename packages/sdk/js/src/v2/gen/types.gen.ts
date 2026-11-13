@@ -141,6 +141,7 @@ export type Session = {
     snapshot?: string
     diff?: string
   }
+  leafMessageID?: string
 }
 
 export type PermissionRuleset = Array<PermissionRule>
@@ -1461,6 +1462,7 @@ export type GlobalSession = {
     snapshot?: string
     diff?: string
   }
+  leafMessageID?: string
   project: ProjectSummary | null
 }
 
@@ -2473,6 +2475,7 @@ export type SyncEventSessionUpdated = {
         snapshot?: string
         diff?: string
       } | null
+      leafMessageID?: string | null
     }
   }
 }
@@ -3422,6 +3425,7 @@ export type SyncEventSessionUpdated11 = {
         snapshot?: string
         diff?: string
       }
+      leafMessageID?: string
     }
   }
 }

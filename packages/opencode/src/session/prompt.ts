@@ -1487,9 +1487,14 @@ export const layer = Layer.effect(
         const oldPin = _caches.msgPin.get(sessionID)
         if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
           settlePromptCaches(sessionID, "native-compaction")
+        // 261114 Red 消息树分支：从会话级叶指针反向走链出可见路径（与压缩 early-stop
+        //   共享一趟扫描，见 MessageV2.ChainWalk）。叶缺失/未物化时 visibleChain 返回
+        //   undefined，不传 chain，行为与旧版逐字节一致。链断（扫描耗尽没到 root）
+        //   由 onStall 响一声——静默吞引用违反本仓红线。
+        const chain = yield* sessions.visibleChain(sessionID).pipe(Effect.orDie)
         let msgs = nativeSpec.enabled
-          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks)
-          : yield* MessageV2.filterCompactedEffect(sessionID)
+          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks, chain)
+          : yield* MessageV2.filterCompactedEffect(sessionID, chain)
         // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
         const lastNativeSummary = msgs.findLast(
           (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>

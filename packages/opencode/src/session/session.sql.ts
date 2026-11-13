@@ -49,6 +49,14 @@ export const SessionTable = sqliteTable(
     tokens_cache_read: integer().notNull().default(0),
     tokens_cache_write: integer().notNull().default(0),
     revert: text({ mode: "json" }).$type<{ messageID: MessageID; partID?: PartID; snapshot?: string; diff?: string }>(),
+    // 261114 Red 消息树分支：可见路径的叶指针。反向走链（叶→parentID→root）是
+    // prompt 咽喉点 newest-first 流式读里唯一能与压缩 early-stop 组合的走法——
+    // 从叶沿链收集、碰到压缩边界即停；root 指针的正向走链要全量读，会杀掉这个
+    // 优化。不可从消息行推导：切走后废弃分支的内部选中指针仍在，最新合格消息
+    // 会是废弃叶。NULL = 升级前的线性会话（可见路径即线性序，指针未参与）。
+    // 迁移 backfill 取时序最新一条（线性会话的叶）。决策：
+    // docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+    leaf_message_id: text().$type<MessageID>(),
     permission: text({ mode: "json" }).$type<Permission.Ruleset>(),
     agent: text(),
     // 260616 Red 记录创建会话的客户端类型(desktop/tui)，用于 Office 群聊 TUI/GUI 分类

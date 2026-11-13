@@ -114,6 +114,7 @@ export function fromRow(row: SessionRow): Info {
     },
     share,
     revert,
+    leafMessageID: row.leaf_message_id ?? undefined,
     permission: row.permission ? [...row.permission] : undefined,
     time: {
       created: row.time_created,
@@ -154,6 +155,7 @@ export function toRow(info: Info) {
     tokens_cache_read: (info.tokens ?? EmptyTokens).cache.read,
     tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
     revert: info.revert ?? null,
+    leaf_message_id: info.leafMessageID ?? null,
     permission: info.permission,
     time_created: info.time.created,
     time_updated: info.time.updated,
@@ -258,6 +260,9 @@ export const Info = Schema.Struct({
   time: Time,
   permission: optionalOmitUndefined(Permission.Ruleset),
   revert: optionalOmitUndefined(Revert),
+  // 261114 Red 消息树分支：可见路径叶指针（语义见 session.sql.ts leaf_message_id）。
+  // 读侧 Session.messages 与 prompt 咽喉点据此反向走链；NULL = 线性会话。
+  leafMessageID: optionalOmitUndefined(MessageID),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -361,6 +366,7 @@ const UpdatedInfo = Schema.Struct({
   time: Schema.optional(UpdatedTime),
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
   revert: Schema.optional(Schema.NullOr(Revert)),
+  leafMessageID: Schema.optional(Schema.NullOr(MessageID)),
 })
 
 const UpdatedEventSchema = Schema.Struct({
@@ -566,6 +572,13 @@ export interface Interface {
   readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
+  /**
+   * 261114 Red 消息树分支：可见路径走链状态（prompt 咽喉点与 Session.messages
+   * 共用）。叶指针缺失（新会话/未写入）或叶消息未物化（升级 backfill 后还没
+   * 写入过的存量会话）返回 undefined——调用方退回线性全量，行为与旧版一致。
+   * 物化门是安全阀：链走只认显式指针，半物化数据会让上下文静默截断。
+   */
+  readonly visibleChain: (sessionID: SessionID) => Effect.Effect<MessageV2.ChainWalk | undefined>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<MessageV2.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
@@ -1143,9 +1156,36 @@ export const layer: Layer.Layer<
         .pipe(Effect.orElseSucceed((): Snapshot.FileDiff[] => []))
     })
 
+    const visibleChain: Interface["visibleChain"] = Effect.fn("Session.visibleChain")(function* (sessionID) {
+      const row = Database.use((db) => {
+        const leaf = db
+          .select({ leaf: SessionTable.leaf_message_id })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+        if (!leaf?.leaf) return undefined
+        // 物化门：叶消息必须带显式树指针（单条消息的会话天然不物化，走线性）
+        const msg = db
+          .select({
+            parentID: sql<string | null>`json_extract(${MessageTable.data}, '$.parentID')`,
+            selectedChildID: sql<string | null>`json_extract(${MessageTable.data}, '$.selectedChildID')`,
+          })
+          .from(MessageTable)
+          .where(eq(MessageTable.id, leaf.leaf))
+          .get()
+        if (!msg || (msg.parentID === null && msg.selectedChildID === null)) return undefined
+        return leaf.leaf
+      })
+      if (!row) return undefined
+      return {
+        wanted: row,
+        onStall: (wanted) => log.warn("message-tree.chain.stall", { sessionID, wanted }),
+      } satisfies MessageV2.ChainWalk
+    })
+
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
-        // 261114 Red limit 路径不走树投影：可见路径的尾部要从 root 走链才知道，而
+        // 261114 Red limit 路径不走树投影：可见路径的尾部要从叶指针走链才知道，而
         //   limit 恰恰是为了不读全会话。Phase 1 数据里没有分支，线性尾 = 可见尾；
         //   Phase 2 写入分支后，limit 语义须重新定义（尾分支片段）。
         return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit })).items
@@ -1164,11 +1204,12 @@ export const layer: Layer.Layer<
         if (!page.more || !page.cursor) break
         before = page.cursor
       }
-      // 261114 Red 消息树分支（Phase 1）：线性历史（无显式树字段）原序返回；物化
-      //   树指针的会话沿 selectedChildID 走可见路径。对存量数据两者恒等且零变更，
-      //   全仓行为不变；Phase 2 起分支写入后这里成为「读当前分支」的咽喉点。
-      //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
-      return visiblePath(result.reverse())
+      // 261114 Red 消息树分支：线性历史（未物化）原序返回；物化树指针的会话从
+      //   会话级叶指针反向走链出可见路径（时序探测在重根会话会拿错根）。对存量
+      //   数据两者恒等且零变更；Phase 2 写入方落地后这里成为「读当前分支」的
+      //   咽喉点。决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+      const chain = yield* visibleChain(input.sessionID)
+      return visiblePath(result.reverse(), chain ? { leafID: chain.wanted } : undefined)
     })
 
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
@@ -1260,6 +1301,7 @@ export const layer: Layer.Layer<
       clearRevert,
       setSummary,
       diff,
+      visibleChain,
       messages,
       children,
       remove,
