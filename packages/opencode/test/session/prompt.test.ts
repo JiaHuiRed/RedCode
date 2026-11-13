@@ -1395,7 +1395,13 @@ it.instance("native preflight does not replace the last sent request with unsent
     const sessions = yield* Session.Service
     const chat = yield* sessions.create({ title: "Sent versus prepared request" })
     yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
-    yield* llm.text("Earlier completed implementation. ".repeat(500), { usage: { input: 100, output: 5 } })
+    // 261113 Red 夹具不能是周期性文本：流内 n-gram 检测现在会真的掐流（原夹具 500 次
+    // 同一句话在 240 字符处就命中），本用例测的是 native preflight 的请求快照。
+    const earlier = Array.from(
+      { length: 500 },
+      (_, index) => `Earlier completed implementation ${index}.`,
+    ).join(" ")
+    yield* llm.text(earlier, { usage: { input: 100, output: 5 } })
     yield* prompt.prompt({
       sessionID: chat.id,
       agent: "build",
@@ -2395,6 +2401,92 @@ for (const { configuredLimit, interleave } of [undefined, 1, 3].flatMap((configu
       }),
   )
 }
+
+// 261113 Red 现场形态：ngram.repeat 在 37,187 字符命中，但流继续到 79,903 才停。命中后
+// takeUntil 必须掐流、process 返回 "stop"、prompt 落 error（子代理回执才能判失败），
+// 且通知在真正退出后才发。续流用永不 resolve 的 gate：只有取消是真的，本轮才会结束。
+it.instance("n-gram repetition stops the turn with a single request and a persisted error", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const status = yield* SessionStatus.Service
+    const bus = yield* Bus.Service
+    const gate = defer<void>()
+    const unit = "abcdefghij".repeat(8) // 80 字符 = NGRAM_WINDOW，滑动窗口必然重复
+    const repeated = unit.repeat(12)
+    const afterTrip = "AFTER_NGRAM_TRIP_MUST_NOT_APPEAR"
+    const errors: Array<string | undefined> = []
+    const events = yield* bus.subscribe(Session.Event.Error)
+    yield* Stream.runForEach(events, (event) =>
+      Effect.sync(() => {
+        errors.push(event.properties.error?.name)
+      }),
+    ).pipe(Effect.forkScoped)
+    const loopEvents: string[] = []
+    const loopDetected = yield* bus.subscribe(Session.Event.LoopDetected)
+    yield* Stream.runForEach(loopDetected, (event) =>
+      Effect.sync(() => {
+        loopEvents.push(event.properties.type)
+      }),
+    ).pipe(Effect.forkScoped)
+
+    const chunk = (delta: Record<string, unknown>, finish_reason: string | null = null) => ({
+      id: "ngram-fixture",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test-model",
+      choices: [{ index: 0, delta, finish_reason }],
+    })
+    yield* llm.push(
+      raw({
+        head: [chunk({ role: "assistant" }), chunk({ content: repeated })],
+        wait: gate.promise,
+        tail: [chunk({ content: afterTrip }), chunk({}, "stop")],
+      }),
+    )
+
+    const chat = yield* sessions.create({ title: "N-gram stop" })
+    yield* user(chat.id, "repeat")
+    const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    const exit = yield* Fiber.await(fiber)
+
+    expect(Exit.isSuccess(exit)).toBe(true)
+    if (!Exit.isSuccess(exit)) return
+    const result = exit.value
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role !== "assistant") return
+    expect(result.info.error?.name).toBe("TextLoopStoppedError")
+    const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("")
+    expect(text).toContain("[RedCode] 检测到模型输出在反复重复同一段内容")
+    expect(text).not.toContain("multiple recovery attempts")
+    expect(text).not.toContain(afterTrip)
+    // 单次请求就收口：命中后没有拿着重复内容再发第二轮
+    expect(yield* llm.calls).toBe(1)
+    // 供应商没报 usage：按既有估算口径补记 step-finish 并标记 estimated（不是实报），
+    // input/缓存为 0；测试模型定价 0，所以价格仍为 0，断言的是 token。
+    const finish = result.parts.find((part): part is MessageV2.StepFinishPart => part.type === "step-finish")
+    expect(finish?.estimated).toBe(true)
+    if (finish) {
+      expect(finish.tokens.input).toBe(0)
+      expect(finish.tokens.cache.read).toBe(0)
+      expect(finish.tokens.output).toBeGreaterThan(0)
+    }
+    expect(result.info.tokens.output).toBeGreaterThan(0)
+    expect(result.info.tokens.input).toBe(0)
+    expect(result.info.cost).toBe(0)
+    // 回合真正收尾（不是靠超时），状态回到 idle
+    expect((yield* status.get(chat.id)).type).toBe("idle")
+    yield* pollWithTimeout(
+      Effect.sync(() => (errors.includes("TextLoopStoppedError") ? true : undefined)),
+      "missing TextLoopStoppedError event",
+    )
+    yield* pollWithTimeout(
+      Effect.sync(() => (loopEvents.includes("ngram") ? true : undefined)),
+      "missing ngram LoopDetected event",
+    )
+  }),
+)
 
 it.instance("repeated tool failures in one parallel batch do not trigger another model request", () =>
   Effect.gen(function* () {
@@ -4919,13 +5011,19 @@ noLLMServer.instance(
 
 // 261109 Karina RC-05 端到端：一轮里真的改了文件，收尾必须落一份可见报告。
 // 报告不是模型输出，而是 harness 依据 patch part 计算的交付证据。
+//
+// 261113 Red Windows smoke 超时后有子进程被清理，但无法确定卡在哪一层。原夹具缺少
+// lockfile，会经 npm 启动 bun；这里直接运行 bun，只测收尾报告，不依赖包管理器启动链。
 it.instance(
   "appends a verification report after a turn that changed files",
   () =>
     Effect.gen(function* () {
       const { dir, llm } = yield* useServerConfig((url) => ({
         ...providerCfg(url),
-        verification: { notice: "always" },
+        verification: {
+          notice: "always",
+          commands: [{ name: "typecheck", command: "bun pass.js" }],
+        },
       }))
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
@@ -4936,7 +5034,7 @@ it.instance(
           { permission: "bash", pattern: "*", action: "allow" },
         ],
       })
-      yield* writeText(path.join(dir, "package.json"), JSON.stringify({ scripts: { typecheck: "bun pass.js" } }))
+      yield* writeText(path.join(dir, "package.json"), JSON.stringify({ name: "fixture", private: true }))
       yield* writeText(path.join(dir, "pass.js"), "process.exit(0)\n")
       const target = path.join(dir, "src", "a.ts")
       yield* llm.tool("write", { filePath: target, content: "export const a = 2\n" })

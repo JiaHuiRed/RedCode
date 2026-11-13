@@ -846,24 +846,32 @@ export function guardFirstEvent<S, E>(
 // stream fails before the provider usage chunk arrives. Reasonix-style estimate:
 // ~4 bytes per token (see packages/llm/src/schema/events.ts visibleOutputTokens).
 // Only emitted when output was actually produced — header-time failures estimate 0.
+// 261113 Red 估算口径的唯一实现：llm 的流断估算与 processor 的自动中止估算共用这一处，
+// 避免两份「4 字节/token」公式漂移。只估 output/reasoning，input 与缓存不猜（没有实报就是没有）。
+export const estimatedCompletionUsage = (input: { textBytes: number; reasoningBytes: number }) => {
+  const textTokens = Math.ceil(Math.max(0, input.textBytes) / 4)
+  const reasoningTokens = Math.ceil(Math.max(0, input.reasoningBytes) / 4)
+  const completion = textTokens + reasoningTokens
+  if (completion === 0) return undefined
+  return {
+    outputTokens: completion,
+    reasoningTokens: input.reasoningBytes > 0 ? reasoningTokens : undefined,
+    totalTokens: completion,
+  }
+}
+
 export const estimatedFinishEvents = (state: ReturnType<typeof LLMAISDK.adapterState>): ReadonlyArray<LLMEvent> => {
   // 261014 Red 当前 step 已收到实报 step-finish 时，流再断只传播失败、不补估算——
   // 否则真实 usage 之外多记一个幽灵 step 的估算输出（双重记账）。
   // 决策：docs/notes/implemented/bug-fix/2026-10-14-incomplete-response-accounting.md
   if (state.sawStepFinish) return []
-  const textTokens = Math.ceil(state.textBytes / 4)
-  const reasoningTokens = Math.ceil(state.reasoningBytes / 4)
-  const completion = textTokens + reasoningTokens
-  if (completion === 0) return []
+  const estimated = estimatedCompletionUsage(state)
+  if (!estimated) return []
   return [
     LLMEvent.stepFinish({
       index: state.step,
       reason: "unknown",
-      usage: new Usage({
-        outputTokens: completion,
-        reasoningTokens: state.reasoningBytes > 0 ? reasoningTokens : undefined,
-        totalTokens: completion,
-      }),
+      usage: new Usage(estimated),
     }),
   ]
 }

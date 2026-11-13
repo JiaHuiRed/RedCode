@@ -215,6 +215,17 @@ describe("session.llm.estimatedFinishEvents", () => {
     const state = LLMAISDK.adapterState()
     expect(LLM.estimatedFinishEvents(state)).toHaveLength(0)
   })
+
+  // 261113 Red 估算口径只有一处实现（4 字节/token）：llm 的流断估算与 processor 的自动中止
+  // （n-gram 重复）共用。只估 output/reasoning，input 与缓存无从得知、保持 0。
+  test("estimates output and reasoning tokens from bytes, never input or cache", () => {
+    expect(LLM.estimatedCompletionUsage({ textBytes: 400, reasoningBytes: 200 })).toEqual({
+      outputTokens: 150,
+      reasoningTokens: 50,
+      totalTokens: 150,
+    })
+    expect(LLM.estimatedCompletionUsage({ textBytes: 0, reasoningBytes: 0 })).toBeUndefined()
+  })
 })
 
 describe("session.llm.ai-sdk adapter", () => {

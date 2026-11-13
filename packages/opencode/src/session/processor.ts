@@ -25,8 +25,8 @@ import * as Log from "@redcode-ai/core/util/log"
 import { isRecord } from "@/util/record"
 import { Freeform } from "@/tool/freeform"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Usage, type LLMEvent } from "@redcode-ai/llm"
-import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
+import { LLMEvent, Usage } from "@redcode-ai/llm"
+import { NgramDetector } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
 import * as InstructionEcho from "./instruction-echo"
 import * as RepeatToolReminder from "./repeat-tool-reminder"
@@ -65,6 +65,9 @@ export interface Handle {
   readonly compactionTiming?: CompactionTiming
   readonly stoppedByPermission?: boolean
   readonly stoppedByToolFailure?: boolean
+  // 261113 Red 流内 n-gram 重复检测命中并停止本轮（正文或 reasoning 任一通道）：prompt.ts 据此把
+  // 停止原因落成消息 error（task 子代理回执与通知靠它判失败），processor 自己不写 error。
+  readonly stoppedByRepeatLoop?: boolean
   readonly guardToolCall?: (name: string, input: unknown) => Effect.Effect<void>
   readonly updateToolCall: (
     toolCallID: string,
@@ -114,6 +117,15 @@ type ToolCall = {
 // 261028 Red 同一 text part 内连续闭合的引用标记达到该数即判复述循环（对齐 NgramDetector 的 3 次阈值）。
 const REFERENCE_LOOP_LIMIT = 3
 
+// 261113 Red n-gram 命中后的可见说明。此前复用 Loop Recovery 的 RECOVERY_PROMPTS.stop：
+// 那是注入给模型的跨 step 纠偏提示，文案谎称「多次恢复尝试后」——流内检测是第一次命中就停，
+// 且发给用户的说明不该是英文的模型指令。
+const NGRAM_STOP_NOTICE =
+  "\n\n[RedCode] 检测到模型输出在反复重复同一段内容，已停止本轮生成以避免继续消耗额度。任务若未完成，可直接续发消息继续。"
+
+// 261113 Red 用量估算按 UTF-8 字节计（约 4 字节/token），与 session/llm.ts 的流断估算同一口径。
+const byteLength = (text: string) => new TextEncoder().encode(text).length
+
 // 261101 Red tool-input-delta 的推送节流：≥400ms 或缓冲 ≥2048 字符才推一条 PartDelta，
 // 避免每 token 一条事件（90 tok/s）把 bus/SSE 和前端 store 打爆；tool-input-end 兜底 flush 尾段。
 const TOOL_INPUT_PUSH_INTERVAL = 400
@@ -131,6 +143,19 @@ interface ProcessorContext extends Input {
   // 260710 Red n-gram 文本重复检测（单 step 内）
   ngramDetector: NgramDetector
   ngramTripped: boolean
+  // 261113 Red 命中时已产出的正文字符数（通知用）；currentText 在 cleanup 后已清空，不能现取。
+  ngramTextLen: number
+  // 261113 Red reasoning 通道的同类检测：独立 detector（不与正文混喂，避免跨通道拼出假重复）。
+  // 内联 <think> 被 ThinkTagScanner 拆进 reasoning 后，整段循环只出现在 reasoning-delta 里。
+  reasoningNgramDetector: NgramDetector
+  reasoningNgramTripped: boolean
+  reasoningNgramTextLen: number
+  // 261113 Red 自动中止（重复检测）没有供应商 usage 时的估算来源：本 step 已消费的正文/思考
+  // 字节，以及是否已收到实报 step-finish（实报到了就不再补估算，防双记）。见 process 出口。
+  streamedTextBytes: number
+  streamedReasoningBytes: number
+  stepFinishBooked: boolean
+  bookingEstimatedUsage: boolean
   // 260812 cc DCP reminder 泄露流式拦截：已触发标志（防同一段多次剥离）
   leakTripped: boolean
   // 260903 cc 泄露锚点的增量扫描器（原先每条 delta 扫全文，O(n²)）
@@ -233,6 +258,16 @@ export const layer = Layer.effect(
         // 260710 Red n-gram 文本重复检测
         ngramDetector: new NgramDetector(),
         ngramTripped: false,
+        ngramTextLen: 0,
+        // 261113 Red reasoning 通道独立检测器
+        reasoningNgramDetector: new NgramDetector(),
+        reasoningNgramTripped: false,
+        reasoningNgramTextLen: 0,
+        // 261113 Red 自动中止的估算用量来源
+        streamedTextBytes: 0,
+        streamedReasoningBytes: 0,
+        stepFinishBooked: false,
+        bookingEstimatedUsage: false,
         leakTripped: false,
         leakScanner: new InstructionEcho.LeakAnchorScanner(),
         leakHold: undefined,
@@ -626,6 +661,9 @@ export const layer = Layer.effect(
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
+            ctx.reasoningNgramDetector.reset()
+            ctx.reasoningNgramTripped = false
+            ctx.reasoningNgramTextLen = 0
             ctx.reasoningMap[value.id] = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -639,6 +677,8 @@ export const layer = Layer.effect(
             return
 
           case "reasoning-delta":
+            // 261113 Red 估算口径按「已消费的模型输出字节」计（与 adapter 的 reasoningBytes 同义）。
+            ctx.streamedReasoningBytes += byteLength(value.text)
             // Match dev: silently drop orphan deltas (no preceding reasoning-start).
             if (!(value.id in ctx.reasoningMap)) return
             ctx.reasoningMap[value.id].text += value.text
@@ -650,6 +690,19 @@ export const layer = Layer.effect(
               field: "text",
               delta: value.text,
             })
+            // 261113 Red reasoning 通道的重复检测：与正文同一套 NgramDetector（80 字符 gram
+            // 重复 3 次，尾部窗口有界），只认确认重复的片段，不按总字符量限制长推理——
+            // 长时间思考只要不重复就不该被打断。独立 detector 保证不与正文/别的 part 混喂。
+            if (!ctx.reasoningNgramTripped && ctx.reasoningNgramDetector.feed(value.text)) {
+              ctx.reasoningNgramTripped = true
+              ctx.reasoningNgramTextLen = ctx.reasoningMap[value.id].text.length
+              slog.warn("ngram.repeat", {
+                sessionID: ctx.sessionID,
+                channel: "reasoning",
+                textLen: ctx.reasoningNgramTextLen,
+              })
+              ctx.reasoningMap[value.id].text += NGRAM_STOP_NOTICE
+            }
             // 261020 Red 纯思考兜底（两档，见文件头注释与 note）：主判据是静默时长
             // （Stream.timeoutOrElse 处），这里只剩防无限流的字符兜底。
             if (!ctx.reasoningStallTripped && !ctx.stepProduced) {
@@ -966,6 +1019,10 @@ export const layer = Layer.effect(
 
           case "step-finish": {
             const usageStartedAt = compactionTiming ? performance.now() : undefined
+            // 261113 Red 实报到了就不再补估算（防双记）；estimated 标记随 part 落库，区别于供应商实报。
+            ctx.stepFinishBooked = true
+            const estimated = ctx.bookingEstimatedUsage
+            ctx.bookingEstimatedUsage = false
             // 260903 cc 一次 add() 同时拿「完成快照」和「相对本 step 起点的补丁」。
             //   原先是 track() 与后面那句 patch(ctx.snapshot) 两次独立调用，各自跑一遍 add()，
             //   而两者之间工作树没有任何变化（中间只有内存记账和写会话库）。等价性推导与
@@ -1028,6 +1085,9 @@ export const layer = Layer.effect(
               type: "step-finish",
               tokens: usage.tokens,
               cost: usage.cost,
+              // 261113 Red 估算用量（自动中止拿不到供应商 usage 时的 4 字节/token 估算）；
+              // 供应商实报的 step-finish 不带此标记。
+              ...(estimated ? { estimated: true } : {}),
               // 260930 Red 币种与 cost 同时刻定格，session 行据此分桶记账（见 session.sql.ts）。
               // 未声明币种的模型若产生了费用，记账侧按 USD 入桶（warn 见上方）。
               ...(usage.currency ? { currency: usage.currency } : {}),
@@ -1069,6 +1129,7 @@ export const layer = Layer.effect(
             // 260710 Red 每个新 text part 重置 n-gram 检测器
             ctx.ngramDetector.reset()
             ctx.ngramTripped = false
+            ctx.ngramTextLen = 0
             ctx.leakTripped = false
             ctx.leakScanner.reset()
             ctx.leakHold = undefined
@@ -1090,6 +1151,8 @@ export const layer = Layer.effect(
             return
 
           case "text-delta": {
+            // 261113 Red 估算口径按「已消费的模型输出字节」计（与 adapter 的 textBytes 同义）。
+            ctx.streamedTextBytes += byteLength(value.text)
             if (!ctx.currentText) return
             let delta = value.text
             while (true) {
@@ -1162,16 +1225,15 @@ export const layer = Layer.effect(
               delta,
             })
             // 260710 Red n-gram 重复检测：流式 delta 累积，发现重复立即中断
+            // 261113 Red 真正制动在 takeUntil（掐流）与 process 出口（返回 "stop"）：此前这里只置
+            // ngramTripped + shouldBreak，前者没人读、后者只控权限拒绝后的循环续跑，于是供应商不
+            // 关流就一直吐到它自己收尾（现场 37k 命中后继续到 79k）。通知也移到出口再发，
+            // 避免流以错误收口时 GUI 误报「已停止」。
             if (!ctx.ngramTripped && ctx.ngramDetector.feed(delta)) {
               ctx.ngramTripped = true
-              slog.warn("ngram.repeat", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
-              yield* bus.publish(Session.Event.LoopDetected, {
-                sessionID: ctx.sessionID,
-                type: "ngram" as const,
-                textLen: ctx.currentText.text.length,
-              })
-              ctx.currentText.text += "\n\n" + RECOVERY_PROMPTS.stop
-              ctx.shouldBreak = true
+              ctx.ngramTextLen = ctx.currentText.text.length
+              slog.warn("ngram.repeat", { sessionID: ctx.sessionID, channel: "text", textLen: ctx.ngramTextLen })
+              ctx.currentText.text += NGRAM_STOP_NOTICE
             }
             return
           }
@@ -1404,6 +1466,18 @@ export const layer = Layer.effect(
             for (let attempt = 0; attempt < 2; attempt++) {
               ctx.referenceLoop = false
               ctx.referenceMarkers = 0
+              // 261113 Red 每次 attempt 从头消费一条新流：上一 attempt 的重复命中标志不能带过来
+              ctx.ngramDetector.reset()
+              ctx.ngramTripped = false
+              ctx.ngramTextLen = 0
+              ctx.reasoningNgramDetector.reset()
+              ctx.reasoningNgramTripped = false
+              ctx.reasoningNgramTextLen = 0
+              // 261113 Red 估算用量也按 attempt 归属：上一 attempt 的字节/实报标志不能带过来
+              ctx.streamedTextBytes = 0
+              ctx.streamedReasoningBytes = 0
+              ctx.stepFinishBooked = false
+              ctx.bookingEstimatedUsage = false
               stepFinishSeen = yield* Deferred.make<void>()
               const stream = llm.stream(streamInput)
               // 261104 Red 网关收尾挂起兜底：GLM 实测吐完 usage（step-finish 已到）后不关流，
@@ -1444,7 +1518,14 @@ export const layer = Layer.effect(
                   }
                 }),
               ),
-              Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped || ctx.referenceLoop),
+              Stream.takeUntil(
+                () =>
+                  ctx.needsCompaction ||
+                  ctx.reasoningStallTripped ||
+                  ctx.referenceLoop ||
+                  ctx.ngramTripped ||
+                  ctx.reasoningNgramTripped,
+              ),
               Stream.runDrain,
               ),
               Deferred.await(stepFinishSeen).pipe(Effect.flatMap(() => Effect.sleep(stall.idleAfterUsageMs))),
@@ -1530,6 +1611,54 @@ export const layer = Layer.effect(
           // 与正常收尾同路径退出（runLoop 里 finish="stop" 会走正常 break 分支）
           if (ctx.reasoningStallTripped) return "stop"
           if (ctx.toolFailureStopped || ctx.blocked || ctx.assistantMessage.error) return "stop"
+          // 261113 Red n-gram 命中：不返回 stop 时 runLoop 会拿着已写好的说明再发一次请求，
+          // 重复内容继续烧额度。通知放在这里而不是 text-delta 里——此时 takeUntil 已掐流、
+          // cleanup 已跑完，且没有别的停止原因抢先收口，流以错误收口时不会误报「已停止」。
+          if (ctx.ngramTripped || ctx.reasoningNgramTripped) {
+            // 261113 Red 自动中止收不到供应商 usage（takeUntil 是正常收尾，llm.ts 的 catchCause
+            // 估算只覆盖失败路径），整段已消耗输出会被记成零费用。按既有估算口径
+            // （LLM.estimatedCompletionUsage，4 字节/token）补记一次 step-finish：只估
+            // output/reasoning，input 与缓存保持 0——不凭空猜；estimated 标记随 part 落库，
+            // 与供应商实报区分。已收到实报时跳过（stepFinishBooked），不双记。
+            // native 与 AI SDK 两条 runtime 都收敛到同一 LLMEvent 流，本估算对两者同样适用。
+            if (!ctx.stepFinishBooked) {
+              const estimated = LLM.estimatedCompletionUsage({
+                textBytes: ctx.streamedTextBytes,
+                reasoningBytes: ctx.streamedReasoningBytes,
+              })
+              if (estimated) {
+                slog.warn("usage.estimated", {
+                  sessionID: ctx.sessionID,
+                  reason: "repeat-loop",
+                  channel: ctx.ngramTripped ? "text" : "reasoning",
+                  ...estimated,
+                })
+                ctx.bookingEstimatedUsage = true
+                // 估算记账是尽力而为：step-finish 路径不可能产生权限拒绝，但 handleEvent 的
+                // 错误通道带着这两类，直接 yield 会把它们泄进 process 的返回类型。记账失败
+                // 只留日志，本轮仍按重复中止收尾。
+                yield* handleEvent(
+                  LLMEvent.stepFinish({ index: 0, reason: "unknown", usage: new Usage(estimated) }),
+                ).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.sync(() => {
+                      slog.warn("usage.estimated.failed", {
+                        sessionID: ctx.sessionID,
+                        error: errorMessage(Cause.squash(cause)),
+                      })
+                    }),
+                  ),
+                )
+                ctx.bookingEstimatedUsage = false
+              }
+            }
+            yield* bus.publish(Session.Event.LoopDetected, {
+              sessionID: ctx.sessionID,
+              type: "ngram" as const,
+              textLen: ctx.ngramTripped ? ctx.ngramTextLen : ctx.reasoningNgramTextLen,
+            })
+            return "stop"
+          }
           return "continue"
         })
       })
@@ -1544,6 +1673,9 @@ export const layer = Layer.effect(
         },
         get stoppedByToolFailure() {
           return ctx.toolFailureStopped
+        },
+        get stoppedByRepeatLoop() {
+          return ctx.ngramTripped || ctx.reasoningNgramTripped
         },
         guardToolCall,
         get salvagedToolCalls() {

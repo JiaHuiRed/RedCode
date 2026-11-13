@@ -771,6 +771,56 @@ describe("tool.task", () => {
     }),
   )
 
+  // 261113 Red 父子结果：子代理流内 n-gram 命中后 prompt 把停止原因落成 TextLoopStoppedError
+  // （而不是停在 completed），task 必须把它当失败传播给父代理。
+  noBackground.instance("reports a subagent text-loop stop as a failure", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) => {
+          const child = reply(input, "重复片段")
+          return Effect.succeed({
+            ...child,
+            info: {
+              ...(child.info as MessageV2.Assistant),
+              error: new MessageV2.TextLoopStoppedError({ message: "模型输出陷入重复循环，已停止本轮生成" }).toObject(),
+            },
+          })
+        },
+      }
+      const exit = yield* def
+        .execute(
+          {
+            description: "repeat loop",
+            prompt: "repeat the same text",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause)
+        expect(error).toBeInstanceOf(Error)
+        expect(String(error)).toContain("执行失败")
+        expect(String(error)).toContain("模型输出陷入重复循环")
+      }
+    }),
+  )
+
   background.instance("execute launches background tasks without waiting for completion", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

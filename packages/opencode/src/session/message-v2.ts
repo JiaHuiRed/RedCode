@@ -94,6 +94,11 @@ export const ContentFilterError = NamedError.create("ContentFilterError", {
 export const ToolFailureStoppedError = NamedError.create("ToolFailureStoppedError", {
   message: Schema.String,
 })
+// 261113 Red n-gram 流内重复命中停止本轮：与工具熔断同一个理由——只写正文说明时 finish 停在
+// 未设置/"tool-calls"，task 子代理回执与 task_status 会把它当正常完成，父代理以为任务成功。
+export const TextLoopStoppedError = NamedError.create("TextLoopStoppedError", {
+  message: Schema.String,
+})
 
 export class OutputFormatText extends Schema.Class<OutputFormatText>("OutputFormatText")({
   type: Schema.Literal("text"),
@@ -279,6 +284,9 @@ export const StepFinishPart = Schema.Struct({
   reason: Schema.String,
   snapshot: Schema.optional(Schema.String),
   cost: Schema.Finite,
+  // 261113 Red 估算用量标记：自动中止/流断补记的 step-finish 没有供应商实报，tokens 是按可见
+  // 输出字节估算的（约 4 字节/token），input 与缓存为 0。缺省 = 供应商实报。
+  estimated: Schema.optional(Schema.Boolean),
   // 260930 Red 记账时刻的币种定格（与 cost 同时写入，语义同 260816 的取价定格）：
   //  session 行按它把费用分进 cost_cny / cost_usd 桶。老消息无此字段，回填写 UNKNOWN→USD 并留日志。
   currency: Schema.optional(Schema.Literals(["USD", "CNY"])),
@@ -450,6 +458,7 @@ const AssistantErrorSchema = Schema.Union([
   ContextOverflowError.EffectSchema,
   ContentFilterError.EffectSchema,
   ToolFailureStoppedError.EffectSchema,
+  TextLoopStoppedError.EffectSchema,
   APIError.EffectSchema,
 ]).annotate({ discriminator: "name" })
 type AssistantError = Schema.Schema.Type<typeof AssistantErrorSchema>

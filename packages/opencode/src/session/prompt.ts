@@ -2453,6 +2453,20 @@ export const layer = Layer.effect(
             return "break" as const
           }
 
+          // 261113 Red 流内 n-gram 重复命中（正文或 reasoning 通道）：可见说明已由 processor 写进
+          // 对应 part（单次检测就停，不是「多次恢复尝试」）。这里负责终止链路的其余部分——
+          // 标记收尾、落 error、发事件；与工具熔断同因：只在 process 里返回 "stop" 时 finish
+          // 未设置，子代理回执报 completed。已有 error 时保留真实失败原因，不覆盖。
+          if (handle.stoppedByRepeatLoop && !handle.message.error) {
+            yield* state.markStopped(sessionID)
+            handle.message.error = new MessageV2.TextLoopStoppedError({
+              message: "模型输出陷入重复循环，已停止本轮生成",
+            }).toObject()
+            yield* sessions.updateMessage(handle.message)
+            yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+            return "break" as const
+          }
+
           if (structured !== undefined) {
             handle.message.structured = structured
             handle.message.finish = handle.message.finish ?? "stop"

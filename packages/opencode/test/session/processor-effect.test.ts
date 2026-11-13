@@ -298,7 +298,10 @@ it.live("session.processor effect tests idle-cuts a silent reasoning stream", ()
         // 261020 Red 主判据：供应商吐出一段思考后再也不吐新分片（hang = 永不发 done 哨兵），
         // 静默超过 idleMs 即收尾——这是 max 推理档上「思考很久但其实没卡」的正面对照：
         // 只要还在吐字就不该被掐，停止吐字才掐。
-        yield* llm.push(reply().reason("y".repeat(500)).hang())
+        // 261113 Red 夹具不能是周期性文本：流内 n-gram 检测现在会真的掐流，500 个相同字符在
+        // 240 字符处就满足「80 字符 gram × 3」，本用例要测的是静默兜底，不是重复检测。
+        const thought = Array.from({ length: 40 }, (_, index) => `推理片段${index}:${"ab".repeat(8)}`).join("|")
+        yield* llm.push(reply().reason(thought).hang())
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "idle")
@@ -330,7 +333,7 @@ it.live("session.processor effect tests idle-cuts a silent reasoning stream", ()
         const parts = MessageV2.parts(msg.id)
         const text = parts.find((part): part is MessageV2.TextPart => part.type === "text")
         expect(value).toBe("stop")
-        expect(text?.text).toBe("y".repeat(500))
+        expect(text?.text).toBe(thought)
         const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
         if (stored.info.role === "assistant") {
           expect(stored.info.finish).toBe("stop")
@@ -853,6 +856,195 @@ it.live("session.processor stops after a second reference repetition", () =>
         const text = MessageV2.parts(msg.id).filter((part) => part.type === "text").map((part) => part.text).join("")
         expect(text).toContain("自动重试一次后仍未停止")
         expect(text).not.toContain("Historical reference")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor cancels the stream and stops on an n-gram repetition", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        // 261113 Red 现场形态（ngram.repeat 37,187 字符后流继续到 79,903）：命中后没有掐流。
+        // 这里用真 NgramDetector + 一段可控续流：命中点之后服务端挂在永不 resolve 的 gate 上，
+        // 只有 process 真的取消流才会返回——不靠 sleep/超时掩盖。
+        const gate = defer<void>()
+        const unit = "abcdefghij".repeat(8) // 80 字符 = NGRAM_WINDOW，滑动窗口必然重复
+        const repeated = unit.repeat(12)
+        const afterTrip = "AFTER_NGRAM_TRIP_MUST_NOT_APPEAR"
+        const loopEvents: Array<{ type: string; textLen: number }> = []
+        const events = yield* bus.subscribe(Session.Event.LoopDetected)
+        yield* Stream.runForEach(events, (event) =>
+          Effect.sync(() => {
+            loopEvents.push({ type: event.properties.type, textLen: event.properties.textLen })
+          }),
+        ).pipe(Effect.forkScoped)
+
+        yield* llm.push(
+          raw({
+            head: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: repeated } }] },
+            ],
+            wait: gate.promise,
+            tail: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: afterTrip } }] },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+            ],
+          }),
+        )
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "repeat")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+
+        const result = yield* handle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "repeat" }], tools: {},
+        })
+
+        expect(result).toBe("stop")
+        expect(handle.stoppedByRepeatLoop).toBe(true)
+        const text = MessageV2.parts(msg.id).filter((part) => part.type === "text").map((part) => part.text).join("")
+        expect(text).toContain(unit)
+        // 单次流检测的准确文案，而不是 Loop Recovery 那个「多次恢复尝试后」的模型指令
+        expect(text).toContain("[RedCode] 检测到模型输出在反复重复同一段内容")
+        expect(text).not.toContain("multiple recovery attempts")
+        // 命中点之后的续流一个字都没进来
+        expect(text).not.toContain(afterTrip)
+        // 没有供应商实报 usage：按既有估算口径补记一次 step-finish，estimated 标记落库；
+        // 只估 output，input/缓存为 0（不凭空猜）。
+        const finishes = MessageV2.parts(msg.id).filter((part) => part.type === "step-finish")
+        expect(finishes).toHaveLength(1)
+        const finish = finishes[0]
+        expect(finish?.estimated).toBe(true)
+        expect(finish?.reason).toBe("unknown")
+        if (finish) {
+          expect(finish.tokens.input).toBe(0)
+          expect(finish.tokens.cache.read).toBe(0)
+          expect(finish.tokens.cache.write).toBe(0)
+          expect(finish.tokens.output).toBeGreaterThan(0)
+        }
+        expect(msg.tokens.output).toBeGreaterThan(0)
+        expect(msg.tokens.input).toBe(0)
+        // 测试模型定价为 0：估算的是 token 数，不是价格
+        expect(msg.cost).toBe(0)
+        expect(yield* llm.calls).toBe(1)
+        yield* waitFor(Effect.sync(() => (loopEvents.length > 0 ? loopEvents : undefined)), "ngram loop event missing")
+        expect(loopEvents.map((event) => event.type)).toEqual(["ngram"])
+        // 通知里的长度是命中那一刻的正文长度，且确实在被取消的流上（没有跑到 gate 之后）
+        expect(loopEvents[0]?.textLen).toBeGreaterThanOrEqual(240)
+        expect(loopEvents[0]?.textLen).toBeLessThanOrEqual(repeated.length)
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor stops a reasoning-channel n-gram repetition without capping long unique reasoning", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+        const unit = "abcdefghij".repeat(8) // 80 字符 = NGRAM_WINDOW
+        const repeated = unit.repeat(12)
+        const afterTrip = "AFTER_REASONING_NGRAM_TRIP"
+        // 261113 Red 真实现象：内联 <think> 被 ThinkTagScanner 拆进 reasoning 后，整段循环只出现在
+        // reasoning-delta 里（text-delta 为空），只修正文路径会漏。这里的续流同样挂在永不 resolve
+        // 的 gate 上——只有真取消才会返回。
+        const gate = defer<void>()
+        const loopEvents: string[] = []
+        const events = yield* bus.subscribe(Session.Event.LoopDetected)
+        yield* Stream.runForEach(events, (event) =>
+          Effect.sync(() => {
+            loopEvents.push(event.properties.type)
+          }),
+        ).pipe(Effect.forkScoped)
+
+        // 误伤对照：同样走 reasoning 通道，但内容不重复——超过任何小阈值也不该被打断，
+        // 更不该按累计字符量判停（上限仍是 reasoningStall 的 200k 兜底）。
+        const unique = Array.from({ length: 200 }, (_, index) => `思考片段${index}:${"xz".repeat(8)}`).join("|")
+        yield* llm.push(
+          reply().reason(unique).stop(),
+          raw({
+            head: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: { reasoning_content: repeated } }],
+              },
+            ],
+            wait: gate.promise,
+            tail: [
+              {
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: { reasoning_content: afterTrip } }],
+              },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+            ],
+          }),
+        )
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "think")
+        const model = yield* provider.getModel(ref.providerID, ref.modelID)
+
+        const longMsg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const longHandle = yield* processors.create({ assistantMessage: longMsg, sessionID: chat.id, model })
+        const longResult = yield* longHandle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "think" }], tools: {},
+        })
+        expect(longResult).toBe("continue")
+        expect(longHandle.stoppedByRepeatLoop).toBe(false)
+        const longReasoning = MessageV2.parts(longMsg.id).filter((part) => part.type === "reasoning")
+        expect(longReasoning.map((part) => part.text).join("")).toBe(unique)
+        // 误伤对照的实报路径：正常收尾的 step-finish 不带 estimated 标记
+        expect(
+          MessageV2.parts(longMsg.id).find((part): part is MessageV2.StepFinishPart => part.type === "step-finish")
+            ?.estimated,
+        ).toBeUndefined()
+        expect(loopEvents).toEqual([])
+
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model })
+        const result = yield* handle.process({
+          user: parent, sessionID: chat.id, model, agent: agent(), system: [],
+          messages: [{ role: "user" as const, content: "think" }], tools: {},
+        })
+
+        expect(result).toBe("stop")
+        expect(handle.stoppedByRepeatLoop).toBe(true)
+        const parts = MessageV2.parts(msg.id)
+        const reasoning = parts.filter((part) => part.type === "reasoning")
+        expect(reasoning).toHaveLength(1)
+        expect(reasoning[0]?.text).toContain(unit)
+        expect(reasoning[0]?.text).toContain("[RedCode] 检测到模型输出在反复重复同一段内容")
+        expect(reasoning[0]?.text).not.toContain(afterTrip)
+        // 没有正文产出：判定确实来自 reasoning 通道，没有被混进 text 检测
+        expect(parts.some((part) => part.type === "text" && part.text.trim().length > 0)).toBe(false)
+        // reasoning 通道同样补记估算：output 全归 reasoning，input/缓存为 0
+        const finishes = parts.filter((part) => part.type === "step-finish")
+        expect(finishes).toHaveLength(1)
+        const finish = finishes[0]
+        expect(finish?.estimated).toBe(true)
+        if (finish) {
+          expect(finish.tokens.input).toBe(0)
+          expect(finish.tokens.output).toBe(0)
+          expect(finish.tokens.reasoning).toBeGreaterThan(0)
+        }
+        expect(msg.tokens.reasoning).toBeGreaterThan(0)
+        expect(msg.tokens.input).toBe(0)
+        expect(msg.cost).toBe(0)
+        expect(yield* llm.calls).toBe(2)
+        yield* waitFor(Effect.sync(() => (loopEvents.length > 0 ? loopEvents : undefined)), "reasoning ngram event missing")
+        expect(loopEvents).toEqual(["ngram"])
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -1784,7 +1976,13 @@ it.live("session.processor effect tests stall-cuts a reasoning-only stream", () 
         // step-finish 永不到达 —— 处理器应在阈值处中断，把思考提升为可见正文，
         // finish 置 "stop" 正常收尾，而不是让 turn 永远挂着。
         // 261020 Red 字符量退居高额兜底（默认 200K），这里把配置压到 30001 仍测同一条路径。
-        yield* llm.push(reply().reason("x".repeat(30001)).stop())
+        // 261113 Red 夹具必须非周期：重复文本会先被流内 n-gram 检测掐掉，测不到 maxChars 兜底。
+        const thought = Array.from(
+          { length: 1500 },
+          (_, index) => `思考片段${String(index).padStart(4, "0")}:${"cd".repeat(6)}`,
+        ).join("|")
+        expect(thought.length).toBeGreaterThan(30_001)
+        yield* llm.push(reply().reason(thought).stop())
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "stall")
@@ -1820,7 +2018,7 @@ it.live("session.processor effect tests stall-cuts a reasoning-only stream", () 
         expect(value).toBe("stop")
         expect(yield* llm.calls).toBe(1)
         // 思考被提升为可见正文，用户看得到东西而不是对着空白等死
-        expect(text?.text).toBe("x".repeat(30001))
+        expect(text?.text).toBe(thought)
         // finish 已落库，runLoop 下一轮能正常 break
         const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
         if (stored.info.role === "assistant") {
