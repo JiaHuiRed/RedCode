@@ -14069,6 +14069,9 @@
                 "$ref": "#/components/schemas/TextLoopStoppedError"
               },
               {
+                "$ref": "#/components/schemas/SummaryTruncatedError"
+              },
+              {
                 "$ref": "#/components/schemas/APIError"
               }
             ]
@@ -14175,6 +14178,27 @@
           "cost",
           "tokens"
         ],
+        "additionalProperties": false
+      },
+      "SummaryTruncatedError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["SummaryTruncatedError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "TextLoopStoppedError": {
@@ -26631,6 +26655,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/TextLoopStoppedError"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SummaryTruncatedError"
                   },
                   {
                     "$ref": "#/components/schemas/APIError"

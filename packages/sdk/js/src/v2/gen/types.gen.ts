@@ -472,6 +472,7 @@ export type AssistantMessage = {
     | ContentFilterError
     | ToolFailureStoppedError
     | TextLoopStoppedError
+    | SummaryTruncatedError
     | ApiError
   parentID: string
   modelID: string
@@ -501,6 +502,13 @@ export type AssistantMessage = {
   finish?: string
   routedVia?: string
   contextLevel?: "ok" | "soft" | "prune" | "compact"
+}
+
+export type SummaryTruncatedError = {
+  name: "SummaryTruncatedError"
+  data: {
+    message: string
+  }
 }
 
 export type TextLoopStoppedError = {
@@ -4878,6 +4886,7 @@ export type EventSessionError = {
       | ContentFilterError
       | ToolFailureStoppedError
       | TextLoopStoppedError
+      | SummaryTruncatedError
       | ApiError
   }
 }

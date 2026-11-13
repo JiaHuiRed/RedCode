@@ -1778,6 +1778,107 @@ describe("session.compaction.process", () => {
     },
   )
 
+  // 261113 Red 输出撞上长度上限（finish="length"）：摘要只是半份，压缩必须显式失败，
+  // 不能让 tail_start_id / checkpoint 把它钉成成功边界。
+  const truncatedSummaryStream = () =>
+    Stream.make(
+      LLMEvent.textStart({ id: "txt-0" }),
+      LLMEvent.textDelta({ id: "txt-0", text: "## Objective\n- partially written summary" }),
+      LLMEvent.textEnd({ id: "txt-0" }),
+      LLMEvent.stepFinish({ index: 0, reason: "length", usage: basicUsage() }),
+      LLMEvent.finish({ reason: "length", usage: basicUsage() }),
+    )
+
+  itCompaction.instance(
+    "legacy compaction rejects a length-truncated summary",
+    () => {
+      const responses = llm()
+      responses.push(truncatedSummaryStream())
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const first = yield* createUserMessage(session.id, "first")
+        yield* createUserMessage(session.id, "second")
+        yield* createUserMessage(session.id, "third")
+        yield* createSummaryCompaction(session.id)
+
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        expect(
+          yield* SessionCompaction.use.process({
+            parentID: msgs.at(-1)!.info.id,
+            messages: msgs,
+            sessionID: session.id,
+            auto: false,
+          }),
+        ).toBe("stop")
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const summary = all.find((m) => m.info.role === "assistant" && m.info.summary)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error?.name).toBe("SummaryTruncatedError")
+          expect(summary.info.finish).toBe("error")
+        }
+        // 截断摘要不写边界：较早原文对模型仍可见
+        const part = yield* readCompactionPart(session.id)
+        expect(part?.tail_start_id).toBeUndefined()
+        expect(MessageV2.filterCompacted(all).some((m) => m.info.id === first.id)).toBe(true)
+      }).pipe(withCompaction({ llm: responses.layer, config: cfg({ tail_turns: 2, preserve_recent_tokens: 10_000 }) }))
+    },
+  )
+
+  itCompaction.instance(
+    "native compaction rejects a length-truncated summary without committing blocks",
+    () => {
+      const responses = llm()
+      responses.push(truncatedSummaryStream())
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const ctx = yield* TestInstance
+        const chat = yield* ssn.create({})
+        const first = yield* createUserMessage(chat.id, "Earlier task")
+        const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: done.id,
+          sessionID: chat.id,
+          type: "text",
+          text: "Completed implementation evidence. ".repeat(500),
+        })
+        yield* createUserMessage(chat.id, "Current task")
+        yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+
+        const messages = yield* ssn.messages({ sessionID: chat.id })
+        expect(
+          yield* SessionCompaction.use.process({
+            parentID: messages.at(-1)!.info.id,
+            messages,
+            sessionID: chat.id,
+            auto: false,
+          }),
+        ).toBe("stop")
+
+        const all = yield* ssn.messages({ sessionID: chat.id })
+        const summary = all.find((m) => m.info.role === "assistant" && m.info.summary)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error?.name).toBe("SummaryTruncatedError")
+          expect(summary.info.finish).toBe("error")
+        }
+        // 不提交压缩块：截断摘要后面没有任何 checkpoint
+        expect(ContextCompaction.list(chat.id)).toHaveLength(0)
+      }).pipe(
+        withCompaction({
+          llm: responses.layer,
+          provider: wide(),
+          config: cfg({
+            native: { enabled: true, trigger_tokens: 60000, target_tokens: 40000, reminder_tokens: 54000, summary_max_tokens: 1000 },
+          }),
+        }),
+      )
+    },
+  )
+
   itCompaction.instance(
     "shrinks retained tail to fit preserve token budget",
     Effect.gen(function* () {

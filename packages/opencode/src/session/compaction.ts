@@ -262,6 +262,12 @@ function repeatLoopFailure(): MessageV2.Assistant["error"] {
   return new MessageV2.TextLoopStoppedError({ message: "摘要生成陷入重复循环，已中止本次压缩" }).toObject()
 }
 
+// 261113 Red 摘要被输出长度上限截断（finish="length"）：与重复停止同族，必须落失败
+// 终态。半份摘要一旦写进压缩边界，被压缩的原文就从后续模型输入里消失了。
+function truncatedSummaryFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.SummaryTruncatedError({ message: "摘要输出达到长度上限被截断，已中止本次压缩" }).toObject()
+}
+
 function completedCompactions(messages: MessageV2.WithParts[]) {
   const users = new Map<MessageID, number>()
   for (let i = 0; i < messages.length; i++) {
@@ -273,10 +279,10 @@ function completedCompactions(messages: MessageV2.WithParts[]) {
 
   return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
     if (msg.info.role !== "assistant") return []
-    // 261113 Red finish 非空不代表成功：无供应商回执的估算 step-finish（重复中止等）会把
-    // 消息停在 finish="unknown"。只有确认过的完成值才算压缩成功，否则截断摘要会顶替
-    // 正常摘要、原文从后续模型输入消失。
-    if (!msg.info.summary || !msg.info.finish || msg.info.finish === "unknown" || msg.info.error) return []
+    // 261113 Red 只有完整摘要才算压缩成功：finish 有值不代表收尾，"unknown"（估算
+    // step-finish）与 "length"（输出被长度上限截断）都可能只留下半份摘要，顶替正常
+    // 摘要后原文从后续模型输入里消失。判据与 filterCompactedOrdered 共用。
+    if (!msg.info.summary || !MessageV2.isCompleteSummary(msg.info)) return []
     const userIndex = users.get(msg.info.parentID)
     if (userIndex === undefined) return []
     return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
@@ -701,6 +707,16 @@ export const layer = Layer.effect(
           return "stop" as const
         }
         if (result !== "continue" || processor.message.error) return "stop" as const
+
+        // 261113 Red 摘要输出撞上长度上限时只有半份：不能拿它 commit 成新边界。
+        if (processor.message.finish === "length") {
+          const failure = truncatedSummaryFailure()
+          processor.message.error = failure
+          processor.message.finish = "error"
+          yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return "stop" as const
+        }
         mark("commit")
         const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
         const summary = summaryText(output) ?? ""
@@ -1007,6 +1023,17 @@ export const layer = Layer.effect(
         // 261113 Red 与原生路径同一收口：重复停止必须先落失败终态并立即返回，不能让下面
         // 的 tail_start_id 更新把截断摘要钉成成功边界（filterCompacted 会据此隐藏原文）。
         const failure = repeatLoopFailure()
+        processor.message.error = failure
+        processor.message.finish = "error"
+        yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return "stop"
+      }
+
+      // 261113 Red 与 native 路径同一收口：截断摘要（finish="length"）必须在更新
+      // tail_start_id 之前拒绝，否则半份摘要会被钉成成功边界。
+      if (processor.message.finish === "length") {
+        const failure = truncatedSummaryFailure()
         processor.message.error = failure
         processor.message.finish = "error"
         yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
