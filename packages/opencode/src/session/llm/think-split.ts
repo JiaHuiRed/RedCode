@@ -38,7 +38,7 @@ function holdbackLength(rest: string): number {
   return 0
 }
 
-type Match = { index: number; tag: string }
+type Match = { index: number; pair: Pair }
 
 /** 最近的开启标签；atStartOnly 组还要求标签本身出现在窗口第 0 字节（真泄漏是从首 token 开始）。 */
 function earliestOpen(window: string, from: number, atStartAllowed: boolean): Match | undefined {
@@ -47,18 +47,18 @@ function earliestOpen(window: string, from: number, atStartAllowed: boolean): Ma
     const index = window.indexOf(pair.open, from)
     if (index < 0) continue
     if (pair.atStartOnly && (!atStartAllowed || index !== 0)) continue
-    if (!best || index < best.index) best = { index, tag: pair.open }
+    if (!best || index < best.index) best = { index, pair }
   }
   return best
 }
 
-/** 最近的闭合标签；atStartOnly 组的闭合只在通道内部（inThink）才认，避免正文里的字面量被吞。 */
-function earliestClose(window: string, from: number, inside: boolean): Match | undefined {
+/** 正文中的孤立闭合标签；atStartOnly 组的闭合只在对应通道内部识别。 */
+function earliestClose(window: string, from: number): Match | undefined {
   let best: Match | undefined
   for (const pair of PAIRS) {
-    if (pair.atStartOnly && !inside) continue
+    if (pair.atStartOnly) continue
     const index = window.indexOf(pair.close, from)
-    if (index >= 0 && (!best || index < best.index)) best = { index, tag: pair.close }
+    if (index >= 0 && (!best || index < best.index)) best = { index, pair }
   }
   return best
 }
@@ -67,7 +67,7 @@ export type ThinkSplit = { text: string; reasoning: string }
 
 export class ThinkTagScanner {
   private tail = ""
-  private inThink = false
+  private active: Pair | undefined
   private emitted = false
 
   /** 喂一段 content 增量，返回两路各自要下发的纯文本（可为空串）。 */
@@ -79,26 +79,26 @@ export class ThinkTagScanner {
     let i = 0
     for (;;) {
       if (i >= window.length) break
-      if (this.inThink) {
-        const close = earliestClose(window, i, true)
-        if (!close) break
-        reasoning += window.slice(i, close.index)
-        this.inThink = false
-        i = close.index + close.tag.length
+      if (this.active) {
+        const close = window.indexOf(this.active.close, i)
+        if (close < 0) break
+        reasoning += window.slice(i, close)
+        i = close + this.active.close.length
+        this.active = undefined
         continue
       }
       const open = earliestOpen(window, i, !this.emitted)
-      const close = earliestClose(window, i, false)
+      const close = earliestClose(window, i)
       if (open && (!close || open.index < close.index)) {
         text += window.slice(i, open.index)
-        this.inThink = true
-        i = open.index + open.tag.length
+        this.active = open.pair
+        i = open.index + open.pair.open.length
         continue
       }
       if (close) {
         // 孤立闭标签：只丢标签，前后都是正文。
         text += window.slice(i, close.index)
-        i = close.index + close.tag.length
+        i = close.index + close.pair.close.length
         continue
       }
       break
@@ -107,7 +107,7 @@ export class ThinkTagScanner {
       const rest = window.slice(i)
       const hold = holdbackLength(rest)
       const release = rest.slice(0, rest.length - hold)
-      if (this.inThink) reasoning += release
+      if (this.active) reasoning += release
       else text += release
       this.tail = rest.slice(rest.length - hold)
     }
@@ -123,6 +123,6 @@ export class ThinkTagScanner {
     const held = this.tail
     this.tail = ""
     if (!held) return { text: "", reasoning: "" }
-    return this.inThink ? { text: "", reasoning: held } : { text: held, reasoning: "" }
+    return this.active ? { text: "", reasoning: held } : { text: held, reasoning: "" }
   }
 }

@@ -75,6 +75,23 @@ describe("ThinkTagScanner", () => {
     expect(out).toEqual({ text: "", reasoning: "分析中" })
   })
 
+  test("does not close an analysis block on a split think closing tag", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([
+      s.feed("<analysis>引用 `</th"),
+      s.feed("ink>` 后继续推理</sum"),
+      s.feed("mary>最终答案"),
+      s.flush(),
+    ])
+    expect(out).toEqual({ text: "最终答案", reasoning: "引用 `</think>` 后继续推理" })
+  })
+
+  test("does not close a think block on a summary closing tag", () => {
+    const s = new ThinkTagScanner()
+    const out = joined([s.feed("<think>引用 </summary> 后继续</think>答案"), s.flush()])
+    expect(out).toEqual({ text: "答案", reasoning: "引用 </summary> 后继续" })
+  })
+
   test("ignores analysis tags mentioned mid-reply", () => {
     const s = new ThinkTagScanner()
     const out = joined([s.feed("提到 "), s.feed("<analysis> 只是正文"), s.flush()])
