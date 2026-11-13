@@ -503,7 +503,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   // Handle --session with --fork: wait for sync to be fully complete before forking
   // (session list loads in non-blocking phase for --session, so we must wait for "complete"
-  // to avoid a race where reconcile overwrites the newly forked session)
+  // to avoid a race where reconcile overwrites the newly forked session). 261113 Red
+  // "complete" 的契约就是 session 列表已写入 store——其余可选请求各自落地，不再参与这个时机。
   let forked = false
   createEffect(() => {
     if (forked || sync.status !== "complete" || !args.sessionID || !args.fork) return

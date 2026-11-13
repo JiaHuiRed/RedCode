@@ -46,6 +46,11 @@ function sidebarDiff(input: Snapshot.FileDiff[]) {
     .slice(0, MAX_SESSION_DIFF_FILES)
     .map((item) => ({ file: item.file, additions: item.additions, deletions: item.deletions, status: item.status }))
 }
+// 261113 Red bootstrap 后台请求的显式等待阈值（ms）。SDK 传输层对每个请求已有 60s
+// deadline（packages/sdk/js/src/v2/client.ts），但那是全局兜底、超时前只表现为「一直
+// pending」；可选状态请求在这里各自给一条可观测的等待上限（只记日志，不 abort）。
+const OPTIONAL_REQUEST_TIMEOUT_MS = 10_000
+
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
@@ -185,10 +190,25 @@ export const {
       }
     }
 
+    function sessionListParams() {
+      return { start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() }
+    }
+
+    function sortedSessions(sessions: Session[]) {
+      return sessions.toSorted((a, b) => a.id.localeCompare(b.id))
+    }
+
     function listSessions() {
+      return sdk.client.session.list(sessionListParams()).then((x) => sortedSessions(x.data ?? []))
+    }
+
+    // 261113 Red bootstrap 的 session 列表是 complete 的判据：未设 throwOnError 时 HTTP 500
+    // 会返回 { error }，被 `?? []` 当成空列表写进 store（把已有会话抹掉、还把失败伪装成成功）。
+    // 这里改成会 reject 的版本，由 current 按 endpoint 记失败并保留既有数据。
+    function fetchSessions() {
       return sdk.client.session
-        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
-        .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+        .list(sessionListParams(), { throwOnError: true })
+        .then((x) => sortedSessions(x.data ?? []))
     }
 
     const forgetRequestWorkspace = (requestID: string) =>
@@ -621,24 +641,143 @@ export const {
       return providerListInFlight
     }
 
+    let bootstrapGeneration = 0
+
+    // 261113 Red 活动摘要播种：恢复快照落地多少就播多少，不等别的可选请求——
+    // MCP/lsp 等无关请求悬挂不能拖住 busy/waiting 摘要的恢复。整表覆盖是安全的：
+    // store 是同一批事件 + 恢复合并后的权威投影（事件先写 store，恢复 apply 会把
+    // 在途事件按 ID 并进快照），播种最多「暂时落后于尚未落地的恢复」，不会丢掉已知的
+    // waiting/busy——那份恢复落地后会再播一次。目录已切走时由 seedActivity 自身的
+    // 目录门禁作废，旧一轮 bootstrap 由 generation 守卫作废。
+    function seedNavigation() {
+      if (!live || !navigation || !sdk.directory) return
+      const busy = Object.entries(store.session_status)
+        .filter(([, status]) => status.type !== "idle")
+        .map(([sessionID]) => sessionID)
+      const requests = [...Object.values(store.permission).flat(), ...Object.values(store.question).flat()].map(
+        (request) => ({
+          id: request.id,
+          sessionID: request.sessionID,
+          workspace: store.request_workspace[request.id],
+        }),
+      )
+      navigation.seedActivity(sdk.directory, { busy, requests })
+    }
+
+    // 261113 Red 请求创建时就绑定失败处理：即使 phase1 悬挂/失败、startBackground 没
+    // 跑到，也不能留下未处理的 rejection（Bun 会当进程级错误）；失败立刻带端点落日志，
+    // 同时把成败作为结果保留给调用方——complete / fork 语义必须能分辨失败，不能当成功。
+    type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+    // 261113 Red 超时只做「可观测标识」：到点记一条带端点的 timed out 日志，不 abort、
+    // 不改写数据路径——迟到结果照旧由 current/seedAfter 的 generation 守卫落盘。
+    // 超时不替代状态合并与生命周期守卫。
+    function watchTimeout(name: string, promise: Promise<unknown>, ms = OPTIONAL_REQUEST_TIMEOUT_MS) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const deadline = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), ms)
+        timer.unref()
+      })
+      const settled = promise.then(
+        () => "settled" as const,
+        // 失败由 observe 记录；这里只负责结束计时，别制造第二个未处理拒绝。
+        () => "settled" as const,
+      )
+      void Promise.race([settled, deadline]).then((outcome) => {
+        if (timer !== undefined) clearTimeout(timer)
+        if (outcome === "timeout") Log.Default.warn("tui bootstrap request timed out", { endpoint: name, timeoutMs: ms })
+      })
+    }
+
+    function observe<T>(name: string, promise: Promise<T>): Promise<Outcome<T>> {
+      watchTimeout(name, promise)
+      return promise.then(
+        (value) => ({ ok: true as const, value }),
+        (error) => {
+          Log.Default.warn("tui bootstrap request failed", {
+            endpoint: name,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return { ok: false as const, error }
+        },
+      )
+    }
+
+    // 261113 Red 迟到的后台结果只在仍属当前一轮 bootstrap 时落盘：新一轮已开始或
+    // provider 已卸载时旧结果直接丢弃，不能盖掉新结果。失败已由 observe 记录。
+    function current<T>(attempt: number, name: string, promise: Promise<T>, apply: (value: T) => void) {
+      return observe(name, promise).then((outcome) => {
+        if (!live || attempt !== bootstrapGeneration || !outcome.ok) return
+        apply(outcome.value)
+      })
+    }
+
+    // 261113 Red 未设 throwOnError 的请求在 HTTP 500 时不 reject，而是返回 { error }：
+    // 不能当成功回填空值（重启/重连后会把 store 里已有的数据抹掉），也不能静默。失败按
+    // endpoint 记一条日志并保留既有数据；data 缺失同样按失败处理（200 空体不当空结果）。
+    function settle<R extends { data?: unknown; error?: unknown }>(
+      attempt: number,
+      name: string,
+      run: () => Promise<R>,
+      apply: (value: NonNullable<R["data"]>) => void,
+    ) {
+      return observe(name, run()).then((outcome) => {
+        if (!live || attempt !== bootstrapGeneration || !outcome.ok) return
+        const response = outcome.value
+        const data = response.data
+        if (response.error !== undefined || data === undefined) {
+          Log.Default.warn("tui bootstrap request failed", {
+            endpoint: name,
+            error: response.error === undefined ? "empty response" : response.error,
+          })
+          return
+        }
+        apply(data as NonNullable<R["data"]>)
+      })
+    }
+
+    // 261113 Red 恢复快照落地就播种活动摘要，不等别的可选请求；旧一轮的迟到结果
+    // 由 generation 守卫丢弃，不播种。
+    function seedAfter(name: string, attempt: number, promise: Promise<unknown>) {
+      return observe(name, promise).then((outcome) => {
+        if (outcome.ok && live && attempt === bootstrapGeneration) seedNavigation()
+      })
+    }
+
     async function bootstrap(input: { fatal?: boolean } = {}) {
       if (props.disabled) {
         setStore("status", "complete")
         return
       }
       const fatal = input.fatal ?? true
+      // 261113 Red 每一轮 bootstrap 一个编号：instance.disposed 触发重启时，旧一轮的
+      // 阻塞结果、后台写入与活动播种都必须作废（见 current 与 seedNavigation 调用点）。
+      const attempt = ++bootstrapGeneration
+      // 261113 Red 恢复类请求在本轮第一个 await 之前就发起：recover() 会同步把旧一轮的
+      // pending 顶掉（内部按 request 身份门禁），旧快照因此不会在本轮 phase1 的 await
+      // 窗口里写进 store——不是缩小窗口，是取消这段窗口。
+      void seedAfter("session.status", attempt, sessionStatusRecovery.recover())
+      void seedAfter("question.list", attempt, questionRecovery.recover())
+      void seedAfter("permission.list", attempt, permissionRecovery.recover())
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
-      const sessionListPromise = projectPromise.then(() => listSessions())
+      const rawSessionList = projectPromise.then(() => fetchSessions())
+      // 261113 Red 创建即观察：blocking 悬挂/失败时 startBackground 可能永不执行，
+      // 裸 promise 的 rejection 会变成进程级未处理错误；失败必须立刻按 endpoint 落日志。
+      // --continue 的阻塞组仍用 rawSessionList，列表失败在那里照旧是 fatal。
+      const sessionListPromise = observe("session.list", rawSessionList)
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
       // 261022 Red 全量目录退出阻塞组（见 ensureProviderList）：后台预取，不 await。
       void ensureProviderList(true)
-      const consoleStatePromise = sdk.client.experimental.console
-        .get({ workspace }, { throwOnError: true })
-        .then((x) => x.data)
-        .catch(() => emptyConsoleState)
+      // 261113 Red console.state 只服务「Provider 弹窗」的 console 托管标记，不参与首屏：
+      // 留在阻塞组里，一次悬挂就把整个第一/第二阶段拦在 loading/partial。改为落地即写
+      // （见 startBackground）；失败不写 store（保留既有值），由 current 按 endpoint 记录。
+      const consoleStatePromise = observe(
+        "console.state",
+        sdk.client.experimental.console.get({ workspace }, { throwOnError: true }).then((x) => x.data),
+      )
       const agentsPromise = sdk.client.app.agents({ workspace }, { throwOnError: true })
       const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       const blockingRequests: { name: string; promise: Promise<unknown> }[] = [
@@ -646,7 +785,7 @@ export const {
         { name: "app.agents", promise: agentsPromise },
         { name: "config.get", promise: configPromise },
         { name: "project.sync", promise: projectPromise },
-        ...(args.continue ? [{ name: "session.list", promise: sessionListPromise }] : []),
+        ...(args.continue ? [{ name: "session.list", promise: rawSessionList }] : []),
       ]
 
       await Promise.allSettled(blockingRequests.map((r) => r.promise))
@@ -658,135 +797,28 @@ export const {
           if (failure) throw failure
         })
         .then(async () => {
-          const providersResponse = providersPromise.then((x) => x.data!)
-          const consoleStateResponse = consoleStatePromise
-          const agentsResponse = agentsPromise.then((x) => x.data ?? [])
-          const configResponse = configPromise.then((x) => x.data!)
-          const sessionListResponse = args.continue ? sessionListPromise : undefined
-
-          return Promise.all([
-            providersResponse,
-            consoleStateResponse,
-            agentsResponse,
-            configResponse,
-            ...(sessionListResponse ? [sessionListResponse] : []),
-          ]).then((responses) => {
-            const providers = responses[0]
-            const consoleState = responses[1]
-            const agents = responses[2]
-            const config = responses[3]
-            const sessions = responses[4]
-
-            batch(() => {
-              setStore("provider", reconcile(providers.providers))
-              setStore("provider_default", reconcile(providers.default))
-              setStore("console_state", reconcile(consoleState))
-              setStore("agent", reconcile(agents))
-              setStore("config", reconcile(config))
-              if (sessions !== undefined) setStore("session", reconcile(sessions))
-            })
+          // 261113 Red 新一轮已开始/provider 已卸载：这一轮的阻塞结果作废，不写 store，
+          // 也不启动后台请求——新的一轮会自己起。
+          if (!live || attempt !== bootstrapGeneration) return
+          const [providers, agents, config] = await Promise.all([
+            providersPromise.then((x) => x.data!),
+            agentsPromise.then((x) => x.data ?? []),
+            configPromise.then((x) => x.data!),
+          ])
+          const sessions = args.continue ? await rawSessionList : undefined
+          if (!live || attempt !== bootstrapGeneration) return
+          batch(() => {
+            setStore("provider", reconcile(providers.providers))
+            setStore("provider_default", reconcile(providers.default))
+            setStore("agent", reconcile(agents))
+            setStore("config", reconcile(config))
+            if (sessions !== undefined) setStore("session", reconcile(sessions))
           })
         })
         .then(() => {
+          if (!live || attempt !== bootstrapGeneration) return
           if (store.status !== "complete") setStore("status", "partial")
-          // 260923 Red 第二阶段 fail-soft：辅助状态接口任一失败只记日志，不再让 status 永远停在
-          // partial。此前 void Promise.all 既没接回外层链也没有独立 catch——单个 rejection
-          // （200 响应体解析失败、listSessions 形状不符、任何显式 throwOnError 的可选请求）都会让
-          // complete 永不触发，而外层 .catch 看不见这条 void 链。SDK client 默认已把网络错误吞成
-          // { data: undefined }，这里兜的是剩下的 reject 口子。
-          const optionalRequests: { name: string; promise: Promise<unknown> }[] = [
-            ...(args.continue
-              ? []
-              : [
-                  {
-                    name: "session.list",
-                    promise: sessionListPromise.then((sessions) => setStore("session", reconcile(sessions))),
-                  },
-                ]),
-            {
-              name: "console.state",
-              promise: consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
-            },
-            {
-              name: "command.list",
-              promise: sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
-            },
-            {
-              name: "lsp.status",
-              promise: sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
-            },
-            {
-              name: "mcp.status",
-              promise: sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
-            },
-            {
-              name: "resource.list",
-              promise: sdk.client.experimental.resource
-                .list({ workspace })
-                .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-            },
-            {
-              name: "formatter.status",
-              promise: sdk.client.formatter
-                .status({ workspace })
-                .then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            },
-            {
-              name: "session.status",
-              promise: sessionStatusRecovery.recover(),
-            },
-            {
-              name: "provider.auth",
-              promise: sdk.client.provider
-                .auth({ workspace })
-                .then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
-            },
-            {
-              name: "provider.quota",
-              promise: sdk.client.provider
-                .quota({ workspace })
-                .then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
-            },
-            {
-              name: "vcs.get",
-              promise: sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
-            },
-            {
-              // 261009 Red 重启/重连恢复仍挂起的提问：SSE 只推连接后的事件，不拉的话
-              // 弹窗不出现、输入框不禁、模型无限等（GUI bootstrap 同款恢复早已存在）。
-              name: "question.list",
-              promise: questionRecovery.recover(),
-            },
-            {
-              name: "permission.list",
-              promise: permissionRecovery.recover(),
-            },
-            { name: "project.workspace.sync", promise: project.workspace.sync() },
-          ]
-          void Promise.allSettled(optionalRequests.map((r) => r.promise)).then((settled) => {
-            // 与阻塞阶段同一套 labeled 聚合，但可选失败只记日志——这些接口没有资格
-            // 把 TUI 拦在 complete 之外。
-            const failure = aggregateFailures(optionalRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
-            if (failure) Log.Default.warn("tui optional bootstrap requests failed", { error: failure.message })
-            // 261114 Red 启动快照：恢复合并后的 store 就是当前目录活动摘要的权威初始值
-            // （busy 集合 + 等待请求），同步推给 Navigation，之后继续由实时事件维护。
-            // 只覆盖本次实际进入的目录，不预热历史工作区。
-            if (live && navigation && sdk.directory) {
-              const busy = Object.entries(store.session_status)
-                .filter(([, status]) => status.type !== "idle")
-                .map(([sessionID]) => sessionID)
-              const requests = [
-                ...Object.values(store.permission).flat(),
-                ...Object.values(store.question).flat(),
-              ].map((request) => ({
-                id: request.id,
-                sessionID: request.sessionID,
-                workspace: store.request_workspace[request.id],
-              }))
-              navigation.seedActivity(sdk.directory, { busy, requests })
-            }
-            setStore("status", "complete")
-          })
+          startBackground(attempt, workspace, consoleStatePromise, sessionListPromise)
         })
         .catch(async (e) => {
           Log.Default.error("tui bootstrap failed", {
@@ -796,12 +828,83 @@ export const {
           })
           // 261110 Red 已卸载的 provider 只记日志：旧目录的迟到失败不能连坐整个 TUI。
           if (!live) return
-          if (fatal) {
-            await exit(e)
-          } else {
-            throw e
-          }
+          // 261113 Red 旧一轮的失败不再触发退出：新一轮（或已完成的当前轮）才是权威，
+          // 旧轮迟到的错误只留在日志里。非 fatal 调用方仍拿到自己的异常。
+          if (!fatal) throw e
+          if (attempt === bootstrapGeneration) await exit(e)
         })
+    }
+
+    // 261113 Red 第二阶段互不阻塞：
+    // ① 恢复类（会话状态/提问/权限）由 bootstrap 开头发起，各自落地即播种活动摘要，
+    //    谁也不等谁——MCP 等无关请求悬挂不拖累权限/提问/busy 的恢复；权限请求照常
+    //    拉取，不因别的请求悬挂而跳过。
+    // ② 其余可选请求各写各的，失败逐项带端点记日志；到 OPTIONAL_REQUEST_TIMEOUT_MS
+    //    仍未落地再记一条 timed out（数据路径不变，迟到结果仍按 generation 守卫落盘）。
+    // ③ complete 只等 session 列表写入：--session --fork 与 --continue 都要求列表先
+    //    到（否则迟到的列表 reconcile 会覆盖刚分叉出来的会话），其余请求悬挂不再把
+    //    TUI 永远拦在 partial。
+    function startBackground(
+      attempt: number,
+      workspace: string | undefined,
+      consoleStatePromise: Promise<Outcome<ConsoleState>>,
+      sessionListPromise: Promise<Outcome<Session[]>>,
+    ) {
+      void consoleStatePromise.then((outcome) => {
+        if (!live || attempt !== bootstrapGeneration || !outcome.ok) return
+        setStore("console_state", reconcile(outcome.value))
+      })
+      void settle(attempt, "command.list", () => sdk.client.command.list({ workspace }), (data) =>
+        setStore("command", reconcile(data)),
+      )
+      void settle(attempt, "lsp.status", () => sdk.client.lsp.status({ workspace }), (data) =>
+        setStore("lsp", reconcile(data)),
+      )
+      void settle(attempt, "mcp.status", () => sdk.client.mcp.status({ workspace }), (data) =>
+        setStore("mcp", reconcile(data)),
+      )
+      void settle(attempt, "resource.list", () => sdk.client.experimental.resource.list({ workspace }), (data) =>
+        setStore("mcp_resource", reconcile(data)),
+      )
+      void settle(attempt, "formatter.status", () => sdk.client.formatter.status({ workspace }), (data) =>
+        setStore("formatter", reconcile(data)),
+      )
+      void settle(attempt, "provider.auth", () => sdk.client.provider.auth({ workspace }), (data) =>
+        setStore("provider_auth", reconcile(data)),
+      )
+      void settle(attempt, "provider.quota", () => sdk.client.provider.quota({ workspace }), (data) =>
+        setStore("provider_quota", reconcile(data)),
+      )
+      void settle(attempt, "vcs.get", () => sdk.client.vcs.get({ workspace }), (data) => setStore("vcs", reconcile(data)))
+      void current(attempt, "project.workspace.sync", project.workspace.sync(), () => {})
+
+      const finish = () => {
+        if (!live || attempt !== bootstrapGeneration) return
+        // 261113 Red 启动快照：恢复合并后的 store 就是当前目录活动摘要的权威初始值
+        // （busy 集合 + 等待请求），同步推给 Navigation，之后继续由实时事件维护。
+        // 只覆盖本次实际进入的目录，不预热历史工作区。
+        seedNavigation()
+        setStore("status", "complete")
+      }
+      // --continue 的 session.list 已在阻塞阶段写入 store，partial 即完整数据；
+      // 其余情况 complete 必须等列表「成功」落地（见函数头注释③）。
+      if (args.continue) {
+        finish()
+        return
+      }
+      void sessionListPromise.then((outcome) => {
+        if (!live || attempt !== bootstrapGeneration) return
+        if (!outcome.ok) {
+          // 261113 Red 列表没落地就不标 complete：--session --fork 依赖它（fork 后迟到的
+          // 列表 reconcile 会覆盖分叉会话）。首页不受影响——ready 只要求 status !== "loading"，
+          // partial 已可交互；失败本身已由 observe 按 endpoint 记录，这里只补一条「为何没
+          // complete」的说明。
+          Log.Default.warn("tui bootstrap complete withheld", { endpoint: "session.list" })
+          return
+        }
+        setStore("session", reconcile(outcome.value))
+        finish()
+      })
     }
 
     onMount(() => {

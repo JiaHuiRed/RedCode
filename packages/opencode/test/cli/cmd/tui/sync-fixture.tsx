@@ -54,8 +54,11 @@ export type FetchHandler = (url: URL) => Response | Promise<Response> | undefine
 
 export function createFetch(override?: FetchHandler) {
   const session = [] as URL[]
+  // 261113 Red 全量请求顺序：验证恢复类请求先于阻塞阶段落地。
+  const urls = [] as URL[]
   const fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
+    urls.push(url)
     if (url.pathname === "/session") session.push(url)
 
     const overridden = await override?.(url)
@@ -94,7 +97,7 @@ export function createFetch(override?: FetchHandler) {
     throw new Error(`unexpected request: ${url.pathname}`)
   }) as typeof globalThis.fetch
 
-  return { fetch, session }
+  return { fetch, session, urls }
 }
 
 type Ctx = { kv: ReturnType<typeof useKV>; project: ReturnType<typeof useProject>; sync: ReturnType<typeof useSync> }
@@ -102,6 +105,9 @@ type Ctx = { kv: ReturnType<typeof useKV>; project: ReturnType<typeof useProject
 export async function mount(
   override?: FetchHandler,
   hooks?: { afterReady?: (ctx: { emit: (event: GlobalEvent) => void }) => void },
+  // 261113 Red 悬挂类用例要在 complete 之前拿到句柄（断言 first screen / 部分状态），
+  // 默认仍等 complete，保持既有用例行为。
+  options?: { waitFor?: "complete" | "partial" | "none" },
 ) {
   const calls = createFetch(override)
   const events = createEventSource()
@@ -124,26 +130,37 @@ export async function mount(
     return <box />
   }
 
-  const app = await testRender(() => (
-    <ArgsProvider>
-      <ExitProvider>
-        <KVProvider>
-          <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
-            <ProjectProvider>
-              <SyncProvider>
-                <Probe />
-              </SyncProvider>
-            </ProjectProvider>
-          </SDKProvider>
-        </KVProvider>
-      </ExitProvider>
-    </ArgsProvider>
-  ))
-
-  await ready
+  const fastBoot = process.env.REDCODE_FAST_BOOT
+  if (options?.waitFor === "none") process.env.REDCODE_FAST_BOOT = "1"
+  const app = await (async () => {
+    try {
+      const rendered = await testRender(() => (
+        <ArgsProvider>
+          <ExitProvider>
+            <KVProvider>
+              <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
+                <ProjectProvider>
+                  <SyncProvider>
+                    <Probe />
+                  </SyncProvider>
+                </ProjectProvider>
+              </SDKProvider>
+            </KVProvider>
+          </ExitProvider>
+        </ArgsProvider>
+      ))
+      await ready
+      return rendered
+    } finally {
+      if (fastBoot === undefined) delete process.env.REDCODE_FAST_BOOT
+      else process.env.REDCODE_FAST_BOOT = fastBoot
+    }
+  })()
   // 261114 Red 竞态用例需要在 bootstrap 可选阶段进行中拿到 emit；此时 Probe 已挂载、
   // bootstrap 刚要启动，事件还没开始飞。
   if (hooks?.afterReady) hooks.afterReady({ emit: events.emit })
-  await wait(() => sync.status === "complete")
-  return { app, emit: events.emit, kv, project, sync, session: calls.session }
+  const waitFor = options?.waitFor ?? "complete"
+  if (waitFor !== "none")
+    await wait(() => (waitFor === "complete" ? sync.status === "complete" : sync.status !== "loading"))
+  return { app, emit: events.emit, kv, project, sync, session: calls.session, urls: calls.urls }
 }

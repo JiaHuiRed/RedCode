@@ -102,6 +102,12 @@ async function mountNavigation(
   return { app, emit: events.emit, navigation, sync }
 }
 
+// 261113 Red complete 不再等恢复快照（悬挂不阻塞）；活动摘要随恢复请求逐个落地补播，
+// 所以断言前要等摘要稳定在 seed 值上，而不是假定 complete 时已经播好。
+async function waitSeeded(navigation: NonNullable<ReturnType<typeof useProjectNavigation>>) {
+  await wait(() => navigation.summary(directory).busy === 2 && navigation.summary(directory).waiting === 1)
+}
+
 const seedFetch: FetchHandler = (url) => {
   if (url.pathname === "/session/status") return json({ ses_a: { type: "busy" }, ses_b: { type: "busy" } })
   if (url.pathname === "/permission")
@@ -118,6 +124,7 @@ describe("project navigation activity", () => {
 
     const { app, navigation } = await mountNavigation(seedFetch)
     try {
+      await waitSeeded(navigation)
       expect(navigation.summary(directory)).toEqual({ busy: 2, waiting: 1 })
       expect(navigation.waitingSession(directory)).toBe("ses_a")
     } finally {
@@ -134,6 +141,7 @@ describe("project navigation activity", () => {
 
     const { app, emit, navigation } = await mountNavigation(seedFetch)
     try {
+      await waitSeeded(navigation)
       expect(navigation.summary(directory)).toEqual({ busy: 2, waiting: 1 })
 
       emit(statusEvent("ses_a", "idle"))
@@ -159,6 +167,7 @@ describe("project navigation activity", () => {
 
     const { app, navigation } = await mountNavigation(seedFetch)
     try {
+      await waitSeeded(navigation)
       expect(navigation.summary(directory)).toEqual({ busy: 2, waiting: 1 })
       expect(await navigation.switchTo(target.path)).toBe(true)
       const switched = await fs.realpath(target.path)
