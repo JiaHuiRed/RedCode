@@ -25,6 +25,8 @@ export function SessionComposerRegion(props: {
   placement?: "dock" | "inline"
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
+  // 261114 Red UX-03 评审：Soul 选择状态由 session.tsx 持有，设计视图渲染选择器
+  newSessionSoul?: () => string | undefined
   onNewSessionWorktreeChange?: (worktree: string) => void
   onNewSessionWorktreeReset: () => void
   onSubmit: () => void
@@ -293,6 +295,7 @@ export function SessionComposerRegion(props: {
                   variant={props.placement === "inline" ? "new-session" : undefined}
                   ref={props.inputRef}
                   newSessionWorktree={props.newSessionWorktree}
+                  newSessionSoul={props.newSessionSoul}
                   onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
                   onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
                   edit={props.followup?.edit}

@@ -1,30 +1,57 @@
 import type { JSX } from "solid-js"
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
+import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { useSettings } from "@/context/settings"
 import { pickGreetingKey } from "@/utils/greeting"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Select } from "@redcode-ai/ui/select"
+import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
+import { Button } from "@redcode-ai/ui/button"
+import { SoulAvatar } from "@/components/soul-avatar"
 import { WordmarkV2 } from "@redcode-ai/ui/v2/components/wordmark-v2.jsx"
 
 const MAIN_WORKTREE = "main"
 
-export function NewSessionDesignView(props: { worktree: string; children: JSX.Element }) {
+export function NewSessionDesignView(props: {
+  worktree: string
+  children: JSX.Element
+  // 261114 Red UX-03 评审：Soul 选择从输入区工具栏挪到上下文行，状态由 session.tsx 持有
+  newSessionSoul?: () => string | undefined
+  onNewSessionSoulChange?: (id: string | undefined) => void
+}) {
   const globalSync = useServerSync()
   const layout = useLayout()
   const navigate = useNavigate()
   const sdk = useSDK()
+  const globalSDK = useGlobalSDK()
   const server = useServer()
   const sync = useSync()
   const language = useLanguage()
+  const settings = useSettings()
+  const dialog = useDialog()
   const [greetingKey] = createSignal(pickGreetingKey(new Date().getHours()))
+
+  // 261114 Red UX-03：Soul 快选（跟随设置默认 / 全阵容 / 设为默认 / 管理），
+  // 逻辑与原工具栏版一致，只是位置移到上下文行。
+  const soulList = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "list"],
+    queryFn: async () => (await globalSDK.client.soul.list({ throwOnError: true })).data,
+  }))
+  const effectiveSoulID = createMemo(
+    () => props.newSessionSoul?.() ?? settings.personalization.lastSoul() ?? undefined,
+  )
+  const currentSoul = createMemo(() => soulList.data?.find((soul) => soul.id === effectiveSoulID()))
 
   const projectRoot = createMemo(() => sync.project?.worktree ?? sdk.directory)
   const projects = createMemo(() => {
@@ -79,6 +106,78 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
               class="mt-4 flex min-h-8 flex-wrap items-center gap-0 border-t border-v2-border-border-base/50 pl-2 pt-2"
               aria-label={language.t("command.session.new")}
             >
+              {/* 261114 Red UX-03 评审：Soul 选择器与工作区归入同一行上下文元信息，
+                  输入区工具栏不再拥挤（此前挤成两行）。 */}
+              <DropdownMenu gutter={4} placement="top-start">
+                <DropdownMenu.Trigger
+                  as={Button}
+                  type="button"
+                  variant="ghost"
+                  size="normal"
+                  class="max-w-[203px] justify-start gap-1.5"
+                  data-action="prompt-soul"
+                  aria-label={language.t("prompt.soul.title")}
+                >
+                  <Show
+                    when={currentSoul()}
+                    fallback={<Icon name="brain" size="small" class="text-v2-icon-icon-muted shrink-0" />}
+                  >
+                    <SoulAvatar soul={currentSoul()!} size="small" />
+                  </Show>
+                  <span class="truncate text-[13px] font-[440] text-v2-text-text-faint">
+                    {currentSoul()?.displayName || currentSoul()?.name || language.t("prompt.soul.default")}
+                  </span>
+                  <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content style={{ "max-height": "320px", "overflow-y": "auto", "min-width": "200px" }}>
+                    <DropdownMenu.Group>
+                      <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+                        {language.t("prompt.soul.title")}
+                      </DropdownMenu.GroupLabel>
+                      <DropdownMenu.Item
+                        onSelect={() => props.onNewSessionSoulChange?.(undefined)}
+                      >
+                        <DropdownMenu.ItemLabel>
+                          <Show when={!props.newSessionSoul?.()}>✓ </Show>
+                          {language.t("prompt.soul.followDefault")}
+                        </DropdownMenu.ItemLabel>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator />
+                      <For each={soulList.data ?? []}>
+                        {(soul) => (
+                          <DropdownMenu.Item onSelect={() => props.onNewSessionSoulChange?.(soul.id)}>
+                            <DropdownMenu.ItemLabel class="flex items-center gap-2">
+                              <Show when={effectiveSoulID() === soul.id}>✓ </Show>
+                              <SoulAvatar soul={soul} size="small" />
+                              <span class="truncate">{soul.displayName || soul.name}</span>
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        )}
+                      </For>
+                    </DropdownMenu.Group>
+                    <DropdownMenu.Separator />
+                    <DropdownMenu.Item
+                      disabled={!effectiveSoulID() || effectiveSoulID() === settings.personalization.lastSoul()}
+                      onSelect={() => {
+                        const id = effectiveSoulID()
+                        if (id) settings.personalization.setLastSoul(id)
+                      }}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("prompt.soul.setDefault")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={() => {
+                        void import("@/components/dialog-settings").then((m) => {
+                          dialog.show(() => <m.DialogSettings initialTab="personalization" />)
+                        })
+                      }}
+                    >
+                      <DropdownMenu.ItemLabel>{language.t("prompt.soul.manage")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
               <Select
                 size="normal"
                 variant="ghost"

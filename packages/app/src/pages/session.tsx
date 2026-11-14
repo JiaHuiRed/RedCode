@@ -106,7 +106,7 @@ export default function Page() {
   const prompt = usePrompt()
   const comments = useComments()
   const terminal = useTerminal()
-  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; soul?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { params, sessionKey, tabs, view } = useSessionLayout()
@@ -458,6 +458,21 @@ export default function Page() {
     if (store.changes === "git" || store.changes === "branch") return !vcsQuery.isPending
     return true
   }
+
+  // 261114 Red UX-03 评审：新会话的 Soul 选择状态上移到本层——设计视图在上下文行
+  // 渲染选择器，提交经 prompt-input 的 lastSoul 通道读取；?soul= 参数（设置页
+  // 「以此 Soul 新建」）在这里消费一次。
+  const [newSessionSoul, setNewSessionSoul] = createSignal<string | undefined>()
+  createEffect(
+    on(
+      () => searchParams.soul,
+      (soul) => {
+        if (!soul) return
+        setNewSessionSoul(soul)
+        void setSearchParams({ soul: undefined }, { replace: true })
+      },
+    ),
+  )
 
   const newSessionWorktree = createMemo(() => {
     // 261114 Red UX-10：显式选择（main / 已有 worktree / create）一律尊重，不再被
@@ -1868,6 +1883,7 @@ export default function Page() {
         inputRef = el
       }}
       newSessionWorktree={newSessionWorktree()}
+      newSessionSoul={newSessionSoul}
       onNewSessionWorktreeChange={(value) => setStore("newSessionWorktree", value)}
       onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
       onSubmit={() => {
@@ -2086,7 +2102,11 @@ export default function Page() {
                   </Show>
                 </Match>
                 <Match when={true}>
-                  <NewSessionDesignView worktree={newSessionWorktree()}>
+                  <NewSessionDesignView
+                    worktree={newSessionWorktree()}
+                    newSessionSoul={newSessionSoul}
+                    onNewSessionSoulChange={setNewSessionSoul}
+                  >
                     {composerRegion("inline")}
                   </NewSessionDesignView>
                 </Match>
