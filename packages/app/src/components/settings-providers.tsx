@@ -178,7 +178,8 @@ export const SettingsProviders: Component = () => {
                             size="large"
                             variant="secondary"
                             onClick={() =>
-                              dialog.show(() => <DialogCustomProvider back="close" editProviderID={item.id} />)
+                              // 261114 Red UX-08：push 进弹窗栈，编辑完回到服务商列表原位置
+                            dialog.push(() => <DialogCustomProvider back="close" editProviderID={item.id} />)
                             }
                           >
                             {language.t("common.edit")}
@@ -222,7 +223,7 @@ export const SettingsProviders: Component = () => {
                     variant="secondary"
                     icon="plus-small"
                     onClick={() => {
-                      dialog.show(() => <DialogConnectProvider provider={item.id} />)
+                      dialog.push(() => <DialogConnectProvider provider={item.id} />)
                     }}
                   >
                     {language.t("common.connect")}
@@ -250,7 +251,7 @@ export const SettingsProviders: Component = () => {
                 variant="secondary"
                 icon="plus-small"
                 onClick={() => {
-                  dialog.show(() => <DialogCustomProvider back="close" />)
+                  dialog.push(() => <DialogCustomProvider back="close" />)
                 }}
               >
                 {language.t("common.connect")}
@@ -262,7 +263,7 @@ export const SettingsProviders: Component = () => {
             variant="ghost"
             class="px-0 py-0 mt-5 text-14-medium text-text-interactive-base text-left justify-start hover:bg-transparent active:bg-transparent"
             onClick={() => {
-              dialog.show(() => <DialogSelectProvider />)
+              dialog.push(() => <DialogSelectProvider />)
             }}
           >
             {language.t("dialog.provider.viewAll")}

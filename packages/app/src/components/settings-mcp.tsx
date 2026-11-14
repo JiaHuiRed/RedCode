@@ -307,7 +307,9 @@ export const SettingsMcp: Component = () => {
 
   const openForm = (name?: string) => {
     const existing = name ? (globalSync.data.config.mcp?.[name] as McpEntry | undefined) : undefined
-    dialog.show(() => <McpForm name={name} existing={existing} onSaved={() => void refetch()} />)
+    // 261114 Red UX-08：push 进弹窗栈——保存/取消只关本层，设置列表的搜索、滚动与焦点原地保留
+    //（show 会整体替换设置弹层，回来后失去原列表上下文）。
+    dialog.push(() => <McpForm name={name} existing={existing} onSaved={() => void refetch()} />)
   }
 
   return (

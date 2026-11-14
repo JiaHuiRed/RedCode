@@ -486,7 +486,7 @@ export const SettingsGeneral: Component = () => {
 
     return (
       <div class="flex flex-col gap-1">
-        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
+        <h3 data-settings-anchor="appearance" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
 
         <SettingsList>
           <SettingsRow
@@ -765,7 +765,7 @@ export const SettingsGeneral: Component = () => {
 
   const NotificationsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
+      <h3 data-settings-anchor="notifications" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
 
       <SettingsList>
         <SettingsRow
@@ -809,7 +809,7 @@ export const SettingsGeneral: Component = () => {
 
   const SoundsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h3>
+      <h3 data-settings-anchor="sounds" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h3>
 
       <SettingsList>
         <SettingsRow
@@ -873,7 +873,7 @@ export const SettingsGeneral: Component = () => {
 
   const TtsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.tts")}</h3>
+      <h3 data-settings-anchor="tts" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.tts")}</h3>
       <SettingsList>
         <SettingsRow
           title={language.t("settings.general.tts.enabled.title")}
@@ -977,7 +977,7 @@ export const SettingsGeneral: Component = () => {
       <div class="flex flex-col gap-3">
         {/* ── User Profile ── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.profile")}</h3>
+          <h3 data-settings-anchor="profile" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.profile")}</h3>
           <SettingsList>
             <SettingsRow
               title={language.t("settings.general.row.displayName.title")}
@@ -1097,7 +1097,7 @@ export const SettingsGeneral: Component = () => {
 
   const UpdatesSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
+      <h3 data-settings-anchor="updates" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
 
       <SettingsList>
         <SettingsRow
@@ -1142,7 +1142,7 @@ export const SettingsGeneral: Component = () => {
   const DisplaySection = () => (
     <Show when={desktop()}>
       <div class="flex flex-col gap-1">
-        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
+        <h3 data-settings-anchor="display" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
 
         <SettingsList>
           <SettingsRow

@@ -992,6 +992,8 @@ export const dict = {
 
   "settings.mobileGateway.title": "Mobile companion",
   "settings.title": "Settings",
+  "settings.search.placeholder": "Search settings",
+  "settings.search.noResults": "No matching settings",
   "settings.mobileGateway.description":
     "Pair a phone or tablet to continue sessions in this workspace through an encrypted, certificate-pinned connection. The Gateway stops with RedCode.",
   "settings.mobileGateway.networkWarning":

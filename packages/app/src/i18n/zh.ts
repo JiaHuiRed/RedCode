@@ -886,6 +886,8 @@ export const dict = {
 
   "settings.mobileGateway.title": "移动接力",
   "settings.title": "设置",
+  "settings.search.placeholder": "搜索设置",
+  "settings.search.noResults": "无匹配设置",
   "settings.mobileGateway.description": "通过证书指纹固定的加密连接，让手机或 Pad 接力此工作区中的会话；RedCode 退出时 Gateway 会关闭。",
   "settings.mobileGateway.networkWarning": "仅选择可信私人网络。RedCode 不会修改防火墙规则；不要在公共网络上启用。",
   "settings.mobileGateway.host": "网络接口",

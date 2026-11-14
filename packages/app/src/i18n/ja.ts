@@ -720,6 +720,8 @@ export const dict = {
   "settings.general.section.display": "ディスプレイ",
   "settings.mobileGateway.title": "モバイル連携",
   "settings.title": "設定",
+  "settings.search.placeholder": "設定を検索",
+  "settings.search.noResults": "一致する設定はありません",
   "settings.mobileGateway.description": "証明書フィンガープリントを固定した暗号化接続で、このワークスペースのセッションをスマートフォンやタブレットから続行します。RedCode 終了時に Gateway も停止します。",
   "settings.mobileGateway.networkWarning": "信頼できるプライベートネットワークのみ選択してください。RedCode はファイアウォール規則を変更しません。パブリックネットワークでは有効にしないでください。",
   "settings.mobileGateway.host": "ネットワークインターフェース",
