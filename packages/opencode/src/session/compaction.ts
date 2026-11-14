@@ -226,16 +226,6 @@ type CompletedCompaction = {
   summary: string | undefined
 }
 
-function summaryText(message: MessageV2.WithParts) {
-  const text = message.parts
-    .filter((part): part is MessageV2.TextPart => part.type === "text")
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join("\n\n")
-    .trim()
-  return text || undefined
-}
-
 // 261026 Red 最多四层有界因果链；保留 SQLite code/errno，不记录 Drizzle SQL 或摘要参数。
 function commitFailure(error: unknown) {
   const details: string[] = []
@@ -268,6 +258,11 @@ function truncatedSummaryFailure(): MessageV2.Assistant["error"] {
   return new MessageV2.SummaryTruncatedError({ message: "摘要输出达到长度上限被截断，已中止本次压缩" }).toObject()
 }
 
+// 261113 Red 供应商正常收尾但摘要正文为空：空摘要同样是半份结果，不能成为新边界。
+function emptySummaryFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.SummaryEmptyError({ message: "摘要生成结果为空，已中止本次压缩" }).toObject()
+}
+
 function completedCompactions(messages: MessageV2.WithParts[]) {
   const users = new Map<MessageID, number>()
   for (let i = 0; i < messages.length; i++) {
@@ -279,13 +274,13 @@ function completedCompactions(messages: MessageV2.WithParts[]) {
 
   return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
     if (msg.info.role !== "assistant") return []
-    // 261113 Red 只有完整摘要才算压缩成功：finish 有值不代表收尾，"unknown"（估算
-    // step-finish）与 "length"（输出被长度上限截断）都可能只留下半份摘要，顶替正常
-    // 摘要后原文从后续模型输入里消失。判据与 filterCompactedOrdered 共用。
-    if (!msg.info.summary || !MessageV2.isCompleteSummary(msg.info)) return []
+    // 261113 Red 只有可用的摘要才算压缩成功：完成值不可信（"unknown"/"length"）、带
+    // error 或正文为空都不能成为成功边界，否则半份摘要顶替正常摘要、原文从后续模型
+    // 输入里消失。判据与压缩提交入口、filterCompactedOrdered 共用。
+    if (!MessageV2.isUsableCompactionSummary(msg)) return []
     const userIndex = users.get(msg.info.parentID)
     if (userIndex === undefined) return []
-    return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
+    return [{ userIndex, assistantIndex, summary: MessageV2.summaryText(msg) }]
   })
 }
 
@@ -709,19 +704,23 @@ export const layer = Layer.effect(
           return "stop" as const
         }
         if (result !== "continue" || processor.message.error) return "stop" as const
-
-        // 261113 Red 摘要输出撞上长度上限时只有半份：不能拿它 commit 成新边界。
-        if (processor.message.finish === "length") {
-          const failure = truncatedSummaryFailure()
+        mark("commit")
+        const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
+        // 261113 Red 统一判据：空正文 / 截断（"length"）/ 估算收尾（"unknown"）/ 带
+        // error 的摘要都不能 commit——半份摘要成为新边界，被压缩的原文就从后续模型
+        // 输入里消失了。
+        if (!MessageV2.isUsableCompactionSummary(output)) {
+          const failure =
+            output.info.role === "assistant" && output.info.finish === "length"
+              ? truncatedSummaryFailure()
+              : emptySummaryFailure()
           processor.message.error = failure
           processor.message.finish = "error"
           yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
           yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
           return "stop" as const
         }
-        mark("commit")
-        const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
-        const summary = summaryText(output) ?? ""
+        const summary = MessageV2.summaryText(output) ?? ""
         summaryBytes = Buffer.byteLength(summary, "utf8")
         if (output.info.role === "assistant") usage = output.info.tokens
         const blocks = yield* Effect.try({
@@ -854,7 +853,8 @@ export const layer = Layer.effect(
         // summary 视为失败压缩（message-v2.ts 的 failedCompactions），否则该 task 会在之后
         // 每个用户轮被 tasks.pop() 重新命中、再次熔断，用户消息永远到不了模型（换模型也无效）。
         // 这不是压缩成功：不写 boundary/tail、不折叠历史；filterCompacted 与
-        // completedCompactions 都要求 finish 且无 error，失败标记不会被当成压缩结果。
+        // completedCompactions 都要求可用摘要（完成值可信、无 error、正文非空），
+        // 失败标记不会被当成压缩结果。
         const now = Date.now()
         const context = yield* InstanceState.context
         yield* session.appendMessage({
@@ -1034,10 +1034,20 @@ export const layer = Layer.effect(
         return "stop"
       }
 
-      // 261113 Red 与 native 路径同一收口：截断摘要（finish="length"）必须在更新
-      // tail_start_id 之前拒绝，否则半份摘要会被钉成成功边界。
-      if (processor.message.finish === "length") {
-        const failure = truncatedSummaryFailure()
+      // 261113 Red 统一判据（与 native、历史投影共用）：空正文 / 截断 / 估算收尾 / 带
+      // error 的摘要都不能成为新边界，必须在更新 tail_start_id 之前拒绝。
+      // 260920 Red 压缩期不做全表扫描：原先两处 `session.messages()` 不带 limit 载入整个
+      // 会话，只为按主键找同一条消息，而压缩恰好发生在会话最长的时刻（note：
+      // docs/notes/archived/architecture/2026-09-18-full-repo-audit.md §4.4）。主键点查，
+      // NotFound 时退回内存里的 msg，与旧 `find(...) ?? { info: msg, parts: [] }` 等价。
+      const summaryMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
+        Effect.orElseSucceed((): MessageV2.WithParts => ({ info: msg, parts: [] })),
+      )
+      if (!MessageV2.isUsableCompactionSummary(summaryMessage)) {
+        const failure =
+          summaryMessage.info.role === "assistant" && summaryMessage.info.finish === "length"
+            ? truncatedSummaryFailure()
+            : emptySummaryFailure()
         processor.message.error = failure
         processor.message.finish = "error"
         yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
@@ -1169,14 +1179,7 @@ export const layer = Layer.effect(
 
       if (processor.message.error) return "stop"
       if (result === "continue") {
-        // 260920 Red 压缩期不做全表扫描：原先两处 `session.messages()` 不带 limit 载入整个会话，
-        // 只为按主键找同一条消息，而压缩恰好发生在会话最长的时刻（note：
-        // docs/notes/archived/architecture/2026-09-18-full-repo-audit.md §4.4）。改成主键点查并
-        // 复用结果；NotFound 时退回内存里的 msg，与旧 `find(...) ?? { info: msg, parts: [] }` 等价。
-        const summaryMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
-          Effect.orElseSucceed((): MessageV2.WithParts => ({ info: msg, parts: [] })),
-        )
-        const summary = summaryText(summaryMessage)
+        const summary = MessageV2.summaryText(summaryMessage)
         // 260808 Red 文件清单追加（Pi 借鉴第 3 项）：机械提取被压缩消息里真实 read/write
         // 过的文件，与上次摘要标签合并后 append 到摘要文本 —— 压缩后模型不用重新探索
         // 已读文件，也不依赖模型在 Relevant Files 里凭记忆写路径。

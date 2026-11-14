@@ -14072,6 +14072,9 @@
                 "$ref": "#/components/schemas/SummaryTruncatedError"
               },
               {
+                "$ref": "#/components/schemas/SummaryEmptyError"
+              },
+              {
                 "$ref": "#/components/schemas/APIError"
               }
             ]
@@ -14182,6 +14185,27 @@
           "cost",
           "tokens"
         ],
+        "additionalProperties": false
+      },
+      "SummaryEmptyError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["SummaryEmptyError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "SummaryTruncatedError": {
@@ -26670,6 +26694,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/SummaryTruncatedError"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SummaryEmptyError"
                   },
                   {
                     "$ref": "#/components/schemas/APIError"

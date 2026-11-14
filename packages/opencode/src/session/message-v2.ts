@@ -106,6 +106,11 @@ export const TextLoopStoppedError = NamedError.create("TextLoopStoppedError", {
 export const SummaryTruncatedError = NamedError.create("SummaryTruncatedError", {
   message: Schema.String,
 })
+// 261113 Red 供应商正常收尾（finish="stop"）却没有吐出摘要正文：空摘要同样是半份结果，
+// 不能成为压缩边界。
+export const SummaryEmptyError = NamedError.create("SummaryEmptyError", {
+  message: Schema.String,
+})
 
 export class OutputFormatText extends Schema.Class<OutputFormatText>("OutputFormatText")({
   type: Schema.Literal("text"),
@@ -478,6 +483,7 @@ const AssistantErrorSchema = Schema.Union([
   ToolFailureStoppedError.EffectSchema,
   TextLoopStoppedError.EffectSchema,
   SummaryTruncatedError.EffectSchema,
+  SummaryEmptyError.EffectSchema,
   APIError.EffectSchema,
 ]).annotate({ discriminator: "name" })
 type AssistantError = Schema.Schema.Type<typeof AssistantErrorSchema>
@@ -1604,6 +1610,25 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
 // 这里 re-export，保持 MessageV2.isCompleteSummary 的调用方不变。
 export { isCompleteSummary }
 
+// 261113 Red 摘要正文：trim 后非空才算有内容（空串/纯空白都不行）。
+export function summaryText(message: { parts: readonly Part[] }) {
+  const text = message.parts
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+  return text || undefined
+}
+
+// 261113 Red 可用的压缩摘要 = summary 标志 + 可信完成值 + 无 error + 正文非空。
+// 压缩提交入口（Native/Legacy）与历史投影共用这一判据：三处各判一遍，空摘要或截断
+// 摘要迟早会从某个缺口漏成新边界，被隐藏的原文就再也回不到模型输入里。
+export function isUsableCompactionSummary(message: WithParts): boolean {
+  if (message.info.role !== "assistant" || !message.info.summary) return false
+  return isCompleteSummary(message.info) && summaryText(message) !== undefined
+}
+
 export function filterCompacted(msgs: Iterable<WithParts>) {
   // 260824 Red: 循环从新往回扫依赖 chrono 逆序输入，但 compaction.ts 的 estimate 回填
   // 传入的是正序/展示序（[parent, summary, tail, 后续]），折叠因此从不生效 → 分割线
@@ -1650,10 +1675,9 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>, tree = true
     }
     if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
       break
-    // 261113 Red finish 有值不代表摘要是完整的：估算 step-finish（"unknown"）与被长度
-    // 上限截断（"length"）都会让半份摘要冒充成功边界，把原文从后续模型输入里顶掉。
-    if (msg.info.role === "assistant" && msg.info.summary && isCompleteSummary(msg.info))
-      completed.add(msg.info.parentID)
+    // 261113 Red 只有可用的摘要才算压缩完成：空正文、估算 step-finish（"unknown"）、
+    // 长度截断（"length"）或带 error 都会让半份摘要冒充成功边界。
+    if (msg.info.role === "assistant" && isUsableCompactionSummary(msg)) completed.add(msg.info.parentID)
   }
   result.reverse()
   // 261114 Red 树过滤（review finding 2）：必须在**重排前**的时序收集集上走链。
@@ -1679,11 +1703,9 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>, tree = true
         (msg, index) =>
           index > compactionIndex &&
           msg.info.role === "assistant" &&
-          msg.info.summary &&
-          msg.info.finish &&
-          // 261113 Red 重排只接受完整摘要：finish="unknown"（估算收尾）或 "length"
-          // （截断）都不参与尾部重排，否则失败摘要把原文顶出模型输入。
-          isCompleteSummary(msg.info) &&
+          // 261113 Red 重排只接受可用摘要：空正文、finish="unknown"/"length" 或带 error
+          // 都不参与尾部重排，否则失败摘要把原文顶出模型输入。
+          isUsableCompactionSummary(msg) &&
           msg.info.parentID === compaction.info.id,
       )
     : -1

@@ -252,7 +252,25 @@ function fake(
     salvagedToolCalls: [],
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
-    process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
+    process: Effect.fn("TestSessionProcessor.process")(() => {
+      // 261113 Red 压缩成功判据要求摘要正文非空、完成值可信：桩必须像真实 processor
+      // 一样落正文与 finish，否则压缩入口会把这次「成功」判成失败摘要。
+      // SessionNs 由调用方（压缩流程）的环境提供，断言仅为满足 Handle.process 的 R=never。
+      const write = Effect.gen(function* () {
+        yield* SessionNs.use.updatePart({
+          id: PartID.ascending(),
+          messageID: msg.id,
+          sessionID: input.sessionID,
+          type: "text",
+          text: "Test compaction summary",
+          time: { start: 0, end: 0 },
+        })
+        msg.finish = "stop"
+        yield* SessionNs.use.updateMessage(msg)
+        return result
+      })
+      return write as unknown as Effect.Effect<"continue" | "compact">
+    }),
   } satisfies SessionProcessorModule.SessionProcessor.Handle
 }
 
@@ -1868,6 +1886,106 @@ describe("session.compaction.process", () => {
           expect(summary.info.finish).toBe("error")
         }
         // 不提交压缩块：截断摘要后面没有任何 checkpoint
+        expect(ContextCompaction.list(chat.id)).toHaveLength(0)
+      }).pipe(
+        withCompaction({
+          llm: responses.layer,
+          provider: wide(),
+          config: cfg({
+            native: { enabled: true, trigger_tokens: 60000, target_tokens: 40000, reminder_tokens: 54000, summary_max_tokens: 1000 },
+          }),
+        }),
+      )
+    },
+  )
+
+  // 261113 Red 供应商正常收尾（finish="stop"）但没吐出摘要正文：空摘要同样是半份
+  // 结果，压缩不能把它钉成成功边界。
+  const emptySummaryStream = () =>
+    Stream.make(
+      LLMEvent.textStart({ id: "txt-0" }),
+      LLMEvent.textEnd({ id: "txt-0" }),
+      LLMEvent.stepFinish({ index: 0, reason: "stop", usage: basicUsage() }),
+      LLMEvent.finish({ reason: "stop", usage: basicUsage() }),
+    )
+
+  itCompaction.instance(
+    "legacy compaction rejects an empty summary",
+    () => {
+      const responses = llm()
+      responses.push(emptySummaryStream())
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const first = yield* createUserMessage(session.id, "first")
+        yield* createUserMessage(session.id, "second")
+        yield* createUserMessage(session.id, "third")
+        yield* createSummaryCompaction(session.id)
+
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        expect(
+          yield* SessionCompaction.use.process({
+            parentID: msgs.at(-1)!.info.id,
+            messages: msgs,
+            sessionID: session.id,
+            auto: false,
+          }),
+        ).toBe("stop")
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const summary = all.find((m) => m.info.role === "assistant" && m.info.summary)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error?.name).toBe("SummaryEmptyError")
+          expect(summary.info.finish).toBe("error")
+        }
+        // 空摘要不写边界：较早原文对模型仍可见
+        const part = yield* readCompactionPart(session.id)
+        expect(part?.tail_start_id).toBeUndefined()
+        expect(MessageV2.filterCompacted(all).some((m) => m.info.id === first.id)).toBe(true)
+      }).pipe(withCompaction({ llm: responses.layer, config: cfg({ tail_turns: 2, preserve_recent_tokens: 10_000 }) }))
+    },
+  )
+
+  itCompaction.instance(
+    "native compaction rejects an empty summary without committing blocks",
+    () => {
+      const responses = llm()
+      responses.push(emptySummaryStream())
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const ctx = yield* TestInstance
+        const chat = yield* ssn.create({})
+        const first = yield* createUserMessage(chat.id, "Earlier task")
+        const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: done.id,
+          sessionID: chat.id,
+          type: "text",
+          text: "Completed implementation evidence. ".repeat(500),
+        })
+        yield* createUserMessage(chat.id, "Current task")
+        yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+
+        const messages = yield* ssn.messages({ sessionID: chat.id })
+        expect(
+          yield* SessionCompaction.use.process({
+            parentID: messages.at(-1)!.info.id,
+            messages,
+            sessionID: chat.id,
+            auto: false,
+          }),
+        ).toBe("stop")
+
+        const all = yield* ssn.messages({ sessionID: chat.id })
+        const summary = all.find((m) => m.info.role === "assistant" && m.info.summary)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error?.name).toBe("SummaryEmptyError")
+          expect(summary.info.finish).toBe("error")
+        }
+        // 不提交压缩块：空摘要后面没有任何 checkpoint
         expect(ContextCompaction.list(chat.id)).toHaveLength(0)
       }).pipe(
         withCompaction({

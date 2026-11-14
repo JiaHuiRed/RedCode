@@ -2139,7 +2139,14 @@ describe("session.message-v2.latest", () => {
       finish: "stop",
       tokens: { input: 150_000, output: 1_500, reasoning: 0, cache: { read: 0, write: 0 }, total: 151_500 },
     } as MessageV2.Assistant,
-    parts: [],
+    // 261113 Red 可用摘要要求正文非空：成功摘要必须带正文，懒扫才会在边界停。
+    parts: [
+      {
+        ...basePart(SUMMARY_ASSISTANT, "summary-text"),
+        type: "text",
+        text: "Compacted summary",
+      },
+    ],
   }
 
   const continueUser: MessageV2.WithParts = {
