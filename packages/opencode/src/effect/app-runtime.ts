@@ -31,6 +31,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionRevert } from "@/session/revert"
+import { SessionBranch } from "@/session/branch"
 import { SessionSummary } from "@/session/summary"
 import { SessionPrompt } from "@/session/prompt"
 import { Instruction } from "@/session/instruction"
@@ -92,6 +93,7 @@ export const AppLayer = Layer.mergeAll(
   SessionProcessor.defaultLayer,
   SessionCompaction.defaultLayer,
   SessionRevert.defaultLayer,
+  SessionBranch.defaultLayer,
   SessionSummary.defaultLayer,
   SessionPrompt.defaultLayer,
   GoalContinuation.defaultLayer,

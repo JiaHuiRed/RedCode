@@ -213,6 +213,8 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionMessageVersionsErrors,
+  SessionMessageVersionsResponses,
   SessionOutlineErrors,
   SessionOutlineResponses,
   SessionPromptAsyncErrors,
@@ -221,6 +223,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionSelectVersionErrors,
+  SessionSelectVersionResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -4466,6 +4470,80 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionUnrevertResponses, SessionUnrevertErrors, ThrowOnError>({
       url: "/session/{sessionID}/unrevert",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List message versions
+   *
+   * List sibling version groups of user messages (edit-resend/regenerate branches), including detached (abandoned) branches kept by revert. Only groups with two or more versions are returned; assistant messages never group (their parentID means the triggering user, not a branch point).
+   */
+  public messageVersions<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionMessageVersionsResponses,
+      SessionMessageVersionsErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/message-versions",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Switch message branch version
+   *
+   * Make the given user message the selected version at its fork point: rewrites the parent's selectedChildID, detaches the currently visible suffix (island) and revives the target branch. File state follows conservatively: the abandoned branch's patches are undone back to the fork point, then files touched by the target branch are restored to its recorded end state (patch-scoped, never a whole-workspace rollback). Rejected while a run is active or a revert marker is pending.
+   */
+  public selectVersion<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionSelectVersionResponses,
+      SessionSelectVersionErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/message/{messageID}/select",
       ...options,
       ...params,
     })

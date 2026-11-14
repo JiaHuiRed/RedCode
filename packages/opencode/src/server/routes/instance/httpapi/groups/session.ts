@@ -7,6 +7,7 @@ import { Goal } from "@/session/goal"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
+import { SessionBranch } from "@/session/branch"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
@@ -137,6 +138,8 @@ export const SessionPaths = {
   diff: `${root}/:sessionID/diff`,
   outline: `${root}/:sessionID/outline`,
   messages: `${root}/:sessionID/message`,
+  messageVersions: `${root}/:sessionID/message-versions`,
+  selectVersion: `${root}/:sessionID/message/:messageID/select`,
   changes: `${root}/:sessionID/changes`,
   message: `${root}/:sessionID/message/:messageID`,
   deliverQueuedMessage: `${root}/:sessionID/message/:messageID/deliver`,
@@ -554,6 +557,38 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.unrevert",
             summary: "Restore reverted messages",
             description: "Restore all previously reverted messages in a session.",
+          }),
+        ),
+        HttpApiEndpoint.get("messageVersions", SessionPaths.messageVersions, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(SessionBranch.VersionGroup), "Sibling version groups"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.messageVersions",
+            summary: "List message versions",
+            description:
+              "List sibling version groups of user messages (edit-resend/regenerate branches), including detached (abandoned) branches kept by revert. Only groups with two or more versions are returned; assistant messages never group (their parentID means the triggering user, not a branch point).",
+          }),
+        ),
+        HttpApiEndpoint.post("selectVersion", SessionPaths.selectVersion, {
+          params: { sessionID: SessionID, messageID: MessageID },
+          query: WorkspaceRoutingQuery,
+          success: described(Session.Info, "Updated session"),
+          error: [
+            HttpApiError.BadRequest,
+            ApiNotFoundError,
+            SessionBusyError,
+            InvalidRequestError,
+            ConflictError,
+          ],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.selectVersion",
+            summary: "Switch message branch version",
+            description:
+              "Make the given user message the selected version at its fork point: rewrites the parent's selectedChildID, detaches the currently visible suffix (island) and revives the target branch. File state follows conservatively: the abandoned branch's patches are undone back to the fork point, then files touched by the target branch are restored to its recorded end state (patch-scoped, never a whole-workspace rollback). Rejected while a run is active or a revert marker is pending.",
           }),
         ),
         HttpApiEndpoint.post("permissionRespond", SessionPaths.permissions, {

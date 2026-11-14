@@ -170,6 +170,8 @@ export const dict: Record<string, string> = {
   "ui.message.copy": "Copy",
   "ui.message.copyMessage": "Copy message",
   "ui.message.forkMessage": "Fork to new session",
+  "ui.message.previousVersion": "Switch to previous version",
+  "ui.message.nextVersion": "Switch to next version",
   "ui.message.revertMessage": "Revert message",
   "ui.message.copyResponse": "Copy response",
 

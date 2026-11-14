@@ -14,6 +14,7 @@ import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
+import { SessionBranch } from "@/session/branch"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
@@ -44,7 +45,7 @@ import {
   UpdatePayload,
   UsageQuery,
 } from "../groups/session"
-import { ConflictError, InvalidRequestError, PermissionNotFoundError, notFound } from "../errors"
+import { ConflictError, InvalidRequestError, PermissionNotFoundError, SessionBusyError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -60,6 +61,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
+    const branchSvc = yield* SessionBranch.Service
     const compactSvc = yield* SessionCompaction.Service
     const runState = yield* SessionRunState.Service
     const agentSvc = yield* Agent.Service
@@ -249,6 +251,40 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapStorageNotFound(
         MessageV2.get({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID }),
       )
+    })
+
+    // 261114 Red 消息树分支 Phase 3 切换器。InvalidBranch 是客户端把不可切换的
+    //   消息喂了进来（非 user / 未物化 / 父不在可见路径）→ 400；RevertPending 是
+    //   会话状态冲突（待截断标记未清理）→ 409，先 unrevert 或发下一条消息。
+    const messageVersions = Effect.fn("SessionHttpApi.messageVersions")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* branchSvc.versions({ sessionID: ctx.params.sessionID })
+    })
+
+    const selectVersion = Effect.fn("SessionHttpApi.selectVersion")(function* (ctx: {
+      params: { sessionID: SessionID; messageID: MessageID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* branchSvc
+        .select({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID })
+        .pipe(
+          Effect.catchTag("InvalidBranch", (error) => new InvalidRequestError({ message: error.message })),
+          Effect.catchTag("RevertPending", (error) =>
+            new ConflictError({
+              message: "session has a pending revert; send a message or unrevert before switching branches",
+              resource: error.sessionID,
+            }),
+          ),
+          Effect.catchTag("NotFoundError", (error) => notFound(error.message)),
+          Effect.catchTag("SessionBusyError", (error) =>
+            new SessionBusyError({
+              sessionID: error.sessionID,
+              message: `Session is busy: ${error.sessionID}`,
+            }),
+          ),
+        )
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
@@ -643,6 +679,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("diff", diff)
       .handle("outline", outline)
       .handle("messages", messages)
+      .handle("messageVersions", messageVersions)
+      .handle("selectVersion", selectVersion)
       .handle("changes", changes)
       .handle("message", message)
       .handleRaw("create", createRaw)

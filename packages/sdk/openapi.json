@@ -8606,6 +8606,196 @@
         ]
       }
     },
+    "/session/{sessionID}/message-versions": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.messageVersions",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sibling version groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageVersionGroup"
+                  },
+                  "description": "Sibling version groups"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List sibling version groups of user messages (edit-resend/regenerate branches), including detached (abandoned) branches kept by revert. Only groups with two or more versions are returned; assistant messages never group (their parentID means the triggering user, not a branch point).",
+        "summary": "List message versions",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.messageVersions({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/message/{messageID}/select": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "session.selectVersion",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "messageID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msg"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SessionBusyError | ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionBusyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ConflictError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Make the given user message the selected version at its fork point: rewrites the parent's selectedChildID, detaches the currently visible suffix (island) and revives the target branch. File state follows conservatively: the abandoned branch's patches are undone back to the fork point, then files touched by the target branch are restored to its recorded end state (patch-scoped, never a whole-workspace rollback). Rejected while a run is active or a revert marker is pending.",
+        "summary": "Switch message branch version",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.selectVersion({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/permissions/{permissionID}": {
       "post": {
         "tags": ["session"],
@@ -12581,6 +12771,9 @@
             "$ref": "#/components/schemas/EventMessagePartDelta"
           },
           {
+            "$ref": "#/components/schemas/EventMessageBranchesSwitched"
+          },
+          {
             "$ref": "#/components/schemas/EventPermissionAsked"
           },
           {
@@ -12617,9 +12810,6 @@
             "$ref": "#/components/schemas/EventSessionIdle"
           },
           {
-            "$ref": "#/components/schemas/EventSessionCompacted"
-          },
-          {
             "$ref": "#/components/schemas/EventMcpToolsChanged"
           },
           {
@@ -12633,6 +12823,9 @@
           },
           {
             "$ref": "#/components/schemas/EventProjectRemoved"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionCompacted"
           },
           {
             "$ref": "#/components/schemas/EventWorktreeReady"
@@ -12770,9 +12963,6 @@
             "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
           },
           {
-            "$ref": "#/components/schemas/EventCatalogModelUpdated"
-          },
-          {
             "$ref": "#/components/schemas/EventSessionNextAgentSwitched"
           },
           {
@@ -12849,6 +13039,9 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
+          },
+          {
+            "$ref": "#/components/schemas/EventCatalogModelUpdated"
           },
           {
             "$ref": "#/components/schemas/EventModels-devRefreshed"
@@ -15441,6 +15634,41 @@
           }
         },
         "required": ["items", "cursor"],
+        "additionalProperties": false
+      },
+      "MessageVersionGroup": {
+        "type": "object",
+        "properties": {
+          "parentID": {
+            "type": "string",
+            "pattern": "^msg"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageVersionEntry"
+            }
+          },
+          "current": {
+            "type": "string",
+            "pattern": "^msg"
+          }
+        },
+        "required": ["versions", "current"],
+        "additionalProperties": false
+      },
+      "MessageVersionEntry": {
+        "type": "object",
+        "properties": {
+          "messageID": {
+            "type": "string",
+            "pattern": "^msg"
+          },
+          "timeCreated": {
+            "type": "number"
+          }
+        },
+        "required": ["messageID", "timeCreated"],
         "additionalProperties": false
       },
       "SubtaskPartInput": {
@@ -18469,6 +18697,9 @@
                 "$ref": "#/components/schemas/EventMessagePartDelta"
               },
               {
+                "$ref": "#/components/schemas/EventMessageBranchesSwitched"
+              },
+              {
                 "$ref": "#/components/schemas/EventPermissionAsked"
               },
               {
@@ -18505,9 +18736,6 @@
                 "$ref": "#/components/schemas/EventSessionIdle"
               },
               {
-                "$ref": "#/components/schemas/EventSessionCompacted"
-              },
-              {
                 "$ref": "#/components/schemas/EventMcpToolsChanged"
               },
               {
@@ -18521,6 +18749,9 @@
               },
               {
                 "$ref": "#/components/schemas/EventProjectRemoved"
+              },
+              {
+                "$ref": "#/components/schemas/EventSessionCompacted"
               },
               {
                 "$ref": "#/components/schemas/EventWorktreeReady"
@@ -18658,9 +18889,6 @@
                 "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
               },
               {
-                "$ref": "#/components/schemas/EventCatalogModelUpdated"
-              },
-              {
                 "$ref": "#/components/schemas/EventSessionNextAgentSwitched"
               },
               {
@@ -18737,6 +18965,9 @@
               },
               {
                 "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
+              },
+              {
+                "$ref": "#/components/schemas/EventCatalogModelUpdated"
               },
               {
                 "$ref": "#/components/schemas/EventModels-devRefreshed"
@@ -26298,6 +26529,31 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionCompacted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.compacted"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventProjectRemoved": {
         "type": "object",
         "properties": {
@@ -26412,31 +26668,6 @@
               }
             },
             "required": ["server"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionCompacted": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.compacted"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
             "additionalProperties": false
           }
         },
@@ -26786,6 +27017,31 @@
           },
           "properties": {
             "$ref": "#/components/schemas/PermissionRequest"
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMessageBranchesSwitched": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["message.branches.switched"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["sessionID"],
+            "additionalProperties": false
           }
         },
         "required": ["id", "type", "properties"],

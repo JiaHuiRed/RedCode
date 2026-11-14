@@ -1,4 +1,4 @@
-// 261114 Red 消息树分支 Phase 1（决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md）。
+// 261114 Red 消息树分支 Phase 1（决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md）。
 // 数据模型取自 DeepSeek chat-demo 的 branches.ts：每条消息带 parentID（线性序上的前一条，
 // assistant 侧即已有的「触发的 user」字段）与 selectedChildID（当前选中的下一条），
 // 可见路径 = 从 root 沿 selectedChildID 走出的链——展示与请求上下文共用这一条路径。

@@ -9,6 +9,7 @@ import { SyncEvent } from "../sync"
 import * as Log from "@redcode-ai/core/util/log"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
+import { markIslandRows } from "./branch"
 import * as ContextCompaction from "./context-compaction"
 import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
@@ -115,7 +116,7 @@ export const layer = Layer.effect(
       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     })
 
-    // 261114 Red 2d 分离弃岛（决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md）：
+    // 261114 Red 2d 分离弃岛（决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md）：
     // cleanup 从「物理删行」收敛为「分岛」——弃岛（revert 点起的消息链）保留在库里，
     // 这是 Phase 3 版本切换器（‹2/3› 切回旧分支）的数据基础。岛内行打上 detached
     // 内部标记（裸 json_set，**不进 Info schema**：API/SDK 不可见的内部簿记），
@@ -123,24 +124,23 @@ export const layer = Layer.effect(
     // 链尾探测与物化全量读、latestCompactionCursor 统一按 json_extract 排除。
     // 分叉点父消息的 selectedChildID 摘除（仅当仍指向岛首），下一条消息经
     // appendMessage 自然落为新分支——edit-resend/regenerate 由此从截断变为落分支。
-    const detachBranch = (island: MessageV2.WithParts[], msgs: MessageV2.WithParts[]) => {
+    // 261114 Red Phase 3：弃岛同时写 islandSnapshot（rev.snapshot = revert 点击时刻
+    // 的盘面，即该分支的文件末态）——切换器切回时据此做补丁级文件恢复
+    // （Snapshot.checkoutFiles）；无快照（snapshot 功能禁用）的岛切回时只切消息。
+    const detachBranch = (island: MessageV2.WithParts[], msgs: MessageV2.WithParts[], snapshot?: string) => {
       const root = island[0]!
       // 分叉点 = 岛首的时序前驱（物化会话的 user.parentID 恒等于时序前驱，统一取时序）
       const index = msgs.findIndex((msg) => msg.info.id === root.info.id)
       const parent = index > 0 ? msgs[index - 1] : undefined
-      Database.use((db) => {
-        for (const msg of island) {
-          db.run(
-            sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.detached', 1) WHERE ${MessageTable.id} = ${msg.info.id}`,
-          )
-        }
-        // 父选中指针仍指向岛首才摘——指向别处说明已分离，不动
-        if (parent) {
+      markIslandRows(island, snapshot)
+      // 父选中指针仍指向岛首才摘——指向别处说明已分离，不动
+      if (parent) {
+        Database.use((db) => {
           db.run(
             sql`UPDATE ${MessageTable} SET data = json_remove(${MessageTable.data}, '$.selectedChildID') WHERE ${MessageTable.id} = ${parent.info.id} AND json_extract(${MessageTable.data}, '$.selectedChildID') = ${root.info.id}`,
           )
-        }
-      })
+        })
+      }
     }
 
     const cleanup = Effect.fn("SessionRevert.cleanup")(function* (session: Session.Info) {
@@ -171,7 +171,7 @@ export const layer = Layer.effect(
       if (remove.length) ContextCompaction.invalidate(sessionID, remove.map((msg) => msg.info.id))
       // 261114 Red 2d 分岛不删行；Removed 事件语义变为「移出可见路径」，客户端
       //   视图与删除时代一致（重载后由读侧排除兜底）。
-      if (remove.length) detachBranch(remove, msgs)
+      if (remove.length) detachBranch(remove, msgs, session.revert.snapshot)
       for (const msg of remove) {
         yield* sync.run(MessageV2.Event.Removed, {
           sessionID,

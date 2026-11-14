@@ -150,6 +150,8 @@ export const dict = {
   "ui.message.copy": "コピー",
   "ui.message.copyMessage": "メッセージをコピー",
   "ui.message.forkMessage": "新しいセッションにフォーク",
+  "ui.message.previousVersion": "前のバージョンに切替",
+  "ui.message.nextVersion": "次のバージョンに切替",
   "ui.message.revertMessage": "この時点までリセット",
   "ui.message.copyResponse": "応答をコピー",
   "ui.message.copied": "コピーしました！",

@@ -440,7 +440,7 @@ export const User = Schema.Struct({
   //   语义即触发的 user 消息，树父链天然成立，无需新字段）。
   //   selectedChildID = 分支选择指针：当前选中的下一条消息，展示与请求上下文
   //   共用这条可见路径。Phase 1 只读不写。
-  //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+  //   决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md
   parentID: Schema.optional(MessageID),
   selectedChildID: Schema.optional(MessageID),
 }).annotate({ identifier: "UserMessage" })
@@ -605,7 +605,7 @@ export const Assistant = Schema.Struct({
   // 261114 Red 消息树分支（Phase 1）：分支选择指针，语义与 User.selectedChildID 相同
   // （见 UserMessage 注释）。树父链不需要新字段——本消息的 parentID（触发的 user）
   // 就是树父。Phase 1 只读不写。
-  // 决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+  // 决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md
   selectedChildID: Schema.optional(MessageID),
 }).annotate({ identifier: "AssistantMessage" })
 export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
@@ -623,6 +623,15 @@ const UpdatedEventSchema = Schema.Struct({
 const RemovedEventSchema = Schema.Struct({
   sessionID: SessionID,
   messageID: MessageID,
+})
+
+// 261114 Red 消息树分支 Phase 3：分支切换完成通知。走 Bus 事件而非 SyncEvent——
+// 同 PartDelta 先例（纯通知、无投影状态），SyncEvent 的 non-projecting 路径根本
+// 不广播。payload 只有 sessionID——切换是「一批行的可见性翻转 + 指针改写」，逐行
+// 增量补不可靠（岛行部件在客户端早已随 Removed 删掉），客户端收到后整会话重拉
+// 消息，重拉结果是唯一真相源。
+const BranchesSwitchedEventSchema = Schema.Struct({
+  sessionID: SessionID,
 })
 
 const PartUpdatedEventSchema = Schema.Struct({
@@ -672,6 +681,7 @@ export const Event = {
     aggregate: "sessionID",
     schema: PartRemovedEventSchema,
   }),
+  BranchesSwitched: BusEvent.define("message.branches.switched", BranchesSwitchedEventSchema),
 }
 
 export const WithParts = Schema.Struct({
@@ -1445,6 +1455,35 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
     more,
     cursor: more && tail ? cursor.encode({ id: tail.id, time: tail.time_created }) : undefined,
   }
+})
+
+// 261114 Red 消息树分支 Phase 3：含弃岛行的全量时序读（规范序 (time_created, id)）。
+// 版本列举与切换必须看到岛——page() 的 detached WHERE 对标准读侧是正确的，对切换器
+// 是盲区（见 page() 内注释「版本切换器读岛时绕过本原语」）。detached / islandSnapshot
+// 是 revert/branch 写的内部簿记（裸 json_set，不进 Info schema），在这里作为行元信息
+// 显式带出，不混进 info——派生字段泄漏进 info 正是 Phase 1 否决读时规范化的原因。
+// 只供 branch.ts 消费，不进任何标准读路径。
+export type BranchRow = WithParts & { detached: boolean; islandSnapshot?: string }
+export const allIncludingDetached = Effect.fn("MessageV2.allIncludingDetached")(function* (input: {
+  sessionID: SessionID
+}) {
+  const rows = Database.use((db) =>
+    db
+      .select()
+      .from(MessageTable)
+      .where(eq(MessageTable.session_id, input.sessionID))
+      .orderBy(MessageTable.time_created, MessageTable.id)
+      .all(),
+  )
+  const hydrated = hydrate(rows)
+  return hydrated.map((item, i) => {
+    const data = rows[i]!.data as { detached?: number; islandSnapshot?: string }
+    return {
+      ...item,
+      detached: Boolean(data.detached),
+      islandSnapshot: data.islandSnapshot,
+    }
+  })
 })
 
 export function* stream(sessionID: SessionID, filter?: (info: Info) => boolean) {

@@ -1339,9 +1339,10 @@ export const layer: Layer.Layer<
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
-        // 261114 Red limit 路径不走树投影：可见路径的尾部要从叶指针走链才知道，而
-        //   limit 恰恰是为了不读全会话。Phase 1 数据里没有分支，线性尾 = 可见尾；
-        //   Phase 2 写入分支后，limit 语义须重新定义（尾分支片段）。
+        // 261114 Red limit 路径不走树投影：分岛不变量（任一时刻每个分叉点恰一条未
+        //   detach 链，revert.cleanup 与 branch.select 共同维持）使平面读天然等于可见
+        //   路径——岛的时序后缀被 page 的 detached WHERE 排除，limit 返回的尾段就是
+        //   当前分支的尾段。messages-pagination 套件有判别性用例钉住。
         return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit })).items
       }
 
@@ -1362,7 +1363,7 @@ export const layer: Layer.Layer<
       //   selectedChildID 正向走链出可见路径。对存量数据两者恒等且零变更。
       //   弃岛行（revert.cleanup 分岛标记 detached）已在 page 层排除，走链天然
       //   只见当前分支。
-      //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+      //   决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md
       return visiblePath(result.reverse())
     })
 

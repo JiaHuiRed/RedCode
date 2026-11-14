@@ -152,6 +152,8 @@ const sessionBindingCommands = [
   "session.unshare",
   "session.undo",
   "session.redo",
+  "session.version.previous",
+  "session.version.next",
   "session.sidebar.toggle",
   "session.toggle.conceal",
   "session.toggle.timestamps",
@@ -879,6 +881,23 @@ export function Session() {
     }
   }
 
+  // 261114 Red 消息树分支 Phase 3：version keybind 作用对象 = 会话尾部第一条有兄弟
+  //   版本的 user 消息（undo/redo 同款「作用在尾部」语义）；该组没有对应方向的
+  //   目标版本时命令置灰。
+  const versionTarget = (delta: number) => {
+    const groups = sync.data.message_versions?.[route.sessionID]
+    if (!groups) return undefined
+    const users = messages().filter((x) => x.role === "user")
+    for (let i = users.length - 1; i >= 0; i--) {
+      const message = users[i]!
+      const group = groups.find((g) => g.versions.some((v) => v.messageID === message.id))
+      if (!group) continue
+      const index = group.versions.findIndex((v) => v.messageID === message.id)
+      return group.versions[index + delta]?.messageID
+    }
+    return undefined
+  }
+
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -1138,6 +1157,35 @@ export function Session() {
             if (result.error) failed(result.error)
           })
           .catch(failed)
+      },
+    },
+    {
+      title: "Previous message version",
+      value: "session.version.previous",
+      category: "Session",
+      enabled: !!versionTarget(-1),
+      run: async () => {
+        const target = versionTarget(-1)
+        if (!target) return
+        dialog.clear()
+        // 261108 Red 同 undo：SDK 的 HTTP 错误是 { error } 而非抛错，必须显式检查。
+        await sync.session.selectVersion({ sessionID: route.sessionID, messageID: target }).then((result) => {
+          if (result.error) toast.show({ message: errorMessage(result.error), variant: "error" })
+        })
+      },
+    },
+    {
+      title: "Next message version",
+      value: "session.version.next",
+      category: "Session",
+      enabled: !!versionTarget(1),
+      run: async () => {
+        const target = versionTarget(1)
+        if (!target) return
+        dialog.clear()
+        await sync.session.selectVersion({ sessionID: route.sessionID, messageID: target }).then((result) => {
+          if (result.error) toast.show({ message: errorMessage(result.error), variant: "error" })
+        })
       },
     },
     {
@@ -1908,6 +1956,16 @@ export function UserMessage(props: {
     if (!error) return undefined
     return "message" in error.data && typeof error.data.message === "string" ? error.data.message : error.name
   })
+  // 261114 Red 消息树分支 Phase 3：兄弟版本位次徽标 ‹i/n›（含弃岛行），随快照装载刷新。
+  const versionBadge = createMemo(() => {
+    const groups = sync.data.message_versions?.[props.message.sessionID]
+    if (!groups) return undefined
+    const group = groups.find((g) => g.versions.some((v) => v.messageID === props.message.id))
+    if (!group || group.versions.length < 2) return undefined
+    const index = group.versions.findIndex((v) => v.messageID === props.message.id)
+    return `${index + 1}/${group.versions.length}`
+  })
+
   const compacting = createMemo(() => {
     const start = sync.session.get(props.message.sessionID)?.time.compacting
     if (start === undefined || compactionError()) return false
@@ -2039,6 +2097,11 @@ export function UserMessage(props: {
             <text fg={color()}>
               <span style={{ bold: true }}>{local.displayName.user + ": "}</span>
             </text>
+            <Show when={versionBadge()}>
+              <text fg={theme.textMuted}>
+                <span style={{ fg: theme.textMuted }}>‹{versionBadge()}›</span>
+              </text>
+            </Show>
             <text fg={theme.text}>{text()}</text>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">

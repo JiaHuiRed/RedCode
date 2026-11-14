@@ -144,6 +144,9 @@ export const Definitions = {
   messages_copy: keybind("<leader>y", "Copy message"),
   messages_undo: keybind("<leader>u", "Undo message"),
   messages_redo: keybind("<leader>r", "Redo message"),
+  // 261114 Red 消息树分支 Phase 3：默认 none——right/left 已被 session_child_cycle 占用。
+  messages_version_previous: keybind("none", "Switch to previous message version"),
+  messages_version_next: keybind("none", "Switch to next message version"),
   messages_toggle_conceal: keybind("<leader>h", "Toggle code block concealment in messages"),
   tool_details: keybind("none", "Toggle tool details visibility"),
   display_thinking: keybind("none", "Toggle thinking blocks visibility"),
@@ -341,6 +344,8 @@ export const CommandMap = {
   messages_copy: "messages.copy",
   messages_undo: "session.undo",
   messages_redo: "session.redo",
+  messages_version_previous: "session.version.previous",
+  messages_version_next: "session.version.next",
   messages_toggle_conceal: "session.toggle.conceal",
   tool_details: "session.toggle.actions",
   display_thinking: "session.toggle.thinking",

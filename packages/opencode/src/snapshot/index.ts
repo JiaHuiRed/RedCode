@@ -73,6 +73,10 @@ export interface Interface {
   readonly finish: (from: string | undefined) => Effect.Effect<{ hash: string | undefined; patch: Patch | undefined }>
   readonly restore: (snapshot: string) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
+  // 261114 Red 消息树分支 Phase 3(切换器):补丁级正向恢复——把指定文件从目标
+  // tree 取回。与 revert(patches,逆向)相对;不做全树 restore,工作区里用户
+  // 改过的其他文件不受影响。
+  readonly checkoutFiles: (hash: string, files: string[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
   readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[], DiffError>
 }
@@ -626,6 +630,43 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             )
           })
 
+          // 261114 Red 消息树分支 Phase 3(切换器):补丁级正向恢复。revert(patches)
+          //   是逆向(取「改动前」tree 的版本覆盖回来),这里正向:把指定文件 checkout
+          //   到目标分支的末态 tree。只动给定文件,不做全树 restore——工作区里用户
+          //   改过的其他文件不受影响(note「只恢复消息对应的 patch,不做 git 级回滚」)。
+          const checkoutFiles = Effect.fnUntraced(function* (hash: string, files: string[]) {
+            if (files.length === 0) return
+            return yield* locked(
+              Effect.gen(function* () {
+                log.info("checkout files", { hash, files: files.length })
+                const result = yield* git([...core, ...args(["checkout", hash, "--", ...files])], {
+                  cwd: state.worktree,
+                })
+                if (result.code === 0) return
+                log.info("batched checkout failed, falling back to per-file", {
+                  hash,
+                  files: files.length,
+                  stderr: result.stderr,
+                })
+                // git checkout <tree> -- <paths> 会在任一路径不在该 tree 时整体失败
+                // (该分支删过的文件):逐文件处理,不在末态 tree 的删除。
+                for (const file of files) {
+                  const rel = path.relative(state.worktree, file).replaceAll("\\", "/")
+                  const single = yield* git([...core, ...args(["checkout", hash, "--", file])], {
+                    cwd: state.worktree,
+                  })
+                  if (single.code === 0) continue
+                  const tree = yield* git([...core, ...args(["ls-tree", hash, "--", rel])], {
+                    cwd: state.worktree,
+                  })
+                  if (tree.code === 0 && tree.text.trim()) continue
+                  log.info("file did not exist in target tree, deleting", { file })
+                  yield* remove(file)
+                }
+              }),
+            )
+          })
+
           const diff = Effect.fnUntraced(function* (hash: string) {
             return yield* locked(
               Effect.gen(function* () {
@@ -901,7 +942,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             Effect.forkScoped,
           )
 
-          return { cleanup, track, patch, finish, restore, revert, diff, diffFull }
+          return { cleanup, track, patch, finish, restore, revert, checkoutFiles, diff, diffFull }
         }),
       )
 
@@ -926,6 +967,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
         }),
         revert: Effect.fn("Snapshot.revert")(function* (patches: Patch[]) {
           return yield* InstanceState.useEffect(state, (s) => s.revert(patches))
+        }),
+        checkoutFiles: Effect.fn("Snapshot.checkoutFiles")(function* (hash: string, files: string[]) {
+          return yield* InstanceState.useEffect(state, (s) => s.checkoutFiles(hash, files))
         }),
         diff: Effect.fn("Snapshot.diff")(function* (hash: string) {
           return yield* InstanceState.useEffect(state, (s) => s.diff(hash))

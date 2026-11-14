@@ -150,9 +150,20 @@ export interface MessageProps {
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
 
+// 261114 Red 消息树分支 Phase 3 切换器：user 消息的兄弟版本 ‹i/n›。
+// versions 由调用方按 messageID 解析（版本组数据在页面层拉取）；prev/next 已绑定
+// 目标消息 id。
+export type MessageVersions = {
+  index: number
+  count: number
+  prev: () => void
+  next: () => void
+}
+
 export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
+  versions?: (messageID: string) => MessageVersions | undefined
 }
 
 export interface MessagePartProps {
@@ -1013,6 +1024,9 @@ export function UserMessageDisplay(props: {
   const copied = () => state.copied
   const busy = () => state.busy
 
+  // 261114 Red 消息树分支 Phase 3：本消息的兄弟版本位次（无兄弟版本时 undefined）。
+  const versions = createMemo(() => props.actions?.versions?.(props.message.id))
+
   const textPart = createMemo(
     () => props.parts?.find((p) => p.type === "text" && !(p as TextPart).synthetic) as TextPart | undefined,
   )
@@ -1181,6 +1195,46 @@ export function UserMessageDisplay(props: {
                   </span>
                 </Show>
               </span>
+            </Show>
+            <Show when={versions()} keyed>
+              {(v) => (
+                <>
+                  <Tooltip value={i18n.t("ui.message.previousVersion")} placement="top" gutter={4}>
+                    <IconButton
+                      icon="chevron-left"
+                      size="normal"
+                      variant="ghost"
+                      disabled={!!busy() || v.index <= 1}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        v.prev()
+                      }}
+                      aria-label={i18n.t("ui.message.previousVersion")}
+                    />
+                  </Tooltip>
+                  <span
+                    data-slot="user-message-version"
+                    class="text-12-regular text-text-weak cursor-default select-none"
+                  >
+                    {v.index}/{v.count}
+                  </span>
+                  <Tooltip value={i18n.t("ui.message.nextVersion")} placement="top" gutter={4}>
+                    <IconButton
+                      icon="chevron-right"
+                      size="normal"
+                      variant="ghost"
+                      disabled={!!busy() || v.index >= v.count}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        v.next()
+                      }}
+                      aria-label={i18n.t("ui.message.nextVersion")}
+                    />
+                  </Tooltip>
+                </>
+              )}
             </Show>
             <Show when={props.actions?.fork}>
               <Tooltip value={i18n.t("ui.message.forkMessage")} placement="top" gutter={4}>

@@ -26,13 +26,15 @@ export type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T
 
 type Usage = Pick<MessageV2.StepFinishPart, "cost" | "tokens" | "currency">
 
-function usage(part: MessageV2.Part | (typeof PartTable.$inferSelect)["data"]): Usage | undefined {
+// 261114 Red 消息树分支 Phase 3 导出给 branch.ts：切回旧分支时按 +1 补记岛内
+// step-finish 用量（detach 侧的 -1 回冲仍走 Removed 投影器，此处只补反向）。
+export function usage(part: MessageV2.Part | (typeof PartTable.$inferSelect)["data"]): Usage | undefined {
   if (part.type !== "step-finish") return undefined
   if (!("cost" in part) || !("tokens" in part)) return undefined
   return { cost: part.cost, tokens: part.tokens, currency: part.currency }
 }
 
-function applyUsage(db: TxOrDb, sessionID: Session.Info["id"], value: Usage, sign = 1) {
+export function applyUsage(db: TxOrDb, sessionID: Session.Info["id"], value: Usage, sign = 1) {
   const delta = value.cost * sign
   // 260930 Red 分币种桶只动归属那一桶：无币种按 USD（processor 侧 warn 留痕），另一桶
   // 保持原值不动。coalesce 兜住未回填的旧行；sign=-1 的 revert 天然覆盖两桶。

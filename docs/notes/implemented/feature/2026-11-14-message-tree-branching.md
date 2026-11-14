@@ -1,7 +1,7 @@
 # 消息树分支：parentId + selectedChildId 单指针树
 
-状态:proposed(Phase 1 已于 2026-11-14 实现并落地,实现记录与两处形态
-修正见文末;Phase 2-4 未动工)
+状态:implemented(Phase 1-3 均于 2026-11-14 落地,实现记录见文末;
+Phase 4 清理退役未动工,见文末清单)
 
 ## 问题
 
@@ -152,12 +152,21 @@ check:openapi-drift 一致(SDK 已重生成)。
 1. ~~`appendBranch`/`selectVersion` 写入侧~~ ✅ 2026-11-14(1fa319d1)。
 2. ~~读侧:prompt 咽喉点/链式过滤~~ ✅ 2026-11-14(初版反向走链被 2c' 推翻,
    见下两节实现记录)。
-3. 写入方接线(2b):prompt/compaction 的消息创建点改 appendBranch 语义
-   (新消息 parentID=当前叶、旧叶 selectedChildID 改指、会话叶指针推进),
-   首写先 materialize;edit-resend/regenerate 改落分支而非截断。
-4. revert 收敛(2d):分支切换 + Snapshot patch 文件恢复;unrevert 双轨退役。
-5. 客户端切换器(Phase 3):TUI/GUI ‹2/3› 切换、sync 事件、GUI 分页语义
-   (handlers/messages 直连 page 与 limit 路径树化)。
+3. ~~写入方接线(2b)~~ ✅ 2026-11-14(73865de9 等,见 2b' 实现记录)。
+4. ~~revert 收敛(2d)~~ ✅ 2026-11-14(978374e7,收敛为分岛 detach;unrevert
+   双轨退役挪到 Phase 4)。
+5. ~~客户端切换器(Phase 3)~~ ✅ 2026-11-14(见文末 Phase 3 实现记录)。原
+   清单项「GUI 分页语义树化」被 2d 的分岛不变量整体消化:detached 行在
+   page 层排除后平面读天然等于可见路径,分页/limit 无需树化,pagination
+   套件有判别性用例钉住。
+
+### Phase 4 待办
+
+- 移除 reverted 标记与 unrevert 的双轨实现(unrevert 变成「切回旧分支 +
+  重放 Snapshot patch」,文件恢复走 branch.ts 的同一套 track/checkout);
+  `session.revert` 列只保留兼容读取。
+- 压缩边界随分叉失效的精细化(2d 记录的 tail_start_id 悬空退化,切回岛时
+  已停用块不复活,全量扫描兜底正确)。
 
 ### Phase 2 实现记录(2026-11-14,2c' 读侧——推翻 2c 的反向走链)
 
@@ -371,3 +380,74 @@ detour);compaction+prompt 224、native/context/session/processor/
 pagination 139 全绿;typecheck 0。模型可见四问:无注入变化(链走只改
 「读哪些消息」,不新增内容;无分支数据链走=线性,出站序列逐字节不变);
 token/KV cache/上限均无影响。
+
+### Phase 3 实现记录(2026-11-14,客户端分支切换器)
+
+**地基:分岛不变量吃掉了原清单的「GUI 分页树化」。** 2d 建立的不变量——任一
+时刻每个分叉点恰一条未 detach 链——使平面读(page 的 detached WHERE,时序序)
+天然等于可见路径:GUI 分页、limit 路径、压缩扫描零改动继续正确。session.ts
+limit 路径的过时注释(「Phase 2 后需重新定义 limit 语义」)已改写;pagination
+套件新增判别性用例(limit=4 混岛行即红)钉住。
+
+**服务端 `session/branch.ts`(Service:versions + select)。** `selectVersion`
+纯函数迎来第一个生产消费者,一个关键适配:含岛全集上 visiblePath 的时序探测
+会落到**旧根岛**(多个 parentID 缺省的 user 并存),必须显式传 rootID——取可见
+行中首个无树父 user(不变量下唯一)。versions 只列 ≥2 版本的 user 组;assistant
+不分组(parentID 语义是「触发的 user」,同轮多步不是版本兄弟);岛链中间的 user
+属于其所在岛的分叉点,天然不与可见链对应消息跨岛聚合(versions 用例钉住)。
+
+**切换写序(崩溃退化不腐化,先 detach 后 undetach):** islandSnapshot 写行 →
+ContextCompaction.invalidate(suffix) → 标记 suffix detached → 逐行 Removed
+(投影器 -1 回冲,读到 detached 跳过删行)→ json_set 改写父指针 → unmark 目标
+岛链 → 直接 applyUsage +1 补记 → bus.publish(BranchesSwitched)。中途崩溃最多
+看到分叉点截断的短链,不出现双链并现。
+
+**文件恢复 = track → revert → checkoutFiles 三步。** 岛分支末态 tree 在 cleanup
+分岛时写入岛首行 `islandSnapshot`(rev.snapshot 此刻还活着);切走时 snap.track()
+当前盘面写进后缀首行;切回时先 snap.revert(当前后缀 patches)退回分叉点,再把岛
+patch 涉及的文件 checkout 到岛末态 tree——新增 `Snapshot.checkoutFiles(hash,
+files)` 补丁级正向恢复(批量 checkout,失败逐文件、不在末态 tree 的删除),**不做
+全树 restore**,工作区里用户改过的其他文件不受影响。存量岛(2d 时代无快照)只切
+消息不动文件,log 说明。
+
+**事件:BranchesSwitched 走 BusEvent,不走 SyncEvent。** 先注册成了 SyncEvent,
+随即发现 SyncEvent 的 non-projecting 路径在 process() 直接 return——不落库也不
+广播,哑事件;换 PartDelta 同款 BusEvent.define + bus.publish(已加的
+NON_PROJECTING 豁免撤回)。payload 只有 sessionID:切换是「一批行可见性翻转 +
+指针改写」,客户端整会话重拉是唯一真相源(岛行部件在客户端早已随 Removed 删掉,
+逐行补不可靠)。
+
+**用量记账不对称的坑。** 补记(+1)不能发 PartUpdated——它的投影器按「替换部件」
+语义先回冲旧行用量(previous -1 + next +1),对已回冲过的岛行会把账冲错;补记直接
+在 branch.ts 调 applyUsage(+1)(从 projectors.ts 导出 usage/applyUsage),回冲(-1)
+仍走 Removed 投影器单一路径。用量用例往返验证 1 → 0 → 1 → 0。
+
+**HTTP**:`GET /session/:id/message-versions` + `POST /session/:id/message/:id/
+select`(OpenAPI description 写明拒绝条件与文件恢复语义)。错误映射:InvalidBranch
+→ 400(非 user/未物化/父不在可见路径)、RevertPending → 409(待截断标记未清理,
+先 unrevert 或发下一条消息)、busy → SessionBusyError;拒绝条件是服务端 select 的
+前置校验,不是文档承诺。
+
+**客户端**。GUI(session.tsx):versions createResource(不入全局 sync store——
+导航元数据不是消息流)+ versionsFor 解析器穿 actions 链,‹i/n› 渲染在
+message-part.tsx UserActions(chevron 左右 + 计数,与 fork/revert 同款 hover 按钮);
+selectVersion 后整会话 force 重拉 + 版本组刷新;branches.switched 事件监听刷新
+(其他窗口同通道)。TUI:store 加 message_versions,loadSessionSnapshot 并行拉取
+(失败不打断快照),branches.switched → 快照重拉;dialog-message 加
+Previous/Next version 条目;keybinds `messages_version_previous/next`(默认 none,
+right/left 已被 session_child_cycle 占用)作用于「会话尾部第一条有兄弟版本的
+user 消息」,错误走 toast;user 消息轨渲染 ‹i/n› 徽标。
+
+**模型可见四问**:① 上下文逐字节不变——切换只改「哪些消息进入上下文」,注入项
+零新增;OpenAPI 新增两端点与事件定义,消息 schema 无字段变化;② token 无固定前缀
+增减(切换本身不写任何进 prompt 的内容);③ KV cache:切回缓存里见过的旧分支 =
+前缀命中,切到新分支 = 从分叉点起失效一次(与 edit-resend 同型);④ 无新增注入项,
+上限不变。
+
+验证:branch.test.ts 8 例(版本列举含岛/current/根组/跨岛不聚合、切换往返+
+不变量、中链分叉指针改写、文件恢复三步往返、存量岛只切消息、用量往返、busy+
+RevertPending 拒绝)、messages-pagination 岛排除判别用例;revert 9 + message-tree
+20 + compaction 103 + invariants 11 全绿(含 BranchesSwitched 非投影豁免的集合
+相等断言);SDK 两条命令重生成,check:openapi-drift 一致;opencode/app/ui
+typecheck 0。已知预存失败:test/cli/cmd/tui/sync.test.tsx loadEarlier 1 例
+(stash 干净树复现,与本批无关)。TUI 真机切换、GUI dev 实测待补。

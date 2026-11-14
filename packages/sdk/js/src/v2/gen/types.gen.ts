@@ -18,6 +18,7 @@ export type Event =
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta
+  | EventMessageBranchesSwitched
   | EventPermissionAsked
   | EventPermissionReplied
   | EventSessionDiff
@@ -30,12 +31,12 @@ export type Event =
   | EventGoalUpdated
   | EventSessionStatus
   | EventSessionIdle
-  | EventSessionCompacted
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
   | EventProjectUpdated
   | EventProjectRemoved
+  | EventSessionCompacted
   | EventWorktreeReady
   | EventWorktreeFailed
   | EventVcsBranchUpdated
@@ -903,6 +904,17 @@ export type V2SessionsResponse = {
     previous?: string
     next?: string
   }
+}
+
+export type MessageVersionGroup = {
+  parentID?: string
+  versions: Array<MessageVersionEntry>
+  current: string
+}
+
+export type MessageVersionEntry = {
+  messageID: string
+  timeCreated: number
 }
 
 export type SubtaskPartInput = {
@@ -2257,6 +2269,7 @@ export type GlobalEvent = {
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
+    | EventMessageBranchesSwitched
     | EventPermissionAsked
     | EventPermissionReplied
     | EventSessionDiff
@@ -2269,12 +2282,12 @@ export type GlobalEvent = {
     | EventGoalUpdated
     | EventSessionStatus
     | EventSessionIdle
-    | EventSessionCompacted
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventCommandExecuted
     | EventProjectUpdated
     | EventProjectRemoved
+    | EventSessionCompacted
     | EventWorktreeReady
     | EventWorktreeFailed
     | EventVcsBranchUpdated
@@ -4771,6 +4784,14 @@ export type EventWorktreeReady = {
   }
 }
 
+export type EventSessionCompacted = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
+  }
+}
+
 export type EventProjectRemoved = {
   id: string
   type: "project.removed"
@@ -4808,14 +4829,6 @@ export type EventMcpToolsChanged = {
   type: "mcp.tools.changed"
   properties: {
     server: string
-  }
-}
-
-export type EventSessionCompacted = {
-  id: string
-  type: "session.compacted"
-  properties: {
-    sessionID: string
   }
 }
 
@@ -4926,6 +4939,14 @@ export type EventPermissionAsked = {
   id: string
   type: "permission.asked"
   properties: PermissionRequest
+}
+
+export type EventMessageBranchesSwitched = {
+  id: string
+  type: "message.branches.switched"
+  properties: {
+    sessionID: string
+  }
 }
 
 export type EventMessagePartDelta = {
@@ -8674,6 +8695,79 @@ export type SessionUnrevertResponses = {
 }
 
 export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnrevertResponses]
+
+export type SessionMessageVersionsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message-versions"
+}
+
+export type SessionMessageVersionsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMessageVersionsError = SessionMessageVersionsErrors[keyof SessionMessageVersionsErrors]
+
+export type SessionMessageVersionsResponses = {
+  /**
+   * Sibling version groups
+   */
+  200: Array<MessageVersionGroup>
+}
+
+export type SessionMessageVersionsResponse = SessionMessageVersionsResponses[keyof SessionMessageVersionsResponses]
+
+export type SessionSelectVersionData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/select"
+}
+
+export type SessionSelectVersionErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * SessionBusyError | ConflictError
+   */
+  409: SessionBusyError | ConflictError
+}
+
+export type SessionSelectVersionError = SessionSelectVersionErrors[keyof SessionSelectVersionErrors]
+
+export type SessionSelectVersionResponses = {
+  /**
+   * Updated session
+   */
+  200: Session
+}
+
+export type SessionSelectVersionResponse = SessionSelectVersionResponses[keyof SessionSelectVersionResponses]
 
 export type PermissionRespondData = {
   body?: {

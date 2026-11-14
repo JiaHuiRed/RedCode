@@ -154,6 +154,8 @@ export const dict = {
   "ui.message.copy": "复制",
   "ui.message.copyMessage": "复制消息",
   "ui.message.forkMessage": "分叉到新会话",
+  "ui.message.previousVersion": "切换到上一版本",
+  "ui.message.nextVersion": "切换到下一版本",
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
 

@@ -1,4 +1,5 @@
 import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
+import type { MessageVersions } from "@redcode-ai/ui/message-part"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
@@ -1695,6 +1696,54 @@ export default function Page() {
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
+  // 261114 Red 消息树分支 Phase 3 切换器：user 消息的兄弟版本组（服务端含弃岛行）。
+  //   切换是低频动作，拉一次随 branches.switched 事件刷新；不入全局 sync store——
+  //   这是导航元数据，不是消息流。切换后整会话重拉（refetch 是唯一真相源，岛行部件
+  //   不在本地 store 里，逐行补不可靠）。
+  const [versionGroups, versionActions] = createResource(
+    () => params.id,
+    async (sessionID) => {
+      const result = await sdk.client.session.messageVersions({ sessionID }, { throwOnError: true })
+      return result.data ?? []
+    },
+  )
+
+  const versionsFor = (messageID: string): MessageVersions | undefined => {
+    const data = versionGroups()
+    if (!data) return
+    const group = data.find((item) => item.versions.some((v) => v.messageID === messageID))
+    if (!group) return
+    const index = group.versions.findIndex((v) => v.messageID === messageID)
+    const step = (delta: number) => {
+      const next = group.versions[index + delta]
+      const sessionID = params.id
+      if (!next || !sessionID) return
+      void selectVersion({ sessionID, messageID: next.messageID })
+    }
+    return { index: index + 1, count: group.versions.length, prev: () => step(-1), next: () => step(1) }
+  }
+
+  const selectVersion = async (input: { sessionID: string; messageID: string }) => {
+    try {
+      const result = await sdk.client.session.selectVersion(input)
+      if (result.data) merge(result.data)
+      await sync.session.sync(input.sessionID, { force: true })
+      void versionActions.refetch()
+    } catch (err) {
+      fail(err)
+    }
+  }
+
+  // 其他窗口/其他客户端发起的切换：整会话重拉 + 版本组刷新。
+  const stopBranches = sdk.event.listen((evt) => {
+    if (evt.details.type !== "message.branches.switched") return
+    const props = evt.details.properties as { sessionID?: string }
+    if (!props.sessionID || props.sessionID !== params.id) return
+    void sync.session.sync(props.sessionID, { force: true })
+    void versionActions.refetch()
+  })
+  onCleanup(stopBranches)
+
   // 260608 Red 逐条分叉：从指定消息派生新会话并跳转（复用 dialog-fork 的逻辑，省去选择对话框）
   const fork = (input: { sessionID: string; messageID: string }) => {
     const restored = draft(input.messageID)
@@ -1714,7 +1763,7 @@ export default function Page() {
       })
   }
 
-  const actions = { revert, fork }
+  const actions = { revert, fork, versions: versionsFor }
 
   createEffect(() => {
     const sessionID = params.id

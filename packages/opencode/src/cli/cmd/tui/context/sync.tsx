@@ -19,6 +19,7 @@ import type {
   ProviderAuthMethod,
   ProviderQuota,
   VcsInfo,
+  MessageVersionGroup,
 } from "@redcode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useProject } from "@tui/context/project"
@@ -116,6 +117,11 @@ export const {
       message: {
         [sessionID: string]: Message[]
       }
+      // 261114 Red 消息树分支 Phase 3：user 消息的兄弟版本组（含弃岛）。导航元数据，
+      // 随快照装载与 branches.switched 事件刷新，不入消息流。
+      message_versions: {
+        [sessionID: string]: MessageVersionGroup[] | undefined
+      }
       part: {
         [messageID: string]: Part[]
       }
@@ -153,6 +159,7 @@ export const {
       todo: {},
       goal: {},
       message: {},
+      message_versions: {},
       part: {},
       lsp: [],
       mcp: {},
@@ -529,6 +536,18 @@ export const {
               }),
             )
           }
+          break
+        }
+        case "message.branches.switched": {
+          // 261114 Red 分支切换：弃岛侧有逐行 Removed，开岛侧没有——整会话快照重拉。
+          const sessionID = (event.properties as { sessionID?: string }).sessionID
+          if (!sessionID || !fullSyncedSessions.has(sessionID)) break
+          void loadSessionSnapshot(sessionID).catch((e) => {
+            Log.Default.warn("tui branches switched resync failed", {
+              sessionID,
+              error: e instanceof Error ? e.message : String(e),
+            })
+          })
           break
         }
         case "message.part.updated": {
@@ -927,7 +946,7 @@ export const {
     // 260923 Red sync 与 reconcile 共用：拉当前 session 快照并整体写入 store。
     // 服务端快照权威，message 数组整体替换——重复调用天然幂等，不叠消息/part。
     async function loadSessionSnapshot(sessionID: string) {
-      const [session, messages, todo, diff, goal] = await Promise.all([
+      const [session, messages, todo, diff, goal, versions] = await Promise.all([
         sdk.client.session.get({ sessionID }, { throwOnError: true }),
         // 261108 Red 审计 RC-P1-03：此前没传 throwOnError，请求失败时 data 是 undefined，
         // 被下面的 `?? []` 当成合法空历史整体替换，已有消息在界面里凭空消失；而 sync()
@@ -941,6 +960,8 @@ export const {
         sdk.client.session.diff({ sessionID, patch: false }).catch(() => undefined),
         // 没钉目标时服务端 404，这是常态不是错误
         sdk.client.session.goal({ sessionID }).catch(() => undefined),
+        // 261114 Red 分支版本组：导航元数据，失败不打断快照装载
+        sdk.client.session.messageVersions({ sessionID }).catch(() => undefined),
       ])
       setStore(
         produce((draft) => {
@@ -955,6 +976,7 @@ export const {
             draft.part[message.info.id] = message.parts
           }
           draft.message[sessionID] = infos
+          draft.message_versions[sessionID] = versions?.data ?? []
           if (diff?.data) draft.session_diff[sessionID] = sidebarDiff(diff.data)
         }),
       )
@@ -1060,6 +1082,19 @@ export const {
         // 261110 Red 阅读位置恢复用：向前补取一页并前置，不推进 fullSyncedSessions。
         loadEarlier(sessionID: string) {
           return loadEarlierMessages(sessionID)
+        },
+        // 261114 Red 分支切换器：版本组读取与切换。切换后整会话快照重拉——弃岛侧
+        // 由 Removed 事件增量摘除，开岛侧没有逐行事件，快照是唯一完整来源。
+        versions(sessionID: string) {
+          return store.message_versions[sessionID]
+        },
+        async selectVersion(input: { sessionID: string; messageID: string }) {
+          const result = await sdk.client.session.selectVersion(input)
+          if (result.error) return result
+          currentSessionID = input.sessionID
+          await loadSessionSnapshot(input.sessionID)
+          fullSyncedSessions.add(input.sessionID)
+          return result
         },
       },
       bootstrap,

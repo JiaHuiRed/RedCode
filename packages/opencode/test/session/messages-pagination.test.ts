@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Option } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
+import { markIslandRows } from "../../src/session/branch"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { NotFoundError } from "@/storage/storage"
@@ -678,6 +679,67 @@ describe("Session.messages", () => {
         const result = yield* session.messages({ sessionID })
         // 被弃的 a1 从可见路径消失，选中链 [u1, a2] 保留
         expect(result.map((item) => item.info.id)).toEqual([u1, a2])
+      }),
+    ),
+  )
+
+  // 261114 Red 消息树分支 Phase 3：弃岛行（detached）对读侧统一隐形（2d 建立的
+  //   不变量——任一时刻每个分叉点恰一条未 detach 链）。平面读（page，时序序）因此
+  //   天然等于可见路径：全量与 limit 两条路都无需树化。limit=4 是判别性断言——
+  //   不排除岛行时会混入 [a1, u2, a2, u2b]。
+  it.instance("excludes detached island rows from full and limit paths", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const appendUser = Effect.fn("Test.appendUser")(function* (text: string) {
+          const msg = yield* session.appendMessage({
+            id: MessageID.ascending(),
+            role: "user" as const,
+            sessionID,
+            agent: "test",
+            model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test") },
+            time: { created: Date.now() },
+          })
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            sessionID,
+            messageID: msg.id,
+            type: "text",
+            text,
+          })
+          return msg
+        })
+        const appendAssistant = (parentID: MessageID) =>
+          session.appendMessage({
+            id: MessageID.ascending(),
+            role: "assistant" as const,
+            sessionID,
+            mode: "",
+            agent: "default",
+            path: { cwd: "/", root: "/" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: ModelID.make("test"),
+            providerID: ProviderID.make("test"),
+            parentID,
+            time: { created: Date.now() },
+            finish: "end_turn",
+          })
+
+        const u1 = yield* appendUser("q1")
+        const a1 = yield* appendAssistant(u1.id)
+        const u2 = yield* appendUser("q2")
+        const a2 = yield* appendAssistant(u2.id)
+
+        // 分岛 [u2, a2]（revert cleanup 形态，这里直接打标记），新分支经 appendMessage
+        // 接到 a1 下——链尾探测排除岛行，接线落在可见尾
+        yield* Effect.sync(() => markIslandRows([{ info: u2 }, { info: a2 }]))
+        const u2b = yield* appendUser("q2'")
+        const a2b = yield* appendAssistant(u2b.id)
+
+        const full = yield* session.messages({ sessionID })
+        expect(full.map((item) => item.info.id)).toEqual([u1.id, a1.id, u2b.id, a2b.id])
+        const limited = yield* session.messages({ sessionID, limit: 4 })
+        expect(limited.map((item) => item.info.id)).toEqual([u1.id, a1.id, u2b.id, a2b.id])
       }),
     ),
   )
