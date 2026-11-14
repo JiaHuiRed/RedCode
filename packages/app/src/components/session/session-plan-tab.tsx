@@ -35,7 +35,9 @@ function statusColor(status: string) {
 }
 
 // 260615 Red Plan 面板：侧栏标签页，展示当前会话的完整 todo 计划进度
-export function SessionPlanTab() {
+// 261114 Red 评审：拆出 SessionPlanDetails（无滚动壳）——计划模块要嵌入上下文 tab
+// 自适应填充最大化时的空白，ScrollView 壳只属于 tab 形态。
+export function SessionPlanDetails() {
   const sync = useSync()
   const language = useLanguage()
   const { params } = useSessionLayout()
@@ -73,8 +75,7 @@ export function SessionPlanTab() {
   const percent = createMemo(() => (total() > 0 ? Math.round((done() / total()) * 100) : 0))
 
   return (
-    <ScrollView class="@container h-full">
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
+    <div class="flex flex-col gap-6">
         <Show when={goal()}>
           {(pinned) => (
             <div class="flex flex-col gap-2 border border-border-base rounded-md bg-surface-base px-3 py-2">
@@ -253,6 +254,16 @@ export function SessionPlanTab() {
             </For>
           </div>
         </Show>
+      </div>
+  )
+}
+
+// 260615 Red Plan 面板：侧栏标签页形态（滚动壳 + 统一内边距）
+export function SessionPlanTab() {
+  return (
+    <ScrollView class="@container h-full">
+      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
+        <SessionPlanDetails />
       </div>
     </ScrollView>
   )

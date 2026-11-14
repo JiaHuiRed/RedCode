@@ -18,6 +18,7 @@ import type { Message, Part, ProviderQuota, UserMessage } from "@redcode-ai/sdk/
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useSessionLayout } from "@/context/session-layout"
+import { SessionPlanDetails } from "./session-plan-tab"
 import {
   useSessionContextSummaries,
   quotaColor,
@@ -305,7 +306,7 @@ export function SessionContextTab(
   const quotaList = () => globalSync.data.provider_quota
   const summaries = useSessionContextSummaries()
   const capsuleGroups = useCapsuleSummaryGroups(summaries)
-  const { params, sessionKey, view } = useSessionLayout()
+  const { params, sessionKey, tabs, view } = useSessionLayout()
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
 
@@ -351,6 +352,28 @@ export function SessionContextTab(
     if (!id) return false
     return sync.session.history.more(id)
   })
+
+  // 261114 Red 评审：计划模块拆成独立胶囊——折叠态显示进度芯片、面板展开时计划区
+  // 自适应填充上下文内容下方的空白；无计划（goal 未设置且无 todo）时整体隐藏。
+  const planGoal = createMemo(() => {
+    const id = params.id
+    if (!id) return undefined
+    const pinned = sync.data.goal[id]
+    if (!pinned || pinned.status === "cleared" || !pinned.text.trim()) return undefined
+    return pinned
+  })
+  const planTodos = createMemo(() => {
+    const id = params.id
+    if (!id) return []
+    return (sync.data.todo[id] as { status: string; content: string }[] | undefined) ?? []
+  })
+  const planExists = createMemo(() => !!planGoal() || planTodos().length > 0)
+  const planDone = createMemo(() => planTodos().filter((t) => t.status === "completed").length)
+
+  const openPlanTab = () => {
+    view().reviewPanel.open()
+    tabs().setActive("plan")
+  }
 
   const providerLabel = createMemo(() => {
     const c = ctx()
@@ -776,6 +799,44 @@ export function SessionContextTab(
               />
             )}
           </Index>
+
+          {/* 261114 Red 评审：计划胶囊（折叠态）——与上下文摘要胶囊同列，点击展开面板到计划 tab */}
+          <Show when={props.compact?.() && planExists()}>
+            <button
+              type="button"
+              data-action="plan-capsule"
+              class="flex w-full min-w-0 items-center gap-2 rounded-md border border-border-base bg-surface-base px-3 py-2 text-left"
+              onClick={openPlanTab}
+              aria-label={language.t("session.tab.plan")}
+            >
+              <Icon name="checklist" size="small" class="shrink-0 text-text-weak" />
+              <span class="shrink-0 text-11-regular text-text-weak">{language.t("session.tab.plan")}</span>
+              <Show when={planGoal()}>
+                <span class="min-w-0 flex-1 truncate text-12-regular text-text-base select-text">{planGoal()!.text}</span>
+              </Show>
+              <Show when={planTodos().length > 0}>
+                <span class="shrink-0 text-11-regular text-text-weaker tabular-nums">
+                  {planDone()}/{planTodos().length}
+                </span>
+              </Show>
+            </button>
+          </Show>
+
+          {/* 261114 Red 评审：计划区（展开态）——自适应填充上下文内容下方的空白，无计划时隐藏 */}
+          <Show when={!props.compact?.() && planExists()}>
+            <div class="rounded-md border border-border-base bg-surface-base p-3">
+              <div class="mb-2 flex items-center gap-2">
+                <Icon name="checklist" size="small" class="text-text-weak" />
+                <span class="text-12-regular text-text-weak">{language.t("session.tab.plan")}</span>
+                <Show when={planTodos().length > 0}>
+                  <span class="ml-auto text-11-regular text-text-weaker tabular-nums">
+                    {planDone()}/{planTodos().length}
+                  </span>
+                </Show>
+              </div>
+              <SessionPlanDetails />
+            </div>
+          </Show>
         </div>
       </div>
     </ScrollView>
