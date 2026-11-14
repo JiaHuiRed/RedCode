@@ -1861,6 +1861,7 @@ export default function Page() {
     <SessionComposerRegion
       state={composer}
       ready={!store.deferRender && messagesReady()}
+      revealMessage={(id) => revealMessage(id)}
       centered={placement === "dock" && centered()}
       placement={placement}
       inputRef={(el) => {

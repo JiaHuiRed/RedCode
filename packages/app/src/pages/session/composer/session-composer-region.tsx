@@ -49,6 +49,8 @@ export function SessionComposerRegion(props: {
     onRestore: (id: string) => void
   }
   setPromptDockRef: (el: HTMLDivElement) => void
+  // 261114 Red UX-11：状态台点击定位——把消息滚动到视口（session.tsx 的 revealMessage）。
+  revealMessage?: (messageID: string) => void
 }) {
   const navigate = useNavigate()
   const prompt = usePrompt()
@@ -187,6 +189,7 @@ export function SessionComposerRegion(props: {
               <SessionPermissionDock
                 request={request}
                 responding={props.state.permissionResponding()}
+                suppressed={!!props.state.questionRequest()}
                 onDecide={(response) => {
                   props.onResponseSubmit()
                   props.state.decide(response)
@@ -208,7 +211,7 @@ export function SessionComposerRegion(props: {
 
         {/* 261109 Karina UX-02：实时工作状态台——当前工具、已加载范围内读/改/命令计数、
             失败数、待确认与子代理进度。空闲时自动隐藏，不长期占屏。 */}
-        <SessionActivityHud />
+        <SessionActivityHud revealMessage={props.revealMessage} />
 
         {/* 260920 Red 把 Composer 变成轻量状态区：正文时间线保留完整 thinking 细节，这里只
             告诉用户输入框当前是否仍在工作/重试，避免底部像一块无状态的浮卡。 */}

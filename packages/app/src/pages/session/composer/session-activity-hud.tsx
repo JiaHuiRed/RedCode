@@ -12,7 +12,10 @@ import { deriveActivity, targetLabel, targetTitle, type ActivityPart } from "./a
 // 261110 Red 字号接 token：固定 11px 换 --font-size-x-small，随外观字号档等比缩放。
 // 261110 Red 统计范围收敛到当前用户回合：上一轮的失败不再挂在下一轮的状态里；
 // 回合起点不在已加载窗口时明示统计不完整。target 显示按 kind 走（命令不做 basename）。
-export function SessionActivityHud() {
+export function SessionActivityHud(props: {
+  // 261114 Red UX-11：点击定位——把含目标工具部件的消息滚入视口（session.tsx revealMessage）。
+  revealMessage?: (messageID: string) => void
+}) {
   const sync = useSync()
   const { params } = useSessionKey()
   const language = useLanguage()
@@ -26,11 +29,30 @@ export function SessionActivityHud() {
     if (!params.id) return -1
     return (sync.data.message[params.id] ?? []).findLastIndex((message) => message.role === "user")
   })
-  const parts = createMemo<ActivityPart[]>(() => {
+  // 261114 Red UX-11：部件带上所属消息 id，点击定位用它滚到对应消息。
+  const parts = createMemo<(ActivityPart & { messageID: string })[]>(() => {
     if (!params.id || turnStart() === -1) return []
     const messages = sync.data.message[params.id] ?? []
-    return messages.slice(turnStart()).flatMap((message) => sync.data.part[message.id] ?? [])
+    return messages.slice(turnStart()).flatMap((message) =>
+      (sync.data.part[message.id] ?? []).map((part) => ({ ...part, messageID: message.id })),
+    )
   })
+  const runningPart = createMemo(() => parts().findLast((part) => part.type === "tool" && part.state?.status === "running"))
+  const failedPart = createMemo(() => parts().findLast((part) => part.type === "tool" && part.state?.status === "error"))
+
+  const reveal = (messageID: string | undefined) => {
+    if (!messageID) return
+    props.revealMessage?.(messageID)
+  }
+
+  // 261114 Red UX-11：待授权 → 聚焦授权 dock 的首个按钮（dock 常驻状态台上方）。
+  const focusPermission = () => {
+    const row = document.querySelector('[data-slot="permission-row"]')
+    if (!row) return
+    row.scrollIntoView({ block: "nearest" })
+    const button = row.parentElement?.querySelector<HTMLButtonElement>("button")
+    button?.focus()
+  }
   const turnIncomplete = createMemo(() => working() && turnStart() === -1)
   const activity = createMemo(() => deriveActivity(parts()))
   const permissions = createMemo(() => (params.id ? (sync.data.permission[params.id]?.length ?? 0) : 0))
@@ -58,15 +80,18 @@ export function SessionActivityHud() {
         </Show>
         <Show when={activity().running} keyed>
           {(running) => (
-            <span
-              class="min-w-0 truncate text-[var(--v2-text-text-base)]"
+            <button
+              type="button"
+              class="min-w-0 cursor-pointer truncate text-left text-[var(--v2-text-text-base)] underline-offset-2 hover:underline"
               title={running.target ? targetTitle(running.target) : undefined}
+              aria-label={language.t("session.activity.locateTool")}
+              onClick={() => reveal(runningPart()?.messageID)}
             >
               {running.tool}
               <Show when={running.target}>
                 <span class="text-[var(--v2-text-text-muted)]"> · {targetLabel(running.target!)}</span>
               </Show>
-            </span>
+            </button>
           )}
         </Show>
         <span class="shrink-0 tabular-nums">
@@ -74,14 +99,24 @@ export function SessionActivityHud() {
           {activity().counts.edit} · {language.t("session.activity.command")} {activity().counts.command}
         </span>
         <Show when={activity().counts.failed > 0}>
-          <span class="shrink-0 text-[var(--v2-text-text-danger,var(--text-danger))]">
+          <button
+            type="button"
+            class="shrink-0 cursor-pointer text-[var(--v2-text-text-danger,var(--text-danger))] underline-offset-2 hover:underline"
+            aria-label={language.t("session.activity.locateFailed")}
+            onClick={() => reveal(failedPart()?.messageID)}
+          >
             {language.t("session.activity.failed")} {activity().counts.failed}
-          </span>
+          </button>
         </Show>
         <Show when={permissions() > 0}>
-          <span class="shrink-0 font-[530] text-[var(--v2-text-text-warning,var(--text-warning))]">
+          <button
+            type="button"
+            class="shrink-0 cursor-pointer font-[530] text-[var(--v2-text-text-warning,var(--text-warning))] underline-offset-2 hover:underline"
+            aria-label={language.t("session.activity.locatePermission")}
+            onClick={focusPermission}
+          >
             {language.t("session.activity.permission")}
-          </span>
+          </button>
         </Show>
         <Show when={runningChildren() > 0}>
           <span class="shrink-0">

@@ -1000,6 +1000,9 @@ export const dict = {
   "settings.title": "Settings",
   "settings.search.placeholder": "Search settings",
   "titlebar.tabs.all": "All open sessions",
+  "session.activity.locateTool": "Locate this tool in the timeline",
+  "session.activity.locateFailed": "Locate the failed tool",
+  "session.activity.locatePermission": "Focus the permission prompt",
   "settings.search.noResults": "No matching settings",
   "settings.mobileGateway.description":
     "Pair a phone or tablet to continue sessions in this workspace through an encrypted, certificate-pinned connection. The Gateway stops with RedCode.",

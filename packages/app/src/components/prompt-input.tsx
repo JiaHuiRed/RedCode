@@ -1371,7 +1371,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     // Handle Shift+Enter BEFORE IME check - Shift+Enter is never used for IME input
     // and should always insert a newline regardless of composition state
-    if (event.key === "Enter" && event.shiftKey) {
+    // 261114 Red UI-02：排除 Ctrl/Meta——Ctrl/Cmd+Shift+Enter 是权限「始终允许」的
+    // 快捷键，此前这里先插了换行又让 window 层 dock 批准，撞成两个动作。
+    if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.metaKey) {
       addPart({ type: "text", content: "\n", start: 0, end: 0 })
       event.preventDefault()
       return
@@ -1384,7 +1386,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // 260823 Red Ctrl/Cmd+Enter 属于权限弹窗快捷键（session-permission-dock 在 window 层监听，
     // 焦点在输入框内也响应）。这里只 preventDefault 阻止 contenteditable 默认插入换行，
     // 不 stopPropagation —— 事件必须继续冒泡到 window 让 dock 消费，否则权限确认失效。
-    if (event.key === "Enter" && !event.shiftKey && (event.ctrlKey || event.metaKey)) {
+    // 261114 Red UI-02：合并 Shift 变体——Ctrl/Cmd+Shift+Enter（始终允许）同样只
+    // preventDefault 放行给 dock，不在草稿里落换行。
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault()
       return
     }

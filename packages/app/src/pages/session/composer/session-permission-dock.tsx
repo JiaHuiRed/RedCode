@@ -11,6 +11,9 @@ export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
   onDecide: (response: "once" | "always" | "reject") => void
+  // 261114 Red UI-02：提问 dock 挂载时让出按键（消费顺序：提问→权限）——此前两者
+  // 同时挂载时一次 Ctrl+Enter/Esc 会同时提交答案与批准/拒绝权限。
+  suppressed?: boolean
 }) {
   const language = useLanguage()
   const platform = usePlatform()
@@ -25,6 +28,7 @@ export function SessionPermissionDock(props: {
     if (platform.mobileCompanion) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (props.responding) return
+      if (props.suppressed) return
       // 261108 Red 组合期按键归输入法：中文候选框的 Escape 会把权限请求直接拒掉。
       if (event.isComposing || event.keyCode === 229) return
       const mod = event.ctrlKey || event.metaKey
