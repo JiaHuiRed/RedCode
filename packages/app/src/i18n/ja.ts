@@ -276,6 +276,8 @@ export const dict = {
   "prompt.context.removeFile": "コンテキストからファイルを削除",
   "prompt.action.attachFile": "ファイルを添付",
   "prompt.soul.title": "Soulを選択",
+  "prompt.editor.expand": "エディターを拡張",
+  "prompt.editor.collapse": "戻す",
   "prompt.soul.default": "Soul",
   "prompt.soul.followDefault": "設定のデフォルトに従う",
   "prompt.soul.setDefault": "新規セッションのデフォルトに設定",

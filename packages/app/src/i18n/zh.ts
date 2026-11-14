@@ -325,6 +325,8 @@ export const dict = {
   "prompt.context.removeFile": "从上下文移除文件",
   "prompt.action.attachFile": "附加文件",
   "prompt.soul.title": "选择 Soul",
+  "prompt.editor.expand": "展开编辑",
+  "prompt.editor.collapse": "收起",
   "prompt.soul.default": "Soul",
   "prompt.soul.followDefault": "跟随设置默认",
   "prompt.soul.setDefault": "设为新会话默认",

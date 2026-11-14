@@ -1723,7 +1723,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             editorRef?.focus()
           }}
         >
-          {/* 261114 Red UX-06：顶部拖高把手 + 展开态。高度=拖拽持久化值，展开时 60vh。 */}
+          {/* 261114 Red UX-06：顶部拖高把手 + 展开态。
+              评审修正：此前拖高/展开只改 max-height——空输入时编辑框由内容撑开，
+              上限再大也看不出来（点了和没点一样）。改为：拖高 = 固定高度（立即
+              生效，内容超出内部滚动）；展开 = min-h 40vh（框立即占主要区域）。 */}
           <div
             data-slot="prompt-resize-handle"
             class="absolute -top-2 right-0 left-0 z-10 h-2 cursor-ns-resize"
@@ -1736,7 +1739,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               "max-h-[180px]": !promptSize.expanded && !promptSize.height,
               "max-h-[60vh]": promptSize.expanded,
             }}
-            style={{ "max-height": !promptSize.expanded && promptSize.height ? `${promptSize.height}px` : undefined }}
+            style={{
+              height: !promptSize.expanded && promptSize.height ? `${promptSize.height}px` : undefined,
+            }}
             ref={(el) => (scrollRef = el)}
           >
             <div
@@ -1763,7 +1768,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onKeyDown={handleKeyDown}
               classList={{
                 "select-text": true,
-                "min-h-[55px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap [font-size:var(--font-size-base)] [line-height:1.5] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+                "w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap [font-size:var(--font-size-base)] [line-height:1.5] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+                "min-h-[55px]": !promptSize.expanded,
+                "min-h-[40vh]": promptSize.expanded,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
@@ -1849,14 +1856,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
              纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
          {/* 261114 Red UX-06：展开/收起编辑区。 */}
          <Show when={store.mode === "normal"}>
-           <Tooltip placement="top" value={language.t(promptSize.expanded ? "ui.common.restore" : "ui.common.maximize")}>
+           <Tooltip placement="top" value={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}>
              <IconButton
                data-action="prompt-expand"
                type="button"
                icon={promptSize.expanded ? "restore" : "maximize"}
                variant="ghost"
+               classList={{ "bg-surface-raised text-v2-icon-icon-base": promptSize.expanded }}
                class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-               aria-label={language.t(promptSize.expanded ? "ui.common.restore" : "ui.common.maximize")}
+               aria-label={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}
                onClick={togglePromptExpand}
              />
            </Tooltip>

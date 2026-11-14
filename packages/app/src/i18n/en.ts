@@ -308,6 +308,8 @@ export const dict = {
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
   "prompt.soul.title": "Choose Soul",
+  "prompt.editor.expand": "Expand editor",
+  "prompt.editor.collapse": "Collapse editor",
   "prompt.soul.default": "Soul",
   "prompt.soul.followDefault": "Follow settings default",
   "prompt.soul.setDefault": "Set as new-session default",
