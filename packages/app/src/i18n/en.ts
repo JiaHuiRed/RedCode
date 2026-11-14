@@ -991,6 +991,7 @@ export const dict = {
   "settings.general.section.tts": "Text to Speech",
 
   "settings.mobileGateway.title": "Mobile companion",
+  "settings.title": "Settings",
   "settings.mobileGateway.description":
     "Pair a phone or tablet to continue sessions in this workspace through an encrypted, certificate-pinned connection. The Gateway stops with RedCode.",
   "settings.mobileGateway.networkWarning":
@@ -1240,6 +1241,9 @@ export const dict = {
   "settings.personalization.avatarSaved": "Avatar updated for this Soul.",
   "settings.personalization.avatarFailed": "Could not use this image. Choose a valid PNG, JPEG or WebP under 5 MiB, 4096 px and 16 megapixels.",
   "settings.personalization.body": "Read-only prompt body",
+  "settings.personalization.startWithSoul": "New session with this Soul",
+  "settings.personalization.backToRoster": "Back to roster",
+  "settings.personalization.advancedInfo": "Advanced info",
   "settings.personalization.copyPath": "Copy path",
   "settings.personalization.openPath": "Open file",
   "settings.personalization.pathCopied": "Soul path copied.",

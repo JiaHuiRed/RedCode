@@ -885,6 +885,7 @@ export const dict = {
   "settings.general.section.tts": "文字转语音",
 
   "settings.mobileGateway.title": "移动接力",
+  "settings.title": "设置",
   "settings.mobileGateway.description": "通过证书指纹固定的加密连接，让手机或 Pad 接力此工作区中的会话；RedCode 退出时 Gateway 会关闭。",
   "settings.mobileGateway.networkWarning": "仅选择可信私人网络。RedCode 不会修改防火墙规则；不要在公共网络上启用。",
   "settings.mobileGateway.host": "网络接口",
@@ -1103,6 +1104,9 @@ export const dict = {
   "settings.personalization.avatarSaved": "此 Soul 的头像已更新。",
   "settings.personalization.avatarFailed": "无法使用这张图片。请选择有效的 PNG、JPEG 或 WebP，大小不超过 5 MiB、4096 px 和 1600 万像素。",
   "settings.personalization.body": "只读正文预览",
+  "settings.personalization.startWithSoul": "以此 Soul 新建",
+  "settings.personalization.backToRoster": "返回阵容",
+  "settings.personalization.advancedInfo": "高级信息",
   "settings.personalization.copyPath": "复制路径",
   "settings.personalization.openPath": "打开文件",
   "settings.personalization.pathCopied": "Soul 路径已复制。",

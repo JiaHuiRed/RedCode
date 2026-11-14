@@ -1,15 +1,20 @@
 import { Button } from "@redcode-ai/ui/button"
 import { TextField } from "@redcode-ai/ui/text-field"
+import { Markdown } from "@redcode-ai/ui/markdown"
+import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
-import { useParams } from "@solidjs/router"
-import { createMemo, For, Show, type Component } from "solid-js"
+import { useNavigate, useParams } from "@solidjs/router"
+import { createEffect, createMemo, For, on, Show, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
+import { createMediaQuery } from "@solid-primitives/media"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useSettings } from "@/context/settings"
+import { persisted } from "@/utils/persist"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import { SoulAvatar } from "./soul-avatar"
 import { SoulAvatarPicker } from "./soul-avatar-picker"
@@ -55,7 +60,23 @@ export const SettingsPersonalization: Component = () => {
   const params = useParams()
   const queryClient = useQueryClient()
   // 261114 Red UX-02：新建区默认收起；默认 Soul 压成紧凑摘要，让阵容回到首屏。
-  const [view, setView] = createStore({ selectedId: "", search: "", createOpen: false, feedback: "", error: "" })
+  // 261114 Red UX-04：detailOpen 是窄布局的详情抽屉开关（宽布局常驻右栏）。
+  const [view, setView] = createStore({
+    selectedId: "",
+    search: "",
+    createOpen: false,
+    feedback: "",
+    error: "",
+    detailOpen: false,
+  })
+  // 261114 Red UX-04：记住上次所看的 Soul，下次打开优先选中。
+  const [lastViewed, setLastViewed] = createStore({ value: "" })
+  persisted("settings.personalization.lastViewed", [lastViewed, setLastViewed])
+
+  const dialog = useDialog()
+  const navigate = useNavigate()
+  const isWide = createMediaQuery("(min-width: 1024px)")
+  let scrollRef: HTMLDivElement | undefined
 
   const souls = useQuery(() => ({
     queryKey: ["soul", sdk.url, "list"],
@@ -104,8 +125,44 @@ export const SettingsPersonalization: Component = () => {
     return !!sync.peek(dir, { bootstrap: false })[0].session.find((session) => session.id === id)
   })
 
-  const selectSoul = (id: string) => {
+  // 261114 Red UX-04：首次进入优先选默认或上次所看的 Soul（列表就绪后一次性）。
+  createEffect(
+    on(
+      () => souls.data,
+      (data) => {
+        if (!data || data.length === 0) return
+        if (view.selectedId && data.some((soul) => soul.id === view.selectedId)) return
+        const candidate =
+          [lastViewed.value, effectiveDefaultId()].find((id) => id && data.some((soul) => soul.id === id)) ??
+          data[0]?.id
+        if (candidate) setView({ selectedId: candidate, feedback: "", error: "" })
+      },
+    ),
+  )
+
+  // 窄布局抽屉打开时回到内容顶部，抽屉（absolute inset-0）才在视口内。
+  createEffect(
+    on(
+      () => view.detailOpen,
+      (open) => {
+        if (open && scrollRef) scrollRef.scrollTop = 0
+      },
+    ),
+  )
+
+  const selectSoul = (id: string, options?: { openDetail?: boolean }) => {
     setView({ selectedId: id, feedback: "", error: "" })
+    setLastViewed("value", id)
+    if (options?.openDetail && !isWide()) setView("detailOpen", true)
+  }
+
+  // 261114 Red UX-04：以此 Soul 新建——带 soul 意图进新会话页（UX-03 的快选器消费），
+  // 关闭设置弹层；仅本地项目目录可导航，全局首页入口没有目标目录。
+  const startWithSoul = (id: string) => {
+    const dir = directory()
+    if (!dir) return
+    dialog.close()
+    navigate(`/${base64Encode(dir)}/session?soul=${encodeURIComponent(id)}`)
   }
   const setDefault = (id: string) => {
     settings.personalization.setLastSoul(id)
@@ -153,7 +210,10 @@ export const SettingsPersonalization: Component = () => {
   }
 
   return (
-    <div class="flex h-full flex-col overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10">
+    <div
+      ref={scrollRef}
+      class="relative flex h-full flex-col overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10"
+    >
       <header class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex max-w-[1000px] flex-col gap-1 pt-6 pb-8">
           <h2 class="text-16-medium text-text-strong">{language.t("settings.personalization.title")}</h2>
@@ -269,8 +329,12 @@ export const SettingsPersonalization: Component = () => {
           </div>
         </section>
 
-        <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,0.85fr)_minmax(0,1.5fr)]">
-          <section aria-label={language.t("settings.personalization.roster")} class="flex min-w-0 flex-col gap-3">
+        {/* 261114 Red UX-04：宽布局阵容与详情各自滚动（固定高），窄布局详情为可返回抽屉。 */}
+        <div class="grid min-h-0 grid-cols-1 gap-4 lg:h-[560px] lg:grid-cols-[minmax(240px,0.85fr)_minmax(0,1.5fr)]">
+          <section
+            aria-label={language.t("settings.personalization.roster")}
+            class="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1"
+          >
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.roster")}</h3>
               <span class="text-12-regular text-text-weak">{soulsList().length}</span>
@@ -302,7 +366,7 @@ export const SettingsPersonalization: Component = () => {
                       type="button"
                       aria-label={language.t("settings.personalization.selectSoul", { name: soul.displayName || soul.name })}
                       aria-pressed={view.selectedId === soul.id}
-                      onClick={() => selectSoul(soul.id)}
+                      onClick={() => selectSoul(soul.id, { openDetail: true })}
                       class={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-surface-raised-base focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus ${
                         view.selectedId === soul.id ? "border-border-focus bg-surface-raised-base" : "border-border-weak-base"
                       }`}
@@ -332,7 +396,15 @@ export const SettingsPersonalization: Component = () => {
             </ul>
           </section>
 
-          <section aria-label={language.t("settings.personalization.details")} class="min-w-0 rounded-lg border border-border-weak-base bg-surface-base p-4">
+          <section
+            aria-label={language.t("settings.personalization.details")}
+            classList={{
+              "min-w-0 flex-col gap-4 overflow-y-auto rounded-lg border border-border-weak-base bg-surface-base p-4 lg:min-h-0": true,
+              // 261114 Red UX-04：窄布局为可返回的抽屉（覆盖整个设置页），宽布局常驻右栏。
+              "absolute inset-0 z-20 lg:static lg:inset-auto lg:z-auto": view.detailOpen,
+              "hidden lg:flex": !view.detailOpen,
+            }}
+          >
             <Show when={selected()} fallback={<p class="text-14-regular text-text-weak">{language.t("settings.personalization.chooseSoul")}</p>}>
               {(soul) => (
                 <div class="flex flex-col gap-4">
@@ -340,13 +412,32 @@ export const SettingsPersonalization: Component = () => {
                     <SoulAvatar soul={soul()} />
                     <div class="min-w-0 flex-1">
                       <h3 class="text-16-medium text-text-strong">{soul().displayName || soul().name}</h3>
-                      <p class="text-12-regular text-text-weak">{soul().name} · {soul().id}</p>
+                      <Show when={soul().description}>
+                        <p class="mt-0.5 text-12-regular text-text-weak">{soul().description}</p>
+                      </Show>
                     </div>
-                    <Show when={soul().id !== effectiveDefaultId()}>
-                      <Button size="small" variant="secondary" onClick={() => setDefault(soul().id)}>
-                        {language.t("settings.personalization.setDefault")}
-                      </Button>
-                    </Show>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Show when={directory()}>
+                        <Button size="small" variant="secondary" onClick={() => startWithSoul(soul().id)}>
+                          {language.t("settings.personalization.startWithSoul")}
+                        </Button>
+                      </Show>
+                      <Show when={soul().id !== effectiveDefaultId()}>
+                        <Button size="small" variant="secondary" onClick={() => setDefault(soul().id)}>
+                          {language.t("settings.personalization.setDefault")}
+                        </Button>
+                      </Show>
+                      <Show when={view.detailOpen}>
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          class="lg:hidden"
+                          onClick={() => setView("detailOpen", false)}
+                        >
+                          {language.t("settings.personalization.backToRoster")}
+                        </Button>
+                      </Show>
+                    </div>
                   </div>
                   <Show when={currentSessionKnown() && sessionSoulId() === soul().id}>
                     <p class="rounded-md bg-surface-raised-base p-2 text-12-regular text-text-weak">
@@ -380,31 +471,42 @@ export const SettingsPersonalization: Component = () => {
                   <Show when={detail.data}>
                     {(data) => (
                       <>
-                        <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <DetailField label="id" value={data().id} source={sourceLabel("id")} />
-                          <DetailField label="name" value={data().name} source={sourceLabel("name")} />
-                          <DetailField label="displayName" value={data().displayName} source={sourceLabel("displayName")} />
-                          <DetailField label="commitPrefix" value={data().commitPrefix} source={sourceLabel("commitPrefix")} />
-                          <DetailField label="avatar" value={data().avatar} source={sourceLabel("avatar")} />
-                          <DetailField label="description" value={data().description} source={sourceLabel("description")} />
-                        </dl>
-                        <Show when={data().path}>
-                          <div class="flex flex-wrap items-center gap-2">
-                            <code class="min-w-0 flex-1 break-all text-12-regular text-text-weak">{data().path}</code>
-                            <Show when={typeof navigator !== "undefined" && !!navigator.clipboard?.writeText}>
-                              <Button size="small" variant="secondary" onClick={copySource}>{language.t("settings.personalization.copyPath")}</Button>
-                            </Show>
-                            <Show when={platform.platform === "desktop" && !!platform.openPath && server.isLocal()}>
-                              <Button size="small" variant="secondary" onClick={openSource}>{language.t("settings.personalization.openPath")}</Button>
-                            </Show>
-                          </div>
-                        </Show>
+                        {/* 261114 Red UX-04：正文以可读 Markdown 优先，工程字段与原文收进高级信息。 */}
                         <Show when={data().content}>
                           <section class="flex flex-col gap-2">
                             <h4 class="text-14-medium text-text-strong">{language.t("settings.personalization.body")}</h4>
-                            <pre class="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-raised-base p-3 font-mono text-12-regular text-text-weak">{data().content}</pre>
+                            <div class="max-h-[420px] overflow-y-auto rounded-md bg-surface-raised-base p-3">
+                              <Markdown text={data().content} cacheKey={`soul:${data().id}:body`} />
+                            </div>
                           </section>
                         </Show>
+                        <details class="rounded-md bg-surface-raised-base p-2">
+                          <summary class="cursor-pointer select-none text-12-medium text-text-weak">
+                            {language.t("settings.personalization.advancedInfo")}
+                          </summary>
+                          <div class="mt-2 flex flex-col gap-2">
+                            <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <DetailField label="id" value={data().id} source={sourceLabel("id")} />
+                              <DetailField label="name" value={data().name} source={sourceLabel("name")} />
+                              <DetailField label="displayName" value={data().displayName} source={sourceLabel("displayName")} />
+                              <DetailField label="commitPrefix" value={data().commitPrefix} source={sourceLabel("commitPrefix")} />
+                              <DetailField label="avatar" value={data().avatar} source={sourceLabel("avatar")} />
+                              <DetailField label="description" value={data().description} source={sourceLabel("description")} />
+                            </dl>
+                            <Show when={data().path}>
+                              <div class="flex flex-wrap items-center gap-2">
+                                <code class="min-w-0 flex-1 break-all text-12-regular text-text-weak">{data().path}</code>
+                                <Show when={typeof navigator !== "undefined" && !!navigator.clipboard?.writeText}>
+                                  <Button size="small" variant="secondary" onClick={copySource}>{language.t("settings.personalization.copyPath")}</Button>
+                                </Show>
+                                <Show when={platform.platform === "desktop" && !!platform.openPath && server.isLocal()}>
+                                  <Button size="small" variant="secondary" onClick={openSource}>{language.t("settings.personalization.openPath")}</Button>
+                                </Show>
+                              </div>
+                            </Show>
+                            <pre class="max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-base p-3 font-mono text-12-regular text-text-weak">{data().content}</pre>
+                          </div>
+                        </details>
                       </>
                     )}
                   </Show>

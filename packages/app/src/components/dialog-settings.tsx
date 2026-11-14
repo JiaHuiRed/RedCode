@@ -1,10 +1,10 @@
 import { Suspense, lazy, onCleanup, onMount, type Component } from "solid-js"
-import { Dialog } from "@redcode-ai/ui/dialog"
+import { Dialog, type DialogSize } from "@redcode-ai/ui/dialog"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { Icon } from "@redcode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { persisted } from "@/utils/persist"
 
 // 261110 Red 外部审计第 3 项：设置分区按需加载 + 记住上次分区 + 入口可指定分区。
@@ -47,6 +47,10 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const [tab] = persisted("settings.dialog.tab", [tabStore, setTabStore])
   if (props.initialTab) setTabStore("value", props.initialTab)
 
+  // 261114 Red UX-01 设置窗口可调大小：尺寸与最大化持久化，关闭后重开恢复。
+  const [sizeStore, setSizeStore] = createStore<DialogSize>({})
+  persisted("settings.dialog.size", [sizeStore, setSizeStore])
+
   onMount(() => {
     const idle = typeof requestIdleCallback === "function" ? requestIdleCallback : (cb: () => void) => setTimeout(cb, 200)
     const handle = idle(() => {
@@ -65,7 +69,14 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   )
 
   return (
-    <Dialog size="x-large" transition>
+    <Dialog
+      size="x-large"
+      transition
+      title={language.t("settings.title")}
+      resizable
+      dialogSize={sizeStore}
+      onResize={(next) => setSizeStore(reconcile(next))}
+    >
       <Tabs
         orientation="vertical"
         variant="settings"

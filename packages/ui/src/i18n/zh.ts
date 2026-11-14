@@ -139,6 +139,8 @@ export const dict = {
   "ui.common.add": "添加",
   "ui.common.back": "返回",
   "ui.common.cancel": "取消",
+  "ui.common.maximize": "最大化",
+  "ui.common.restore": "还原尺寸",
   "ui.common.confirm": "确认",
   "ui.common.dismiss": "忽略",
   "ui.common.close": "关闭",

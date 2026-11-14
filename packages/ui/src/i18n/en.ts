@@ -155,6 +155,8 @@ export const dict: Record<string, string> = {
   "ui.common.add": "Add",
   "ui.common.back": "Back",
   "ui.common.cancel": "Cancel",
+  "ui.common.maximize": "Maximize",
+  "ui.common.restore": "Restore size",
   "ui.common.confirm": "Confirm",
   "ui.common.dismiss": "Dismiss",
   "ui.common.close": "Close",

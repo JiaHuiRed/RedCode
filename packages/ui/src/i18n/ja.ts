@@ -135,6 +135,8 @@ export const dict = {
   "ui.common.add": "追加",
   "ui.common.back": "戻る",
   "ui.common.cancel": "キャンセル",
+  "ui.common.maximize": "最大化",
+  "ui.common.restore": "サイズを戻す",
   "ui.common.confirm": "確認",
   "ui.common.dismiss": "閉じる",
   "ui.common.close": "閉じる",

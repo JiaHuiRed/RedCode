@@ -133,6 +133,76 @@
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);
   }
+
+  /* 261114 Red UX-01 设置窗口可调大小：opt-in 的调整手柄、最大化与窄布局容器查询。 */
+  &[data-resizable] {
+    [data-slot="dialog-container"] {
+      container-type: inline-size;
+
+      /* 受控尺寸由 inline style 写 width/height；JS 已按视口钳制，这里只兜底。 */
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 16px);
+    }
+
+    &[data-maximized] [data-slot="dialog-container"] {
+      width: calc(100vw - 16px) !important;
+      height: calc(100vh - 16px) !important;
+    }
+
+    [data-slot="dialog-header-spacer"] {
+      flex: 1;
+    }
+
+    [data-slot="dialog-resize-handle"] {
+      position: absolute;
+      right: 2px;
+      bottom: 2px;
+      width: 18px;
+      height: 18px;
+      cursor: nwse-resize;
+      z-index: 20;
+      border-radius: 0 0 var(--radius-xl) 0;
+      touch-action: none;
+    }
+  }
+}
+
+/* 窄容器：设置导航从左侧竖排翻到顶部横排（容器查询按 dialog-container 宽度，
+   不按视口——分屏/贴半屏时以设置实际可用宽度为准）。 */
+@container (max-width: 719px) {
+  [data-component="dialog"][data-resizable] .settings-dialog[data-orientation="vertical"] {
+    flex-direction: column;
+
+    [data-slot="tabs-list"] {
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      max-height: 34vh;
+      flex-direction: row;
+      flex-wrap: wrap;
+      overflow-y: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border-weak-base);
+      align-content: flex-start;
+
+      /* 分区标题与触发器分组整体横向流式排布（wrapper→全部分区→单分区→触发器行） */
+      > div,
+      > div > div,
+      > div > div > div {
+        flex-direction: row;
+        flex-wrap: wrap;
+        height: auto;
+      }
+
+      [data-slot="tabs-section-title"] {
+        width: auto;
+      }
+
+      [data-slot="tabs-trigger-wrapper"] {
+        height: 32px;
+      }
+    }
+  }
 }
 
 [data-component="dialog"][data-transition] [data-slot="dialog-content"] {
