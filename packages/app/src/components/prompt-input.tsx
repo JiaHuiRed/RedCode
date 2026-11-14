@@ -185,8 +185,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const soulControl = () => (
-    <Show when={newSession()}>
-      <DropdownMenu gutter={4} placement="top-start">
+    <Show when={newSession()}>      <DropdownMenu gutter={4} placement="top-start">
         <DropdownMenu.Trigger
           as={Button}
           type="button"
@@ -199,7 +198,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           <Show when={currentSoul()} fallback={<Icon name="brain" size="small" class="text-v2-icon-icon-muted shrink-0" />}>
             <SoulAvatar soul={currentSoul()!} size="small" />
           </Show>
-          <span class="truncate text-[14px] font-[440] leading-[18px] text-v2-text-text-faint">
+          <span class="truncate [font-size:var(--font-size-base)] font-[440] leading-[1.3] text-v2-text-text-faint">
             {currentSoul()?.displayName || currentSoul()?.name || language.t("prompt.soul.default")}
           </span>
           <Icon name="chevron-down" size="small" class="text-v2-icon-icon-muted shrink-0" />
@@ -1505,6 +1504,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // 底层早就是通的：local.agent 的 list/current/set 在 @提及子代理时就在用，
   // agent.cycle 命令也早注册了（use-session-commands.tsx）、有快捷键、命令面板里能调，
   //   缺的只是这个可见控件。照模型入口的样式做，保持一排控件观感一致。
+  // 261114 Red UX-06 长提示可展开编辑：拖高（持久化）与展开（占工作区主要高度）。
+  // 两种视图共用同一个 contentEditable——草稿、@引用、选区、撤销栈天然共享，不复制内容。
+  const [promptSize, setPromptSize] = createStore<{ height?: number; expanded?: boolean }>({})
+  persisted("settings.prompt.size", [promptSize, setPromptSize])
+
+  const togglePromptExpand = () => setPromptSize("expanded", !promptSize.expanded)
+
+  const editorScrollMaxHeight = () =>
+    promptSize.expanded ? Math.round(window.innerHeight * 0.6) : (promptSize.height ?? 180)
+
+  const startEditorResize = (event: PointerEvent) => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = editorScrollMaxHeight()
+    const move = (moveEvent: PointerEvent) => {
+      setPromptSize({ height: Math.max(120, startHeight + (startY - moveEvent.clientY)), expanded: false })
+    }
+    const stop = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", stop)
+      window.removeEventListener("pointercancel", stop)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", stop)
+    window.addEventListener("pointercancel", stop)
+  }
+
   const agentControl = () => (
     <Show when={local.agent.list().length > 1}>
       <div
@@ -1788,7 +1814,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             editorRef?.focus()
           }}
         >
-          <div class="relative max-h-[180px] overflow-y-auto no-scrollbar" ref={(el) => (scrollRef = el)}>
+          {/* 261114 Red UX-06：顶部拖高把手 + 展开态。高度=拖拽持久化值，展开时 60vh。 */}
+          <div
+            data-slot="prompt-resize-handle"
+            class="absolute -top-2 right-0 left-0 z-10 h-2 cursor-ns-resize"
+            onPointerDown={startEditorResize}
+            aria-hidden="true"
+          />
+          <div
+            class="relative overflow-y-auto no-scrollbar"
+            classList={{
+              "max-h-[180px]": !promptSize.expanded && !promptSize.height,
+              "max-h-[60vh]": promptSize.expanded,
+            }}
+            style={{ "max-height": !promptSize.expanded && promptSize.height ? `${promptSize.height}px` : undefined }}
+            ref={(el) => (scrollRef = el)}
+          >
             <div
               data-component="prompt-input"
               ref={(el) => {
@@ -1813,7 +1854,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onKeyDown={handleKeyDown}
               classList={{
                 "select-text": true,
-                "min-h-[55px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-[21px] text-[14px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+                "min-h-[55px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap [font-size:var(--font-size-base)] [line-height:1.5] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
@@ -1821,15 +1862,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
             <div
               data-component={newSession() ? "session-new-design-text" : "session-composer-text"}
-              class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-[21px] text-[14px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
+              class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate [font-size:var(--font-size-base)] [line-height:1.5] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
               classList={{ "font-mono!": store.mode === "shell", hidden: prompt.dirty() }}
             >
               {designPlaceholder()}
             </div>
           </div>
         </div>
-        <div class="flex h-[46px] items-center px-2">
-          <div class="flex min-w-0 flex-1 items-center gap-0">
+        {/* 261114 Red UX-07：工具栏按聊天列实际宽度换行（两行兜底），发送/停止常显；
+            输入与标签字号走 --font-size-* token 随外观设置缩放。 */}
+        <div class="flex min-h-[46px] flex-wrap items-center gap-y-1 px-2 py-1">
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-y-1">
             {fileAttachmentInput()}
             {soulControl()}
             <TooltipKeybind
@@ -1865,7 +1908,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     restoreFocus()
                   }}
                   class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
-                  valueClass="truncate pl-5 text-[14px] font-[440] leading-[18px] text-v2-text-text-faint"
+                  valueClass="truncate pl-5 [font-size:var(--font-size-base)] font-[440] leading-[1.3] text-v2-text-text-faint"
                   triggerStyle={control()}
                   triggerProps={{ "data-action": "prompt-workspace" }}
                   variant="ghost"
@@ -1896,6 +1939,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           </Show>
          {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
              纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
+         {/* 261114 Red UX-06：展开/收起编辑区。 */}
+         <Show when={store.mode === "normal"}>
+           <Tooltip placement="top" value={language.t(promptSize.expanded ? "ui.common.restore" : "ui.common.maximize")}>
+             <IconButton
+               data-action="prompt-expand"
+               type="button"
+               icon={promptSize.expanded ? "restore" : "maximize"}
+               variant="ghost"
+               class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+               aria-label={language.t(promptSize.expanded ? "ui.common.restore" : "ui.common.maximize")}
+               onClick={togglePromptExpand}
+             />
+           </Tooltip>
+         </Show>
          <Show when={canInterruptSend()}>
            <Tooltip placement="top" value={language.t("prompt.action.interruptSend")}>
              <IconButton
