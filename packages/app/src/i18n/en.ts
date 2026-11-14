@@ -128,6 +128,7 @@ export const dict = {
 
   "dialog.model.select.title": "Select model",
   "dialog.model.search.placeholder": "Search models",
+  "dialog.model.recent": "Recent",
   "dialog.model.empty": "No model results",
   "dialog.model.manage": "Manage models",
   "dialog.model.manage.description": "Customize which models appear in the model selector.",

@@ -111,6 +111,7 @@ export const dict = {
   "dialog.provider.vercel.note": "スマートルーターによるAIモデルへの統合アクセス",
   "dialog.model.select.title": "モデルを選択",
   "dialog.model.search.placeholder": "モデルを検索",
+  "dialog.model.recent": "最近使用",
   "dialog.model.empty": "モデルが見つかりません",
   "dialog.model.manage": "モデルを管理",
   "dialog.model.manage.description": "モデルセレクターに表示するモデルをカスタマイズします。",

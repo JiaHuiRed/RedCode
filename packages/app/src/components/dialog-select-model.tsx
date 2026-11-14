@@ -30,12 +30,35 @@ const ModelList: Component<{
   const model = props.model ?? useLocal().model
   const language = useLanguage()
 
-  const models = createMemo(() =>
-    model
+  type ModelItem = ReturnType<typeof model.list>[number] & { recent?: boolean }
+
+  // 261114 Red UX-05：最近使用前排——复用 local.model.recent（已解析的模型列表，
+  // 按 provider+model 去重），失效/隐藏的记录静默跳过；主列表去重不重复出现。
+  const recents = createMemo((): ModelItem[] => {
+    const out: ModelItem[] = []
+    const seen = new Set<string>()
+    for (const entry of model.recent()) {
+      if (!entry) continue
+      const id = `${entry.provider.id}:${entry.id}`
+      if (seen.has(id)) continue
+      if (!model.visible({ modelID: entry.id, providerID: entry.provider.id })) continue
+      seen.add(id)
+      out.push({ ...entry, recent: true })
+    }
+    return out
+  })
+
+  const models = createMemo((): ModelItem[] => {
+    const base = model
       .list()
       .filter((m) => model.visible({ modelID: m.id, providerID: m.provider.id }))
-      .filter((m) => (props.provider ? m.provider.id === props.provider : true)),
-  )
+      .filter((m) => (props.provider ? m.provider.id === props.provider : true))
+    if (props.provider) return base
+    const recentIDs = new Set(recents().map((x) => `${x.provider.id}:${x.id}`))
+    return [...recents(), ...base.filter((m) => !recentIDs.has(`${m.provider.id}:${m.id}`))]
+  })
+
+  const recentGroupLabel = language.t("dialog.model.recent")
 
   return (
     <List
@@ -50,8 +73,13 @@ const ModelList: Component<{
       current={model.current()}
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
-      groupBy={(x) => x.provider.name}
+      groupBy={(x) => ((x as ModelItem).recent ? recentGroupLabel : x.provider.name)}
       sortGroupsBy={(a, b) => {
+        // 261114 Red UX-05：最近分组恒排最前。
+        const aRecent = (a.items[0] as ModelItem).recent === true
+        const bRecent = (b.items[0] as ModelItem).recent === true
+        if (aRecent && !bRecent) return -1
+        if (!aRecent && bRecent) return 1
         const aProvider = a.items[0].provider.id
         const bProvider = b.items[0].provider.id
         if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1

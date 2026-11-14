@@ -1643,6 +1643,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
         class="flex min-w-0 items-center"
       >
+        {/* 261114 Red UX-05：模型名直接打开模型列表——两次点击完成换模型并回输入。
+            推理强度拆成独立点击区（右侧档位 chip），只调档位不经过完整列表。 */}
         <Tooltip
           placement="top"
           gutter={4}
@@ -1660,12 +1662,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         >
           <ModelSelectorPopover
             model={local.model}
-            overview={modelOverview}
-            overviewTitle={
-              variants().length > 0
-                ? language.t("settings.agents.variant.title")
-                : language.t("dialog.model.select.title")
-            }
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
@@ -1684,15 +1680,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               />
             </Show>
             <span class="truncate">{local.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
-            <Show when={variants().length > 0}>
-              <span class="shrink-0 text-v2-text-text-muted" aria-hidden="true">
-                ·
-              </span>
-              <span class="shrink-0 capitalize text-v2-text-text-accent">{currentVariantLabel()}</span>
-            </Show>
             <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
           </ModelSelectorPopover>
         </Tooltip>
+        <Show when={variants().length > 0}>
+          <ModelSelectorPopover
+            model={local.model}
+            overview={modelOverview}
+            overviewTitle={language.t("settings.agents.variant.title")}
+            triggerAs={Button}
+            triggerProps={{
+              variant: "ghost",
+              size: "normal",
+              style: control(),
+              class:
+                "min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize text-v2-text-text-accent",
+              "data-action": "prompt-variant",
+            }}
+            onClose={restoreFocus}
+          >
+            <Icon name="brain" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+            <span class="truncate">{currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}</span>
+            <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+          </ModelSelectorPopover>
+        </Show>
       </div>
     </Show>
   )
