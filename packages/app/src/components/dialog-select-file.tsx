@@ -181,10 +181,14 @@ function createSessionEntries(props: {
   const state: {
     token: number
     inflight: Promise<void> | undefined
+    // 261114 Red UX-09 评审修正：空查询（最近会话）与搜索各有在途槽，互不阻塞——
+    // 选择器打开即拉最近会话，随后键入关键词的搜索不被空查询占住的闸挡掉。
+    emptyInflight: Promise<void> | undefined
     cached: Entry[] | undefined
   } = {
     token: 0,
     inflight: undefined,
+    emptyInflight: undefined,
     cached: undefined,
   }
 
@@ -197,10 +201,65 @@ function createSessionEntries(props: {
   const sessions = (text: string) => {
     const query = text.trim()
     if (!query) {
+      // 261114 Red UX-09 评审修正：空查询是「加载最近会话」，不是清空——此前只清
+      // 缓存直接返回，选择器打开时最近会话永远不出现。空查询与搜索共用同一加载
+      // 管线但不写查询缓存；token 先自增作废在途搜索结果，避免旧搜索落地抢位。
+      if (state.emptyInflight) return
       state.token += 1
       state.inflight = undefined
       state.cached = undefined
-      setEntries((prev) => (prev.length === 0 ? prev : []))
+      const current = state.token
+      const dirs = props.workspaces()
+      if (dirs.length === 0) return
+      state.emptyInflight = Promise.all(
+        dirs.map((directory) => {
+          const description = props.label(directory)
+          return props.globalSDK.client.session
+            .list({ directory, roots: true })
+            .then((x) =>
+              (x.data ?? [])
+                .filter((s) => !!s?.id)
+                .map((s) => ({
+                  id: s.id,
+                  title: s.title ?? props.language.t("command.session.new"),
+                  description,
+                  directory,
+                  archived: s.time?.archived,
+                  updated: s.time?.updated,
+                })),
+            )
+            .catch(
+              () =>
+                [] as {
+                  id: string
+                  title: string
+                  description: string
+                  directory: string
+                  archived?: number
+                  updated?: number
+                }[],
+            )
+        }),
+      )
+        .then((results) => {
+          if (state.token !== current) return
+          const seen = new Set<string>()
+          const category = props.language.t("command.category.session")
+          const next = results
+            .flat()
+            .filter((item) => {
+              const key = `${item.directory}:${item.id}`
+              if (seen.has(key)) return false
+              seen.add(key)
+              return true
+            })
+            .map((item) => createSessionEntry(item, category))
+          setEntries(next)
+        })
+        .catch(() => {})
+        .finally(() => {
+          state.emptyInflight = undefined
+        })
       return
     }
 
@@ -210,6 +269,9 @@ function createSessionEntries(props: {
     }
     if (state.inflight) return
 
+    // 261114 Red UX-09 评审修正：搜索起跑时令牌自增，作废在途的最近会话响应，
+    // 避免它晚落地把搜索结果顶掉。
+    state.token += 1
     const current = state.token
     const dirs = props.workspaces()
     if (dirs.length === 0) return

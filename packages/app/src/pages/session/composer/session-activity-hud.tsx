@@ -45,12 +45,14 @@ export function SessionActivityHud(props: {
     props.revealMessage?.(messageID)
   }
 
-  // 261114 Red UX-11：待授权 → 聚焦授权 dock 的首个按钮（dock 常驻状态台上方）。
+  // 261114 Red UX-11：待授权 → 聚焦授权 dock 的首个操作按钮。评审修正：操作按钮在
+  // DockPrompt 独立的 permission-footer 里，不在 permission-row 的父节点——直接定位
+  // dock 根再取 footer 按钮。
   const focusPermission = () => {
-    const row = document.querySelector('[data-slot="permission-row"]')
-    if (!row) return
-    row.scrollIntoView({ block: "nearest" })
-    const button = row.parentElement?.querySelector<HTMLButtonElement>("button")
+    const dock = document.querySelector('[data-component="dock-prompt"][data-kind="permission"]')
+    if (!dock) return
+    dock.scrollIntoView({ block: "nearest" })
+    const button = dock.querySelector<HTMLButtonElement>('[data-slot="permission-footer"] button')
     button?.focus()
   }
   const turnIncomplete = createMemo(() => working() && turnStart() === -1)
