@@ -54,7 +54,8 @@ export const SettingsPersonalization: Component = () => {
   const sync = useServerSync()
   const params = useParams()
   const queryClient = useQueryClient()
-  const [view, setView] = createStore({ selectedId: "", search: "", feedback: "", error: "" })
+  // 261114 Red UX-02：新建区默认收起；默认 Soul 压成紧凑摘要，让阵容回到首屏。
+  const [view, setView] = createStore({ selectedId: "", search: "", createOpen: false, feedback: "", error: "" })
 
   const souls = useQuery(() => ({
     queryKey: ["soul", sdk.url, "list"],
@@ -143,10 +144,10 @@ export const SettingsPersonalization: Component = () => {
 
   const createSoul = async (input: SoulCreateInput) => {
     const created = (await sdk.client.soul.create(input, { throwOnError: true })).data
-    // 新 Soul 写盘后先刷新注册表再选中；默认 Soul 与当前会话绑定都不动。
+    // 新 Soul 写盘后先刷新注册表再选中并收起创建区；默认 Soul 与当前会话绑定都不动。
     await souls.refetch()
     void issues.refetch()
-    setView({ selectedId: created.id, search: "", error: "", feedback: "" })
+    setView({ selectedId: created.id, search: "", createOpen: false, error: "", feedback: "" })
     void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "detail", created.id] })
     return created
   }
@@ -197,10 +198,13 @@ export const SettingsPersonalization: Component = () => {
               <div class="flex flex-wrap items-center gap-3">
                 <SoulAvatar soul={soul()} />
                 <div class="min-w-0 flex-1">
-                  <p class="text-14-medium text-text-strong">{soul().displayName || soul().name}</p>
-                  <p class="text-12-regular text-text-weak">{soul().name}</p>
-                  <Show when={soul().description}><p class="mt-1 text-12-regular text-text-weak">{soul().description}</p></Show>
-                  <Show when={soul().commitPrefix}><p class="mt-1 text-12-regular text-text-weak">{soul().commitPrefix}</p></Show>
+                  <p class="truncate text-14-medium text-text-strong">
+                    {soul().displayName || soul().name}
+                    <span class="ml-1 font-normal text-12-regular text-text-weak">{soul().name}</span>
+                  </p>
+                  <Show when={soul().description}>
+                    <p class="truncate text-12-regular text-text-weak">{soul().description}</p>
+                  </Show>
                 </div>
                 <Button size="small" variant="secondary" onClick={() => selectSoul(soul().id)}>
                   {language.t("settings.personalization.viewDetails")}
@@ -239,11 +243,30 @@ export const SettingsPersonalization: Component = () => {
           aria-label={language.t("settings.personalization.create.title")}
           class="flex flex-col gap-4 rounded-lg border border-border-weak-base bg-surface-base p-4"
         >
-          <div class="flex flex-col gap-1">
-            <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.create.title")}</h3>
-            <p class="text-12-regular text-text-weak">{language.t("settings.personalization.create.description")}</p>
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex flex-col gap-1">
+              <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.create.title")}</h3>
+              <p class="text-12-regular text-text-weak">{language.t("settings.personalization.create.description")}</p>
+            </div>
+            <Button
+              type="button"
+              size="small"
+              variant="secondary"
+              aria-expanded={view.createOpen}
+              aria-controls="soul-create-body"
+              onClick={() => setView("createOpen", !view.createOpen)}
+            >
+              {language.t(
+                view.createOpen
+                  ? "settings.personalization.create.collapse"
+                  : "settings.personalization.create.expand",
+              )}
+            </Button>
           </div>
-          <SoulCreateForm create={createSoul} />
+          {/* 收起用 hidden 不用 Show：不卸载 SoulCreateForm，草稿在收起后保留。 */}
+          <div id="soul-create-body" classList={{ hidden: !view.createOpen }} aria-hidden={!view.createOpen}>
+            <SoulCreateForm create={createSoul} />
+          </div>
         </section>
 
         <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,0.85fr)_minmax(0,1.5fr)]">

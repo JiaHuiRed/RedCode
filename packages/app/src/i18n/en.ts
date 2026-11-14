@@ -880,6 +880,8 @@ export const dict = {
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
   "terminal.close": "Close terminal",
+  "terminal.maximize": "Maximize terminal",
+  "terminal.restore": "Restore terminal height",
   "terminal.connectionLost.title": "Connection Lost",
   "terminal.connectionLost.abnormalClose": "WebSocket closed abnormally: {{code}}",
   "terminal.connectionLost.description":
@@ -1242,6 +1244,8 @@ export const dict = {
   "settings.personalization.openPath": "Open file",
   "settings.personalization.pathCopied": "Soul path copied.",
   "settings.personalization.create.title": "Create a Soul",
+  "settings.personalization.create.expand": "Show",
+  "settings.personalization.create.collapse": "Collapse",
   "settings.personalization.create.description":
     "Paste a complete Soul file (frontmatter and body) and let the server validate and create it, or fill the fields manually. Creating a Soul never changes the default Soul or the current session.",
   "settings.personalization.create.modeLabel": "Creation mode",

@@ -663,6 +663,8 @@ export const dict = {
   "terminal.title": "ターミナル",
   "terminal.title.numbered": "ターミナル {{number}}",
   "terminal.close": "ターミナルを閉じる",
+  "terminal.maximize": "ターミナルを最大化",
+  "terminal.restore": "ターミナルの高さを戻す",
   "terminal.connectionLost.title": "接続が失われました",
   "terminal.connectionLost.description":
     "ターミナルの接続が中断されました。これはサーバーが再起動したときに発生することがあります。",
@@ -935,6 +937,8 @@ export const dict = {
   "settings.personalization.openPath": "ファイルを開く",
   "settings.personalization.pathCopied": "Soul のパスをコピーしました。",
   "settings.personalization.create.title": "Soul を作成",
+  "settings.personalization.create.expand": "表示",
+  "settings.personalization.create.collapse": "閉じる",
   "settings.personalization.create.description":
     "完全な Soul ファイル（frontmatter と本文）を貼り付けてサーバー側で検証・作成するか、項目を入力します。作成しても既定の Soul と現在のセッションは変わりません。",
   "settings.personalization.create.modeLabel": "作成方法",

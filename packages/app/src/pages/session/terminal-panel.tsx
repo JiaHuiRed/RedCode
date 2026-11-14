@@ -4,7 +4,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { IconButton } from "@redcode-ai/ui/icon-button"
-import { TooltipKeybind } from "@redcode-ai/ui/tooltip"
+import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -37,13 +37,28 @@ export function TerminalPanel() {
 
   const [store, setStore] = createStore({
     autoCreated: false,
+    maximized: false,
     activeDraggable: undefined as string | undefined,
     recovered: {} as Record<string, boolean>,
     view: typeof window === "undefined" ? 1000 : (window.visualViewport?.height ?? window.innerHeight),
   })
 
   const max = () => store.view * 0.6
-  const pane = () => Math.min(height(), max())
+  // 261114 Red UX-12：最大化是临时态——占满父容器工作区高度，不写回 layout.terminal.height，
+  // 恢复后用户原高度原样生效；PTY 由 opened()/active() 键控，切换最大化不重连。
+  const pane = () => {
+    const cap = Math.min(height(), max())
+    if (!opened() || !store.maximized) return cap
+    const container = root?.parentElement
+    return container ? Math.max(cap, container.clientHeight) : cap
+  }
+
+  const toggleMaximize = () => {
+    const next = !store.maximized
+    setStore("maximized", next)
+    const activeId = terminal.active()
+    if (!next && activeId) requestAnimationFrame(() => focusTerminalById(activeId))
+  }
 
   onMount(() => {
     if (typeof window === "undefined") return
@@ -58,7 +73,7 @@ export function TerminalPanel() {
 
   createEffect(() => {
     if (!opened()) {
-      setStore("autoCreated", false)
+      setStore({ autoCreated: false, maximized: false })
       return
     }
 
@@ -224,7 +239,7 @@ export function TerminalPanel() {
         }}
         style={{ height: `${pane()}px` }}
       >
-        <div class="hidden md:block" onPointerDown={() => size.start()}>
+        <div class={store.maximized ? "hidden" : "hidden md:block"} onPointerDown={() => size.start()}>
           <ResizeHandle
             direction="vertical"
             size={pane()}
@@ -293,6 +308,15 @@ export function TerminalPanel() {
                         aria-label={language.t("command.terminal.new")}
                       />
                     </TooltipKeybind>
+                    <Tooltip value={language.t(store.maximized ? "terminal.restore" : "terminal.maximize")} placement="top">
+                      <IconButton
+                        icon={store.maximized ? "collapse" : "expand"}
+                        variant="ghost"
+                        iconSize="large"
+                        onClick={toggleMaximize}
+                        aria-label={language.t(store.maximized ? "terminal.restore" : "terminal.maximize")}
+                      />
+                    </Tooltip>
                   </div>
                 </Tabs.List>
               </Tabs>

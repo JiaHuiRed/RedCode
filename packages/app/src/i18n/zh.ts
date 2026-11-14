@@ -820,6 +820,8 @@ export const dict = {
   "terminal.title": "终端",
   "terminal.title.numbered": "终端 {{number}}",
   "terminal.close": "关闭终端",
+  "terminal.maximize": "最大化终端",
+  "terminal.restore": "恢复终端高度",
   "terminal.connectionLost.title": "连接已丢失",
   "terminal.connectionLost.description": "终端连接已中断。这可能发生在服务器重启时。",
 
@@ -1105,6 +1107,8 @@ export const dict = {
   "settings.personalization.openPath": "打开文件",
   "settings.personalization.pathCopied": "Soul 路径已复制。",
   "settings.personalization.create.title": "新建 Soul",
+  "settings.personalization.create.expand": "展开",
+  "settings.personalization.create.collapse": "收起",
   "settings.personalization.create.description":
     "粘贴完整 Soul 文件（frontmatter 与正文）交由服务端校验并创建，也可逐项填写。新建 Soul 不会改变默认 Soul 或当前会话。",
   "settings.personalization.create.modeLabel": "创建方式",
