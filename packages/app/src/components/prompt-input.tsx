@@ -9,6 +9,7 @@ import {
   createMemo,
   createSignal,
   createResource,
+  For,
   type Accessor,
   Suspense,
 } from "solid-js"
@@ -40,8 +41,12 @@ import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/componen
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { useServerSync } from "@/context/server-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { SoulAvatar } from "./soul-avatar"
+import { useSearchParams } from "@solidjs/router"
 import { quotaCompactSummary } from "@/components/session/session-context-summary"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useProviders } from "@/hooks/use-providers"
@@ -81,7 +86,7 @@ import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
 import { ImagePreview } from "@redcode-ai/ui/image-preview"
-import { useQueries } from "@tanstack/solid-query"
+import { useQueries, useQuery } from "@tanstack/solid-query"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { getFilename } from "@redcode-ai/core/util/path"
@@ -133,6 +138,7 @@ const CREATE_WORKTREE = "create"
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
+  const globalSDK = useGlobalSDK()
   const queryOptions = useQueryOptions()
 
   const sync = useSync()
@@ -150,10 +156,111 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const settings = useSettings()
   const platform = usePlatform()
   const { params, tabs, view } = useSessionLayout()
+  const [searchParams, setSearchParams] = useSearchParams<{ soul?: string }>()
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
   let slashPopoverRef!: HTMLDivElement
+
+  // 261114 Red UX-03 新会话快选 Soul：本次选择覆盖设置默认（不改偏好，切换不清草稿/
+  // 附件/模型/工作位置），经 lastSoul 通道一路接到 session.create。?soul= 参数来自
+  // 设置页「以此 Soul 新建」（UX-04），消费一次即清除。
+  const [sessionSoulID, setSessionSoulID] = createSignal<string | undefined>()
+  const soulList = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "list"],
+    queryFn: async () => (await globalSDK.client.soul.list({ throwOnError: true })).data,
+  }))
+  const effectiveSoulID = createMemo(() => sessionSoulID() ?? settings.personalization.lastSoul() ?? undefined)
+  const currentSoul = createMemo(() => soulList.data?.find((soul) => soul.id === effectiveSoulID()))
+
+  createEffect(
+    on(
+      () => searchParams.soul,
+      (soul) => {
+        if (!soul || !newSession()) return
+        setSessionSoulID(soul)
+        void setSearchParams({ soul: undefined }, { replace: true })
+      },
+    ),
+  )
+
+  const soulControl = () => (
+    <Show when={newSession()}>
+      <DropdownMenu gutter={4} placement="top-start">
+        <DropdownMenu.Trigger
+          as={Button}
+          type="button"
+          variant="ghost"
+          size="small"
+          class="max-w-[175px] gap-1 px-1"
+          data-action="prompt-soul"
+          aria-label={language.t("prompt.soul.title")}
+        >
+          <Show when={currentSoul()} fallback={<Icon name="brain" size="small" class="text-v2-icon-icon-muted shrink-0" />}>
+            <SoulAvatar soul={currentSoul()!} size="small" />
+          </Show>
+          <span class="truncate text-[14px] font-[440] leading-[18px] text-v2-text-text-faint">
+            {currentSoul()?.displayName || currentSoul()?.name || language.t("prompt.soul.default")}
+          </span>
+          <Icon name="chevron-down" size="small" class="text-v2-icon-icon-muted shrink-0" />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content style={{ "max-height": "320px", "overflow-y": "auto", "min-width": "200px" }}>
+            <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+              {language.t("prompt.soul.title")}
+            </DropdownMenu.GroupLabel>
+            <DropdownMenu.Item
+              onSelect={() => {
+                setSessionSoulID(undefined)
+                restoreFocus()
+              }}
+            >
+              <DropdownMenu.ItemLabel>
+                <Show when={!sessionSoulID()}>✓ </Show>
+                {language.t("prompt.soul.followDefault")}
+              </DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator />
+            <For each={soulList.data ?? []}>
+              {(soul) => (
+                <DropdownMenu.Item
+                  onSelect={() => {
+                    setSessionSoulID(soul.id)
+                    restoreFocus()
+                  }}
+                >
+                  <DropdownMenu.ItemLabel class="flex items-center gap-2">
+                    <Show when={effectiveSoulID() === soul.id}>✓ </Show>
+                    <SoulAvatar soul={soul} size="small" />
+                    <span class="truncate">{soul.displayName || soul.name}</span>
+                  </DropdownMenu.ItemLabel>
+                </DropdownMenu.Item>
+              )}
+            </For>
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item
+              disabled={!effectiveSoulID() || effectiveSoulID() === settings.personalization.lastSoul()}
+              onSelect={() => {
+                const id = effectiveSoulID()
+                if (id) settings.personalization.setLastSoul(id)
+              }}
+            >
+              <DropdownMenu.ItemLabel>{language.t("prompt.soul.setDefault")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onSelect={() => {
+                void import("@/components/dialog-settings").then((m) => {
+                  dialog.show(() => <m.DialogSettings initialTab="personalization" />)
+                })
+              }}
+            >
+              <DropdownMenu.ItemLabel>{language.t("prompt.soul.manage")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+    </Show>
+  )
 
   const mirror = { input: false }
   const inset = 56
@@ -1175,7 +1282,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onDeliveryReset: () => setStore("delivery", "steer"),
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
-    lastSoul: () => settings.personalization.lastSoul(),
+    lastSoul: () => effectiveSoulID(),
   })
 
   const handleKeyDown = (event: KeyboardEvent) => {
@@ -1713,6 +1820,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         <div class="flex h-[46px] items-center px-2">
           <div class="flex min-w-0 flex-1 items-center gap-0">
             {fileAttachmentInput()}
+            {soulControl()}
             <TooltipKeybind
               placement="top"
               title={language.t("prompt.action.attachFile")}
