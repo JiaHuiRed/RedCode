@@ -442,28 +442,28 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
             />
             <DropdownMenu.Portal>
               <DropdownMenu.Content style={{ "max-height": "320px", "overflow-y": "auto", "min-width": "220px" }}>
-                <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
-                  {language.t("titlebar.tabs.all")}
-                </DropdownMenu.GroupLabel>
-                <For each={tabsEnriched()}>
-                  {(tab) => (
-                    <DropdownMenu.Item
-                      onSelect={() => navigate(tab.href)}
-                      closeOnSelect
-                    >
-                      <DropdownMenu.ItemLabel class="flex items-center gap-2">
-                        <Show when={tab.status === "busy"}>
-                          <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong animate-pulse" />
-                        </Show>
-                        <Show when={tab.status === "retry"}>
-                          <div class="size-1.5 shrink-0 rounded-full bg-surface-critical-strong" />
-                        </Show>
-                        <span class="truncate">{tab.info.title}</span>
-                        <span class="ml-auto shrink-0 text-11-regular text-text-weaker">{tab.dir}</span>
-                      </DropdownMenu.ItemLabel>
-                    </DropdownMenu.Item>
-                  )}
-                </For>
+                {/* 261114 Red 修正：Kobalte 的 GroupLabel 必须在 Group 内，否则点击渲染即崩 */}
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+                    {language.t("titlebar.tabs.all")}
+                  </DropdownMenu.GroupLabel>
+                  <For each={tabsEnriched()}>
+                    {(tab) => (
+                      <DropdownMenu.Item onSelect={() => navigate(tab.href)} closeOnSelect>
+                        <DropdownMenu.ItemLabel class="flex items-center gap-2">
+                          <Show when={tab.status === "busy"}>
+                            <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong animate-pulse" />
+                          </Show>
+                          <Show when={tab.status === "retry"}>
+                            <div class="size-1.5 shrink-0 rounded-full bg-surface-critical-strong" />
+                          </Show>
+                          <span class="truncate">{tab.info.title}</span>
+                          <span class="ml-auto shrink-0 text-11-regular text-text-weaker">{tab.dir}</span>
+                        </DropdownMenu.ItemLabel>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu>

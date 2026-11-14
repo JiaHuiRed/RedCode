@@ -205,37 +205,40 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content style={{ "max-height": "320px", "overflow-y": "auto", "min-width": "200px" }}>
-            <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
-              {language.t("prompt.soul.title")}
-            </DropdownMenu.GroupLabel>
-            <DropdownMenu.Item
-              onSelect={() => {
-                setSessionSoulID(undefined)
-                restoreFocus()
-              }}
-            >
-              <DropdownMenu.ItemLabel>
-                <Show when={!sessionSoulID()}>✓ </Show>
-                {language.t("prompt.soul.followDefault")}
-              </DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Separator />
-            <For each={soulList.data ?? []}>
-              {(soul) => (
-                <DropdownMenu.Item
-                  onSelect={() => {
-                    setSessionSoulID(soul.id)
-                    restoreFocus()
-                  }}
-                >
-                  <DropdownMenu.ItemLabel class="flex items-center gap-2">
-                    <Show when={effectiveSoulID() === soul.id}>✓ </Show>
-                    <SoulAvatar soul={soul} size="small" />
-                    <span class="truncate">{soul.displayName || soul.name}</span>
-                  </DropdownMenu.ItemLabel>
-                </DropdownMenu.Item>
-              )}
-            </For>
+            {/* 261114 Red 修正：Kobalte 的 GroupLabel 必须在 Group 内，否则点击渲染即崩 */}
+            <DropdownMenu.Group>
+              <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+                {language.t("prompt.soul.title")}
+              </DropdownMenu.GroupLabel>
+              <DropdownMenu.Item
+                onSelect={() => {
+                  setSessionSoulID(undefined)
+                  restoreFocus()
+                }}
+              >
+                <DropdownMenu.ItemLabel>
+                  <Show when={!sessionSoulID()}>✓ </Show>
+                  {language.t("prompt.soul.followDefault")}
+                </DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <For each={soulList.data ?? []}>
+                {(soul) => (
+                  <DropdownMenu.Item
+                    onSelect={() => {
+                      setSessionSoulID(soul.id)
+                      restoreFocus()
+                    }}
+                  >
+                    <DropdownMenu.ItemLabel class="flex items-center gap-2">
+                      <Show when={effectiveSoulID() === soul.id}>✓ </Show>
+                      <SoulAvatar soul={soul} size="small" />
+                      <span class="truncate">{soul.displayName || soul.name}</span>
+                    </DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </DropdownMenu.Group>
             <DropdownMenu.Separator />
             <DropdownMenu.Item
               disabled={!effectiveSoulID() || effectiveSoulID() === settings.personalization.lastSoul()}
