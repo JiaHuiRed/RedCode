@@ -172,7 +172,7 @@ function createFileEntries(props: {
   return { recent, root }
 }
 
-function createSessionEntries(props: {
+export function createSessionEntries(props: {
   workspaces: () => string[]
   label: (directory: string) => string
   globalSDK: ReturnType<typeof useGlobalSDK>

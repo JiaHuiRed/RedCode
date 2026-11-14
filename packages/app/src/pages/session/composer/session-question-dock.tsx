@@ -475,6 +475,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
             <Button
               variant={last() ? "primary" : "secondary"}
               size="large"
+              data-action="question-next"
               disabled={sending()}
               onClick={next}
               aria-keyshortcuts="Meta+Enter Control+Enter"

@@ -80,7 +80,7 @@ export function SessionPermissionDock(props: {
           <>
             <div />
             <div data-slot="permission-footer-actions">
-              <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+              <Button variant="ghost" size="normal" data-action="permission-reject" onClick={() => props.onDecide("reject")} disabled={props.responding}>
                 {language.t("ui.permission.deny")}
                 {/* 260811 Red 深色主题下 keybind 的浅底+描边太突兀，按钮内保持透明文字态 */}
                 <Keybind class="!shadow-none !bg-transparent">Esc</Keybind>
@@ -88,6 +88,7 @@ export function SessionPermissionDock(props: {
               <Button
                 variant="secondary"
                 size="normal"
+                data-action="permission-always"
                 onClick={() => props.onDecide("always")}
                 disabled={props.responding}
               >
@@ -97,6 +98,7 @@ export function SessionPermissionDock(props: {
               <Button
                 variant="primary"
                 size="normal"
+                data-action="permission-once"
                 onClick={() => props.onDecide("once")}
                 disabled={props.responding}
               >
