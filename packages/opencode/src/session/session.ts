@@ -27,7 +27,7 @@ import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@redcode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
-import { visiblePath } from "./message-tree"
+import { hasExplicitBranches, materialize, visiblePath } from "./message-tree"
 import * as ContextCompaction from "./context-compaction"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -114,7 +114,6 @@ export function fromRow(row: SessionRow): Info {
     },
     share,
     revert,
-    leafMessageID: row.leaf_message_id ?? undefined,
     permission: row.permission ? [...row.permission] : undefined,
     time: {
       created: row.time_created,
@@ -155,7 +154,6 @@ export function toRow(info: Info) {
     tokens_cache_read: (info.tokens ?? EmptyTokens).cache.read,
     tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
     revert: info.revert ?? null,
-    leaf_message_id: info.leafMessageID ?? null,
     permission: info.permission,
     time_created: info.time.created,
     time_updated: info.time.updated,
@@ -260,9 +258,6 @@ export const Info = Schema.Struct({
   time: Time,
   permission: optionalOmitUndefined(Permission.Ruleset),
   revert: optionalOmitUndefined(Revert),
-  // 261114 Red 消息树分支：可见路径叶指针（语义见 session.sql.ts leaf_message_id）。
-  // 读侧 Session.messages 与 prompt 咽喉点据此反向走链；NULL = 线性会话。
-  leafMessageID: optionalOmitUndefined(MessageID),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -366,7 +361,6 @@ const UpdatedInfo = Schema.Struct({
   time: Schema.optional(UpdatedTime),
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
   revert: Schema.optional(Schema.NullOr(Revert)),
-  leafMessageID: Schema.optional(Schema.NullOr(MessageID)),
 })
 
 const UpdatedEventSchema = Schema.Struct({
@@ -573,12 +567,13 @@ export interface Interface {
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   /**
-   * 261114 Red 消息树分支：可见路径走链状态（prompt 咽喉点与 Session.messages
-   * 共用）。叶指针缺失（新会话/未写入）或叶消息未物化（升级 backfill 后还没
-   * 写入过的存量会话）返回 undefined——调用方退回线性全量，行为与旧版一致。
-   * 物化门是安全阀：链走只认显式指针，半物化数据会让上下文静默截断。
+   * 261114 Red 消息树分支：新消息统一接线口（所有新建消息必经，禁止直接
+   * updateMessage 创建——裸行没有树指针，链走在那里断掉、上下文静默截断）。
+   * 接线 = appendBranch 的线性特例：parent = 库内最新一条（线性尾；revert
+   * cleanup 删行后同样落在正确父上），旧尾 selectedChildID 改指新消息。首次
+   * 接线前把整条历史物化为显式指针（幂等，只写变更行）。
    */
-  readonly visibleChain: (sessionID: SessionID) => Effect.Effect<MessageV2.ChainWalk | undefined>
+  readonly appendMessage: <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<MessageV2.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
@@ -808,6 +803,30 @@ export const layer: Layer.Layer<
 
     const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
+        // 261114 Red 树指针合并保护：整包写者的内存副本可能没有别的写者后来
+        // json_set 进来的 selectedChildID/parentID（流式 assistant 的 processor
+        // 收尾写、steer/queued 的 delivery 翻转）——直接整包落库会把指针抹掉，
+        // 链从这条消息断开、后续全部不可达（steer 测试实测）。落库前把库里的
+        // 指针合并回来；写者自己带的新值优先（分支改选走 appendBranch/selectVersion）。
+        const stored = Database.use((db) =>
+          db
+            .select({ data: MessageTable.data })
+            .from(MessageTable)
+            .where(eq(MessageTable.id, msg.id))
+            .get(),
+        )
+        if (stored) {
+          const prev = stored.data as MessageV2.Info
+          const mutable = msg as { selectedChildID?: MessageID; parentID?: MessageID }
+          const prevSel = (prev as { selectedChildID?: MessageID }).selectedChildID
+          if (prevSel !== undefined && mutable.selectedChildID === undefined) {
+            mutable.selectedChildID = prevSel
+          }
+          const prevParent = (prev as { parentID?: MessageID }).parentID
+          if (prevParent !== undefined && mutable.parentID === undefined && msg.role === "user") {
+            mutable.parentID = prevParent
+          }
+        }
         yield* sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg })
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
@@ -853,6 +872,12 @@ export const layer: Layer.Layer<
             if (!row) return
             const message = row.data as MessageV2.User
             const messageID = MessageID.make(row.id)
+            // 261114 Red 排队消息提交时故意不接线（appendMessage），在 claim 的
+            // 回合边界接到当时的链尾——此刻没有流式写者，接线位置即逻辑位置。
+            yield* appendLock(sessionID).withPermits(1)(
+              // Database.use 抛错按缺陷炸（die）：接线失败响得越早越好
+              Effect.sync(() => wireToChainTail(sessionID, messageID, true)),
+            )
             queuedReservations.set(sessionID, messageID)
             log.info("queue.claimed", { sessionID, messageID })
             return { ...message, id: messageID, sessionID }
@@ -897,6 +922,10 @@ export const layer: Layer.Layer<
         yield* queueLock(input.sessionID).withPermits(1)(
           Effect.gen(function* () {
             const message = yield* queuedMessage(input)
+            // 261114 Red 同 claim/promote：排队消息提交时不接线，送达边界接
+            yield* appendLock(input.sessionID).withPermits(1)(
+              Effect.sync(() => wireToChainTail(input.sessionID, input.messageID, true)),
+            )
             yield* updateMessage({ ...message.info, delivery: "steer" })
           }),
         )
@@ -955,7 +984,14 @@ export const layer: Layer.Layer<
            for (const row of rows) {
              const message = row.data as MessageV2.User
              const messageID = MessageID.make(row.id)
-             yield* updateMessage({ ...message, id: messageID, sessionID, delivery: "steer" })
+             // 261114 Red 同 claim：pending_steer 在领取边界接线
+             yield* appendLock(sessionID).withPermits(1)(
+               Effect.sync(() => wireToChainTail(sessionID, messageID, true)),
+             )
+             // 翻转前重读：上面的接线 json_set 了 parentID，陈旧副本整包重写会抹掉它
+             const fresh = yield* MessageV2.get({ sessionID, messageID }).pipe(Effect.orDie)
+             if (fresh.info.role !== "user") continue
+             yield* updateMessage({ ...fresh.info, delivery: "steer" })
              last = messageID
            }
            if (last) log.info("steer.promoted", { sessionID, count: rows.length, messageID: last })
@@ -1070,12 +1106,15 @@ export const layer: Layer.Layer<
         idMap.set(msg.info.id, newID)
 
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
-          ...msg.info,
-          sessionID: session.id,
-          id: newID,
-          ...(parentID && { parentID }),
-        })
+        // 261114 Red 树字段不随 fork 带过去：msgs 已是可见路径（线性化），源会话的
+        // 指针在 fork 里是悬空引用；fork 保持线性会话，首写时经 appendMessage 物化。
+        const cloned = yield* updateMessage((() => {
+          const info = { ...msg.info, sessionID: session.id, id: newID }
+          delete (info as { selectedChildID?: unknown }).selectedChildID
+          if (msg.info.role === "user") delete (info as { parentID?: unknown }).parentID
+          else if (parentID) (info as { parentID?: MessageID | undefined }).parentID = parentID
+          return info as MessageV2.Info
+        })())
 
         for (const part of msg.parts) {
           const p: MessageV2.Part = {
@@ -1156,32 +1195,91 @@ export const layer: Layer.Layer<
         .pipe(Effect.orElseSucceed((): Snapshot.FileDiff[] => []))
     })
 
-    const visibleChain: Interface["visibleChain"] = Effect.fn("Session.visibleChain")(function* (sessionID) {
-      const row = Database.use((db) => {
-        const leaf = db
-          .select({ leaf: SessionTable.leaf_message_id })
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-        if (!leaf?.leaf) return undefined
-        // 物化门：叶消息必须带显式树指针（单条消息的会话天然不物化，走线性）
-        const msg = db
-          .select({
-            parentID: sql<string | null>`json_extract(${MessageTable.data}, '$.parentID')`,
-            selectedChildID: sql<string | null>`json_extract(${MessageTable.data}, '$.selectedChildID')`,
-          })
+    // 261114 Red 排队消息与 steer 可并发提交，父指针的读改写必须原子（两个并发
+    // appendMessage 会都读到同一叶、后者覆盖前者的 selectedChildID，前者从链上
+    // 掉队——线性模型下无害的并发在树模型下是丢消息）。
+    const appendLocks = new Map<SessionID, Semaphore.Semaphore>()
+    const appendLock = (sessionID: SessionID) => {
+      const existing = appendLocks.get(sessionID)
+      if (existing) return existing
+      const lock = Semaphore.makeUnsafe(1)
+      appendLocks.set(sessionID, lock)
+      return lock
+    }
+
+    /**
+     * 接线原语：把 messageID 接到当前链尾（库内最新一条「已上线」消息），
+     * 并把整条历史物化为显式指针（幂等，只在未物化时执行一次）。
+     * 「已上线」= delivery 不是 queued/pending_steer——排队消息在提交时故意
+     * 不接线（裸行），到 claim/promote 的回合边界再接：那时链尾是已收尾的
+     * assistant，不存在与流式写者的竞争（assistant 由 processor 整包重写，
+     * 旁路写者的字段会被下一次整包写吞掉，json_set 也一样）。
+     * ⚠️ InfoData 两个陷阱（实测各炸过一次）：回写 WHERE 必须用行 id 列
+     * （data JSON 无 id，用 info.id 当条件 = 静默空转）；喂树函数前必须
+     * 水合 id/sessionID（否则 parentID/selectedChildID 派生全 undefined）。
+     */
+    const wireToChainTail = (sessionID: SessionID, messageID: MessageID, withParentID: boolean) =>
+      Database.use((db) => {
+        const rows = db
+          .select({ id: MessageTable.id, data: MessageTable.data })
           .from(MessageTable)
-          .where(eq(MessageTable.id, leaf.leaf))
-          .get()
-        if (!msg || (msg.parentID === null && msg.selectedChildID === null)) return undefined
-        return leaf.leaf
+          .where(eq(MessageTable.session_id, sessionID))
+          .orderBy(MessageTable.time_created, MessageTable.id)
+          .all()
+        if (rows.length === 0) return
+        // 物化门：最新一条已上线消息已带指针 → 全会话已物化（claim/append 按
+        // FIFO 顺序逐条接线，不会出现中段裸行），跳过；否则整条历史一次性物化
+        // （升级后/首写前必经；排队/待领行不参与——它们的逻辑位置在接线时才定）。
+        const online = rows.filter((row) => {
+          const delivery = (row.data as { delivery?: string }).delivery
+          return delivery !== "queued" && delivery !== "pending_steer"
+        })
+        const tail = online.at(-1)
+        if (!tail) return
+        const tailInfo = tail.data as MessageV2.Info
+        const tailWired =
+          tailInfo.role === "user"
+            ? tailInfo.parentID !== undefined || tailInfo.selectedChildID !== undefined
+            : tailInfo.selectedChildID !== undefined
+        if (!tailWired) {
+          const nodes = online.map((row) => ({
+            id: MessageID.make(row.id),
+            info: { ...(row.data as MessageV2.Info), id: MessageID.make(row.id), sessionID } as MessageV2.Info,
+          }))
+          for (const node of materialize(nodes)) {
+            db.update(MessageTable).set({ data: node.info }).where(eq(MessageTable.id, node.id)).run()
+          }
+        }
+        if (tail.id === messageID) return
+        // 链尾的 selectedChildID 指向新成员。json_set 而非整包重写：外科手术式
+        // 更新不吞同一行上其他写者的字段。
+        db.run(
+          sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.selectedChildID', ${messageID}) WHERE ${MessageTable.id} = ${tail.id}`,
+        )
+        // 用户消息的树父 = 线性前驱（任何角色）；assistant 的 parentID 语义是
+        // 「触发的 user」，归调用方，接线不碰。
+        if (withParentID) {
+          db.run(
+            sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.parentID', ${tail.id}) WHERE ${MessageTable.id} = ${messageID}`,
+          )
+        }
       })
-      if (!row) return undefined
-      return {
-        wanted: row,
-        onStall: (wanted) => log.warn("message-tree.chain.stall", { sessionID, wanted }),
-      } satisfies MessageV2.ChainWalk
-    })
+
+    const appendMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
+      appendLock(msg.sessionID).withPermits(1)(
+        Effect.gen(function* () {
+          const delivery = (msg as { delivery?: string }).delivery
+          // queued/pending_steer 提交时不接线（见 wireToChainTail 注释），
+          // claim/promote 在回合边界接线。assistant 不碰 parentID（触发 user
+          // 语义归调用方），只接 selectedChildID 链。
+          if (delivery !== "queued" && delivery !== "pending_steer") {
+            // 接线失败按缺陷炸（静默断链 = 上下文截断），不做 ignore 兜底
+            yield* Effect.sync(() => wireToChainTail(msg.sessionID, msg.id, msg.role === "user"))
+          }
+          yield* updateMessage(msg)
+          return msg
+        }).pipe(Effect.withSpan("Session.appendMessage")),
+      )
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
       if (input.limit) {
@@ -1208,8 +1306,7 @@ export const layer: Layer.Layer<
       //   会话级叶指针反向走链出可见路径（时序探测在重根会话会拿错根）。对存量
       //   数据两者恒等且零变更；Phase 2 写入方落地后这里成为「读当前分支」的
       //   咽喉点。决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
-      const chain = yield* visibleChain(input.sessionID)
-      return visiblePath(result.reverse(), chain ? { leafID: chain.wanted } : undefined)
+      return visiblePath(result.reverse())
     })
 
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
@@ -1301,7 +1398,7 @@ export const layer: Layer.Layer<
       clearRevert,
       setSummary,
       diff,
-      visibleChain,
+      appendMessage,
       messages,
       children,
       remove,

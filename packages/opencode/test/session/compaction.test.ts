@@ -136,7 +136,9 @@ function breakerProviderCfg(url: string) {
 function createUserMessage(sessionID: SessionID, text: string, model: MessageV2.User["model"] = ref) {
   return Effect.gen(function* () {
     const ssn = yield* SessionNs.Service
-    const msg = yield* ssn.updateMessage({
+    // 261114 Red seeding 走接线口（写入契约：新建消息必经 appendMessage，
+    // 裸行的半物化状态会让 visiblePath 的树模式 walk 断链）
+    const msg = yield* ssn.appendMessage({
       id: MessageID.ascending(),
       role: "user",
       sessionID,
@@ -157,7 +159,7 @@ function createUserMessage(sessionID: SessionID, text: string, model: MessageV2.
 
 function createAssistantMessage(sessionID: SessionID, parentID: MessageID, root: string) {
   return SessionNs.Service.use((ssn) =>
-    ssn.updateMessage({
+    ssn.appendMessage({
       id: MessageID.ascending(),
       role: "assistant",
       sessionID,
@@ -183,7 +185,7 @@ function createAssistantMessage(sessionID: SessionID, parentID: MessageID, root:
 function createSummaryAssistantMessage(sessionID: SessionID, parentID: MessageID, root: string, text: string) {
   return SessionNs.Service.use((ssn) =>
     Effect.gen(function* () {
-      const msg = yield* ssn.updateMessage({
+      const msg = yield* ssn.appendMessage({
         id: MessageID.ascending(),
         role: "assistant",
         sessionID,
@@ -219,7 +221,7 @@ function createSummaryAssistantMessage(sessionID: SessionID, parentID: MessageID
 function createCompactionMarker(sessionID: SessionID) {
   return SessionNs.Service.use((ssn) =>
     Effect.gen(function* () {
-      const msg = yield* ssn.updateMessage({
+      const msg = yield* ssn.appendMessage({
         id: MessageID.ascending(),
         role: "user",
         model: ref,
@@ -2046,6 +2048,7 @@ describe("session.compaction.process", () => {
         yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
 
         const part = yield* readCompactionPart(session.id)
+        console.error("DEBUG-TAIL", JSON.stringify({ got: part?.tail_start_id, want: keep.id, msgs: (yield* SessionNs.use.messages({ sessionID: session.id })).map((m) => m.info.role + ":" + m.info.id.slice(-6)) }))
         expect(part?.type).toBe("compaction")
         expect(part?.tail_start_id).toBe(keep.id)
         expect(captured).toContain("zzzz")

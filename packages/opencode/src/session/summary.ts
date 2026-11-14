@@ -260,8 +260,17 @@ export const layer = Layer.effect(
       if (!target || target.info.role !== "user") return
       const msgDiffs = yield* diffSpan(turnSpan, "turn", input.messageID)
       if (!msgDiffs) return
-      target.info.summary = { ...target.info.summary, diffs: capPatches(msgDiffs, MAX_TURN_PATCH_BYTES) }
-      yield* sessions.updateMessage(target.info)
+      // 261114 Red 写前重读：diffSpan（git 操作）期间接线可能已写入树指针，
+      // 陈旧副本整包重写会抹掉它（链断）。
+      const freshTarget = yield* sessions
+        .messages({ sessionID: input.sessionID })
+        .pipe(
+          Effect.map((msgs) => msgs.find((m) => m.info.id === input.messageID)),
+          Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+        )
+      if (!freshTarget || freshTarget.info.role !== "user") return
+      freshTarget.info.summary = { ...freshTarget.info.summary, diffs: capPatches(msgDiffs, MAX_TURN_PATCH_BYTES) }
+      yield* sessions.updateMessage(freshTarget.info)
       if (turnSpan) turnSpans.set(input.messageID, turnSpan)
     })
 

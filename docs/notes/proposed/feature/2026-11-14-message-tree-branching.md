@@ -150,7 +150,8 @@ check:openapi-drift 一致(SDK 已重生成)。
 ### Phase 2 开工清单(下会话)
 
 1. ~~`appendBranch`/`selectVersion` 写入侧~~ ✅ 2026-11-14(1fa319d1)。
-2. ~~读侧:prompt 咽喉点/叶指针/链式过滤~~ ✅ 2026-11-14(见下 2c 实现记录)。
+2. ~~读侧:prompt 咽喉点/链式过滤~~ ✅ 2026-11-14(初版反向走链被 2c' 推翻,
+   见下两节实现记录)。
 3. 写入方接线(2b):prompt/compaction 的消息创建点改 appendBranch 语义
    (新消息 parentID=当前叶、旧叶 selectedChildID 改指、会话叶指针推进),
    首写先 materialize;edit-resend/regenerate 改落分支而非截断。
@@ -158,9 +159,94 @@ check:openapi-drift 一致(SDK 已重生成)。
 5. 客户端切换器(Phase 3):TUI/GUI ‹2/3› 切换、sync 事件、GUI 分页语义
    (handlers/messages 直连 page 与 limit 路径树化)。
 
-### Phase 2 实现记录(2026-11-14,2c 读侧)
+### Phase 2 实现记录(2026-11-14,2c' 读侧——推翻 2c 的反向走链)
 
-**会话级叶指针,不是 root 指针。** prompt 咽喉点的压缩 early-stop 是
+**2c 的叶指针 + parentID 反向走链被推翻,改正向 selectedChildID 链。**
+2c 落地后跑写入方(2b)回归,split-turn 用例抓到反向走链的根本歧义:
+**assistant.parentID 的语义是「触发的 user 消息」,连续多条 assistant
+共享同一 user(重试/同轮多段,测试里两个 assistant 同挂一个 user)时,
+它≠线性前驱**——从叶沿 parentID 反向收集会直接跳过中间的 assistant,
+路径静默缺消息。正向 selectedChildID 链没有这个歧义(它是唯一在写入时
+就按线性序接好的指针),demo 也只用正向。
+
+连带修正,全部记录在案:
+
+- **`visiblePath` 只走正向**(root 可选指定,缺省时序探测;压缩后缀场景
+  首条=边界消息,探测自然落对)。删除 leafID 反向模式。
+- **`filterCompactedOrdered` 的 ChainWalk 参数整体移除**(2c 的流式走链
+  与 early-stop 共享一趟扫描的设计随反向走链作废);改为调用方在压缩
+  结果上做后置 `visiblePath` 过滤——early-stop 语义不变(后缀仍到边界
+  为止),线性会话过滤恒等。prompt 主循环、native history、compaction
+  校验点三处接入;native 在有活跃 DCP 块时**不做**路径过滤(覆盖段被
+  下推过滤后链在 anchor 断头,跨段续走需要按块改道,留给分支写入方
+  落地时做,宁可线性旧行为也不静默给残缺路径)。
+- **`Session.visibleChain` 与 leaf_message_id 的全部代码路径删除**(列在
+  迁移过的 DB 里残留,无引用无害;迁移文件保留)。正向走链不需要会话级
+  指针;重根会话(编辑首条消息)落地时加 root_message_id。
+- **appendMessage 的两个 InfoData 陷阱**(各实测炸一次,注释已写进源码):
+  ① data JSON 是 Omit<id|sessionID>,回写 WHERE 用 info.id = undefined =
+  静默空转;② 裸 row.data 喂树函数,id 缺失让 parentID/selectedChildID
+  派生全 undefined——必须先水合。
+- **appendMessage 写序**保持:新行(暂不可达无害)→ 父 selectedChildID
+  → 收尾;并发提交用 per-session 信号量串行(排队+steer 并发追加在
+  线性模型无害、树模型丢消息)。
+
+验证:message-tree 22 例(新增连续 assistant 回归)、prompt+compaction+
+session 232、native/context/session/processor/pagination 等全绿;
+typecheck 0;SDK 重生成,drift 一致(leafMessageID 移出 OpenAPI)。
+
+### Phase 2 实现记录(2026-11-14,2b' 写入方接线)
+
+**接线原语 `Session.appendMessage`**:所有新建消息(user/assistant/压缩
+trigger/摘要/followup)必经,裸 updateMessage 创建的行没有树指针,链在那里
+断、上下文静默截断。接线 = appendBranch 的线性特例:
+
+- **parent 解析 = 库内最新一条「已上线」消息**(delivery 非 queued/
+  pending_steer)。用户消息 parentID = 该前驱(树父语义 = 线性前驱);
+  **assistant 的 parentID 由调用方给出、接线不碰**——它的语义是「触发的
+  user」,多步回合里每步一条 assistant、全部指向同一 user,接线若改写
+  成前一个 assistant 就破坏了全仓依赖这层语义的代码(failedCompactions、
+  hasUnfinishedTurn、边界判定 `lastAssistant.parentID === lastUser.id`)。
+- **selectedChildID 链接用 json_set** 外科手术式写入(链尾可能是别的
+  写者刚落库的行,整包重写会吞别人的字段),写序:新行(暂不可达无害)→
+  链尾 sel → 新行 parentID,中途崩溃各自收敛、不产生链上断点。
+- **并发提交**用 per-session 信号量串行:排队+steer 并发追加在线性模型
+  无害(先后落库即可),树模型下父指针读改写竞态 = 消息从链上掉队。
+- **queued/pending_steer 提交时故意不接线**,claim/promote/deliver 的
+  回合边界再接:边界处没有流式写者,接线位置即逻辑位置(尾)。steer 的
+  语义是注入进行中的轮次,但其存储位置本来就 mid-turn,链上排在当前
+  step 之后、下一步 assistant 之前,与旧行为的上下文顺序一致。
+
+**四层根因(全部实测抓到,修复各有针对性)**:
+
+1. **InfoData 两个陷阱**:data JSON 是 `Omit<Info,"id"|"sessionID">`——
+   回写 WHERE 用 `info.id` = undefined = 全部静默空转(链断在首行);
+   裸 row.data 喂树函数,id 缺失让 materialize 派生全 undefined。
+   修:回写用行 id 列;喂树函数前水合。
+2. **整包重写吞指针**:流式 assistant 的 processor 收尾写、steer/queued
+   的 delivery 翻转,都持有陈旧内存副本,整包落库会抹掉别的写者后来
+   json_set 进 selectedChildID 的指针——steer 行被两次翻转抹到链断,
+   后续全部不可达,循环空转。修(系统性):`updateMessage` 落库前把库里
+   的树指针合并回来(写者自带的新值优先,分支改选走
+   appendBranch/selectVersion);三个高危翻转点(delivered 翻转、promote
+   翻转、summary diffs 回写)另加写前重读。
+3. **visiblePath 误跑 native 路径**:DCP 覆盖段被下推过滤后,链在 anchor
+   处断头(覆盖的前驱缺席),msgs 塌缩成 1。修:native 的过滤在
+   history 内部且有「无活跃块」守卫;有活跃块时保持线性旧行为,跨覆盖段
+   续走留给分支写入方落地时做。
+4. **测试 seeding 半物化**:compaction 测试的 fixture 用裸 updateMessage
+   造历史 + 一条接线消息 = 半物化混合态,visiblePath 的树模式 walk 在
+   裸行断链。修:seeding helper 改走 appendMessage(与写入契约一致)。
+
+验证:prompt 123 全绿(此前 115/43/23/13/8 fail 逐层清零)、compaction
+101 全绿、session/message-tree/messages-pagination 87 全绿;typecheck 0;
+SDK 重生成,drift 一致。模型可见四问:接线只改「哪些消息进入上下文」,
+线性会话恒等、逐字节零变化;无注入项变化;token/KV cache/上限均无影响。
+
+### Phase 2 实现记录(2026-11-14,2c 初版——已被 2c' 部分推翻,留档)
+
+**【已被 2c' 推翻的部分:叶指针与反向走链;保留有效的部分:物化门与
+接线原语。】** prompt 咽喉点的压缩 early-stop 是
 newest-first 流式读:从叶沿 parentID 反向收集与分页天然组合,链碰到压缩
 边界即停;root 指针的正向走链要全量读,会杀掉 261017 那次读下推的优化
 (实测 53 页→14 页)。叶指针也不可从消息行推导:切走后废弃分支的内部

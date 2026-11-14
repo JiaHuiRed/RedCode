@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Option } from "effect"
 import { Session as SessionNs } from "@/session/session"
-import { Database, eq } from "@/storage/db"
-import { SessionTable } from "../../src/session/session.sql"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
@@ -647,13 +645,13 @@ describe("Session.messages", () => {
     }),
   )
 
-  // 261114 Red 消息树分支：迁移 backfill 把存量线性会话的叶指针指向时序最新一条；
-  // 新会话的叶由写入方维护（2b）。这里直接置列验证读侧反向走链与线性等价。
-  it.instance("walks the visible path backward from the leaf pointer", () =>
+  // 261114 Red 消息树分支：物化指针（写入方 2b 形态）下读侧正向走链仍与线性序
+  //   逐条一致（Phase 1 等价性在树形态数据上成立）。
+  it.instance("keeps linear order on materialized pointers via the forward walk", () =>
     withSession(({ session, sessionID }) =>
       Effect.gen(function* () {
         const ids = yield* fill(sessionID, 4)
-        // 写入方形态：叶指针 + 每条消息物化 parentID/selectedChildID（除首条无父）
+        // 写入方形态：每条消息物化 parentID/selectedChildID（除首条无父）
         for (let i = 0; i < ids.length; i++) {
           const msg = yield* MessageV2.get({ sessionID, messageID: ids[i]! }).pipe(Effect.orDie)
           const info = msg.info as { parentID?: MessageID; selectedChildID?: MessageID }
@@ -661,17 +659,6 @@ describe("Session.messages", () => {
           if (i < ids.length - 1) info.selectedChildID = ids[i + 1]!
           yield* session.updateMessage(msg.info)
         }
-        Database.use((db) =>
-          db
-            .update(SessionTable)
-            .set({ leaf_message_id: ids.at(-1) })
-            .where(eq(SessionTable.id, sessionID))
-            .run(),
-        )
-        // 物化 + 叶指针齐备：visibleChain 应返回走链状态
-        const chain = yield* session.visibleChain(sessionID)
-        expect(chain?.wanted).toBe(ids.at(-1))
-        // 链走状态下读侧仍与线性序逐条一致（Phase 1 等价性在树形态数据上成立）
         const result = yield* session.messages({ sessionID })
         expect(result.map((item) => item.info.id)).toEqual(ids)
       }),

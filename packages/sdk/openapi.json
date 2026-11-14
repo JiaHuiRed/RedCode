@@ -13046,10 +13046,6 @@
             },
             "required": ["messageID"],
             "additionalProperties": false
-          },
-          "leafMessageID": {
-            "type": "string",
-            "pattern": "^msg"
           }
         },
         "required": ["id", "slug", "projectID", "directory", "title", "version", "time"],
@@ -16965,10 +16961,6 @@
             "required": ["messageID"],
             "additionalProperties": false
           },
-          "leafMessageID": {
-            "type": "string",
-            "pattern": "^msg"
-          },
           "project": {
             "anyOf": [
               {
@@ -19393,17 +19385,6 @@
                         },
                         "required": ["messageID"],
                         "additionalProperties": false
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "leafMessageID": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^msg"
                       },
                       {
                         "type": "null"
@@ -22413,10 +22394,6 @@
                     },
                     "required": ["messageID"],
                     "additionalProperties": false
-                  },
-                  "leafMessageID": {
-                    "type": "string",
-                    "pattern": "^msg"
                   }
                 },
                 "additionalProperties": false

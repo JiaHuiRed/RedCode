@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { MessageV2 } from "../../src/session/message-v2"
+import type { MessageV2 } from "../../src/session/message-v2"
 import { MessageID } from "../../src/session/schema"
 import {
   appendBranch,
@@ -129,40 +129,6 @@ describe("session.message-tree.visiblePath", () => {
     expect(visiblePath([])).toStrictEqual([])
   })
 
-  test("leafID walks backward via parentID and reverses into the path", () => {
-    // u1 → a1 → u2 → a2（选中链）+ u2b 弃用支线；数组序是创建序
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const u2 = treeUser(a1.info.id as MessageID)
-    const a2 = assistant(u2.info.id as MessageID)
-    const u2b = treeUser(a1.info.id as MessageID)
-    const a2b = assistant(u2b.info.id as MessageID)
-    const nodes = [u1, a1, u2, a2, u2b, a2b]
-    setChild(u1, a1)
-    setChild(a1, u2)
-    setChild(u2, a2)
-    // 弃用支线内部指针原样保留（demo 的「恢复该版本已选后续」语义）
-    setChild(u2b, a2b)
-    // 叶指针指向选中链的尾 → 反向走链 = [u1, a1, u2, a2]；时序探测会拿错
-    expect(visiblePath(nodes, { leafID: a2.info.id as MessageID }).map((n) => n.info.id)).toStrictEqual(
-      ids([u1, a1, u2, a2]),
-    )
-    // 指向弃用支线叶 → 该支线即当时可见路径
-    expect(visiblePath(nodes, { leafID: a2b.info.id as MessageID }).map((n) => n.info.id)).toStrictEqual(
-      ids([u1, a1, u2b, a2b]),
-    )
-  })
-
-  test("leafID takes precedence over forward root detection", () => {
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const nodes = [u1, a1]
-    setChild(u1, a1)
-    // 无 parentID 的 root：反向走链在 root 停止
-    expect(visiblePath(nodes, { leafID: a1.info.id as MessageID }).map((n) => n.info.id)).toStrictEqual(
-      ids([u1, a1]),
-    )
-  })
 })
 
 describe("session.message-tree.materialize", () => {
@@ -230,7 +196,7 @@ describe("session.message-tree.appendBranch", () => {
     expect(result.newRootID).toBe(u1b.info.id)
     expect(u1b.info.parentID).toBeUndefined()
     // 时序探测拿错根（u1 更老）——重根会话必须传会话级指针
-    expect(visiblePath([...nodes, u1b], { rootID: u1b.info.id as MessageID }).map((n) => n.info.id)).toStrictEqual(
+    expect(visiblePath([...nodes, u1b], u1b.info.id as MessageID).map((n) => n.info.id)).toStrictEqual(
       ids([u1b]),
     )
   })
@@ -281,7 +247,7 @@ describe("session.message-tree.selectVersion", () => {
     const result = selectVersion(nodes, u1b.info.id as MessageID)
     expect(result.changed).toStrictEqual([])
     expect(result.newRootID).toBe(u1b.info.id)
-    expect(visiblePath(nodes, { rootID: u1b.info.id as MessageID }).map((n) => n.info.id)).toStrictEqual(ids([u1b]))
+    expect(visiblePath(nodes, u1b.info.id as MessageID).map((n) => n.info.id)).toStrictEqual(ids([u1b]))
   })
 
   test("branchless history rejects switching (nothing to switch between)", () => {
@@ -292,107 +258,3 @@ describe("session.message-tree.selectVersion", () => {
 })
 
 
-// 261114 Red 链式过滤（filterCompactedOrdered 的 chain 走）纯函数用例：走链与
-// 压缩边界/DCP 覆盖段共享一趟扫描的语义在此钉死。DB 级组合由 prompt 套件回归。
-describe("session.message-tree.chainWalk", () => {
-  const withParts = (node: Node, parts: MessageV2.Part[] = []): MessageV2.WithParts => ({
-    info: node.info,
-    parts,
-  })
-  const textPart = (text: string): MessageV2.Part => ({ type: "text", text }) as MessageV2.Part
-  const compactionPart = (tailStartID?: string): MessageV2.Part =>
-    ({
-      type: "compaction",
-      auto: true,
-      ...(tailStartID ? { tail_start_id: tailStartID } : {}),
-    }) as MessageV2.Part
-
-  test("linear materialized chain walks to the identical set (equivalence)", () => {
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const u2 = user()
-    const a2 = assistant(u2.info.id as MessageID)
-    materialize([u1, a1, u2, a2])
-    // newest-first 流（stream() 的产出序）
-    const newestFirst = [a2, u2, a1, u1].map((n) => withParts(n, [textPart("x")]))
-    const chain: MessageV2.ChainWalk = { wanted: a2.info.id as MessageID }
-    const result = MessageV2.filterCompactedOrdered(newestFirst, chain)
-    expect(result.map((m) => m.info.id)).toStrictEqual(ids([u1, a1, u2, a2]))
-    expect(chain.wanted).toBeUndefined()
-  })
-
-  test("abandoned branch members are excluded from the chain", () => {
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const a2 = assistant(u1.info.id as MessageID)
-    const u2b = treeUser(a1.info.id as MessageID)
-    const a2b = assistant(u2b.info.id as MessageID)
-    setChild(u1, a1)
-    setChild(a1, u2b)
-    // 流含全部存储行（弃用的 a2 也在），走链按 wanted 只收选中分支
-    const newestFirst = [a2, a2b, u2b, a1, u1].map((n) => withParts(n, [textPart("x")]))
-    const chain: MessageV2.ChainWalk = { wanted: a2b.info.id as MessageID }
-    const result = MessageV2.filterCompactedOrdered(newestFirst, chain)
-    expect(result.map((m) => m.info.id)).toStrictEqual(ids([u1, a1, u2b, a2b]))
-  })
-
-  test("compaction boundary with tail_start_id keeps the retained tail and stops the walk", () => {
-    // 时序 u1,a1,u2,a2,c1(边界,tail_start=u2),s1(summary),u3,a3 —— 同
-    // messages-pagination 的 retains-original-tail fixture 布局；物化补全指针
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const u2 = user()
-    const a2 = assistant(u2.info.id as MessageID)
-    const c1 = user()
-    const s1 = assistant(c1.info.id as MessageID, { summary: true, finish: "stop" } as Partial<MessageV2.Info>)
-    const u3 = user()
-    const a3 = assistant(u3.info.id as MessageID)
-    materialize([u1, a1, u2, a2, c1, s1, u3, a3])
-    const newestFirst = [a3, u3, s1, c1, a2, u2, a1, u1].map((n) => withParts(n, [textPart("x")]))
-    // 边界部件挂在 c1 上；s1 是完整摘要 → completed.add(c1) → c1 命中边界 → retain=u2
-    const withCompaction = newestFirst.map((m) =>
-      m.info.id === c1.info.id ? withParts(c1, [compactionPart(u2.info.id)]) : m,
-    )
-    const chain: MessageV2.ChainWalk = { wanted: a3.info.id as MessageID }
-    const result = MessageV2.filterCompactedOrdered(withCompaction, chain)
-    // 与无 chain 版本同布局：[c1, s1, u2, a2, u3, a3]（边界重排 + 保留 tail）
-    expect(result.map((m) => m.info.id)).toStrictEqual(ids([c1, s1, u2, a2, u3, a3]))
-  })
-
-  test("stall fires when the chain cannot reach the root", () => {
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const u2 = treeUser(a1.info.id as MessageID)
-    // u2 的父指针指向缺失消息（写入方漏接线的形态）
-    ;(u2.info as { parentID?: MessageID }).parentID = "msg_missing" as unknown as MessageID
-    setChild(u1, u2)
-    const stream = [u2, u1].map((n) => withParts(n, [textPart("x")]))
-    const stalls: string[] = []
-    const chain: MessageV2.ChainWalk = {
-      wanted: u2.info.id as MessageID,
-      onStall: (wanted) => stalls.push(wanted),
-    }
-    const result = MessageV2.filterCompactedOrdered(stream, chain)
-    // 链只收成员：u1 在断点之下，不进输出；stall 带断点 id 响一声
-    expect(result.map((m) => m.info.id)).toStrictEqual(ids([u2]))
-    expect(stalls).toStrictEqual(["msg_missing"])
-  })
-
-  test("detour crosses a DCP-covered span and resumes at the anchor", () => {
-    // u1,a1,u2,a2；块覆盖 [a1..u2]，anchor=a1（范围最旧、流过滤器豁免）
-    const u1 = user()
-    const a1 = assistant(u1.info.id as MessageID)
-    const u2 = treeUser(a1.info.id as MessageID)
-    const a2 = assistant(u2.info.id as MessageID)
-    // native 流形态：covered 非 anchor（u2）已被下推过滤，不在流里
-    const stream = [a2, a1, u1].map((n) => withParts(n, [textPart("x")]))
-    const chain: MessageV2.ChainWalk = {
-      wanted: a2.info.id as MessageID,
-      skip: (id) => (id === u2.info.id ? (a1.info.id as MessageID) : id),
-    }
-    const result = MessageV2.filterCompactedOrdered(stream, chain)
-    // a2 → (parent u2 被覆盖 → 改道 anchor a1) → a1 → u1；输出为时序（reverse 后）
-    expect(result.map((m) => m.info.id)).toStrictEqual(ids([u1, a1, a2]))
-    expect(chain.wanted).toBeUndefined()
-  })
-})

@@ -80,6 +80,7 @@ import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as NativeRuntime from "./native-context-runtime"
+import { visiblePath } from "./message-tree"
 import * as ContextCompaction from "./context-compaction"
 import { usable as usableContext } from "./overflow"
 import { estimateModelMessages } from "./image-tokens"
@@ -579,7 +580,8 @@ export const layer = Layer.effect(
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
-      const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
+      // 261114 Red 接线口（同主循环）：parentID 由 appendMessage 解析
+      const assistantMessage: MessageV2.Assistant = yield* sessions.appendMessage({
         id: MessageID.ascending(),
         role: "assistant",
         parentID: lastUser.id,
@@ -745,7 +747,7 @@ export const layer = Layer.effect(
         agent: lastUser.agent,
         model: lastUser.model,
       }
-      yield* sessions.updateMessage(summaryUserMsg)
+      yield* sessions.appendMessage(summaryUserMsg)
       yield* sessions.updatePart({
         id: PartID.ascending(),
         messageID: summaryUserMsg.id,
@@ -1327,7 +1329,8 @@ export const layer = Layer.effect(
         })
       })
 
-      yield* sessions.updateMessage(info)
+      // 261114 Red 消息树分支：新建消息统一走 appendMessage 接线
+      yield* sessions.appendMessage(info)
       for (const part of parts) yield* sessions.updatePart(part)
       // 260820 cc 这里原本有一段 66 行的 reduce，把 parts 归并成 text/files/agents/references/
       // synthetic 五个数组，专供 688c31cf 摘掉的那两处 events.publish(SessionEvent.Prompted /
@@ -1487,14 +1490,14 @@ export const layer = Layer.effect(
         const oldPin = _caches.msgPin.get(sessionID)
         if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
           settlePromptCaches(sessionID, "native-compaction")
-        // 261114 Red 消息树分支：从会话级叶指针反向走链出可见路径（与压缩 early-stop
-        //   共享一趟扫描，见 MessageV2.ChainWalk）。叶缺失/未物化时 visibleChain 返回
-        //   undefined，不传 chain，行为与旧版逐字节一致。链断（扫描耗尽没到 root）
-        //   由 onStall 响一声——静默吞引用违反本仓红线。
-        const chain = yield* sessions.visibleChain(sessionID).pipe(Effect.orDie)
+        // 261114 Red 消息树分支：legacy 路径在压缩后缀上做正向可见路径过滤
+        //   （selectedChildID 链，见 message-tree.visiblePath）。native 路径的
+        //   过滤在 history 内部且有活跃块守卫——覆盖段缺席会让链在 anchor 处
+        //   断头（seed assistant 被覆盖时走链停在首条，msgs 塌缩成 1，实测），
+        //   跨覆盖段续走留给分支写入方落地时做。
         let msgs = nativeSpec.enabled
-          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks, chain)
-          : yield* MessageV2.filterCompactedEffect(sessionID, chain)
+          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks)
+          : visiblePath(yield* MessageV2.filterCompactedEffect(sessionID))
         // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
         const lastNativeSummary = msgs.findLast(
           (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>
@@ -1825,7 +1828,9 @@ export const layer = Layer.effect(
           time: { created: Date.now() },
           sessionID,
         }
-        yield* sessions.updateMessage(msg)
+        // 261114 Red 接线口：assistant 落库走 appendMessage（parentID 保持调用方
+        // 语义「触发的 user」，接线只接 selectedChildID 链）
+        yield* sessions.appendMessage(msg)
 
         const finalizeInterruptedAssistant = Effect.gen(function* () {
           if (msg.time.completed) return
@@ -2429,7 +2434,12 @@ export const layer = Layer.effect(
               }
               for (const msg of visibleMsgs) {
                 if (msg.info.role !== "user" || msg.info.delivery !== "steer") continue
-                yield* sessions.updateMessage({ ...msg.info, delivery: "delivered" })
+                // 261114 Red 翻转前必须重读：msgs 是组装时的快照，期间接线
+                // （wireToChainTail 的 json_set）可能已写入树指针——用陈旧副本
+                // 整包重写会把指针抹掉，链从这条消息断开（steer 测试实测）。
+                const fresh = yield* MessageV2.get({ sessionID, messageID: msg.info.id }).pipe(Effect.orDie)
+                if (fresh.info.role !== "user") continue
+                yield* sessions.updateMessage({ ...fresh.info, delivery: "delivered" })
               }
             }),
           )

@@ -33,32 +33,22 @@ export function hasExplicitBranches(messages: readonly WithInfo[]): boolean {
 
 /**
  * 可见路径：线性历史（无显式树字段）原序返回（同一数组引用，零分配零变更）；
- * 树模式走链，悬空指针与环都按「路径到此为止」终止——步数上界就是消息数，
- * 不需要额外防环结构。输入必须是 MessageV2.page 的规范序（time_created, id 升序）。
+ * 树模式从 root 沿 selectedChildID 正向走链，悬空指针与环都按「路径到此为止」
+ * 终止——步数上界就是消息数，不需要额外防环结构。
+ * 输入必须是规范序（time_created, id 升序），或「压缩边界起的时序后缀」
+ * （filterCompactedOrdered 的输出；此时首条=边界消息，root 探测自然落在它，
+ * 链从边界继续，边界以下已折叠无需走）。
  *
- * 走链方向二选一：
- * - leafID（首选）：从会话级叶指针沿 parentID 反向收集再反转。与 prompt 咽喉点
- *   的 newest-first 流式读同构，是唯一能与压缩 early-stop 组合的走法；发生过
- *   重根的会话必须走这条（时序探测拿错根）。
- * - 无 leafID：正向从 root 走 selectedChildID。root 按时序探测（第一条无树父的
- *   user）——只适用于未重根会话。
+ * ⚠️ 只走正向（selectedChildID），不走 parentID 反向：assistant.parentID 的
+ * 语义是「触发的 user 消息」，连续多条 assistant 共享同一 user（重试/同轮
+ * 多段）时它≠线性前驱，反向走链会把中间的 assistant 静默丢出路径（实测
+ * split-turn 用例抓到）。selectedChildID 是唯一无歧义的链。
+ * rootID 供重根会话（编辑首条消息）显式指定；未重根会话时序探测即可。
  */
-export function visiblePath<T extends WithInfo>(
-  messages: T[],
-  pointer?: { leafID?: MessageID; rootID?: MessageID },
-): T[] {
+export function visiblePath<T extends WithInfo>(messages: T[], rootID?: MessageID): T[] {
   if (messages.length === 0 || !hasExplicitBranches(messages)) return messages
   const byId = new Map(messages.map((m) => [m.info.id, m]))
-  if (pointer?.leafID) {
-    const path: T[] = []
-    let node = byId.get(pointer.leafID)
-    for (let i = 0; i < messages.length && node; i++) {
-      path.push(node)
-      node = node.info.parentID ? byId.get(node.info.parentID) : undefined
-    }
-    return path.reverse()
-  }
-  const root = (pointer?.rootID && byId.get(pointer.rootID)) ||
+  const root = (rootID && byId.get(rootID)) ||
     messages.find((m) => m.info.role === "user" && m.info.parentID === undefined) ||
     messages[0]!
   const path: T[] = []
@@ -175,7 +165,7 @@ export function selectVersion<T extends WithInfo>(
   const parentID = target.info.parentID
   // 根版本的切换（target 自身无树父）：任何根兄弟都可成为新 root
   if (parentID === undefined) return { changed: [], newRootID: messageID }
-  const path = visiblePath(messages, { rootID })
+  const path = visiblePath(messages, rootID)
   if (!path.some((m) => m.info.id === parentID)) return { changed: [] }
   const parent = messages.find((m) => m.info.id === parentID)
   if (!parent) throw new Error(`selectVersion: parent message ${parentID} not found in session`)

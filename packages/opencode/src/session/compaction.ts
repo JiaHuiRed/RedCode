@@ -4,6 +4,7 @@ import * as Session from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
+import { visiblePath } from "./message-tree"
 import { Token } from "@/util/token"
 import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
@@ -593,7 +594,9 @@ export const layer = Layer.effect(
           time: { created: Date.now() },
         }
         summaryMessageID = msg.id
-        yield* session.updateMessage(msg)
+        // 261114 Red 消息树分支：native 摘要同样走接线口（首轮审计只抓到
+        // updateMessage({...}) 内联形态，变量形态的创建点漏了两处——重查补齐）
+        yield* session.appendMessage(msg)
         const active = ContextCompaction.list(input.sessionID)
         // 261010 Red 选段锚点用 provider 实报的完整请求（触发口径），不是历史粗估——
         // 现场 250k 实报被 171k 粗估顶替后，回收需求只剩 27k，7 条消息就提前收工。
@@ -763,7 +766,8 @@ export const layer = Layer.effect(
         })
         mark("finalize")
         if (input.auto || hasUnfinishedTurn(input.messages, input.parentID)) {
-          const followup = yield* session.updateMessage({
+          // 261114 Red 消息树分支：新建消息走接线口（下同）
+          const followup = yield* session.appendMessage({
             ...userMessage, id: MessageID.ascending(), time: { created: Date.now() },
           })
           yield* session.updatePart({
@@ -854,7 +858,7 @@ export const layer = Layer.effect(
         // completedCompactions 都要求 finish 且无 error，失败标记不会被当成压缩结果。
         const now = Date.now()
         const context = yield* InstanceState.context
-        yield* session.updateMessage({
+        yield* session.appendMessage({
           id: MessageID.ascending(),
           role: "assistant",
           parentID: input.parentID,
@@ -986,7 +990,8 @@ export const layer = Layer.effect(
           created: Date.now(),
         },
       }
-      yield* session.updateMessage(msg)
+      // 261114 Red legacy 摘要创建走接线口（同 596 的教训：变量形态创建点）
+      yield* session.appendMessage(msg)
       const processor = yield* processors.create({
         assistantMessage: msg,
         sessionID: input.sessionID,
@@ -1051,7 +1056,7 @@ export const layer = Layer.effect(
       if (result === "continue" && (input.auto || hasUnfinishedTurn(input.messages, input.parentID))) {
         if (replay) {
           const original = replay.info
-          const replayMsg = yield* session.updateMessage({
+          const replayMsg = yield* session.appendMessage({
             id: MessageID.ascending(),
             role: "user",
             sessionID: input.sessionID,
@@ -1099,7 +1104,7 @@ export const layer = Layer.effect(
               { enabled: true },
             )).enabled
           ) {
-            const continueMsg = yield* session.updateMessage({
+            const continueMsg = yield* session.appendMessage({
               id: MessageID.ascending(),
               role: "user",
               sessionID: input.sessionID,
@@ -1201,10 +1206,8 @@ export const layer = Layer.effect(
         if (compactionPart) {
           // 261108 Red 审计 RC-P2-07：filterCompactedEffect 从最新一页往回扫，命中本次
           // 压缩边界就停；此前先 session.messages() 全量载入再过滤，1 万条会话要读 200 页。
-          // 261114 Red 树会话带链走（与 prompt 同视图）；线性/未物化会话 visibleChain
-          // 返回 undefined，行为不变。
-          const chain = yield* session.visibleChain(input.sessionID)
-          const after = yield* MessageV2.filterCompactedEffect(input.sessionID, chain)
+          // 261114 Red 树会话补一道可见路径过滤（与 prompt 同视图）。
+          const after = visiblePath(yield* MessageV2.filterCompactedEffect(input.sessionID))
           const tokensAfter = yield* estimate({ messages: after, model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({
@@ -1257,7 +1260,7 @@ export const layer = Layer.effect(
         current.value.model.variant !== "default"
           ? current.value.model.variant
           : undefined)
-      const msg = yield* session.updateMessage({
+      const msg = yield* session.appendMessage({
         id: MessageID.ascending(),
         role: "user",
         model: variant ? { ...input.model, variant } : input.model,
