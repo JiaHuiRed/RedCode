@@ -1602,7 +1602,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const rawText = () => readPartText(data.store.part_text_accum_delta, part())
-  const text = () => props.message.role === "assistant" && !isCompactionSummary() ? filterCannedAgreement(rawText()) : rawText()
+  const text = () => props.message.role === "assistant" && !(props.message as AssistantMessage).summary
+    ? filterCannedAgreement(rawText())
+    : rawText()
   // 261011 Red 压缩摘要默认折叠：summary=true 的 assistant 消息（压缩产物）此前与普通
   // 回复同构全量铺开，几百行文件清单直接糊满聊天区。对齐思考链折叠模式（260830）：
   // 收起为一行（标题+meta+chevron），点击展开全文。
