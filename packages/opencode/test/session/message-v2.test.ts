@@ -2315,6 +2315,39 @@ describe("session.message-v2.latest", () => {
         CONTINUE_USER,
       ])
     })
+
+    // 261114 Red review finding 2 回归：树过滤必须在重排**前**的时序收集集上走链。
+    // 旧实现在重排后的模型序上走链——保留尾在模型序里位于摘要之后、时序链上却在
+    // 其之前，从压缩触发出发的正向走链够不到它（边界后没有 parentID 缺省的 user，
+    // root 探测落到 messages[0] = 触发消息），压缩明明保留的近期上下文被整段丢弃。
+    test("物化会话：重排后保留尾不丢（走链在时序收集集上做）", () => {
+      const covered = MessageID.make("msg_covered")
+      const wired = (
+        msg: MessageV2.WithParts,
+        over: { parentID?: MessageID; selectedChildID?: MessageID },
+      ): MessageV2.WithParts => ({ info: { ...msg.info, ...over } as MessageV2.WithParts["info"], parts: msg.parts })
+      // 时序链：tail → overflow → compaction → summary → continue。tail 的父是
+      // 被压缩覆盖的前驱（行不在收集集里）——悬空 parentID 是压缩后缀的正常形态。
+      const materialized = [
+        wired(tailUser, { parentID: covered, selectedChildID: OVERFLOW_ASSISTANT }),
+        wired(overflowAssistant, { selectedChildID: COMPACTION_USER }),
+        wired(compactionUser, { parentID: OVERFLOW_ASSISTANT, selectedChildID: SUMMARY_ASSISTANT }),
+        wired(summaryAssistant, { selectedChildID: CONTINUE_USER }),
+        wired(continueUser, { parentID: SUMMARY_ASSISTANT }),
+      ]
+      const out = MessageV2.filterCompacted(materialized)
+      // 模型序照旧 [compaction, summary, tail, overflow, continue]——保留尾在列
+      expect(out.map((m) => m.info.id)).toEqual([
+        COMPACTION_USER,
+        SUMMARY_ASSISTANT,
+        TAIL_USER,
+        OVERFLOW_ASSISTANT,
+        CONTINUE_USER,
+      ])
+      // 对照组：同一集合不带树字段（存量线性会话）——过滤恒等，结果一致
+      const bare = MessageV2.filterCompacted([tailUser, overflowAssistant, compactionUser, summaryAssistant, continueUser])
+      expect(bare.map((m) => m.info.id)).toEqual(out.map((m) => m.info.id))
+    })
   })
 })
 

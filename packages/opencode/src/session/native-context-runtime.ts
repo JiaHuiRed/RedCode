@@ -5,7 +5,6 @@ import * as ContextCompaction from "./context-compaction"
 import * as NativeContext from "./native-context"
 import { settlePromptCaches } from "./prompt-caches"
 import type { SessionID } from "./schema"
-import { visiblePath } from "./message-tree"
 
 // 261010 Red 压缩版本由持久化活跃块决定；恢复/重启不依赖插件旁路状态。
 // 261105 Red 只 hash 块 id（listIDs 不解析摘要），与 list().map(id) 结果一致。
@@ -19,9 +18,11 @@ export function settle(sessionID: SessionID, previous: string, next: string) {
 
 // 261105 Red 可选传入同一 step 的活跃块快照：history 与 project 此前各读一次，
 // 加上 revision 的 id 投影，同批块每步读库三遍。调用方不传时保持原行为。
-// 261114 Red 树会话的可见路径过滤（正向 selectedChildID 链）只在无活跃块时做：
-//   覆盖段被下推过滤后链在 anchor 处断头，跨段续走需要按块数据改道——那是
-//   分支写入方（edit-resend）落地时的事，此刻不静默给出残缺路径。
+// 261114 Red 树会话的可见路径过滤在 filterCompactedOrdered 内部、重排前的时序
+//   收集集上做（review finding 2）；无活跃块 = 无覆盖缺口，走链安全。有活跃块时
+//   覆盖段被下推过滤掏空链中段（anchor 断头），传 tree=false 退出——走链会截断
+//   在首个缺口，跨覆盖段续走需要按块数据改道，那是分支写入方（edit-resend）落
+//   地时的事，此刻不静默给出残缺路径。
 export function history(sessionID: SessionID, spec: NativeCompaction.Spec, blocks?: ContextCompaction.Block[]) {
   const active = blocks ?? ContextCompaction.list(sessionID)
   const anchors = new Set(active.map((block) => block.anchorID))
@@ -36,8 +37,7 @@ export function history(sessionID: SessionID, spec: NativeCompaction.Spec, block
       yield message
     }
   }
-  const ordered = MessageV2.filterCompactedOrdered(visible())
-  return active.length === 0 ? visiblePath(ordered) : ordered
+  return MessageV2.filterCompactedOrdered(visible(), active.length === 0)
 }
 
 export function project(

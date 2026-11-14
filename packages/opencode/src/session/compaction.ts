@@ -4,7 +4,6 @@ import * as Session from "./session"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
-import { visiblePath } from "./message-tree"
 import { Token } from "@/util/token"
 import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
@@ -1206,8 +1205,9 @@ export const layer = Layer.effect(
         if (compactionPart) {
           // 261108 Red 审计 RC-P2-07：filterCompactedEffect 从最新一页往回扫，命中本次
           // 压缩边界就停；此前先 session.messages() 全量载入再过滤，1 万条会话要读 200 页。
-          // 261114 Red 树会话补一道可见路径过滤（与 prompt 同视图）。
-          const after = visiblePath(yield* MessageV2.filterCompactedEffect(input.sessionID))
+          // 261114 Red 树过滤在 filterCompactedOrdered 内部（重排前的时序收集集，
+          // review finding 2），与 prompt 同视图。
+          const after = yield* MessageV2.filterCompactedEffect(input.sessionID)
           const tokensAfter = yield* estimate({ messages: after, model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({

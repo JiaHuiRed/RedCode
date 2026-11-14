@@ -21,6 +21,7 @@ import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
 import { isCompleteSummary } from "./summary-complete"
+import { visiblePath } from "./message-tree"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
@@ -1618,8 +1619,10 @@ export function filterCompacted(msgs: Iterable<WithParts>) {
  * ⚠️ 逆序是**前置条件不是建议**：顺序错了会让下面的 break 提前命中，静默少喂消息给模型。
  * 数组入参一律走 {@link filterCompacted}，那里会先归一化。
  *
+ * tree（默认 true）控制消息树可见路径过滤；false 供覆盖段被下推掏空的 native
+ * 路径使用（链有缺口，走链会截断），见函数内 finding 2 注释。
  */
-export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
+export function filterCompactedOrdered(ordered: Iterable<WithParts>, tree = true) {
   const result = [] as WithParts[]
   const completed = new Set<string>()
   let retain: MessageID | undefined
@@ -1647,17 +1650,26 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
       completed.add(msg.info.parentID)
   }
   result.reverse()
-  const compactionIndex = result.findLastIndex(
+  // 261114 Red 树过滤（review finding 2）：必须在**重排前**的时序收集集上走链。
+  //   重排把保留尾挪到摘要之后，而时序链上保留尾在摘要**之前**——在重排后的
+  //   数组上走链只能从压缩触发出发正向走，够不到保留尾（边界后没有 parentID
+  //   缺省的 user，root 探测落到 messages[0] = 触发消息），压缩明明保留的近期
+  //   上下文被整段丢弃。收集集是「tail_start 起的链连续后缀」，从首元素走链
+  //   恰好覆盖全集合。前提：集合无覆盖缺口——native 的下推过滤会掏空链中段
+  //   （anchor 断头，走链截断在首个缺口），由调用方传 tree=false 退出；跨覆盖
+  //   段续走等分支写入方（2d）落地时做。
+  const chain = tree ? visiblePath(result) : result
+  const compactionIndex = chain.findLastIndex(
     (msg) =>
       msg.info.role === "user" &&
       msg.parts.some((item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined),
   )
-  const compaction = result[compactionIndex]
+  const compaction = chain[compactionIndex]
   const part = compaction?.parts.find(
     (item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined,
   )
   const summaryIndex = compaction
-    ? result.findIndex(
+    ? chain.findIndex(
         (msg, index) =>
           index > compactionIndex &&
           msg.info.role === "assistant" &&
@@ -1669,15 +1681,15 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
           msg.info.parentID === compaction.info.id,
       )
     : -1
-  const tailIndex = part?.tail_start_id ? result.findIndex((msg) => msg.info.id === part.tail_start_id) : -1
+  const tailIndex = part?.tail_start_id ? chain.findIndex((msg) => msg.info.id === part.tail_start_id) : -1
   if (tailIndex >= 0 && tailIndex < compactionIndex && summaryIndex > compactionIndex) {
     return [
-      ...result.slice(compactionIndex, summaryIndex + 1),
-      ...result.slice(tailIndex, compactionIndex),
-      ...result.slice(summaryIndex + 1),
+      ...chain.slice(compactionIndex, summaryIndex + 1),
+      ...chain.slice(tailIndex, compactionIndex),
+      ...chain.slice(summaryIndex + 1),
     ]
   }
-  return result
+  return chain
 }
 
 export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {

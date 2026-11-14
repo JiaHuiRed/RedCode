@@ -109,6 +109,53 @@ const addAssistant = Effect.fn("Test.addAssistant")(function* (
   return id
 })
 
+// 261114 Red 走 appendMessage 接线契约的 seeding（对照 addUser/addAssistant 的
+// 裸 updateMessage）：review finding 1 的 DB 回归要验「落库行自带树父」。
+const appendUser = Effect.fn("Test.appendUser")(function* (sessionID: SessionID, text?: string) {
+  const session = yield* SessionNs.Service
+  const id = MessageID.ascending()
+  yield* session.appendMessage({
+    id,
+    sessionID,
+    role: "user",
+    time: { created: Date.now() },
+    agent: "test",
+    model: { providerID: "test", modelID: "test" },
+    tools: {},
+    mode: "",
+  } as unknown as MessageV2.Info)
+  if (text) {
+    yield* session.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID: id,
+      type: "text",
+      text,
+    })
+  }
+  return id
+})
+
+const appendAssistant = Effect.fn("Test.appendAssistant")(function* (sessionID: SessionID, parentID: MessageID) {
+  const session = yield* SessionNs.Service
+  const id = MessageID.ascending()
+  yield* session.appendMessage({
+    id,
+    sessionID,
+    role: "assistant",
+    time: { created: Date.now() },
+    parentID,
+    modelID: ModelID.make("test"),
+    providerID: ProviderID.make("test"),
+    mode: "",
+    agent: "default",
+    path: { cwd: "/", root: "/" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  } as unknown as MessageV2.Info)
+  return id
+})
+
 const addCompactionPart = Effect.fn("Test.addCompactionPart")(function* (
   sessionID: SessionID,
   messageID: MessageID,
@@ -661,6 +708,95 @@ describe("Session.messages", () => {
         }
         const result = yield* session.messages({ sessionID })
         expect(result.map((item) => item.info.id)).toEqual(ids)
+      }),
+    ),
+  )
+
+  // 261114 Red review finding 1 回归：appendMessage 必须「先落完整行、再接尾边」。
+  // 旧实现先接线后落库——parentID 的 json_set 打在尚未落库的行上（0 行生效），
+  // 新 user 落库即缺树父，要等下一条 assistant 追加时被物化门顺手自愈；链尾
+  // user（流式进行中/崩溃窗口）则永久缺失，selectVersion 会把它误认成根版本。
+  // 下面的断言在旧代码下失败（u2.parentID 为 undefined）。
+  it.instance("appendMessage carries the user parent pointer into the inserted row", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const u1 = yield* appendUser(sessionID, "q1")
+        const a1 = yield* appendAssistant(sessionID, u1)
+        const u2 = yield* appendUser(sessionID, "q2")
+        // 链尾 user 落库即带树父，不等下一条 assistant 自愈
+        const u2msg = yield* MessageV2.get({ sessionID, messageID: u2 }).pipe(Effect.orDie)
+        expect(u2msg.info.parentID).toBe(a1)
+        const u1msg = yield* MessageV2.get({ sessionID, messageID: u1 }).pipe(Effect.orDie)
+        expect(u1msg.info.parentID).toBeUndefined()
+        expect(u1msg.info.selectedChildID).toBe(a1)
+        // 连续追加 u→a→u→a：重读校验每个 user 的父指针及整条可见链（评审建议）
+        const a2 = yield* appendAssistant(sessionID, u2)
+        const a2msg = yield* MessageV2.get({ sessionID, messageID: a2 }).pipe(Effect.orDie)
+        expect(a2msg.info.parentID).toBe(u2)
+        const a1msg = yield* MessageV2.get({ sessionID, messageID: a1 }).pipe(Effect.orDie)
+        expect(a1msg.info.selectedChildID).toBe(u2)
+        const u2wired = yield* MessageV2.get({ sessionID, messageID: u2 }).pipe(Effect.orDie)
+        expect(u2wired.info.selectedChildID).toBe(a2)
+        const result = yield* session.messages({ sessionID })
+        expect(result.map((item) => item.info.id)).toEqual([u1, a1, u2, a2])
+      }),
+    ),
+  )
+
+  // 261114 Red 旧写入方损伤的按行修复：链尾 user 裸落库（无 parentID）但前驱 sel
+  //   已指向它（旧代码先 json_set 尾边、后落库的产物）。尾边在 ⇒ 探测走快路径，
+  //   此时按行补 parentID，不触发全量物化。
+  it.instance("heals a legacy parent-less tail row whose chain edge is already wired", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const u1 = yield* appendUser(sessionID, "q1")
+        const a1 = yield* appendAssistant(sessionID, u1)
+        // 模拟旧损伤：u2 裸落库（裸 updateMessage，无接线），再手工接前驱 sel
+        const u2 = yield* addUser(sessionID, "q2")
+        const a1msg = yield* MessageV2.get({ sessionID, messageID: a1 }).pipe(Effect.orDie)
+        yield* session.updateMessage({ ...a1msg.info, selectedChildID: u2 } as MessageV2.Info)
+        const a2 = yield* appendAssistant(sessionID, u2)
+        const u2msg = yield* MessageV2.get({ sessionID, messageID: u2 }).pipe(Effect.orDie)
+        expect(u2msg.info.parentID).toBe(a1)
+        expect(u2msg.info.selectedChildID).toBe(a2)
+        const result = yield* session.messages({ sessionID })
+        expect(result.map((item) => item.info.id)).toEqual([u1, a1, u2, a2])
+      }),
+    ),
+  )
+
+  // 261114 Red 链尾探测把「已接线的排队行」算作链成员：acknowledge 要到模型响应
+  //   发出才把 queued 翻成 delivered，本回合 assistant 的接线若把 claimed 排队行
+  //   排除，尾边会被改写到别处、排队消息从链上掉队（旧过滤条件的问题）。
+  it.instance("keeps a claimed queued message on the chain across the acknowledge window", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const u1 = yield* appendUser(sessionID, "q1")
+        const a1 = yield* appendAssistant(sessionID, u1)
+        // 提交即排队（落裸行，不接线），claim 边界接线——此刻 delivery 仍是 queued
+        const u2 = MessageID.ascending()
+        yield* session.appendMessage({
+          id: u2,
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "test",
+          model: { providerID: "test", modelID: "test" },
+          tools: {},
+          mode: "",
+          delivery: "queued",
+        } as unknown as MessageV2.Info)
+        const claimed = yield* session.claimQueuedMessage(sessionID)
+        expect(claimed?.id).toBe(u2)
+        // acknowledge 之前（模型响应尚未发出）本回合 assistant 追加——u2 必须仍在链上
+        const a2 = yield* appendAssistant(sessionID, u2)
+        const a1msg = yield* MessageV2.get({ sessionID, messageID: a1 }).pipe(Effect.orDie)
+        expect(a1msg.info.selectedChildID).toBe(u2)
+        const u2msg = yield* MessageV2.get({ sessionID, messageID: u2 }).pipe(Effect.orDie)
+        expect(u2msg.info.parentID).toBe(a1)
+        expect(u2msg.info.selectedChildID).toBe(a2)
+        const result = yield* session.messages({ sessionID })
+        expect(result.map((item) => item.info.id)).toEqual([u1, a1, u2, a2])
       }),
     ),
   )

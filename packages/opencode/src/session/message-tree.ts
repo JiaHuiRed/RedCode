@@ -35,9 +35,10 @@ export function hasExplicitBranches(messages: readonly WithInfo[]): boolean {
  * 可见路径：线性历史（无显式树字段）原序返回（同一数组引用，零分配零变更）；
  * 树模式从 root 沿 selectedChildID 正向走链，悬空指针与环都按「路径到此为止」
  * 终止——步数上界就是消息数，不需要额外防环结构。
- * 输入必须是规范序（time_created, id 升序），或「压缩边界起的时序后缀」
- * （filterCompactedOrdered 的输出；此时首条=边界消息，root 探测自然落在它，
- * 链从边界继续，边界以下已折叠无需走）。
+ * 输入必须是规范序（time_created, id 升序），或「tail_start 起的链连续后缀」
+ * （filterCompactedOrdered **重排前**的时序收集集：root 探测落到首元素，走链
+ * 恰好覆盖全集合。不能在重排后的模型序上走链——保留尾在模型序里位于摘要之后、
+ * 时序链上却在其之前，走链够不到，review finding 2）。
  *
  * ⚠️ 只走正向（selectedChildID），不走 parentID 反向：assistant.parentID 的
  * 语义是「触发的 user 消息」，连续多条 assistant 共享同一 user（重试/同轮

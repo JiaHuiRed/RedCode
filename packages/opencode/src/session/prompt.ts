@@ -80,7 +80,6 @@ import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as NativeRuntime from "./native-context-runtime"
-import { visiblePath } from "./message-tree"
 import * as ContextCompaction from "./context-compaction"
 import { usable as usableContext } from "./overflow"
 import { estimateModelMessages } from "./image-tokens"
@@ -1490,14 +1489,14 @@ export const layer = Layer.effect(
         const oldPin = _caches.msgPin.get(sessionID)
         if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
           settlePromptCaches(sessionID, "native-compaction")
-        // 261114 Red 消息树分支：legacy 路径在压缩后缀上做正向可见路径过滤
-        //   （selectedChildID 链，见 message-tree.visiblePath）。native 路径的
-        //   过滤在 history 内部且有活跃块守卫——覆盖段缺席会让链在 anchor 处
-        //   断头（seed assistant 被覆盖时走链停在首条，msgs 塌缩成 1，实测），
-        //   跨覆盖段续走留给分支写入方落地时做。
+        // 261114 Red 消息树分支：树过滤在 filterCompactedOrdered 内部、重排**前**
+        //   的时序收集集上做（review finding 2：在重排后的数组上走链只能从压缩
+        //   触发出发，够不到时序在前驱位置的保留尾，压缩保留的近期上下文被整段
+        //   丢弃）。native 路径同样在内部，有覆盖缺口（活跃块下推）时传
+        //   tree=false 退出——缺口会让走链截断，跨覆盖段续走留给分支写入方（2d）。
         let msgs = nativeSpec.enabled
           ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks)
-          : visiblePath(yield* MessageV2.filterCompactedEffect(sessionID))
+          : yield* MessageV2.filterCompactedEffect(sessionID)
         // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
         const lastNativeSummary = msgs.findLast(
           (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>

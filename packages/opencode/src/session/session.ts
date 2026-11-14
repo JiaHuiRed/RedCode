@@ -1207,42 +1207,76 @@ export const layer: Layer.Layer<
       return lock
     }
 
+    // 261114 Red 在线判定：delivery 不是 queued/pending_steer 的消息才参与链。
+    // json_extract 判 NULL 按在线算（IFNULL 兜底——无 delivery 字段与「非这两个
+    // 值」等价）。物化全量读用 onlineOnlySql（排队/待领行的逻辑位置在接线时才定，
+    // 不参与物化）；链尾探测用 chainMemberSql——已接线的排队行（claim 边界补了
+    // parentID、前驱 sel 已指向它）已经在链上，是合法链尾：acknowledge 要到模型
+    // 响应发出才把 queued 翻成 delivered，本回合 assistant 的接线若把它排除，
+    // 尾边会被改写到别处、排队消息从链上掉队。
+    const onlineOnlySql = sql`IFNULL(json_extract(${MessageTable.data}, '$.delivery'), '') NOT IN ('queued', 'pending_steer')`
+    const chainMemberSql = sql`${onlineOnlySql} OR json_extract(${MessageTable.data}, '$.parentID') IS NOT NULL`
+
     /**
-     * 接线原语：把 messageID 接到当前链尾（库内最新一条「已上线」消息），
-     * 并把整条历史物化为显式指针（幂等，只在未物化时执行一次）。
-     * 「已上线」= delivery 不是 queued/pending_steer——排队消息在提交时故意
-     * 不接线（裸行），到 claim/promote 的回合边界再接：那时链尾是已收尾的
-     * assistant，不存在与流式写者的竞争（assistant 由 processor 整包重写，
-     * 旁路写者的字段会被下一次整包写吞掉，json_set 也一样）。
-     * ⚠️ InfoData 两个陷阱（实测各炸过一次）：回写 WHERE 必须用行 id 列
-     * （data JSON 无 id，用 info.id 当条件 = 静默空转）；喂树函数前必须
-     * 水合 id/sessionID（否则 parentID/selectedChildID 派生全 undefined）。
+     * 尾边接线：tail.selectedChildID = messageID。json_set 而非整包重写：
+     * 外科手术式更新不吞同一行上其他写者的字段。
      */
-    const wireToChainTail = (sessionID: SessionID, messageID: MessageID, withParentID: boolean) =>
+    const linkTail = (tailID: MessageID, messageID: MessageID) =>
       Database.use((db) => {
-        const rows = db
+        db.run(
+          sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.selectedChildID', ${messageID}) WHERE ${MessageTable.id} = ${tailID}`,
+        )
+      })
+
+    /**
+     * 链尾解析 + 物化门：返回库内最新一条链上消息的 id（= 新消息的树父）。
+     * 快路径 2 行探测：尾边显式接线（prev.selectedChildID = tail.id）即全链已
+     * 物化——物化契约是「首写全量物化、此后每次接线只推进尾边」，尾边在 ⇒
+     * 链下全在；无前驱（单行会话）同理。否则全量读 + 一次性物化（升级后/
+     * 存量会话首写必经，幂等，只写变更行）。
+     * 旧版门判「tail 自身带树字段」：链尾 assistant 按定义无 selectedChildID
+     * （后继还不存在），门永远打开，每次追加都全量读——被本探测替代。
+     * ⚠️ InfoData 陷阱（实测炸过）：喂树函数前必须水合 id/sessionID（data
+     * JSON 是 Omit<id|sessionID>，裸 row.data 让指针派生全 undefined，物化整轮
+     * 静默空转）。
+     */
+    const resolveChainTail = (sessionID: SessionID): { id: MessageID } | undefined =>
+      Database.use((db) => {
+        const probe = db
           .select({ id: MessageTable.id, data: MessageTable.data })
           .from(MessageTable)
-          .where(eq(MessageTable.session_id, sessionID))
-          .orderBy(MessageTable.time_created, MessageTable.id)
+          .where(and(eq(MessageTable.session_id, sessionID), chainMemberSql))
+          .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+          .limit(2)
           .all()
-        if (rows.length === 0) return
-        // 物化门：最新一条已上线消息已带指针 → 全会话已物化（claim/append 按
-        // FIFO 顺序逐条接线，不会出现中段裸行），跳过；否则整条历史一次性物化
-        // （升级后/首写前必经；排队/待领行不参与——它们的逻辑位置在接线时才定）。
-        const online = rows.filter((row) => {
-          const delivery = (row.data as { delivery?: string }).delivery
-          return delivery !== "queued" && delivery !== "pending_steer"
-        })
-        const tail = online.at(-1)
-        if (!tail) return
-        const tailInfo = tail.data as MessageV2.Info
-        const tailWired =
-          tailInfo.role === "user"
-            ? tailInfo.parentID !== undefined || tailInfo.selectedChildID !== undefined
-            : tailInfo.selectedChildID !== undefined
-        if (!tailWired) {
-          const nodes = online.map((row) => ({
+        const tail = probe[0]
+        if (!tail) return undefined
+        const prev = probe[1]
+        const tailEdgeWired =
+          prev === undefined ||
+          (prev.data as { selectedChildID?: MessageID }).selectedChildID === tail.id
+        if (tailEdgeWired) {
+          // 旧写入方损伤修复：appendMessage 曾先接线后落库，parentID 的 json_set
+          // 打在尚未落库的行上（0 行生效），链尾 user 落库即缺树父。尾边在 ⇒
+          // prev 就是链上前驱，只补这一行，不触发全量物化。
+          const tailInfo = tail.data as MessageV2.Info
+          if (
+            prev &&
+            tailInfo.role === "user" &&
+            (tailInfo as { parentID?: MessageID }).parentID === undefined
+          ) {
+            db.run(
+              sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.parentID', ${prev.id}) WHERE ${MessageTable.id} = ${tail.id}`,
+            )
+          }
+        } else {
+          const rows = db
+            .select({ id: MessageTable.id, data: MessageTable.data })
+            .from(MessageTable)
+            .where(and(eq(MessageTable.session_id, sessionID), onlineOnlySql))
+            .orderBy(MessageTable.time_created, MessageTable.id)
+            .all()
+          const nodes = rows.map((row) => ({
             id: MessageID.make(row.id),
             info: { ...(row.data as MessageV2.Info), id: MessageID.make(row.id), sessionID } as MessageV2.Info,
           }))
@@ -1250,20 +1284,29 @@ export const layer: Layer.Layer<
             db.update(MessageTable).set({ data: node.info }).where(eq(MessageTable.id, node.id)).run()
           }
         }
-        if (tail.id === messageID) return
-        // 链尾的 selectedChildID 指向新成员。json_set 而非整包重写：外科手术式
-        // 更新不吞同一行上其他写者的字段。
-        db.run(
-          sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.selectedChildID', ${messageID}) WHERE ${MessageTable.id} = ${tail.id}`,
-        )
-        // 用户消息的树父 = 线性前驱（任何角色）；assistant 的 parentID 语义是
-        // 「触发的 user」，归调用方，接线不碰。
-        if (withParentID) {
+        return { id: MessageID.make(tail.id) }
+      })
+
+    /**
+     * 接线原语（claim/promote/deliver 边界）：把【已落库】的 messageID 接到当前
+     * 链尾。排队消息在提交时故意不接线（appendMessage 落裸行），到回合边界
+     * 再接：那时没有流式写者，接线位置即逻辑位置（assistant 由 processor 整包
+     * 重写，旁路写者的字段会被下一次整包写吞掉，json_set 也一样）。
+     */
+    const wireToChainTail = (sessionID: SessionID, messageID: MessageID, withParentID: boolean) => {
+      const tail = resolveChainTail(sessionID)
+      if (!tail || tail.id === messageID) return
+      linkTail(tail.id, messageID)
+      // 用户消息的树父 = 线性前驱（任何角色）；assistant 的 parentID 语义是
+      // 「触发的 user」，归调用方，接线不碰。
+      if (withParentID) {
+        Database.use((db) => {
           db.run(
             sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.parentID', ${tail.id}) WHERE ${MessageTable.id} = ${messageID}`,
           )
-        }
-      })
+        })
+      }
+    }
 
     const appendMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
       appendLock(msg.sessionID).withPermits(1)(
@@ -1273,10 +1316,20 @@ export const layer: Layer.Layer<
           // claim/promote 在回合边界接线。assistant 不碰 parentID（触发 user
           // 语义归调用方），只接 selectedChildID 链。
           if (delivery !== "queued" && delivery !== "pending_steer") {
+            // 261114 Red 写序修正：旧实现先接线后落库——parentID 的 json_set 打在
+            //   尚未落库的行上（0 行生效），新 user 落库即缺树父（selectVersion
+            //   会把它误认成根版本），且「链尾 sel 已指向新消息、新消息未落库」
+            //   期间崩溃留下悬空指针。改为：解析父 → parentID 带进内存副本 →
+            //   落库完整行 → 接尾边。中途崩溃最多留下「已落库但未接线」的孤儿行
+            //   （读侧不可见，下次追加按物化契约收编），不再产生悬空指针。
             // 接线失败按缺陷炸（静默断链 = 上下文截断），不做 ignore 兜底
-            yield* Effect.sync(() => wireToChainTail(msg.sessionID, msg.id, msg.role === "user"))
+            const parent = yield* Effect.sync(() => resolveChainTail(msg.sessionID))
+            if (parent && msg.role === "user") (msg as { parentID?: MessageID }).parentID = parent.id
+            yield* updateMessage(msg)
+            if (parent) yield* Effect.sync(() => linkTail(parent.id, msg.id))
+          } else {
+            yield* updateMessage(msg)
           }
-          yield* updateMessage(msg)
           return msg
         }).pipe(Effect.withSpan("Session.appendMessage")),
       )
