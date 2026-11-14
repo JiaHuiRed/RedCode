@@ -323,6 +323,37 @@ describe("prompt submit worktree selection", () => {
     expect(syncedDirectories).toEqual(["/repo/worktree-a", "/repo/worktree-a", "/repo/worktree-b", "/repo/worktree-b"])
   })
 
+  // 261114 Red UX-10：worktree 内选 main 时，main 必须解析成项目主目录而非当前 SDK 目录。
+  test("resolves an explicit main selection to the project worktree root", async () => {
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => "main",
+      // mock 的 sdk.directory 是 /repo/main——这里把它当作 worktree，项目根在别处
+      projectWorktree: () => "/repo/root",
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(createdClients).toEqual(["/repo/root"])
+    expect(createdSessions).toEqual(["/repo/root"])
+    expect(promoted).toEqual([{ directory: "/repo/root", sessionID: "session-1" }])
+  })
+
   test("pins the saved soul on a new session in the selected directory without changing the preference", async () => {
     promptValue.push({
       type: "image",

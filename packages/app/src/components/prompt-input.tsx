@@ -1275,6 +1275,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setMode: (mode) => setStore("mode", mode),
     setPopover: (popover) => setStore("popover", popover),
     newSessionWorktree: () => props.newSessionWorktree,
+    // 261114 Red UX-10：main 显式解析成项目主目录（worktree 内选 main 不再回当前目录）。
+    projectWorktree: () => {
+      const [store] = globalSync.child(sdk.directory, { bootstrap: false })
+      const match = globalSync.data.project.find((candidate) => candidate.id === store.project)
+      return match?.worktree
+    },
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     shouldQueue: props.shouldQueue,
     delivery: () => store.delivery,

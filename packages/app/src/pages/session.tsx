@@ -460,7 +460,10 @@ export default function Page() {
   }
 
   const newSessionWorktree = createMemo(() => {
-    if (store.newSessionWorktree === "create") return "create"
+    // 261114 Red UX-10：显式选择（main / 已有 worktree / create）一律尊重，不再被
+    // 「当前 SDK 目录」推导覆盖——此前在 worktree 内选 main 或选其他已有 worktree
+    // 都会被推导回当前目录。「main」的目录解析在提交侧（submit.ts）做。
+    if (store.newSessionWorktree) return store.newSessionWorktree
     const project = sync.project
     if (project && sdk.directory !== project.worktree) return sdk.directory
     return "main"

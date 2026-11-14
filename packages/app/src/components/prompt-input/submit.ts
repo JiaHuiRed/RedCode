@@ -210,6 +210,9 @@ type PromptSubmitInput = {
   setMode: (mode: "normal" | "shell") => void
   setPopover: (popover: "at" | "slash" | null) => void
   newSessionWorktree?: Accessor<string | undefined>
+  // 261114 Red UX-10：项目主目录（Project.worktree）。main 显式解析用它，避免在
+  // worktree 内选 main 时沿用当前 SDK 目录；缺省回退当前目录。
+  projectWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
   delivery?: Accessor<"queue" | "steer">
@@ -397,6 +400,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const shouldAutoAccept = isNewSession && submitAutoAccept
     const worktreeSelection = submitWorktree
 
+    // 261114 Red UX-10：main 显式解析成项目主目录——在 worktree 内选 main 时不能
+    // 沿用当前 SDK 工作树目录（此前「在 worktree 内选 main 仍回当前 worktree」）。
+    const projectRoot = input.projectWorktree?.() ?? sdk.directory
+
     let sessionDirectory = projectDirectory
     let client = sdk.client
 
@@ -415,9 +422,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     try {
       if (isNewSession) {
-        if (worktreeSelection === "create") {
+        if (worktreeSelection === "main") {
+          sessionDirectory = projectRoot
+        } else if (worktreeSelection === "create") {
           const createdWorktree = await client.worktree
-            .create({ directory: projectDirectory })
+            .create({ directory: projectRoot })
             .then((x) => x.data)
             .catch((err) => {
               showToast({
@@ -443,6 +452,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }
 
         if (sessionDirectory !== projectDirectory) {
+          // 注意：这里比较的是「目标目录 vs 当前 SDK 目录」——worktree 内选 main 时
+          // projectRoot ≠ projectDirectory，会正确换 client 到主目录。
           client = sdk.createClient({
             directory: sessionDirectory,
             throwOnError: true,
