@@ -8,6 +8,26 @@
 
 ---
 
+### [0.18.4] - 2026-11-14
+
+- **消息树分支：编辑重发/重新生成不再截断，旧回答可切回**（`packages/opencode/src/session/{message-tree,message-v2,session,branch,revert,compaction,prompt}.ts`、`snapshot/index.ts`、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app`、TUI）：会话历史从线性表升级为 `parentID + selectedChildID` 单指针树（DeepSeek chat-demo 数据模型），分四期落地。Phase 1：分支字段进消息 data JSON、读侧零变更零派生（线性历史逐字节不变），物化是写入契约。Phase 2：`appendMessage` 成为全部新建消息的接线原语（链尾探测快路径、per-session 写序信号量、整包重写合并树指针），edit-resend/regenerate 从截断改为落分支——revert 收敛为「分岛 detach」，弃岛行打内部 `detached` 标记保留在库（对读侧统一隐形，平面读天然等于可见路径），分叉点父指针摘除后新消息自然落为新分支。Phase 3：版本切换器——`GET /session/:id/message-versions` + `POST /session/:id/message/:id/select`（`selectVersion` 纯函数改写父指针，弃岛对称开合），文件恢复三步（岛快照 track → revert 当前后缀 patches 回分叉点 → `Snapshot.checkoutFiles` 补丁级取岛末态，不做全树回滚），用量随可见性回冲/补记，GUI/TUI 消息轨 ‹i/n› 切换 + `message.branches.switched` 事件整会话重拉。模型可见四问：上下文逐字节不变（切换只改「哪些消息进入上下文」）、token/KV cache 无新增注入项，切到新分支从分叉点失效一次（与 edit-resend 同型）。验证：branch 8 + pagination 61 + revert 9 + message-tree 20 + compaction 103 + invariants 11 全绿；SDK 重生成 drift 一致；opencode/app/ui/desktop typecheck 0。决策与三期实现记录见 `docs/notes/implemented/feature/2026-11-14-message-tree-branching.md`。
+- **续写资格写时固化（读时纯函数形态）与跨天日期带内注入**（`packages/opencode/src/session/message-v2.ts`）：`MessageV2.continuable()` 纯函数三道门槛（finish=length/Aborted、截断点落在非空正文、无悬空工具）判定截断回复可作 prefill 续写——原提案的持久化布尔被推翻（`withContinuation` 已在 LLM 层透明续写，落库点家族过大）；`toUIMessages` 在本地日期变更的轮次边界插入合成日期通知（变更才注入 ≈15 token，纯派生不落库）。验证：message-v2 10+3 用例 93 pass；typecheck 0。决策见 `docs/notes/proposed/feature/2026-11-14-continue-eligibility-and-date-change-notice.md`。
+- **压缩摘要统一按「可用」判据决定成功边界**（`packages/opencode/src/session/compaction.ts`、`message-v2.ts`）：截断的压缩摘要（finish=length/unknown）不再被当作成功边界——此前它被视为完整压缩，随后的轮次会把被覆盖原文直接扔出上下文；失败摘要落库后由既有兜底路径重压。压缩统计工具轮次按消息时间而非重排后位置。验证：compaction 套件全绿（含截断摘要回归）。
+- **套话展示过滤：确认句不再骚扰，真道歉与引用不误伤**（`packages/core/src/util/canned-agreement.ts`、`session/message-v2.ts`、GUI/TUI 展示层）：保守的 n-gram 开场白过滤器只作用于「非摘要 assistant 对话文本」的展示层——存储部件、复制（TUI copy 与显示过滤同口径）、导出全部原样；真道歉、引用语境与长内容不误伤（回归用例钉住）。
+- **Soul frontmatter 收紧：仅限 YAML、拒绝可执行语言**（`packages/opencode/src/soul/`、config）：markdown frontmatter 限定 YAML（覆盖 agent/command/skill），Soul frontmatter 拒绝可执行语言载荷；失败摘要不再当成功边界。
+- **TUI 断线重连补拉权限与状态快照**（`packages/opencode/src/cli/cmd/tui/context/`）：重连后权限与 question/permission 快照经恢复合并门禁重新播种，不再停留在断线前状态。
+- **TUI 朱印配色与阅读排版**（`packages/ui`、TUI 侧栏）：朱印主题配色、阅读排版与连续工作段署名；侧栏次序改为上下文/配额优先。决策记录见 `docs/notes/`（视觉改版 1+2 配色 seed 反解）。
+- **GPT 家族交付纪律与 prompt-eval 实证**（`packages/opencode/src/session/prompt/gpt.md`、`script/prompt-eval*`）：GPT 提示词重写后把「自有本地 UI 验证」纳入交付动作而非免责声明；prompt-eval 覆盖 live UI 交付、无关服务边界与自有 dev 重启场景断言。
+- **0.18.4 体验包（GUI）**（`packages/app`、`packages/ui`）：体验优先审查报告（`docs/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.4 包全部落地——
+  - **UX-01/02/12**：设置窗口可调大小/最大化/还原（尺寸持久化、主窗口变小时钳制、窄容器导航横排翻折）；新建 Soul 默认收起阵容回首屏；终端一键最大化/恢复（不新建 PTY）。
+  - **UX-03/04**：新会话输入区快选 Soul（本次选择覆盖设置默认、`?soul=` 参数接设置页「以此 Soul 新建」）；Soul 阵容详情工作区（默认/上次所选直开、宽窄双布局、可读 Markdown 正文优先、工程字段收进高级信息）。
+  - **UX-05**：模型名直开列表（两次点击完成换模型）+ 档位独立点击区 + 最近使用分组恒排最前。
+  - **UX-06/07**：长提示拖高与展开编辑（共享同一 contentEditable 草稿）；工具栏自适应换行、编辑器与标签字号走 `--font-size-*` token 随外观缩放。
+  - **UX-08**：设置跨分区搜索直达（tab+页内锚点）；MCP/服务商编辑弹窗改 `dialog.push` 保存后回原列表（滚动/焦点保留）；各分区滚动位置记忆。
+  - **UX-09/10/11**：关闭后台标签保持当前会话、标签带滚动+活动标签滚入视野+「全部已开」下拉、通用选择器空查询补最近会话、首页项目/视图/检索持久化；工作位置选择真实生效（main 显式解析项目主目录，不再被当前目录推导覆盖，submit 套件 15/15）；状态台工具/失败/待授权可点击定位。
+- **UI-02 快捷键只触发一个预期动作**（`packages/app/src/components/prompt-input.tsx`、composer docks）：Shift+Enter 换行排除 Ctrl/Meta（此前 Ctrl+Shift+Enter 同时插换行+批准权限）；提问 dock 挂载时权限 dock 让出 window 按键（消费顺序：提问→权限），Esc/Ctrl+Enter 不再同时作用两处请求。
+- 已知预存失败：`test/cli/cmd/tui/sync.test.tsx` loadEarlier 1 例（stash 干净树复现，与本版无关，待单独修复）。
+
 ### [0.18.3] - 2026-11-13
 
 - **自动压缩熔断状态修复**（`packages/opencode/src/session/compaction.ts`）：只在自动压缩成功后推进快速回填计数，手动或失败的压缩不再改写状态；按消息时间而非重排后的数组位置统计工具轮次。熔断时记录失败摘要以退休待处理任务，后续用户消息不再反复卡在同一个旧任务，也不将失败当作压缩成功。验证：compaction 套件 97 pass；native 分支尚未单独实测。决策更新见 `docs/notes/proposed/feature/2026-11-12-compact-rapid-refill-breaker.md`。
