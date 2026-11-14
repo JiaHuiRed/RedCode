@@ -1,6 +1,7 @@
 import type { Agent, AssistantMessage, Part, Provider, TextPart, UserMessage } from "@redcode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
+import { filterCannedAgreement } from "@redcode-ai/core/util/canned-agreement"
 
 export type TranscriptOptions = {
   thinking: boolean
@@ -32,7 +33,7 @@ export function isVisibleTextPart(part: Part): part is TextPart {
 export function copyAssistantText(parts: Part[]): string | undefined {
   const textParts = parts.filter(isVisibleTextPart)
   if (textParts.length === 0) return
-  return textParts.map((part) => part.text).join("\n").trim()
+  return filterCannedAgreement(textParts.map((part) => part.text).join("\n")).trim()
 }
 
 export function formatTranscript(
