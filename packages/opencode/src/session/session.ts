@@ -1214,8 +1214,11 @@ export const layer: Layer.Layer<
     // parentID、前驱 sel 已指向它）已经在链上，是合法链尾：acknowledge 要到模型
     // 响应发出才把 queued 翻成 delivered，本回合 assistant 的接线若把它排除，
     // 尾边会被改写到别处、排队消息从链上掉队。
-    const onlineOnlySql = sql`IFNULL(json_extract(${MessageTable.data}, '$.delivery'), '') NOT IN ('queued', 'pending_steer')`
-    const chainMemberSql = sql`${onlineOnlySql} OR json_extract(${MessageTable.data}, '$.parentID') IS NOT NULL`
+    // detached（revert.cleanup 分岛标记，裸 json_set 不进 schema）的弃岛行对写入
+    // 侧同样隐形——岛在时序上更新，探测不排除它会把新分支挂到弃岛叶上。
+    const detachedSql = sql`IFNULL(json_extract(${MessageTable.data}, '$.detached'), 0) = 0`
+    const onlineOnlySql = sql`IFNULL(json_extract(${MessageTable.data}, '$.delivery'), '') NOT IN ('queued', 'pending_steer') AND ${detachedSql}`
+    const chainMemberSql = sql`(${onlineOnlySql} OR json_extract(${MessageTable.data}, '$.parentID') IS NOT NULL) AND ${detachedSql}`
 
     /**
      * 尾边接线：tail.selectedChildID = messageID。json_set 而非整包重写：
@@ -1355,10 +1358,11 @@ export const layer: Layer.Layer<
         if (!page.more || !page.cursor) break
         before = page.cursor
       }
-      // 261114 Red 消息树分支：线性历史（未物化）原序返回；物化树指针的会话从
-      //   会话级叶指针反向走链出可见路径（时序探测在重根会话会拿错根）。对存量
-      //   数据两者恒等且零变更；Phase 2 写入方落地后这里成为「读当前分支」的
-      //   咽喉点。决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
+      // 261114 Red 消息树分支：线性历史（未物化）原序返回；物化树指针的会话沿
+      //   selectedChildID 正向走链出可见路径。对存量数据两者恒等且零变更。
+      //   弃岛行（revert.cleanup 分岛标记 detached）已在 page 层排除，走链天然
+      //   只见当前分支。
+      //   决策：docs/notes/proposed/feature/2026-11-14-message-tree-branching.md
       return visiblePath(result.reverse())
     })
 
@@ -1424,6 +1428,9 @@ export const layer: Layer.Layer<
             .where(
               and(
                 eq(MessageTable.session_id, sessionID),
+                // 261114 Red 2d 分岛：弃岛上的压缩边界不得充当 GUI 初始游标，
+                // 否则会从岛的时序位置起翻页、跳过当前分支的更早消息。
+                sql`IFNULL(json_extract(${MessageTable.data}, '$.detached'), 0) = 0`,
                 sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
                 sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
               ),

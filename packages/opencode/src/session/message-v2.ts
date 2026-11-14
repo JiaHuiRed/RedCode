@@ -1392,11 +1392,17 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
 }) {
   const before = input.before ? cursor.decode(input.before) : undefined
   const after = input.after ? cursor.decode(input.after) : undefined
-  const where = before
-    ? and(eq(MessageTable.session_id, input.sessionID), older(before))
-    : after
-      ? and(eq(MessageTable.session_id, input.sessionID), newer(after))
-      : eq(MessageTable.session_id, input.sessionID)
+  const where = and(
+    before
+      ? and(eq(MessageTable.session_id, input.sessionID), older(before))
+      : after
+        ? and(eq(MessageTable.session_id, input.sessionID), newer(after))
+        : eq(MessageTable.session_id, input.sessionID),
+    // 261114 Red 2d 分岛（revert.cleanup 不再删行）：detached 是 cleanup 打的内部
+    //   标记（裸 json_set，不进 Info schema），弃岛对所有标准读侧隐形——分页/
+    //   流/上下文组装/GUI 分页统一走这里。版本切换器（Phase 3）读岛时绕过本原语。
+    sql`IFNULL(json_extract(${MessageTable.data}, '$.detached'), 0) = 0`,
+  )
   const rows = Database.use((db) =>
     db
       .select()

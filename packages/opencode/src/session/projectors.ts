@@ -168,8 +168,18 @@ export default [
       const previous = usage(row.data)
       if (previous) applyUsage(db, data.sessionID, previous, -1)
     }
+    // 261114 Red 2d 分岛（revert.cleanup）：detached 行只「移出可见路径」不删——
+    //   弃岛保留在库里是 Phase 3 版本切换器的数据基础；用量回冲照旧（岛的真实
+    //   花费随视图移出账面，切回旧分支时由切换器补记）。cleanup 先打标记再发
+    //   事件，此处读到 detached 即代表本次移除是分岛而非删除。
     db.delete(MessageTable)
-      .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
+      .where(
+        and(
+          eq(MessageTable.id, data.messageID),
+          eq(MessageTable.session_id, data.sessionID),
+          sql`IFNULL(json_extract(${MessageTable.data}, '$.detached'), 0) = 0`,
+        ),
+      )
       .run()
   }),
 

@@ -294,6 +294,43 @@ SDK 重生成,drift 一致。模型可见四问:接线只改「哪些消息进�
 
 
 
+### Phase 2 实现记录(2026-11-14,2d——revert 收敛为分岛)
+
+**cleanup 从「物理删行」收敛为「分岛 detach」。** 本仓的 revert 实现与提案
+原文设想的不同:没有 per-message reverted 标记,而是 session 级
+`session.revert` 暂存 + 下一次 prompt 入口的 `cleanup` 懒执行;真正的删行者
+是 `MessageV2.Event.Removed` 的投影器——cleanup 发事件、投影器删库。分岛的
+解耦点就在投影器:cleanup 先给弃岛行打 `detached` 内部标记(裸 json_set,
+**不进 Info schema**——API/SDK 不可见的内部簿记)再发 Removed,投影器对
+detached 行跳过删行,用量回冲照旧(岛的真实花费随视图移出账面,Phase 3 切回
+时补记)。客户端零改动:Removed 的语义从「删除」变为「移出可见路径」,视图
+行为一致。
+
+- **弃岛 = Phase 3 版本切换器的数据基础**:岛内 parentID/selectedChildID
+  完整保留,分叉点父消息的 selectedChildID 摘除(仅当仍指向岛首),下一条
+  消息经 appendMessage 落为新分支——edit-resend/regenerate 从截断变为落
+  分支,旧问答随时可切回(切换器落地前暂不可达,但数据在)。
+- **detached 对写入侧同样隐形**:链尾探测/物化全量读排除岛行——岛在时序上
+  更新,不排除会把新分支挂到弃岛叶上;latestCompactionCursor 同理(否则 GUI
+  初始游标落在岛的时序位置,跳过当前分支的更早消息)。
+- **detached 对读侧统一隐形**:MessageV2.page 是 messages()/stream/压缩
+  扫描/GUI 分页的漏斗,一处 WHERE 全覆盖。重根场景(revert 到首条消息)下
+  岛上旧根与新根同时 parentID 缺省,读侧排除后 find 探测天然只命中新根,
+  **无需会话级 root 指针**(Phase 3 切换器要任意旧根可达时再加)。
+- **revert/unrevert 本体零改动**:revert 只标记 + Snapshot 文件恢复(既有
+  patch 机制),unrevert 恢复快照 + 清标记;分岛发生在提交边界的 cleanup。
+  note 原文「unrevert 变成切回旧分支 + 重放 patch」属于 Phase 3 切换器。
+- **压缩边界跨分叉(既有行为,非本改动引入)**:revert 点落在保留尾内时,
+  幸存边界的 tail_start_id 悬空进岛——压缩扫描退化为全量读幸存链(正确但
+  不再 early-stop,摘要与原文重复出现在上下文)。删除时代 tail_start 同样
+  悬空;边界随分叉失效的精细化留待压缩侧跟进。
+- **回归**:两条 DB 用例(分岛行存活 + 提交落分支;重根)在 stash 旧码下
+  逐条验证失败、恢复后通过;既有 revert 套件 7 例(断言走读侧)零改动通过。
+
+模型可见四问:① 上下文逐字节不变——弃岛行对读侧隐形与删行等价,新分支的
+prompt 集合与截断时代完全一致;② token 无变化;③ KV cache 无变化(前缀
+不动);④ 无新增注入项。
+
 ### Phase 2 实现记录(2026-11-14,2c 初版——已被 2c' 部分推翻,留档)
 
 **【已被 2c' 推翻的部分:叶指针与反向走链;保留有效的部分:物化门与

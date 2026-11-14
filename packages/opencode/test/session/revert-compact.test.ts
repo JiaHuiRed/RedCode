@@ -427,6 +427,135 @@ describe("revert + compact workflow", () => {
     ),
   )
 
+  // 261114 Red 2d 分岛回归：cleanup 从删行收敛为分岛（detached 内部标记对读侧
+  //   隐形），弃岛行保留在库里——Phase 3 版本切换器（‹2/3› 切回旧分支）的数据
+  //   基础；提交侧下一条消息经 appendMessage 落为新分支，edit-resend 不再破坏性。
+  const appendUser = Effect.fn("test.appendUser")(function* (sessionID: SessionID, text?: string) {
+    const session = yield* Session.Service
+    const msg = {
+      id: MessageID.ascending(),
+      role: "user" as const,
+      sessionID,
+      agent: "default",
+      model: { providerID: ProviderID.make("openai"), modelID: ModelID.make("gpt-4") },
+      time: { created: Date.now() },
+    }
+    yield* session.appendMessage(msg)
+    if (text) {
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: msg.id,
+        sessionID,
+        type: "text" as const,
+        text,
+      })
+    }
+    return msg
+  })
+
+  const appendAssistant = Effect.fn("test.appendAssistant")(function* (sessionID: SessionID, parentID: MessageID) {
+    const session = yield* Session.Service
+    const msg = {
+      id: MessageID.ascending(),
+      role: "assistant" as const,
+      sessionID,
+      mode: "default",
+      agent: "default",
+      path: { cwd: "/", root: "/" },
+      cost: 0,
+      tokens,
+      modelID: ModelID.make("gpt-4"),
+      providerID: ProviderID.make("openai"),
+      parentID,
+      time: { created: Date.now() },
+      finish: "end_turn",
+    }
+    yield* session.appendMessage(msg)
+    return msg
+  })
+
+  it.live(
+    "cleanup detaches the abandoned branch — rows persist and the next append forks",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+
+          const info = yield* session.create({})
+          const sid = info.id
+
+          const u1 = yield* appendUser(sid, "q1")
+          const a1 = yield* appendAssistant(sid, u1.id)
+          const u2 = yield* appendUser(sid, "q2")
+          const a2 = yield* appendAssistant(sid, u2.id)
+
+          yield* session.setRevert({
+            sessionID: sid,
+            revert: { messageID: u2.id },
+            summary: { additions: 0, deletions: 0, files: 0 },
+          })
+          yield* revert.cleanup(yield* session.get(sid))
+
+          // 读侧：弃岛隐形
+          const msgs = yield* session.messages({ sessionID: sid })
+          expect(msgs.map((m) => m.info.id)).toEqual([u1.id, a1.id])
+          // 行存活且岛内指针完整（切回旧分支的数据基础）
+          const u2row = yield* MessageV2.get({ sessionID: sid, messageID: u2.id }).pipe(Effect.orDie)
+          expect(u2row.info.parentID).toBe(a1.id)
+          expect(u2row.info.selectedChildID).toBe(a2.id)
+          // 分叉点的选中指针已摘除
+          const a1row = yield* MessageV2.get({ sessionID: sid, messageID: a1.id }).pipe(Effect.orDie)
+          expect(a1row.info.selectedChildID).toBeUndefined()
+          // 下一条消息落为新分支（edit-resend 的提交路径）
+          const u3 = yield* appendUser(sid, "q2 edited")
+          const u3row = yield* MessageV2.get({ sessionID: sid, messageID: u3.id }).pipe(Effect.orDie)
+          expect(u3row.info.parentID).toBe(a1.id)
+          const after = yield* session.messages({ sessionID: sid })
+          expect(after.map((m) => m.info.id)).toEqual([u1.id, a1.id, u3.id])
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live(
+    "cleanup on a revert to the first message re-roots the next append",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+
+          const info = yield* session.create({})
+          const sid = info.id
+
+          const u1 = yield* appendUser(sid, "q1")
+          const a1 = yield* appendAssistant(sid, u1.id)
+
+          yield* session.setRevert({
+            sessionID: sid,
+            revert: { messageID: u1.id },
+            summary: { additions: 0, deletions: 0, files: 0 },
+          })
+          yield* revert.cleanup(yield* session.get(sid))
+
+          // 整条旧链成岛：读侧为空，行存活
+          const msgs = yield* session.messages({ sessionID: sid })
+          expect(msgs.map((m) => m.info.id)).toEqual([])
+          const u1row = yield* MessageV2.get({ sessionID: sid, messageID: u1.id }).pipe(Effect.orDie)
+          expect(u1row.info.parentID).toBeUndefined()
+          expect(u1row.info.selectedChildID).toBe(a1.id)
+          // 下一条消息成为新根
+          const u2 = yield* appendUser(sid, "q1 edited")
+          const u2row = yield* MessageV2.get({ sessionID: sid, messageID: u2.id }).pipe(Effect.orDie)
+          expect(u2row.info.parentID).toBeUndefined()
+          const after = yield* session.messages({ sessionID: sid })
+          expect(after.map((m) => m.info.id)).toEqual([u2.id])
+        }),
+      { git: true },
+    ),
+  )
+
   it.live(
     "cleanup is a no-op when session has no revert state",
     provideTmpdirInstance(
