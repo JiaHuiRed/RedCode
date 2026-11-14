@@ -1,4 +1,5 @@
-import { createEffect, createMemo, For, Match, Show, startTransition, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, startTransition, Switch, untrack } from "solid-js"
+import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -208,16 +209,22 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       },
       removeTab: (href: string) => {
         startTransition(() => {
+          // 261114 Red UX-09：关闭后台标签保持当前会话——只有关掉活动标签才导航到邻居。
+          const index = store.findIndex((t) => t.href === href)
+          if (index === -1) return
+          const closingActive = store[index]!.href === location.pathname
+          const remaining = store.filter((t) => t.href !== href)
           setStore(
             produce((tabs) => {
-              const index = tabs.findIndex((t) => t.href === href)
-              if (index === -1) return
-              tabs.splice(index, 1)
-              const nextTab = tabs[index] ?? tabs[tabs.length - 1]
-              if (nextTab) navigate(nextTab.href)
-              else navigate("/")
+              const current = tabs.findIndex((t) => t.href === href)
+              if (current === -1) return
+              tabs.splice(current, 1)
             }),
           )
+          if (!closingActive) return
+          const nextTab = remaining[index] ?? remaining[remaining.length - 1]
+          if (nextTab) navigate(nextTab.href)
+          else navigate("/")
         })
       },
     }
@@ -347,6 +354,19 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     (tab) => globalSync.peek(tab.dir, { bootstrap: false })[0],
   )
 
+  // 261114 Red UX-09：活动标签确保可见。
+  let tabsStripRef: HTMLDivElement | undefined
+  createEffect(
+    on(
+      () => location.pathname,
+      () => {
+        requestAnimationFrame(() => {
+          tabsStripRef?.querySelector("[data-active='true']")?.scrollIntoView({ inline: "nearest", block: "nearest" })
+        })
+      },
+    ),
+  )
+
   return (
     <div
       class="h-full min-w-0 flex-1 flex flex-row items-center gap-1.5 pr-3 py-2"
@@ -367,8 +387,10 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         icon={<IconV2 name="grid-plus" />}
         state={!!homeMatch() ? "pressed" : undefined}
       />
+      {/* 261114 Red UX-09：标签带可横向滚动，活动标签自动滚入视野；溢出时「全部已开」
+          下拉列出全部打开的会话（含状态与目录）。 */}
       <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
-        <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-hidden">
+        <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar" ref={(el) => (tabsStripRef = el)}>
           <For each={tabsEnriched()}>
             {(tab, i) => (
               <>
@@ -406,6 +428,45 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
             title={language.t("command.session.new")}
             onClose={() => navigate(tabsEnriched().at(-1)?.href ?? "/")}
           />
+        </Show>
+        <Show when={tabsEnriched().length > 0}>
+          <DropdownMenu gutter={4} placement="bottom-end">
+            <DropdownMenu.Trigger
+              as={IconButtonV2}
+              type="button"
+              variant="ghost-muted"
+              size="large"
+              class="shrink-0"
+              icon={<IconV2 name="chevron-down" />}
+              aria-label={language.t("titlebar.tabs.all")}
+            />
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content style={{ "max-height": "320px", "overflow-y": "auto", "min-width": "220px" }}>
+                <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+                  {language.t("titlebar.tabs.all")}
+                </DropdownMenu.GroupLabel>
+                <For each={tabsEnriched()}>
+                  {(tab) => (
+                    <DropdownMenu.Item
+                      onSelect={() => navigate(tab.href)}
+                      closeOnSelect
+                    >
+                      <DropdownMenu.ItemLabel class="flex items-center gap-2">
+                        <Show when={tab.status === "busy"}>
+                          <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong animate-pulse" />
+                        </Show>
+                        <Show when={tab.status === "retry"}>
+                          <div class="size-1.5 shrink-0 rounded-full bg-surface-critical-strong" />
+                        </Show>
+                        <span class="truncate">{tab.info.title}</span>
+                        <span class="ml-auto shrink-0 text-11-regular text-text-weaker">{tab.dir}</span>
+                      </DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  )}
+                </For>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
         </Show>
         <div class="min-w-0 flex-1" />
       </div>

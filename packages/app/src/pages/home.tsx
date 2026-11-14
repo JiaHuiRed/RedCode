@@ -19,6 +19,7 @@ import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { DialogConfirm } from "@/components/dialog-confirm"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { useServer } from "@/context/server"
+import { persisted } from "@/utils/persist"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useCommand } from "@/context/command"
@@ -79,6 +80,9 @@ function HomeDesign() {
     archived: false,
     usageCollapsed: readHomeUsageCollapsed(),
   })
+  // 261114 Red UX-09：回首页保留项目/视图/检索/归档筛选与位置（persisted 与默认值
+  // 合并，新字段未来安全）。searchInputRef 焦点行为不变。
+  persisted("home.view.state", [state, setState])
   let searchInputRef: HTMLInputElement | undefined
 
   onMount(() => {

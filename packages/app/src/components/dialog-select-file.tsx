@@ -338,8 +338,9 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
     }
 
     if (!query) {
+      // 261114 Red UX-09：空查询补最近会话（sessions("") 触发后台加载，落地后刷新）。
       sessions("")
-      return [...commandEntries.picks(), ...fileEntries.recent()]
+      return [...commandEntries.picks(), ...sessionEntries(), ...fileEntries.recent()]
     }
 
     // 触发/续用会话列表后台加载；entries() 同步读，未落地时为 []（命令先出）
