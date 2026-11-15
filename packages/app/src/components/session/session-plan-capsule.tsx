@@ -1,4 +1,4 @@
-import { Show, createMemo, createSignal } from "solid-js"
+import { Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { Goal, Todo } from "@redcode-ai/sdk/v2/client"
 import { Icon } from "@redcode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
@@ -33,6 +33,18 @@ export function SessionPlanCapsule() {
   })
   const exists = createMemo(() => !!goal() || todos().length > 0)
   const done = createMemo(() => todos().filter((todo) => todo.status === "completed").length)
+
+  // 261115 Red：todo/goal 平时只在会话忙碌时同步（session.tsx 的忙碌 effect），打开
+  // 历史空闲会话时 store 里没有数据，胶囊与 plan tab 都会是空的。挂载时补拉一次，
+  // 每个会话一次（Set 守卫防止 goal 404 写回 undefined 造成重复拉取）。
+  const requested = new Set<string>()
+  createEffect(() => {
+    const id = params.id
+    if (!id || requested.has(id)) return
+    requested.add(id)
+    if (sync.data.todo[id] === undefined) void sync.session.todo(id)
+    if (sync.data.goal[id] === undefined) void sync.session.goal(id)
+  })
 
   return (
     <Show when={exists()}>
