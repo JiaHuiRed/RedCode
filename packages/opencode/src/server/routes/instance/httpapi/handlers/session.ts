@@ -8,6 +8,9 @@ import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { SessionChanges } from "@/session/changes"
 import { Config } from "@/config/config"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as Database from "@/storage/db"
+import * as SessionQuery from "@/tool/session-query"
 import { ContextSnapshot } from "@/session/context-snapshot"
 import { Goal } from "@/session/goal"
 import { SessionCompaction } from "@/session/compaction"
@@ -285,6 +288,46 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             }),
           ),
         )
+    })
+
+    // 261115 Red UX-15 会话全文搜索：复用 session_query 工具的 resolve/run（同一套有界
+    // 扫描与预算判据），把面向模型取证的逻辑接到 HTTP 只读端点。扫描是字面子串、
+    // 大小写敏感；nextCursor 需要客户端带着同样的 q 续传。
+    const searchSession = Effect.fn("SessionHttpApi.searchSession")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: { q: string; cursor?: string; limit?: number }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      const spec = SessionQuery.resolve(
+        {
+          operation: "search",
+          query: ctx.query.q,
+          session_id: ctx.params.sessionID,
+          cursor: ctx.query.cursor,
+          limit: ctx.query.limit,
+        },
+        yield* InstanceState.directory,
+        ctx.params.sessionID,
+        NativeCompaction.resolve((yield* config.get()).compaction?.native),
+      )
+      const raw = yield* Database.use((db) => SessionQuery.run(db, spec, new AbortController().signal))
+      // run 的返回是 read/search 两种形状的联合；本端点固定 search，用 in 判据收窄，不 cast。
+      if (!("results" in raw)) return { results: [], scannedParts: 0 }
+      const nextCursor = "nextCursor" in raw ? raw.nextCursor : undefined
+      return {
+        results: raw.results.map((hit) => ({
+          sessionID: hit.sessionID,
+          messageID: hit.messageID,
+          partID: hit.partID,
+          role: hit.role,
+          createdAt: hit.createdAt,
+          offset: hit.offset,
+          text: hit.text,
+          ...(hit.nextOffset !== undefined ? { nextOffset: hit.nextOffset } : {}),
+        })),
+        scannedParts: raw.scannedParts,
+        ...(nextCursor ? { nextCursor } : {}),
+      }
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
@@ -681,6 +724,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("messages", messages)
       .handle("messageVersions", messageVersions)
       .handle("selectVersion", selectVersion)
+      .handle("query", searchSession)
       .handle("changes", changes)
       .handle("message", message)
       .handleRaw("create", createRaw)

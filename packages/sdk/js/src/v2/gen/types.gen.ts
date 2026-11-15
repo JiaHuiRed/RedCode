@@ -8730,6 +8730,56 @@ export type SessionMessageVersionsResponses = {
 
 export type SessionMessageVersionsResponse = SessionMessageVersionsResponses[keyof SessionMessageVersionsResponses]
 
+export type SessionQueryData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    directory?: string
+    workspace?: string
+    q: string
+    cursor?: string
+    limit?: string
+  }
+  url: "/session/{sessionID}/query"
+}
+
+export type SessionQueryErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionQueryError = SessionQueryErrors[keyof SessionQueryErrors]
+
+export type SessionQueryResponses = {
+  /**
+   * Bounded full-text search hits
+   */
+  200: {
+    results: Array<{
+      sessionID: string
+      messageID: string
+      partID: string
+      role: "user" | "assistant"
+      createdAt: number | "Infinity" | "-Infinity" | "NaN"
+      offset: number | "Infinity" | "-Infinity" | "NaN"
+      text: string
+      nextOffset?: number | "Infinity" | "-Infinity" | "NaN"
+    }>
+    scannedParts: number | "Infinity" | "-Infinity" | "NaN"
+    nextCursor?: string
+  }
+}
+
+export type SessionQueryResponse = SessionQueryResponses[keyof SessionQueryResponses]
+
 export type SessionSelectVersionData = {
   body?: never
   path: {

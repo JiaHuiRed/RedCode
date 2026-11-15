@@ -375,6 +375,13 @@ export const dict = {
   "dialog.background.result.empty": "This job finished without output.",
   "settings.personalization.copySoul": "Duplicate this Soul",
   "settings.personalization.create.startNew": "Start a session with this Soul",
+  "session.search.placeholder": "Search this session's history…",
+  "session.search.action": "Search",
+  "session.search.searching": "Searching…",
+  "session.search.empty": "No matches in the scanned range — use “Search more” to keep scanning older history.",
+  "session.search.more": "Search more",
+  "session.search.scanned": "{{count}} parts scanned",
+  "session.search.backToOutline": "Back to turns",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

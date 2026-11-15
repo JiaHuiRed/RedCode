@@ -386,6 +386,13 @@ export const dict = {
   "dialog.background.result.empty": "该任务结束但没有输出。",
   "settings.personalization.copySoul": "复制此 Soul",
   "settings.personalization.create.startNew": "以此 Soul 新建会话",
+  "session.search.placeholder": "在本会话历史中查找…",
+  "session.search.action": "查找",
+  "session.search.searching": "查找中…",
+  "session.search.empty": "已扫描范围内没有命中——点「继续搜索」可继续扫更早的历史。",
+  "session.search.more": "继续搜索",
+  "session.search.scanned": "已扫描 {{count}} 片",
+  "session.search.backToOutline": "返回轮次",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",

@@ -1,13 +1,18 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createMediaQuery } from "@solid-primitives/media"
 import { MessageNav } from "@redcode-ai/ui/message-nav"
+import { Button } from "@redcode-ai/ui/button"
+import { TextField } from "@redcode-ai/ui/text-field"
 import { useLanguage } from "@/context/language"
 import { useQueryOptions } from "@/context/server-sync"
+import { useSDK } from "@/context/sdk"
 import { pathKey } from "@/utils/path-key"
-import type { SessionOutlineResponse } from "@redcode-ai/sdk/v2/client"
+import type { SessionOutlineResponse, SessionQueryResponses } from "@redcode-ai/sdk/v2/client"
 
 type Entry = SessionOutlineResponse["entries"][number]
+// SDK codegen 把 Schema.Number 展开成 number | "Infinity" | … 联合，这里沿用生成形状。
+type SearchHit = SessionQueryResponses[200]["results"][number]
 const EMPTY: Entry[] = []
 
 /**
@@ -40,7 +45,170 @@ export function SessionTurnOutline(props: {
       loading={query.isLoading}
       busy={props.busy}
       onJump={props.onJump}
+      toolbar={<SessionSearchPanel sessionID={props.sessionID} busy={props.busy} onJump={props.onJump} />}
     />
+  )
+}
+
+// 261115 Red UX-15 查找本会话：只记得一个报错、路径或承诺时按字面找回原文。
+// 服务端 GET /session/:id/query 是有界字面子串扫描（复用 session_query 的预算判据）；
+// 这里 Enter 触发（不逐键扫描），命中显示片段 + 角色 + 时间，点击走 onJump 跳到
+// 对应消息（loadThrough 负责把窗口外旧消息翻进来）；有 nextCursor 时「继续搜索」
+// 续传——空一页不等于全部没有，扫描预算未覆盖的部分要用户显式追。
+type SearchState = {
+  q: string
+  hits: SearchHit[]
+  scannedParts: number
+  nextCursor?: string
+  error?: string
+}
+
+function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (messageID: string) => void }) {
+  const sdk = useSDK()
+  const language = useLanguage()
+  const [input, setInput] = createSignal("")
+  const [state, setState] = createSignal<SearchState | undefined>()
+  const [running, setRunning] = createSignal(false)
+
+  const runSearch = async (cursor?: string) => {
+    const q = input().trim()
+    if (!q || running()) return
+    setRunning(true)
+    try {
+      const response = await sdk.client.session.query({ sessionID: props.sessionID, q, cursor }, { throwOnError: true })
+      const data = response.data
+      setState((prev) =>
+        cursor && prev
+          ? {
+              q,
+              hits: [...prev.hits, ...(data?.results ?? [])],
+              scannedParts: prev.scannedParts + Number(data?.scannedParts ?? 0),
+              nextCursor: data?.nextCursor,
+            }
+          : {
+              q,
+              hits: data?.results ?? [],
+              scannedParts: Number(data?.scannedParts ?? 0),
+              nextCursor: data?.nextCursor,
+            },
+      )
+    } catch (error) {
+      setState((prev) => ({
+        q,
+        hits: prev?.hits ?? [],
+        scannedParts: prev?.scannedParts ?? 0,
+        error: error instanceof Error ? error.message : String(error),
+      }))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  // 命中片段按同一字面语义在客户端切三段高亮（服务端是大小写敏感子串）。
+  const snippet = (hit: SearchHit) => {
+    const text = hit.text.replace(/\s+/g, " ").trim()
+    const index = text.indexOf(state()?.q ?? "")
+    if (index === -1) return { before: text, match: undefined, after: undefined }
+    return {
+      before: text.slice(0, index),
+      match: text.slice(index, index + (state()?.q.length ?? 0)),
+      after: text.slice(index + (state()?.q.length ?? 0)),
+    }
+  }
+
+  return (
+    <div class="flex flex-col gap-1 px-2 pt-2">
+      <form
+        class="flex items-center gap-1"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void runSearch()
+        }}
+      >
+        <TextField
+          value={input()}
+          onChange={setInput}
+          placeholder={language.t("session.search.placeholder")}
+          aria-label={language.t("session.search.placeholder")}
+          spellcheck={false}
+          autocomplete="off"
+          class="h-7 flex-1 text-12-regular"
+        />
+        <Button type="submit" size="small" disabled={running() || props.busy}>
+          {running() ? language.t("session.search.searching") : language.t("session.search.action")}
+        </Button>
+      </form>
+      <Show when={state()}>
+        {(data) => (
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center justify-between px-1">
+              <span class="text-11-regular text-text-weaker">
+                {language.t("session.search.scanned", { count: data().scannedParts })}
+              </span>
+              <button
+                type="button"
+                class="text-11-regular text-text-weak hover:text-text-strong"
+                onClick={() => {
+                  setInput("")
+                  setState(undefined)
+                }}
+              >
+                ← {language.t("session.search.backToOutline")}
+              </button>
+            </div>
+            <Show when={data().error}>
+              <div role="alert" class="px-1 text-11-regular text-text-danger-base">
+                {data().error}
+              </div>
+            </Show>
+            <div class="max-h-[320px] overflow-y-auto">
+              <Show
+                when={data().hits.length > 0}
+                fallback={
+                  <div class="px-1 py-3 text-12-regular text-text-weak">
+                    {language.t("session.search.empty")}
+                  </div>
+                }
+              >
+                <For each={data().hits}>
+                  {(hit) => {
+                    const parts = () => snippet(hit)
+                    return (
+                      <button
+                        type="button"
+                        disabled={props.busy}
+                        onClick={() => props.onJump(hit.messageID)}
+                        class="group w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-raised-base disabled:opacity-60"
+                      >
+                        <div class="flex items-center gap-2 text-11-regular text-text-weaker">
+                          <span>{hit.role}</span>
+                          <span>{new Date(Number(hit.createdAt)).toLocaleString(language.intl())}</span>
+                        </div>
+                        <div class="mt-0.5 line-clamp-2 break-words text-12-regular text-text-strong">
+                          {parts().before}
+                          <mark class="bg-transparent text-v2-state-fg-info">{parts().match}</mark>
+                          {parts().after}
+                        </div>
+                      </button>
+                    )
+                  }}
+                </For>
+              </Show>
+            </div>
+            <Show when={data().nextCursor}>
+              <Button
+                size="small"
+                variant="secondary"
+                disabled={running()}
+                onClick={() => void runSearch(data().nextCursor)}
+              >
+                {language.t("session.search.more")}
+              </Button>
+            </Show>
+          </div>
+        )}
+      </Show>
+    </div>
   )
 }
 
@@ -115,6 +283,8 @@ export function TurnOutline(props: {
   loading: boolean
   busy: boolean
   onJump: (messageID: string) => void
+  // 261115 Red UX-15：大纲标签页顶部的「查找本会话」面板（搜索结果就地展示）。
+  toolbar?: JSX.Element
 }) {
   const language = useLanguage()
   // 最新一轮在最上面：长会话里想找的通常是刚才那几轮，而不是开头。
@@ -122,6 +292,7 @@ export function TurnOutline(props: {
 
   return (
     <div data-component="turn-outline" class="flex flex-col h-full min-h-0">
+      {props.toolbar}
       <Show
         when={rows().length > 0}
         fallback={
