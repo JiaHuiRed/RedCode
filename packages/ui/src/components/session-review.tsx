@@ -13,7 +13,7 @@ import { useFileComponent } from "../context/file"
 import { useI18n } from "../context/i18n"
 import { getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import { checksum } from "@redcode-ai/core/util/encode"
-import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { type FileContent, type SnapshotFileDiff, type VcsFileDiff } from "@redcode-ai/sdk/v2"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
@@ -175,6 +175,19 @@ export function stepTarget(all: readonly string[], focused: string | undefined, 
   return all[next]
 }
 
+// 261115 Red UX-16：「标记并下一个」的目标计算。从 current 之后（含环绕）找第一个
+// 未审文件；current 缺省或不在列表时从头扫全部。current 本身刚被标记，永远排除。
+export function nextUnreviewedTarget(
+  all: readonly string[],
+  reviewed: ReadonlySet<string>,
+  current: string | undefined,
+) {
+  if (all.length === 0) return undefined
+  const start = current !== undefined && all.includes(current) ? all.indexOf(current) : -1
+  const ordered = start === -1 ? all : [...all.slice(start + 1), ...all.slice(0, start + 1)]
+  return ordered.find((file) => file !== current && !reviewed.has(file))
+}
+
 export const SessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
@@ -199,7 +212,14 @@ export const SessionReview = (props: SessionReviewProps) => {
   const itemsMap = createMemo(() =>
     Object.fromEntries(list(props.diffs).map((diff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
   )
-  const files = createMemo(() => props.diffs.map((diff) => diff.file!))
+  const allFiles = createMemo(() => props.diffs.map((diff) => diff.file!))
+  // 261115 Red UX-16 未审筛选：只影响列表与导航，进度仍按全部文件计。
+  const [unreviewedOnly, setUnreviewedOnly] = createSignal(false)
+  const files = createMemo(() => {
+    if (!unreviewedOnly()) return allFiles()
+    const reviewed = reviewedSet()
+    return allFiles().filter((file) => !reviewed.has(file))
+  })
   const grouped = createMemo(() => {
     const next = new Map<string, SessionReviewComment[]>()
     for (const comment of props.comments ?? []) {
@@ -219,14 +239,35 @@ export const SessionReview = (props: SessionReviewProps) => {
   // 上一/下一文件：按文件列表顺序移动，展开目标并滚到它的顶部。
   // 261110 Red 焦点必须回写给宿主（受控）：不回写则宿主 activeDiff 停在旧值，
   // 连续导航永远按旧焦点计算，重复跳到同一个文件。
-  const step = (delta: number) => {
-    const file = stepTarget(files(), props.focusedFile, delta)
+  const goto = (file: string | undefined) => {
     if (!file) return
     const openFiles = open()
     if (!openFiles.includes(file)) handleChange([...openFiles, file])
     props.onFocusedFileChange?.(file)
     requestAnimationFrame(() => anchors.get(file)?.scrollIntoView({ block: "start" }))
   }
+
+  const step = (delta: number) => {
+    goto(stepTarget(files(), props.focusedFile, delta))
+  }
+
+  // 261115 Red UX-16 标记并下一个：当前文件标记已审 + 跳到下一个待审文件并展开。
+  // 目标在标记生效前就算好（旧 reviewed 集合 + 刚标记的 current），不依赖父级状态回流。
+  const handleMarkAndNext = () => {
+    const reviewed = reviewedSet()
+    const current =
+      props.focusedFile && allFiles().includes(props.focusedFile)
+        ? props.focusedFile
+        : allFiles().find((file) => !reviewed.has(file))
+    if (!current) return
+    if (!reviewed.has(current)) props.onToggleReviewed?.(current)
+    goto(nextUnreviewedTarget(allFiles(), reviewed, current))
+  }
+
+  // 全批已审（按全部文件计，不受筛选影响）。筛选模式下列表清空时用它给出收尾状态。
+  const allReviewed = createMemo(
+    () => allFiles().length > 0 && allFiles().every((file) => reviewedSet().has(file)),
+  )
 
   const syncVisible = () => {
     frame = undefined
@@ -371,9 +412,26 @@ export const SessionReview = (props: SessionReviewProps) => {
         </div>
         <div data-slot="session-review-actions">
           <Show when={hasDiffs() && props.onToggleReviewed}>
-            <div data-slot="session-review-reviewed-progress">
-              {reviewedSet().size}/{files().length}
+            {/* 261115 Red UX-16：进度按全部文件计（筛选只收窄列表，不改变进度语义）；
+                全批已审时给出收尾状态而不是悬着的 N/N。 */}
+            <div
+              data-slot="session-review-reviewed-progress"
+              data-done={allReviewed() ? "" : undefined}
+            >
+              {allReviewed()
+                ? i18n.t("ui.sessionReview.reviewed.done")
+                : `${reviewedSet().size}/${allFiles().length}`}
             </div>
+            <RadioGroup
+              options={["all", "unreviewed"] as const}
+              current={unreviewedOnly() ? "unreviewed" : "all"}
+              size="small"
+              value={(option) => option}
+              label={(option) =>
+                i18n.t(option === "all" ? "ui.sessionReview.filter.all" : "ui.sessionReview.filter.unreviewed")
+              }
+              onSelect={(option) => setUnreviewedOnly(option === "unreviewed")}
+            />
             <button
               type="button"
               data-slot="session-review-step"
@@ -390,6 +448,16 @@ export const SessionReview = (props: SessionReviewProps) => {
             >
               ›
             </button>
+            <Tooltip value={i18n.t("ui.sessionReview.reviewed.markNext")} placement="top" gutter={4}>
+              <Button
+                size="small"
+                data-slot="session-review-mark-next"
+                disabled={allReviewed()}
+                onClick={handleMarkAndNext}
+              >
+                {i18n.t("ui.sessionReview.reviewed.markNext")}
+              </Button>
+            </Tooltip>
           </Show>
           <Show when={hasDiffs() && props.onDiffStyleChange}>
             <RadioGroup
@@ -433,7 +501,18 @@ export const SessionReview = (props: SessionReviewProps) => {
         }}
       >
         <div data-slot="session-review-container" class={props.classes?.container}>
-          <Show when={hasDiffs()} fallback={props.empty}>
+          <Show
+            when={hasDiffs()}
+            fallback={
+              // 261115 Red UX-16：未审筛选把列表清空 ≠ 没有改动——给出本批完成状态，
+              // 只有真没有 diff 时才落回宿主的 empty。
+              allFiles().length > 0 ? (
+                <div data-slot="session-review-all-reviewed">{i18n.t("ui.sessionReview.reviewed.allDone")}</div>
+              ) : (
+                props.empty
+              )
+            }
+          >
             <div class="pb-6">
               <Accordion multiple value={open()} onChange={handleChange}>
                 <For each={files()}>

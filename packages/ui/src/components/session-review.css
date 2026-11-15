@@ -281,6 +281,20 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* 261115 Red UX-16：全批已审的收尾态 */
+  [data-slot="session-review-reviewed-progress"][data-done] {
+    color: var(--syntax-success, var(--text-strong));
+  }
+
+  [data-slot="session-review-all-reviewed"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 0;
+    font-size: var(--font-size-base, 13px);
+    color: var(--text-weak);
+  }
+
   [data-slot="session-review-step"] {
     display: inline-flex;
     align-items: center;

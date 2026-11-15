@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { stepTarget } from "./session-review"
+import { nextUnreviewedTarget, stepTarget } from "./session-review"
 
 const files = ["a.ts", "b.ts", "c.ts"]
 
@@ -42,5 +42,30 @@ describe("stepTarget", () => {
   test("单文件原地不动，空列表返回 undefined", () => {
     expect(stepTarget(["only.ts"], "only.ts", 1)).toBe("only.ts")
     expect(stepTarget([], undefined, 1)).toBeUndefined()
+  })
+})
+
+describe("nextUnreviewedTarget", () => {
+  // 261115 Red UX-16：标记并下一个——从当前文件之后（含环绕）找第一个未审文件，
+  // current 本身刚被标记，永远排除。
+  test("从当前文件之后找第一个未审，跳过已审文件", () => {
+    expect(nextUnreviewedTarget(files, new Set(["a.ts"]), "a.ts")).toBe("b.ts")
+    expect(nextUnreviewedTarget(files, new Set(["a.ts", "b.ts"]), "a.ts")).toBe("c.ts")
+  })
+
+  test("尾部环绕到开头", () => {
+    expect(nextUnreviewedTarget(files, new Set(["a.ts", "b.ts"]), "b.ts")).toBe("c.ts")
+    expect(nextUnreviewedTarget(files, new Set(["b.ts", "c.ts"]), "c.ts")).toBe("a.ts")
+  })
+
+  test("无焦点或焦点不在列表时从头扫全部", () => {
+    expect(nextUnreviewedTarget(files, new Set(["a.ts"]), undefined)).toBe("b.ts")
+    expect(nextUnreviewedTarget(files, new Set(["a.ts"]), "removed.ts")).toBe("b.ts")
+  })
+
+  test("current 刚标记也要排除；全审完返回 undefined", () => {
+    expect(nextUnreviewedTarget(["only.ts"], new Set(), "only.ts")).toBeUndefined()
+    expect(nextUnreviewedTarget(files, new Set(["a.ts", "b.ts", "c.ts"]), "b.ts")).toBeUndefined()
+    expect(nextUnreviewedTarget([], new Set(), undefined)).toBeUndefined()
   })
 })
