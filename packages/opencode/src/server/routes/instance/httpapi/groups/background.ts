@@ -24,6 +24,22 @@ export type Job = typeof Job.Type
 
 export const Cancelled = Schema.Struct({ cancelled: Schema.Array(Schema.String) })
 
+// 261115 Red UX-17 按需结果：output 单独一个端点按需取，列表仍然零重量。output 有界
+// （末尾 32,000 字符 + 截断标记与总量），完整输出走 sessionID 的会话记录。
+export const JobResult = Schema.Struct({
+  id: Schema.String,
+  found: Schema.Boolean,
+  status: Schema.optional(Schema.Literals(["running", "completed", "error", "cancelled"])),
+  title: Schema.optional(Schema.String),
+  output: Schema.optional(Schema.String),
+  truncated: Schema.Boolean,
+  totalChars: Schema.Number,
+  error: Schema.optional(Schema.String),
+  sessionID: Schema.optional(Schema.String),
+  parentSessionID: Schema.optional(Schema.String),
+})
+export type JobResult = typeof JobResult.Type
+
 export const BackgroundApi = HttpApi.make("background")
   .add(
     HttpApiGroup.make("background")
@@ -48,6 +64,18 @@ export const BackgroundApi = HttpApi.make("background")
             identifier: "background.cancel",
             summary: "Cancel a background activity",
             description: "Cancel a running background job and any background jobs nested under it.",
+          }),
+        ),
+        HttpApiEndpoint.get("result", `${root}/:jobID/result`, {
+          params: { jobID: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(JobResult, "Background job result (bounded)"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "background.result",
+            summary: "Get a background job result",
+            description:
+              "On-demand result of a finished background job. The output is bounded to the last 32,000 characters with a truncation flag and total size; open the linked session for the full transcript. Jobs are recycled 30 minutes after completion.",
           }),
         ),
       )

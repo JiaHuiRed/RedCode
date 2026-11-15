@@ -21,6 +21,8 @@ import type {
   BackgroundCancelResponses,
   BackgroundListErrors,
   BackgroundListResponses,
+  BackgroundResultErrors,
+  BackgroundResultResponses,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -5857,6 +5859,38 @@ export class Background extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<BackgroundCancelResponses, BackgroundCancelErrors, ThrowOnError>({
       url: "/background/{jobID}/cancel",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get a background job result
+   *
+   * On-demand result of a finished background job. The output is bounded to the last 32,000 characters with a truncation flag and total size; open the linked session for the full transcript. Jobs are recycled 30 minutes after completion.
+   */
+  public result<ThrowOnError extends boolean = false>(
+    parameters: {
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<BackgroundResultResponses, BackgroundResultErrors, ThrowOnError>({
+      url: "/background/{jobID}/result",
       ...options,
       ...params,
     })

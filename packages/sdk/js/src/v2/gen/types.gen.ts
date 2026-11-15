@@ -10397,6 +10397,47 @@ export type BackgroundCancelResponses = {
 
 export type BackgroundCancelResponse = BackgroundCancelResponses[keyof BackgroundCancelResponses]
 
+export type BackgroundResultData = {
+  body?: never
+  path: {
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background/{jobID}/result"
+}
+
+export type BackgroundResultErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type BackgroundResultError = BackgroundResultErrors[keyof BackgroundResultErrors]
+
+export type BackgroundResultResponses = {
+  /**
+   * Background job result (bounded)
+   */
+  200: {
+    id: string
+    found: boolean
+    status?: "running" | "completed" | "error" | "cancelled"
+    title?: string
+    output?: string
+    truncated: boolean
+    totalChars: number | "Infinity" | "-Infinity" | "NaN"
+    error?: string
+    sessionID?: string
+    parentSessionID?: string
+  }
+}
+
+export type BackgroundResultResponse = BackgroundResultResponses[keyof BackgroundResultResponses]
+
 export type PtyConnectData = {
   body?: never
   path: {
