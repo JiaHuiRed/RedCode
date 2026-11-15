@@ -6,6 +6,12 @@
  */
 const ASSENT = /(?:你|您|哥哥|哥)说[得的]对[ \t]*$/
 const ACCEPT = /(?:这个|这点|这回|这事|这次)?我认$/
+// 261115 Red：条件/让步从句里的「说得对」不是机械附和——整句删除会把条件前提
+// 一并抹掉，剩下的断言读起来变成无条件成立（审查实例：「如果你说得对，我们再看
+// 数据。」曾整段删成「我们再看数据。」）。同一从句里出现这些引导词就原样保留。
+const CONDITIONAL =
+  /(?:如果|假如|假使|要是|若是|倘若|即使|即便|就算|哪怕|虽然|虽说|只要|除非|既然|因为|不论|不管|无论)/
+const TRAILING = /[，,。！!？?；;：:\s]+$/
 const BOUNDARY = new Set(["，", ",", "。", "！", "!", "？", "?", "；", ";", "：", ":"])
 const HAN = /\p{Script=Han}/u
 const QUOTES: Record<string, string> = { '“': '”', '「': '」', '『': '』', '‘': '’', '"': '"' }
@@ -19,7 +25,10 @@ function stripLine(line: string): string {
   let quote: string | undefined
   let tick = false
   const check = () => {
-    if (ASSENT.test(clause) || ACCEPT.test(clause)) dirty = true
+    const statement = clause.replace(TRAILING, "")
+    if (!statement) return
+    if (CONDITIONAL.test(statement)) return
+    if (ASSENT.test(statement) || ACCEPT.test(statement)) dirty = true
   }
   const flush = () => {
     check()

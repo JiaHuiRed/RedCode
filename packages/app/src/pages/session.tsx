@@ -920,10 +920,11 @@ export default function Page() {
     setActive: tabs().setActive,
     loadFile: file.load,
     // 261115 Red UX-18：一次性浏览共用预览槽位——新的一次性打开顶掉旧的，
-    // 文件树普通打开或固定后不再被顶掉。
+    // 文件树普通打开或固定后不再被顶掉；已打开的常驻标签保持常驻（复审）。
     closeTab: tabs().close,
     previewTab: () => view().previewTab.current(),
     setPreviewTab: (tab) => view().previewTab.set(tab),
+    isTabOpen: (tab) => tabs().all().includes(tab),
   })
 
   // 261115 Red UX-18：审查列表「打开文件」是带来源的一次性浏览——记录来源 tab，

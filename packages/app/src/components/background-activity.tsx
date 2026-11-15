@@ -3,7 +3,7 @@
 // 261115 Red UX-17：结束的任务有了按需结果端点（GET /background/:jobID/result，有界），
 // 完成未看的条目带「待查看」标记，点开是结果对话框——看结果、复制、引用到草稿、
 // 跳子会话/父任务，不再只有一个完成状态。
-import { createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { Button } from "@redcode-ai/ui/button"
 import { Dialog } from "@redcode-ai/ui/dialog"
@@ -141,9 +141,18 @@ export function DialogBackground() {
   const unseen = createMemo(() => rows().filter((row) => row.unseen).length)
 
   // 261115 Red UX-17：结束的任务点开结果对话框（按需拉取，有界）；运行中的照旧跳会话。
+  // 261115 Red UX-17 复审：待查看标记移到结果真正取到之后（JobResultDialog 的 onSeen）——
+  // 请求失败时保留标记，用户还能知道这条结果没看过。
   const openResult = (row: Row) => {
-    seenResults.add(row.id)
-    dialog.show(() => <JobResultDialog row={row} />)
+    dialog.show(() => (
+      <JobResultDialog
+        row={row}
+        onSeen={() => {
+          seenResults.add(row.id)
+          void refetch()
+        }}
+      />
+    ))
   }
 
   const stop = (row: Row) => {
@@ -302,7 +311,7 @@ function ConfirmStop(props: { row: Row; onDone: () => Promise<void> }) {
 // 明确标注总量与完整来源，不冒充完整输出。
 const QUOTE_CHAR_CAP = 2_000
 
-function JobResultDialog(props: { row: Row }) {
+function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   const sdk = useSDK()
   const language = useLanguage()
   const dialog = useDialog()
@@ -319,6 +328,15 @@ function JobResultDialog(props: { row: Row }) {
     },
   )
 
+  // 261115 Red UX-17 复审：只有结果真正落在手里才算「已看」——请求失败或加载中
+  // 不清待查看标记（旧实现进对话框就标记，失败后用户再也分不出哪条没看过）。
+  let seen = false
+  createEffect(() => {
+    if (!result() || seen) return
+    seen = true
+    props.onSeen?.()
+  })
+
   const jump = (sessionID?: string) => {
     if (!sessionID || !params.dir) return
     dialog.close()
@@ -334,15 +352,15 @@ function JobResultDialog(props: { row: Row }) {
 
   // 引用到草稿：把结果摘录追加成一条文本部件，原草稿内容与光标语义不动，也不发送。
   // 来源写在引文头部；超过 2K 字符只带末尾并标注，完整输出走复制/会话。
+  // 261115 Red UX-17 复审：上限独立于服务端截断标记——服务端只标自己的 32K 上限，
+  // 20K 的完整输出仍远超引用预算，不能整段塞进草稿。
   const quote = () => {
     const data = result()
     if (!data?.output) return
     const header = `\n\n[后台任务「${props.row.title}」]\n`
-    const body = data.truncated ? data.output.slice(-QUOTE_CHAR_CAP) : data.output
-    const tail =
-      data.truncated && data.output.length > QUOTE_CHAR_CAP
-        ? `\n…（${language.t("dialog.background.result.quoteTruncated")}）`
-        : ""
+    const over = data.output.length > QUOTE_CHAR_CAP
+    const body = over ? data.output.slice(-QUOTE_CHAR_CAP) : data.output
+    const tail = over ? `\n…（${language.t("dialog.background.result.quoteTruncated")}）` : ""
     const text = `${header}${body}${tail}\n`
     const parts = prompt.current()
     let offset = 0

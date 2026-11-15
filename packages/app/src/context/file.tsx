@@ -259,11 +259,17 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     // 过期结果本就不上屏。本地命令/最近文件等同步候选不经过这里，不受延迟影响。
     const SEARCH_DEBOUNCE_MS = 150
     const searchInflight = new Map<string, Promise<string[]>>()
-    let searchTimer: number | undefined
-    let searchGeneration = 0
+    // 261115 Red UX-19 复审：防抖状态按入口（dirs）分桶——文件选择器与 @ 提及
+    // 共用一套 timer/generation 会互相作废，各自独立的尾随窗口才互不打断。
+    type SearchDebounce = { timer?: number; generation: number; cancel?: () => void }
+    const searchDebounce = new Map<"true" | "false", SearchDebounce>()
 
     onCleanup(() => {
-      if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+      for (const state of searchDebounce.values()) {
+        if (state.timer !== undefined) window.clearTimeout(state.timer)
+        state.cancel?.()
+      }
+      searchDebounce.clear()
     })
 
     const searchNow = (query: string, dirs: "true" | "false") => {
@@ -281,16 +287,19 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const search = (query: string, dirs: "true" | "false") =>
       new Promise<string[]>((resolve) => {
-        const generation = ++searchGeneration
-        if (searchTimer !== undefined) window.clearTimeout(searchTimer)
-        searchTimer = window.setTimeout(
-          () => {
-            void searchNow(query, dirs).then((result) => {
-              resolve(generation === searchGeneration ? result : [])
-            })
-          },
-          SEARCH_DEBOUNCE_MS,
-        )
+        const state = searchDebounce.get(dirs) ?? { generation: 0 }
+        searchDebounce.set(dirs, state)
+        const generation = ++state.generation
+        if (state.timer !== undefined) window.clearTimeout(state.timer)
+        // 取消旧窗口时立即以 [] 结算上一轮调用，不留永久 pending 的 Promise。
+        state.cancel?.()
+        state.timer = window.setTimeout(() => {
+          state.timer = undefined
+          void searchNow(query, dirs).then((result) => {
+            resolve(generation === state.generation ? result : [])
+          })
+        }, SEARCH_DEBOUNCE_MS)
+        state.cancel = () => resolve([])
       })
 
     const stop = sdk.event.listen((e) => {

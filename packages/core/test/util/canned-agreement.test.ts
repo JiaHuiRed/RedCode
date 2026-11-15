@@ -14,7 +14,8 @@ describe("assistant display: canned assent only", () => {
     ["你说得对，这一点我改。", "这一点我改。"],
     ["- 你说得对，分支确实漏了。", "- 分支确实漏了。"],
     ["这行确实有问题，你说得对，已经补上。", "这行确实有问题，已经补上。"],
-    ["如果你说得对，我们再看数据。", "我们再看数据。"],
+    // 261115 Red：条件前提不能随附和一起删——整句只剩陈述会读成无条件成立。
+    ["如果你说得对，我们再看数据。", "如果你说得对，我们再看数据。"],
   ])("removes standalone formula in %s", (raw, expected) => {
     expect(clean(raw)).toBe(expected)
   })
@@ -33,6 +34,9 @@ describe("assistant display: canned assent only", () => {
     "    你说得对",
     "```markdown\n你说得对\n我认\n```",
     "“原文是：\n你说得对\n我认”",
+    "即使你说得对，这个方案仍有风险。",
+    "你如果说得对，那数据就不该这样。",
+    "就算你说得对，这个顺序也不能换。",
   ])("preserves legitimate prose and quoted text: %s", (raw) => {
     expect(clean(raw)).toBe(raw)
   })

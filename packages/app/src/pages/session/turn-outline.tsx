@@ -70,8 +70,12 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
   const [state, setState] = createSignal<SearchState | undefined>()
   const [running, setRunning] = createSignal(false)
 
+  // 261115 Red UX-15 复审：分页锚定已执行查询的关键词——用户在结果页改了输入框再点
+  // 「继续搜索」，仍按首次查询的 q + 旧游标续传，不把新词混进旧结果；新搜索（无游标）
+  // 覆写整份 state，旧分页随之作废。running 守卫保证同一时刻只有一个在途请求，
+  // 旧请求不会迟到覆盖新结果。
   const runSearch = async (cursor?: string) => {
-    const q = input().trim()
+    const q = cursor ? (state()?.q ?? "") : input().trim()
     if (!q || running()) return
     setRunning(true)
     try {

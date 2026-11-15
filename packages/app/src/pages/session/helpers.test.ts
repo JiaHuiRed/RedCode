@@ -21,7 +21,45 @@ describe("createOpenReviewFile", () => {
 
     openReviewFile("src/a.ts")
 
-    expect(calls).toEqual(["show", "load:src/a.ts", "tab:src/a.ts", "open:file://src/a.ts", "active:file://src/a.ts"])
+    expect(calls).toEqual(["show", "tab:src/a.ts", "open:file://src/a.ts", "active:file://src/a.ts", "load:src/a.ts"])
+  })
+
+  // 261115 Red UX-18 复审：已打开的常驻标签不能因为从 Diff 再打开一次就被标成预览
+  // （否则下一次一次性浏览会把常驻标签关掉）；新标签才进预览槽。
+  test("keeps an already-open tab resident instead of marking it preview", () => {
+    const previewed: (string | undefined)[] = []
+    const openReviewFile = createOpenReviewFile({
+      showAllFiles: () => {},
+      tabForPath: (path) => `file://${path}`,
+      openTab: () => {},
+      setActive: () => {},
+      loadFile: () => {},
+      previewTab: () => undefined,
+      setPreviewTab: (tab) => previewed.push(tab),
+      isTabOpen: (tab) => tab === "file://src/a.ts",
+    })
+
+    openReviewFile("src/a.ts")
+
+    expect(previewed).toEqual([])
+  })
+
+  test("marks a fresh tab as the preview slot", () => {
+    const previewed: (string | undefined)[] = []
+    const openReviewFile = createOpenReviewFile({
+      showAllFiles: () => {},
+      tabForPath: (path) => `file://${path}`,
+      openTab: () => {},
+      setActive: () => {},
+      loadFile: () => {},
+      previewTab: () => undefined,
+      setPreviewTab: (tab) => previewed.push(tab),
+      isTabOpen: () => false,
+    })
+
+    openReviewFile("src/a.ts")
+
+    expect(previewed).toEqual(["file://src/a.ts"])
   })
 })
 

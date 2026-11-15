@@ -17,6 +17,9 @@ export const createOpenReviewFile = (input: {
   closeTab?: (tab: string) => void
   previewTab?: () => string | undefined
   setPreviewTab?: (tab: string | undefined) => void
+  // 261115 Red UX-18 复审：目标已是打开的常驻标签时保持常驻——重新标成预览会让
+  // 下一次一次性浏览把常驻标签顶掉；只有新标签才进预览槽。
+  isTabOpen?: (tab: string) => boolean
 }) => {
   return (path: string) => {
     batch(() => {
@@ -25,7 +28,12 @@ export const createOpenReviewFile = (input: {
       // 上一槽位还开着且不是本次目标 → 顶掉；已关闭（或用户固定后清了标记）则不补刀。
       const prev = input.previewTab?.()
       if (prev && prev !== tab) input.closeTab?.(prev)
-      input.setPreviewTab?.(tab)
+      if (input.isTabOpen?.(tab)) {
+        // 常驻标签保持原状；旧预览标记若还指着被顶掉的标签，一并清空。
+        if (prev && prev !== tab) input.setPreviewTab?.(undefined)
+      } else {
+        input.setPreviewTab?.(tab)
+      }
       // 立即开标签：点文件的下一次绘制就能看到目标标签与读取状态，加载期由
       // FileTabContent 自带的 Loading 态接住——不再「先加载后开标签」让人感觉没点上。
       input.openTab(tab)
