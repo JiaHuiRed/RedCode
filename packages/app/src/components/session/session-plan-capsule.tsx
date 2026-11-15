@@ -1,50 +1,17 @@
-import { Show, createEffect, createMemo, createSignal } from "solid-js"
-import type { Goal, Todo } from "@redcode-ai/sdk/v2/client"
+import { Show, createSignal } from "solid-js"
 import { Icon } from "@redcode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
-import { useSync } from "@/context/sync"
-import { useSessionLayout } from "@/context/session-layout"
-import { SessionPlanDetails } from "./session-plan-tab"
-
-const emptyTodos: Todo[] = []
+import { SessionPlanDetails, useSessionPlan } from "./session-plan-tab"
 
 // 261115 Red 计划胶囊：宽桌面折叠态挂在上下文胶囊**下方**的独立卡片。用户意图
 // （261115 复审）：「计划」不该塞进上下文胶囊内部——胶囊多数时候不展开，下方大片
 // 空白正好给计划单独一个入口；上下堆叠，不在同一列里并列。点击就地展开/收起，
 // 不跳 tab；无计划（goal 未设置且无 todo）时整体隐藏。
+// 面板展开后入口由顶部 plan tab 接管——本组件只在 compact() 为真时渲染。
 export function SessionPlanCapsule() {
-  const sync = useSync()
   const language = useLanguage()
-  const { params } = useSessionLayout()
   const [expanded, setExpanded] = createSignal(false)
-
-  // goal 过滤与 SessionPlanDetails 同源：cleared 不显示。
-  const goal = createMemo((): Goal | undefined => {
-    const id = params.id
-    if (!id) return undefined
-    const pinned = sync.data.goal[id]
-    if (!pinned || pinned.status === "cleared" || !pinned.text.trim()) return undefined
-    return pinned
-  })
-  const todos = createMemo((): Todo[] => {
-    const id = params.id
-    if (!id) return emptyTodos
-    return (sync.data.todo[id] as Todo[] | undefined) ?? emptyTodos
-  })
-  const exists = createMemo(() => !!goal() || todos().length > 0)
-  const done = createMemo(() => todos().filter((todo) => todo.status === "completed").length)
-
-  // 261115 Red：todo/goal 平时只在会话忙碌时同步（session.tsx 的忙碌 effect），打开
-  // 历史空闲会话时 store 里没有数据，胶囊与 plan tab 都会是空的。挂载时补拉一次，
-  // 每个会话一次（Set 守卫防止 goal 404 写回 undefined 造成重复拉取）。
-  const requested = new Set<string>()
-  createEffect(() => {
-    const id = params.id
-    if (!id || requested.has(id)) return
-    requested.add(id)
-    if (sync.data.todo[id] === undefined) void sync.session.todo(id)
-    if (sync.data.goal[id] === undefined) void sync.session.goal(id)
-  })
+  const { goal, total, done, exists } = useSessionPlan()
 
   return (
     <Show when={exists()}>
@@ -64,9 +31,9 @@ export function SessionPlanCapsule() {
               <span class="min-w-0 flex-1 truncate text-12-regular text-text-base select-text">{pinned().text}</span>
             )}
           </Show>
-          <Show when={todos().length > 0}>
+          <Show when={total() > 0}>
             <span class="ml-auto shrink-0 text-11-regular text-text-weaker tabular-nums">
-              {done()}/{todos().length}
+              {done()}/{total()}
             </span>
           </Show>
           <Icon

@@ -143,10 +143,10 @@ describe("DEFAULT_SESSION_TABS", () => {
 })
 
 // 260923 Red C4：固定 system tab 全部不可关闭（文档第 14 节）。此前 close("context")
-// 会把它从 all[] 里删掉，Context 入口随之消失。261115 Red：plan 退役后剩四项。
+// 会把它从 all[] 里删掉，Context 入口随之消失。
 describe("nextSessionTabsForClose", () => {
   test("refuses to close any fixed system tab", () => {
-    for (const tab of ["review", "context", "outline", "status"]) {
+    for (const tab of ["review", "context", "outline", "plan", "status"]) {
       expect(nextSessionTabsForClose({ all: ["context", "outline", "file://a.ts"], active: tab }, tab)).toBeUndefined()
     }
   })

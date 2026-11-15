@@ -7,15 +7,16 @@ import { createSessionTabs } from "./session-layout"
 // 261024 Red 自 pages/session/helpers.test.ts 随实现一同迁入。
 
 describe("SYSTEM_TABS", () => {
-  // 261115 Red：计划 tab 退役（计划由右侧独立胶囊承载），固定入口回到四项。
-  test("pins the four fixed tabs", () => {
-    expect([...SYSTEM_TABS].sort()).toEqual(["context", "outline", "review", "status"])
+  // 261115 Red：plan 保留为固定入口——宽桌面折叠态由右侧计划胶囊承载，展开态与中等
+  // 桌面由面板 tab 承载，两边合起来才覆盖全部面板形态。
+  test("pins the five fixed tabs", () => {
+    expect([...SYSTEM_TABS].sort()).toEqual(["context", "outline", "plan", "review", "status"])
   })
 
-  // 260923 Red C5：strip 按这个顺序渲染（审查 | 上下文 | 轮次 | 状态）。
+  // 260923 Red C5：strip 按这个顺序渲染（审查 | 上下文 | 轮次 | 计划 | 状态）。
   // Set 本身保序，所以顺序也是契约的一部分，别让人随手改乱。
   test("keeps the documented strip order", () => {
-    expect([...SYSTEM_TABS]).toEqual(["review", "context", "outline", "status"])
+    expect([...SYSTEM_TABS]).toEqual(["review", "context", "outline", "plan", "status"])
   })
 })
 
@@ -104,7 +105,6 @@ describe("createSessionTabs", () => {
 
   // 260923 Red C2：固定 system tab 都不进 openedTabs（此前 outline 漏网，会被当成
   // 文件标签渲染进 SortableProvider——可拖拽、可关闭，且 strip 上出现两份标签）。
-  // 261115 Red：plan 退役后仍要挡住运行期残留的同名 tab（RETIRED_TABS）。
   test("keeps every system tab out of openedTabs", () => {
     createRoot((dispose) => {
       const [state] = createStore({

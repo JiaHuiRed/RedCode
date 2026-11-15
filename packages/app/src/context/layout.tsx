@@ -132,14 +132,11 @@ export function pruneSessionKeys(input: {
 // 260923 Red C2/C4：固定 system tabs——永远存在、不需要 open 才出现、不可关闭、不参与
 // 排序、不参与动态文件 all[]。定义放在 tabs 状态模型的 owner（layout）里：它同时被
 // helpers 的 openedTabs 过滤与 close 守卫使用，页面层从 helpers re-export 取用。
-// 261115 Red：「计划」改由右侧独立胶囊承载，面板里的 plan tab 退役（不再列在这里）。
-export const SYSTEM_TABS = new Set<string>(["review", "context", "outline", "status"])
-export type SystemTab = "review" | "context" | "outline" | "status"
-
-// 261115 Red：退役的 system tab 在持久化加载时剔除——SYSTEM_TABS 不再吞它，
-// 否则它会按普通文件 tab 出现在文件行；active 落在它上面则回退到 context。
-// openedTabs 的过滤也共用这份集合（{session-layout} 侧），挡住运行期残留。
-export const RETIRED_TABS = new Set<string>(["plan"])
+// 261115 Red：plan 入口按面板形态分流——宽桌面折叠态由右侧计划胶囊承载，trigger 只在
+// 面板展开（含 768–1279px 中等桌面）时渲染。plan 仍留在 SYSTEM_TABS 里：漏掉它会退化成
+// 文件 tab（可拖拽、可关闭，条目在 all[] 里跟着持久化）。
+export const SYSTEM_TABS = new Set<string>(["review", "context", "outline", "plan", "status"])
+export type SystemTab = "review" | "context" | "outline" | "plan" | "status"
 
 // 260923 Red C1：sessionTabs 的「getter 虚拟默认」与「写入路径 seed」此前是两个世界——
 // getter 虚拟 {all:["context"]}（没有 active），而 setActive seed {all:[]}、open 从
@@ -195,7 +192,6 @@ const normalizeSessionTab = (path: ReturnType<typeof createPathHelpers> | undefi
 const normalizeSessionTabList = (path: ReturnType<typeof createPathHelpers> | undefined, all: string[]) => {
   const seen = new Set<string>()
   return all.flatMap((tab) => {
-    if (RETIRED_TABS.has(tab)) return []
     const value = normalizeSessionTab(path, tab)
     if (seen.has(value)) return []
     seen.add(value)
@@ -205,10 +201,9 @@ const normalizeSessionTabList = (path: ReturnType<typeof createPathHelpers> | un
 
 const normalizeStoredSessionTabs = (key: string, tabs: SessionTabs) => {
   const path = sessionPath(key)
-  const active = tabs.active ? normalizeSessionTab(path, tabs.active) : tabs.active
   return {
     all: normalizeSessionTabList(path, tabs.all),
-    active: active && RETIRED_TABS.has(active) ? "context" : active,
+    active: tabs.active ? normalizeSessionTab(path, tabs.active) : tabs.active,
   }
 }
 

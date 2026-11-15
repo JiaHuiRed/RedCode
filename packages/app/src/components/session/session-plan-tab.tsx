@@ -1,6 +1,7 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import type { Goal, Todo } from "@redcode-ai/sdk/v2/client"
 import { Icon } from "@redcode-ai/ui/icon"
+import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/context/session-layout"
@@ -33,28 +34,87 @@ function statusColor(status: string) {
   return "var(--text-weak)"
 }
 
-// 260615 Red Plan 面板：侧栏标签页，展示当前会话的完整 todo 计划进度
-// 261115 Red：「计划」不再占面板 tab——面板 tab 退役，计划改由右侧独立胶囊承载，
-// 本文件只剩嵌入用的 SessionPlanDetails（胶囊展开区）。
-export function SessionPlanDetails() {
+// 261115 Red 计划数据与补拉：胶囊（宽桌面折叠态）与计划 tab（面板展开态）共用这一份。
+// todo/goal 平时只在会话忙碌时同步（session.tsx 的忙碌 effect），打开历史空闲会话时
+// store 里没有数据，两个入口都会是空的。
+//
+// 补拉判据是「todo 是否写回 store」（成功时空数组也会落 store），不用一次性 Set：
+// 首次失败时 effect 的依赖不变，光靠标记会让历史会话的计划一直空着——失败按
+// 1s/2s/4s 有界重试，切走再回来也会因为 todo 仍缺失重新拉。不依赖 reject 判失败：
+// goal 的 404 与网络错误在 sync 层都写回 undefined，那里分不出来。
+const RETRY_DELAYS = [1000, 2000, 4000]
+
+export function useSessionPlan() {
   const sync = useSync()
-  const language = useLanguage()
   const { params } = useSessionLayout()
 
   const todos = createMemo((): Todo[] => {
     const id = params.id
     if (!id) return emptyTodos
-    return (sync.data.todo[id] as Todo[] | undefined) ?? emptyTodos
+    return sync.data.todo[id] ?? emptyTodos
   })
-
   // cleared 不显示：目标被清掉之后这块就该消失，留一行「已清除」只是占地方。
-  const goal = createMemo(() => {
+  const goal = createMemo((): Goal | undefined => {
     const id = params.id
     if (!id) return undefined
     const pinned = sync.data.goal[id]
     if (!pinned || pinned.status === "cleared" || !pinned.text.trim()) return undefined
     return pinned
   })
+  const total = createMemo(() => todos().length)
+  const done = createMemo(() => todos().filter((todo) => todo.status === "completed").length)
+  const inProgress = createMemo(() => todos().filter((todo) => todo.status === "in_progress").length)
+  const exists = createMemo(() => !!goal() || total() > 0)
+
+  const inflight = new Set<string>()
+  const timers: ReturnType<typeof setTimeout>[] = []
+  onCleanup(() => timers.forEach(clearTimeout))
+
+  const load = (id: string, attempt: number) => {
+    if (inflight.has(id)) return
+    inflight.add(id)
+    const settle = () => {
+      inflight.delete(id)
+      const delay = RETRY_DELAYS[attempt]
+      if (sync.data.todo[id] !== undefined || delay === undefined) return
+      timers.push(
+        setTimeout(() => {
+          if (params.id === id) load(id, attempt + 1)
+        }, delay),
+      )
+    }
+    void Promise.all([
+      sync.data.todo[id] === undefined ? sync.session.todo(id) : undefined,
+      sync.data.goal[id] === undefined ? sync.session.goal(id) : undefined,
+    ]).then(settle, settle)
+  }
+
+  createEffect(() => {
+    const id = params.id
+    if (!id || sync.data.todo[id] !== undefined) return
+    load(id, 0)
+  })
+
+  return { goal, todos, total, done, inProgress, exists }
+}
+
+// 260615 Red Plan 面板：侧栏标签页形态（滚动壳 + 统一内边距）。261115 Red：宽桌面折叠态
+// 由右侧计划胶囊承载，这个 tab 服务面板展开态与 768–1279px 中等桌面。
+export function SessionPlanTab() {
+  return (
+    <ScrollView class="@container h-full">
+      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
+        <SessionPlanDetails />
+      </div>
+    </ScrollView>
+  )
+}
+
+// 计划正文：胶囊展开区与 plan tab 共用。
+export function SessionPlanDetails() {
+  const sync = useSync()
+  const language = useLanguage()
+  const { goal, todos, total, done, inProgress } = useSessionPlan()
 
   // 轮次上限与预算天花板只在自动续跑开启时才真的会拦人（goal-continuation.ts 的三闸门），
   // 默认是关的。关着还画一条「3/20 轮」的进度会让人以为有个并不存在的限制在逼近。
@@ -68,9 +128,6 @@ export function SessionPlanDetails() {
     return Math.max(0, Math.min(100, Math.round((pinned.tokens_used / budget) * 100)))
   })
 
-  const total = createMemo(() => todos().length)
-  const done = createMemo(() => todos().filter((t) => t.status === "completed").length)
-  const inProgress = createMemo(() => todos().filter((t) => t.status === "in_progress").length)
   const percent = createMemo(() => (total() > 0 ? Math.round((done() / total()) * 100) : 0))
 
   return (

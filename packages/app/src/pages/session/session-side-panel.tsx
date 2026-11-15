@@ -11,7 +11,7 @@ import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, close
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
-import { SessionContextTab, SessionPlanCapsule, SortableTab, FileVisual } from "@/components/session"
+import { SessionContextTab, SessionPlanCapsule, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
 import { useCommand } from "@/context/command"
 import { SDKProvider } from "@/context/sdk"
 import { useFile, type SelectedLineRange } from "@/context/file"
@@ -315,6 +315,13 @@ export function SessionSidePanel(props: {
     tabs().setActive("context")
   })
 
+  // 261115 Red：折叠态不渲染 plan trigger，active 停在 plan 上就成了「没有入口的高亮」。
+  // 与 activeFileTab 同口径退回 context——计划摘要仍在下方胶囊里，内容不丢。
+  createEffect(() => {
+    if (!compact() || activeTab() !== "plan") return
+    tabs().setActive("context")
+  })
+
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     contextResizeObserver?.disconnect()
@@ -488,6 +495,16 @@ export function SessionSidePanel(props: {
                                   language.t("session.tab.outline"),
                                   <Icon name="bullet-list" size="small" />,
                                 )}
+                                {/* 261115 Red：计划入口按形态分流——宽桌面折叠态由右侧计划胶囊
+                              承载，展开态与 768–1279px 中等桌面由本 tab 承接。两个入口同时
+                              在场会重复，折叠态隐藏不会让展开态找不到计划。 */}
+                                <Show when={!compact()}>
+                                  {systemTab(
+                                    "plan",
+                                    language.t("session.tab.plan"),
+                                    <Icon name="checklist" size="small" />,
+                                  )}
+                                </Show>
                                 {systemTab(
                                   "status",
                                   language.t("session.tab.status"),
@@ -640,7 +657,14 @@ export function SessionSidePanel(props: {
                               </Show>
                             </Tabs.Content>
 
-                            {/* 261115 Red：计划面板不再占用面板 tab——由右侧独立胶囊承载。 */}
+                            {/* 261115 Red：计划面板。宽桌面折叠态由右侧胶囊承载，本 tab 只在
+                           面板展开（含中等桌面）时才有 trigger。 */}
+                            <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "plan"}>
+                                <SessionPlanTab />
+                              </Show>
+                            </Tabs.Content>
+
                             <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
                               <Show when={activeTab() === "status"}>
                                 <Suspense fallback={<div class="flex-1 min-h-0" />}>
