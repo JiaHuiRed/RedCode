@@ -3,7 +3,7 @@ import type { Config } from "../../../src/config/config"
 import type { Project } from "../../../src/project/project"
 import type { Worktree } from "../../../src/worktree"
 import type { MessageV2 } from "../../../src/session/message-v2"
-import type { SessionID } from "../../../src/session/schema"
+import type { SessionID, MessageID } from "../../../src/session/schema"
 
 export const OpenApiMethods = ["get", "post", "put", "delete", "patch"] as const
 export const Methods = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const
@@ -56,7 +56,10 @@ export type ScenarioContext = {
   session: (input?: { title?: string; parentID?: SessionID }) => Effect.Effect<SessionInfo>
   sessionGet: (sessionID: SessionID) => Effect.Effect<SessionInfo | undefined>
   project: () => Effect.Effect<Project.Info>
-  message: (sessionID: SessionID, input?: { text?: string; delivery?: "queued" }) => Effect.Effect<MessageSeed>
+  message: (
+    sessionID: SessionID,
+    input?: { text?: string; delivery?: "queued"; id?: MessageID; parentID?: MessageID; selectedChildID?: MessageID },
+  ) => Effect.Effect<MessageSeed>
   messages: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts[]>
   todos: (sessionID: SessionID, todos: TodoInfo[]) => Effect.Effect<void>
   goal: (input: { sessionID: SessionID; text: string }) => Effect.Effect<void>

@@ -163,7 +163,7 @@ describe("tui sync", () => {
       // 压缩摘要不在首屏（服务端 after 排他），但一定出现在往前翻的那一页里。
       return sessionID === paged
         ? json([info(sessionID, "msg_old", 1)])
-        : json([info(sessionID, "msg_old", 1), info(sessionID, "msg_summary", 2, { summary: true })])
+        : json([info(sessionID, "msg_old", 1), info(sessionID, "msg_summary", 2, { summary: true, finish: "stop" })])
     })
 
     try {

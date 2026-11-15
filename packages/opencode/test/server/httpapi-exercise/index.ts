@@ -24,6 +24,7 @@ import { Effect } from "effect"
 import { OpenApi } from "effect/http-api"
 import { TestLLMServer } from "../../lib/llm-server"
 import { ContextSnapshot } from "../../../src/session/context-snapshot"
+import { MessageID } from "../../../src/session/schema"
 import os from "os"
 import path from "path"
 import { array, boolean, check, isRecord, message, object, stable } from "./assertions"
@@ -1660,6 +1661,49 @@ const scenarios: Scenario[] = [
       },
       "status",
     ),
+  // 261115 Red 消息树 Phase 3 的 HTTP 接线。versions 造一个真实分叉点（两条同父
+  // user 兄弟）验证组列举；select 走「目标消息不存在」的拒绝路径——树改写的成功
+  // 语义（父指针改写、弃岛开合、文件恢复）由 test/session/branch.test.ts 覆盖，
+  // 这里只证明路由解码、实例上下文与错误映射接对了。
+  http.protected
+    .get("/session/{sessionID}/message-versions", "session.message_versions")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Message versions" })
+        const root = MessageID.ascending()
+        const first = MessageID.ascending()
+        const second = MessageID.ascending()
+        yield* ctx.message(session.id, { id: root, text: "root", selectedChildID: first })
+        yield* ctx.message(session.id, { id: first, text: "first branch", parentID: root })
+        yield* ctx.message(session.id, { id: second, text: "second branch", parentID: root })
+        return { session, root, first, second }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/message-versions", { sessionID: ctx.state.session.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(body.length === 1, "only a fork point with two user siblings forms a version group")
+      const group = body[0]
+      object(group)
+      check(group.parentID === ctx.state.root, "group should be keyed by the fork point")
+      array(group.versions)
+      check(group.versions.length === 2, "both sibling versions should be listed")
+      check(group.current === ctx.state.first, "current should follow the fork point's selectedChildID")
+    }),
+  http.protected
+    .post("/session/{sessionID}/message/{messageID}/select", "session.select_version")
+    .seeded((ctx) => ctx.session({ title: "Select version" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/message/{messageID}/select", {
+        sessionID: ctx.state.id,
+        messageID: MessageID.ascending(),
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected
     .post("/session/{sessionID}/permissions/{permissionID}", "permission.respond")
     .seeded((ctx) => ctx.session({ title: "Deprecated permission session" }))

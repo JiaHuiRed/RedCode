@@ -144,11 +144,13 @@ function withContext<A, E>(
           message: (sessionID, input) =>
             Effect.gen(function* () {
               const info: MessageV2.User = {
-                id: MessageID.ascending(),
+                id: input?.id ?? MessageID.ascending(),
                 sessionID,
                 role: "user",
                 time: { created: Date.now() },
                 delivery: input?.delivery,
+                parentID: input?.parentID,
+                selectedChildID: input?.selectedChildID,
                 agent: "build",
                 model: {
                   providerID: ProviderID.redcode,

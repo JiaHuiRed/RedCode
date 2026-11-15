@@ -27,7 +27,7 @@ describe("system prompt routing", () => {
     // 261111 Red 逐句自我审查与强制结果开场已删（docs/2026-11-11-prompt-revision-proposal.md §4），
     // 这里只钉保留下来的四项行为纠偏。
     expect(PROMPT_GPT).toContain("Prefer the smallest complete solution")
-    expect(PROMPT_GPT).toContain("Reuse verification while it still covers the final state")
+    expect(PROMPT_GPT).toContain("Reuse successful checks unless changed state invalidates them")
     expect(PROMPT_GPT).toContain("instead of reopening it for reassurance")
     expect(PROMPT_GPT).not.toContain("## Anti-defensive writing")
     expect(PROMPT_GPT).not.toContain("a question nobody asked")

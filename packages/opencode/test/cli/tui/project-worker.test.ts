@@ -17,7 +17,9 @@ const it = testEffect(Layer.mergeAll(TestLLMServer.layer, CrossSpawnSpawner.defa
 // 261114 Red Windows CI 全量并发下曾贴 30s 套件上限超时（本地单跑 ~14s）。给这个
 // 真 Worker + 双目录 + 三轮 LLM 往返的重集成测试独立时间预算，不动全仓超时；
 // 各阶段耗时打进日志，Nightly 再超时可直接对账是哪段卡住。
-const STAGE_BUDGET_MS = 120_000
+// 261115 Red Nightly 上 120s 也超了（本地 33s，CI 慢机约 3.6 倍），抬到 240s 留足
+// 余量——真卡死时日志里的 stage 时间戳仍能指出停在哪一段。
+const STAGE_BUDGET_MS = 240_000
 const workerT0 = Date.now()
 const stage = (label: string) => console.log(`[project-worker] ${label} +${((Date.now() - workerT0) / 1000).toFixed(1)}s`)
 
