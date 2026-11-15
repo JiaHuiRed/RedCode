@@ -73,6 +73,10 @@ export async function mockRedCodeServer(page: Page, config: MockServerConfig) {
 
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
 
+    // 261115 Red 消息树 Phase 3 的 version 列举：页面加载即请求，兜底 {} 会让
+    // versionGroups 对对象取 find（TypeError）崩掉整树，顶栏动作槽位的按钮随之不渲染。
+    if (/^\/session\/[^/]+\/message-versions$/.test(path)) return json(route, [])
+
     // 261013 Red changes 页有严格形状校验（validatePage：latest/cursor 必须为安全整数），
     // 兜底的 {} 会触发 "invalid session changes page" console.error 挂掉冒烟断言。
     if (/^\/session\/[^/]+\/changes$/.test(path)) {
