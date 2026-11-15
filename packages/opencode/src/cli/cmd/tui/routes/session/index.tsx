@@ -2407,7 +2407,10 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
 
   const content = createMemo(() => {
     // OpenRouter encrypts some reasoning blocks; drop the placeholder.
-    return props.part.text.replace("[REDACTED]", "").trim()
+    // 261115 Red 思考链与正文同口径：套话同样不展示。
+    return filterCannedAgreement(props.part.text)
+      .replace("[REDACTED]", "")
+      .trim()
   })
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.

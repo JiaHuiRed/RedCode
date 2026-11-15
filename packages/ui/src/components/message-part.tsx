@@ -1896,9 +1896,10 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
-  // OpenRouter 加密的 reasoning 块是空壳占位，摘除后再判定（与 TUI ReasoningPart 同法）
+  // OpenRouter 加密的 reasoning 块是空壳占位，摘除后再判定（与 TUI ReasoningPart 同法）。
+  // 261115 Red 思考链与正文同口径：套话同样不展示，避免展开思考又看到。
   const content = createMemo(() =>
-    text()
+    filterCannedAgreement(text())
       .replace(/\[REDACTED\]/g, "")
       .trim(),
   )
