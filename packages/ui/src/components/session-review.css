@@ -295,6 +295,34 @@
     color: var(--text-weak);
   }
 
+  /* 261115 Red A-UX-04：全批审完的收尾汇总（文件数 + 增删行合计）。 */
+  [data-slot="session-review-complete"] {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 4px 8px;
+    font-size: var(--font-size-small);
+    color: var(--text-weak);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-slot="session-review-complete-title"] {
+    color: var(--syntax-success, var(--text-strong));
+  }
+
+  [data-slot="session-review-complete-stats"] {
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  [data-slot="session-review-complete-add"] {
+    color: var(--syntax-success);
+  }
+
+  [data-slot="session-review-complete-del"] {
+    color: var(--syntax-critical);
+  }
+
   [data-slot="session-review-step"] {
     display: inline-flex;
     align-items: center;

@@ -12,6 +12,7 @@
 
 - **计划入口覆盖全部面板形态**（`packages/app/src/pages/session/session-side-panel.tsx`、`context/{layout,session-layout}.tsx`、`components/session/session-plan-*.tsx`）：恢复「计划」系统 tab，但只在面板展开态渲染——宽桌面折叠仍走右侧计划胶囊，展开态与 768–1279px 中等桌面由 tab 承接，补上删 tab 后「展开工作台反而找不到计划」的入口缺口；折叠时 active 停在 plan 上自动退回上下文。计划数据与补拉抽成 `useSessionPlan` 供胶囊与 tab 共用，补拉判据改为「todo 是否写回 store」并加 1s/2s/4s 有界退避重试（原先的一次性 Set 让首次失败的历史会话计划永久空着，切走再回来也不重拉）。验证：app typecheck 0；layout + session-layout 测试 23 pass；webui 实测 1440 折叠（四项 tab + 胶囊 1/8）、1440 展开与 1100 展开（五项 tab、计划内容可见）、展开选计划后折叠自动回上下文。
 - **A-UX-03 工具分组摘要**（`packages/ui/src/components/{message-part,message-part-groups}.tsx`、`packages/app/src/pages/session/message-timeline.tsx`）：对话时间线的工具按「探索（read/glob/grep/list）/ 修改（edit/write/apply_patch）/ 命令（shell/bash）」三类分段折叠，连续同类才合并，跨类各自成组；组内出现失败时该组自动展开一次并在摘要后显示红色失败数，失败与权限申请不再被折叠吞掉。分组模型拆到 `message-part-groups.ts`（纯函数，脱离 `@solidjs/router` 可单测）。验证：ui typecheck 0、ui 全量 110 pass、app typecheck 0、timeline 数据测试 48 pass；webui 实测编辑/命令组摘要、组内展开列表与失败组标记。
+- **A-UX-04 审查收尾汇总**（`packages/ui/src/components/session-review.{tsx,css}`）：全批审完后在文件列表末尾给一行真实合计——文件数 + 增删行（`reviewTotals` 纯函数），只描述看过的规模，不冒充测试或暂存状态。验证：ui typecheck 0、ui 全量 112 pass（新增 2 条合计用例）；webui 实测 6 个文件全部标记后出现「6 个文件已全部审阅 +75 −1」，与各文件增删数一致。
 
 ### [0.18.5] - 2026-11-15
 

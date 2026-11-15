@@ -188,6 +188,19 @@ export function nextUnreviewedTarget(
   return ordered.find((file) => file !== current && !reviewed.has(file))
 }
 
+// 261115 Red A-UX-04：审查完成汇总的合计。只数「看过的改动规模」——文件数与增删行，
+// 不冒充测试/暂存状态（reviewed 的语义仍是「看过」）。
+export function reviewTotals(diffs: readonly { additions?: number; deletions?: number }[]) {
+  return diffs.reduce<{ files: number; additions: number; deletions: number }>(
+    (acc, diff) => ({
+      files: acc.files + 1,
+      additions: acc.additions + (diff.additions ?? 0),
+      deletions: acc.deletions + (diff.deletions ?? 0),
+    }),
+    { files: 0, additions: 0, deletions: 0 },
+  )
+}
+
 export const SessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
@@ -268,6 +281,7 @@ export const SessionReview = (props: SessionReviewProps) => {
   const allReviewed = createMemo(
     () => allFiles().length > 0 && allFiles().every((file) => reviewedSet().has(file)),
   )
+  const totals = createMemo(() => reviewTotals(props.diffs))
 
   const syncVisible = () => {
     frame = undefined
@@ -792,6 +806,19 @@ export const SessionReview = (props: SessionReviewProps) => {
                   }}
                 </For>
               </Accordion>
+              {/* 261115 Red A-UX-04：全批审完的收尾汇总——文件数与增删行合计。
+                  只描述看过的规模，不冒充测试或暂存状态。 */}
+              <Show when={allReviewed()}>
+                <div data-slot="session-review-complete">
+                  <span data-slot="session-review-complete-title">
+                    {i18n.t("ui.sessionReview.complete.title", { count: totals().files })}
+                  </span>
+                  <span data-slot="session-review-complete-stats">
+                    <span data-slot="session-review-complete-add">+{totals().additions}</span>
+                    <span data-slot="session-review-complete-del">−{totals().deletions}</span>
+                  </span>
+                </div>
+              </Show>
             </div>
           </Show>
         </div>

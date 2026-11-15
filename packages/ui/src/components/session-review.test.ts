@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { nextUnreviewedTarget, stepTarget } from "./session-review"
+import { nextUnreviewedTarget, reviewTotals, stepTarget } from "./session-review"
 
 const files = ["a.ts", "b.ts", "c.ts"]
 
@@ -42,6 +42,22 @@ describe("stepTarget", () => {
   test("单文件原地不动，空列表返回 undefined", () => {
     expect(stepTarget(["only.ts"], "only.ts", 1)).toBe("only.ts")
     expect(stepTarget([], undefined, 1)).toBeUndefined()
+  })
+})
+
+describe("reviewTotals", () => {
+  // 261115 Red A-UX-04：全批审完的收尾汇总。只数看过的规模，binary 或缺失计数的
+  // 文件仍计文件数、行数按 0 计。
+  test("sums files and line counts", () => {
+    expect(reviewTotals([{ additions: 3, deletions: 1 }, { additions: 0, deletions: 2 }, {}])).toEqual({
+      files: 3,
+      additions: 3,
+      deletions: 3,
+    })
+  })
+
+  test("empty list yields zeros", () => {
+    expect(reviewTotals([])).toEqual({ files: 0, additions: 0, deletions: 0 })
   })
 })
 
