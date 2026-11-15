@@ -35,6 +35,16 @@ import { useFileComponent, useFileOpen } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
+import {
+  groupParts,
+  isGroupedTool,
+  sameGroups,
+  type PartGroup,
+  type PartRef,
+  type ToolGroupKind,
+} from "./message-part-groups"
+export { groupParts, sameGroups }
+export type { PartGroup, PartRef, ToolGroupKind }
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Collapsible } from "./collapsible"
@@ -464,7 +474,6 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 const HIDDEN_TOOLS = new Set(["todowrite"])
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
@@ -477,91 +486,6 @@ function same<T>(a: readonly T[] | undefined, b: readonly T[] | undefined) {
   if (!a || !b) return false
   if (a.length !== b.length) return false
   return a.every((x, i) => x === b[i])
-}
-
-export type PartRef = {
-  messageID: string
-  partID: string
-}
-
-export type PartGroup =
-  | {
-      key: string
-      type: "part"
-      ref: PartRef
-    }
-  | {
-      key: string
-      type: "context"
-      refs: PartRef[]
-    }
-
-function sameRef(a: PartRef, b: PartRef) {
-  return a.messageID === b.messageID && a.partID === b.partID
-}
-
-function sameGroup(a: PartGroup, b: PartGroup) {
-  if (a === b) return true
-  if (a.key !== b.key) return false
-  if (a.type !== b.type) return false
-  if (a.type === "part") {
-    if (b.type !== "part") return false
-    return sameRef(a.ref, b.ref)
-  }
-  if (b.type !== "context") return false
-  if (a.refs.length !== b.refs.length) return false
-  return a.refs.every((ref, i) => sameRef(ref, b.refs[i]!))
-}
-
-export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.length !== b.length) return false
-  return a.every((item, i) => sameGroup(item, b[i]!))
-}
-
-export function groupParts(parts: { messageID: string; part: PartType }[]) {
-  const result: PartGroup[] = []
-  let start = -1
-
-  const flush = (end: number) => {
-    if (start < 0) return
-    const first = parts[start]
-    const last = parts[end]
-    if (!first || !last) {
-      start = -1
-      return
-    }
-    result.push({
-      key: `context:${first.part.id}`,
-      type: "context",
-      refs: parts.slice(start, end + 1).map((item) => ({
-        messageID: item.messageID,
-        partID: item.part.id,
-      })),
-    })
-    start = -1
-  }
-
-  parts.forEach((item, index) => {
-    if (isContextGroupTool(item.part)) {
-      if (start < 0) start = index
-      return
-    }
-
-    flush(index - 1)
-    result.push({
-      key: `part:${item.messageID}:${item.part.id}`,
-      type: "part",
-      ref: {
-        messageID: item.messageID,
-        partID: item.part.id,
-      },
-    })
-  })
-
-  flush(parts.length - 1)
-  return result
 }
 
 function index<T extends { id: string }>(items: readonly T[]) {
@@ -636,24 +560,28 @@ export function AssistantParts(props: {
 
         return (
           <Switch>
-            <Match when={entryType() === "context"}>
+            <Match when={entryType() !== "part"}>
               {(() => {
                 const parts = createMemo(
                   () => {
                     const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
+                    if (entry.type === "part") return emptyTools
                     return entry.refs
                       .map((ref) => part().get(ref.messageID)?.get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
+                      .filter((part): part is ToolPart => !!part && isGroupedTool(part))
                   },
                   emptyTools,
                   { equals: same },
                 )
                 const busy = createMemo(() => props.working && last() === entryAccessor().key)
+                const kind = createMemo(() => {
+                  const entry = entryAccessor()
+                  return entry.type === "part" ? undefined : entry.type
+                })
 
                 return (
-                  <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} busy={busy()} />
+                  <Show when={parts().length > 0 && kind()}>
+                    <ToolGroup kind={kind()!} parts={parts()} busy={busy()} />
                   </Show>
                 )
               })()}
@@ -691,10 +619,6 @@ export function AssistantParts(props: {
       }}
     </Index>
   )
-}
-
-function isContextGroupTool(part: PartType): part is ToolPart {
-  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(part.tool)
 }
 
 function contextToolDetail(part: ToolPart): string | undefined {
@@ -857,23 +781,27 @@ export function AssistantMessageDisplay(props: {
 
         return (
           <Switch>
-            <Match when={entryType() === "context"}>
+            <Match when={entryType() !== "part"}>
               {(() => {
                 const parts = createMemo(
                   () => {
                     const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
+                    if (entry.type === "part") return emptyTools
                     return entry.refs
                       .map((ref) => part().get(ref.partID))
-                      .filter((part): part is ToolPart => !!part && isContextGroupTool(part))
+                      .filter((part): part is ToolPart => !!part && isGroupedTool(part))
                   },
                   emptyTools,
                   { equals: same },
                 )
+                const kind = createMemo(() => {
+                  const entry = entryAccessor()
+                  return entry.type === "part" ? undefined : entry.type
+                })
 
                 return (
-                  <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} />
+                  <Show when={parts().length > 0 && kind()}>
+                    <ToolGroup kind={kind()!} parts={parts()} />
                   </Show>
                 )
               })()}
@@ -904,14 +832,80 @@ export function AssistantMessageDisplay(props: {
   )
 }
 
-export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
+// 261115 Red A-UX-03：探索 / 修改 / 命令三类共用一套折叠外壳——标题、摘要与失败提示
+// 按 kind 分派，展开后的单项渲染完全一致。失败不被折叠吞掉：组内出现 error 时强制
+// 展开一次（用户手动收起后不再抢回），摘要后跟红色失败数。
+export function ToolGroup(props: { kind: ToolGroupKind; parts: ToolPart[]; busy?: boolean }) {
   const i18n = useI18n()
   const [open, setOpen] = createSignal(false)
   const pending = createMemo(
     () =>
       !!props.busy || props.parts.some((part) => part.state.status === "pending" || part.state.status === "running"),
   )
-  const summary = createMemo(() => contextToolSummary(props.parts))
+  const failed = createMemo(() => props.parts.filter((part) => part.state.status === "error").length)
+  let revealed = false
+  createEffect(() => {
+    if (!failed() || revealed) return
+    revealed = true
+    setOpen(true)
+  })
+  const title = createMemo(() =>
+    props.kind === "context"
+      ? i18n.t("ui.sessionTurn.status.gatheringContext")
+      : props.kind === "edit"
+        ? i18n.t("ui.sessionTurn.status.makingEdits")
+        : i18n.t("ui.sessionTurn.status.runningCommands"),
+  )
+  const titleDone = createMemo(() =>
+    props.kind === "context"
+      ? i18n.t("ui.sessionTurn.status.gatheredContext")
+      : props.kind === "edit"
+        ? i18n.t("ui.sessionTurn.status.madeEdits")
+        : i18n.t("ui.sessionTurn.status.ranCommands"),
+  )
+  const items = createMemo(() => {
+    if (props.kind === "context") {
+      const summary = contextToolSummary(props.parts)
+      return [
+        {
+          key: "read",
+          count: summary.read,
+          one: i18n.t("ui.messagePart.context.read.one"),
+          other: i18n.t("ui.messagePart.context.read.other"),
+        },
+        {
+          key: "search",
+          count: summary.search,
+          one: i18n.t("ui.messagePart.context.search.one"),
+          other: i18n.t("ui.messagePart.context.search.other"),
+        },
+        {
+          key: "list",
+          count: summary.list,
+          one: i18n.t("ui.messagePart.context.list.one"),
+          other: i18n.t("ui.messagePart.context.list.other"),
+        },
+      ]
+    }
+    if (props.kind === "edit") {
+      return [
+        {
+          key: "edit",
+          count: props.parts.length,
+          one: i18n.t("ui.messagePart.group.edit.one"),
+          other: i18n.t("ui.messagePart.group.edit.other"),
+        },
+      ]
+    }
+    return [
+      {
+        key: "command",
+        count: props.parts.length,
+        one: i18n.t("ui.messagePart.group.command.one"),
+        other: i18n.t("ui.messagePart.group.command.other"),
+      },
+    ]
+  })
 
   return (
     <Collapsible
@@ -922,47 +916,25 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
       data-timeline-part-ids={props.parts.map((part) => part.id).join(",")}
     >
       <Collapsible.Trigger>
-        <div data-component="context-tool-group-trigger">
+        <div data-component="context-tool-group-trigger" data-kind={props.kind} data-failed={failed() > 0 || undefined}>
           <span
             data-slot="context-tool-group-title"
             class="min-w-0 flex items-center gap-2 text-14-medium text-text-strong"
           >
             <span data-slot="context-tool-group-label" class="shrink-0">
-              <ToolStatusTitle
-                active={pending()}
-                activeText={i18n.t("ui.sessionTurn.status.gatheringContext")}
-                doneText={i18n.t("ui.sessionTurn.status.gatheredContext")}
-                split={false}
-              />
+              <ToolStatusTitle active={pending()} activeText={title()} doneText={titleDone()} split={false} />
             </span>
             <span
               data-slot="context-tool-group-summary"
               class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-normal text-text-base"
             >
-              <AnimatedCountList
-                items={[
-                  {
-                    key: "read",
-                    count: summary().read,
-                    one: i18n.t("ui.messagePart.context.read.one"),
-                    other: i18n.t("ui.messagePart.context.read.other"),
-                  },
-                  {
-                    key: "search",
-                    count: summary().search,
-                    one: i18n.t("ui.messagePart.context.search.one"),
-                    other: i18n.t("ui.messagePart.context.search.other"),
-                  },
-                  {
-                    key: "list",
-                    count: summary().list,
-                    one: i18n.t("ui.messagePart.context.list.one"),
-                    other: i18n.t("ui.messagePart.context.list.other"),
-                  },
-                ]}
-                fallback=""
-              />
+              <AnimatedCountList items={items()} fallback="" />
             </span>
+            <Show when={failed() > 0}>
+              <span data-slot="context-tool-group-failed" class="shrink-0 font-normal" style={{ color: "var(--syntax-critical)" }}>
+                {i18n.t("ui.messagePart.group.failed", { count: failed() })}
+              </span>
+            </Show>
           </span>
           <Collapsible.Arrow />
         </div>
@@ -975,14 +947,15 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
               const running = createMemo(
                 () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
               )
+              const error = createMemo(() => partAccessor().state.status === "error")
               return (
-                <div data-slot="context-tool-group-item">
+                <div data-slot="context-tool-group-item" data-failed={error() || undefined}>
                   <div data-component="tool-trigger">
                     <div data-slot="basic-tool-tool-trigger-content">
                       <div data-slot="basic-tool-tool-info">
                         <div data-slot="basic-tool-tool-info-structured">
                           <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title">
+                            <span data-slot="basic-tool-tool-title" style={error() ? { color: "var(--syntax-critical)" } : undefined}>
                               <TextShimmer text={trigger().title} active={running()} />
                             </span>
                             <Show when={!running() && trigger().subtitle}>

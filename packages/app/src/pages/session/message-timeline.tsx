@@ -24,7 +24,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { Button } from "@redcode-ai/ui/button"
 import { Card } from "@redcode-ai/ui/card"
 import {
-  ContextToolGroup,
+  ToolGroup,
   Message,
   MessageDivider,
   Part as MessagePart,
@@ -1754,22 +1754,29 @@ export function MessageTimeline(props: {
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
 
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>) => {
-    if (row().group.type === "context") {
+    if (row().group.type !== "part") {
+      const kind = createMemo(() => {
+        const group = row().group
+        return group.type === "part" ? undefined : group.type
+      })
       const parts = createMemo(() => {
         const group = row().group
-        if (group.type !== "context") return emptyTools
-        return group.refs
-          .map((ref) => getMsgPart(ref.messageID, ref.partID))
-          .filter((part): part is ToolPart => part?.type === "tool")
+        if (group.type === "part") return emptyTools
+        return group.refs.map((ref) => getMsgPart(ref.messageID, ref.partID)).filter((part): part is ToolPart => part?.type === "tool")
       })
 
       return (
-        <ContextToolGroup
-          parts={parts()}
-          busy={
-            workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
-          }
-        />
+        <Show when={kind()}>
+          {(groupKind) => (
+            <ToolGroup
+              kind={groupKind()}
+              parts={parts()}
+              busy={
+                workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+              }
+            />
+          )}
+        </Show>
       )
     }
 

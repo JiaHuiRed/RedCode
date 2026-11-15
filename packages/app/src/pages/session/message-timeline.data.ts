@@ -314,7 +314,7 @@ export namespace Timeline {
     // 用 part 类型表一次 O(n)，不按文本内容或相邻猜测。
     const partTypeByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part.type] as const))
     const groupKind = (group: PartGroup): "text" | "work" => {
-      if (group.type === "context") return "work"
+      if (group.type !== "part") return "work"
       return partTypeByID.get(group.ref.partID) === "text" ? "text" : "work"
     }
 
