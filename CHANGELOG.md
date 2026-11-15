@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **计划入口覆盖全部面板形态**（`packages/app/src/pages/session/session-side-panel.tsx`、`context/{layout,session-layout}.tsx`、`components/session/session-plan-*.tsx`）：恢复「计划」系统 tab，但只在面板展开态渲染——宽桌面折叠仍走右侧计划胶囊，展开态与 768–1279px 中等桌面由 tab 承接，补上删 tab 后「展开工作台反而找不到计划」的入口缺口；折叠时 active 停在 plan 上自动退回上下文。计划数据与补拉抽成 `useSessionPlan` 供胶囊与 tab 共用，补拉判据改为「todo 是否写回 store」并加 1s/2s/4s 有界退避重试（原先的一次性 Set 让首次失败的历史会话计划永久空着，切走再回来也不重拉）。验证：app typecheck 0；layout + session-layout 测试 23 pass；webui 实测 1440 折叠（四项 tab + 胶囊 1/8）、1440 展开与 1100 展开（五项 tab、计划内容可见）、展开选计划后折叠自动回上下文。
+
 ### [0.18.5] - 2026-11-15
 
 - **0.18.5 体验包（GUI/core）**：体验优先审查报告（`docs/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.5 包 8 项全部落地（分阶段口径下不依赖后端写入接口的部分先行）——
@@ -22,7 +26,6 @@
 - **RX-01 重试绑定原提交**（`packages/app/src/components/prompt-input/submit.ts`）：A 提交失败后继续写 B、再点横幅 Retry，旧实现直绑 handleSubmit 读到什么发什么——现在失败时留完整快照（草稿/上下文/模型/交付方式/intent/messageID/waitForWorktree），Retry 走 `retryFailedSubmit` 重发快照并复用同一条 messageID 幂等；当前输入框不读取不清空；编辑器仍原样保留失败稿时重试成功按正常提交后状态清空该 scope（含按 key 移除已随发的评论项）；编辑器内容 ≠ 失败稿时横幅补提示行 + 失败稿预览；打字不再自动清错误横幅；记录随 dismiss/重试成功/新提交成功清除。submit 套件 17 pass（新增 2 条交错顺序回归）。
 - **0.18.4 评审修复收编**（`packages/app`）：Soul 快选与全部会话下拉渲染即崩——Kobalte `GroupLabel` 缺 `Group` 包裹（类型层不校验，点击级才崩），两处补 Group；空搜索加载最近会话 + 在途槽守卫改判令牌有效性（emptyInflight 与搜索槽对称，防旧请求回写）；状态台定位提问 dock 优先、聚焦权限 footer「允许一次」；Soul 选择器挪到新会话页上下文行（与工作区/分支同排）；展开编辑/拖高改为立即改变框体；状态台删「思考中」重复行；计划模块拆独立胶囊、最大化时自适应填充面板空白（`SessionPlanDetails` 无滚动壳复用）。
 - **CI/测试基建**（Karina）：e2e mock 补消息版本端点修 session 页整树崩溃；nightly 补版本端点覆盖 + 两处过期测试数据。
-- **计划入口覆盖全部面板形态**（`packages/app/src/pages/session/session-side-panel.tsx`、`context/{layout,session-layout}.tsx`、`components/session/session-plan-*.tsx`）：恢复「计划」系统 tab，但只在面板展开态渲染——宽桌面折叠仍走右侧计划胶囊，展开态与 768–1279px 中等桌面由 tab 承接，补上删 tab 后「展开工作台反而找不到计划」的入口缺口；折叠时 active 停在 plan 上自动退回上下文。计划数据与补拉抽成 `useSessionPlan` 供胶囊与 tab 共用，补拉判据改为「todo 是否写回 store」并加 1s/2s/4s 有界退避重试（原先的一次性 Set 让首次失败的历史会话计划永久空着，切走再回来也不重拉）。验证：app typecheck 0；layout + session-layout 测试 23 pass；webui 实测 1440 折叠（四项 tab + 胶囊 1/8）、1440 展开与 1100 展开（五项 tab、计划内容可见）、展开选计划后折叠自动回上下文。
 - 已知预存失败：`test/cli/cmd/tui/sync.test.tsx` loadEarlier 1 例（stash 干净树复现，与本版无关，待单独修复）。
 
 ### [0.18.4] - 2026-11-14
