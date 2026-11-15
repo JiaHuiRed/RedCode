@@ -251,11 +251,47 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       return promise
     }
 
+    // 261115 Red UX-19/PF-07：远程文件搜索尾随防抖 + 在途去重 + latest-only。
+    // 大仓库里 @ 与文件选择器的远程候选此前逐键直发，每次都是一次 rg 全仓扫描，
+    // 快速输入时过期扫描逐键累加占住 IO。现在 150ms 尾随窗口（审查报告 PF-07 的
+    // 建议起点，非实测基线）：只发最后一次查询；同 key 在途请求复用；只有最新
+    // 一代调用者拿到响应，过期调用拿到空数组——消费方全是 createResource.latest，
+    // 过期结果本就不上屏。本地命令/最近文件等同步候选不经过这里，不受延迟影响。
+    const SEARCH_DEBOUNCE_MS = 150
+    const searchInflight = new Map<string, Promise<string[]>>()
+    let searchTimer: number | undefined
+    let searchGeneration = 0
+
+    onCleanup(() => {
+      if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+    })
+
+    const searchNow = (query: string, dirs: "true" | "false") => {
+      const key = `${dirs}:${query}`
+      const existing = searchInflight.get(key)
+      if (existing) return existing
+      const promise = sdk.client.find
+        .files({ query, dirs })
+        .then((x) => (x.data ?? []).map(path.normalize))
+        .catch(() => [] as string[])
+        .finally(() => searchInflight.delete(key))
+      searchInflight.set(key, promise)
+      return promise
+    }
+
     const search = (query: string, dirs: "true" | "false") =>
-      sdk.client.find.files({ query, dirs }).then(
-        (x) => (x.data ?? []).map(path.normalize),
-        () => [],
-      )
+      new Promise<string[]>((resolve) => {
+        const generation = ++searchGeneration
+        if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+        searchTimer = window.setTimeout(
+          () => {
+            void searchNow(query, dirs).then((result) => {
+              resolve(generation === searchGeneration ? result : [])
+            })
+          },
+          SEARCH_DEBOUNCE_MS,
+        )
+      })
 
     const stop = sdk.event.listen((e) => {
       invalidateFromWatcher(e.details, {
