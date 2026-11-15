@@ -381,7 +381,8 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  // 261115 Red A-UX-07：窄终端的侧栏是 overlay，不占正文宽度——只有宽屏常驻侧栏才扣。
+  const contentWidth = createMemo(() => dimensions().width - (wide() && sidebarVisible() ? 42 : 0) - 4)
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -1882,7 +1883,7 @@ export function Session() {
                   // 260806 Red 同 ui/dialog.tsx：半透明遮罩会让背景里的 CJK 整段消失，改全透明
                   backgroundColor={RGBA.fromInts(0, 0, 0, 0)}
                 >
-                  <Sidebar sessionID={route.sessionID} />
+                  <Sidebar sessionID={route.sessionID} compact />
                 </box>
               </Match>
             </Switch>

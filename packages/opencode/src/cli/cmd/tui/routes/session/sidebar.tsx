@@ -12,7 +12,10 @@ import * as Clipboard from "@tui/util/clipboard"
 import { useToast } from "@tui/ui/toast"
 import { useRenderer } from "@opentui/solid"
 
-export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
+// 261115 Red A-UX-07：宽终端 42 列完整档；窄终端以 overlay 打开时走 28 列简要档——
+// 只留标题、工作区与共享链接，会话 ID 这类次要信息不占宽度。
+export function Sidebar(props: { sessionID: string; overlay?: boolean; compact?: boolean }) {
+  const width = () => (props.compact ? 28 : 42)
   const project = useProject()
   const sync = useSync()
   const { theme } = useTheme()
@@ -31,7 +34,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     <Show when={session()}>
       <box
         backgroundColor={theme.backgroundPanel}
-        width={42}
+        width={width()}
         height="100%"
         paddingTop={0}
         paddingBottom={0}
@@ -66,7 +69,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 <text fg={theme.text}>
                   <b>{session()!.title}</b>
                 </text>
-                <Show when={InstallationChannel !== "latest"}>
+                <Show when={InstallationChannel !== "latest" && !props.compact}>
                   <text fg={theme.textMuted}>{props.sessionID}</text>
                 </Show>
                 <Show when={session()!.workspaceID}>
