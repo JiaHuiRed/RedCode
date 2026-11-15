@@ -1,4 +1,5 @@
 export { SessionContextTab } from "./session-context-tab"
+export { SessionPlanCapsule } from "./session-plan-capsule"
 export { SessionPlanTab, SessionPlanDetails } from "./session-plan-tab"
 export { SortableTab, FileVisual } from "./session-sortable-tab"
 export { SortableTerminalTab } from "./session-sortable-terminal-tab"

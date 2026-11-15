@@ -11,7 +11,7 @@ import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, close
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
-import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
+import { SessionContextTab, SessionPlanCapsule, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
 import { useCommand } from "@/context/command"
 import { SDKProvider } from "@/context/sdk"
 import { useFile, type SelectedLineRange } from "@/context/file"
@@ -736,6 +736,11 @@ export function SessionSidePanel(props: {
             />
           </Show>
         </aside>
+        {/* 261115 Red 计划胶囊：宽桌面折叠态挂在上下文胶囊下方，独立展开（不塞进
+            上下文面板内部）；面板打开后计划仍走顶部 plan tab。 */}
+        <Show when={compact()}>
+          <SessionPlanCapsule />
+        </Show>
       </div>
     </Show>
   )
