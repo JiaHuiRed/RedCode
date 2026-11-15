@@ -1,7 +1,6 @@
 import { For, Show, createMemo } from "solid-js"
 import type { Goal, Todo } from "@redcode-ai/sdk/v2/client"
 import { Icon } from "@redcode-ai/ui/icon"
-import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/context/session-layout"
@@ -35,8 +34,8 @@ function statusColor(status: string) {
 }
 
 // 260615 Red Plan 面板：侧栏标签页，展示当前会话的完整 todo 计划进度
-// 261114 Red 评审：拆出 SessionPlanDetails（无滚动壳）——计划模块要嵌入上下文 tab
-// 自适应填充最大化时的空白，ScrollView 壳只属于 tab 形态。
+// 261115 Red：「计划」不再占面板 tab——面板 tab 退役，计划改由右侧独立胶囊承载，
+// 本文件只剩嵌入用的 SessionPlanDetails（胶囊展开区）。
 export function SessionPlanDetails() {
   const sync = useSync()
   const language = useLanguage()
@@ -255,16 +254,5 @@ export function SessionPlanDetails() {
           </div>
         </Show>
       </div>
-  )
-}
-
-// 260615 Red Plan 面板：侧栏标签页形态（滚动壳 + 统一内边距）
-export function SessionPlanTab() {
-  return (
-    <ScrollView class="@container h-full">
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-6">
-        <SessionPlanDetails />
-      </div>
-    </ScrollView>
   )
 }

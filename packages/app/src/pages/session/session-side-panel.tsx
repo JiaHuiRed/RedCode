@@ -11,7 +11,7 @@ import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, close
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
-import { SessionContextTab, SessionPlanCapsule, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
+import { SessionContextTab, SessionPlanCapsule, SortableTab, FileVisual } from "@/components/session"
 import { useCommand } from "@/context/command"
 import { SDKProvider } from "@/context/sdk"
 import { useFile, type SelectedLineRange } from "@/context/file"
@@ -489,11 +489,6 @@ export function SessionSidePanel(props: {
                                   <Icon name="bullet-list" size="small" />,
                                 )}
                                 {systemTab(
-                                  "plan",
-                                  language.t("session.tab.plan"),
-                                  <Icon name="checklist" size="small" />,
-                                )}
-                                {systemTab(
                                   "status",
                                   language.t("session.tab.status"),
                                   <Icon name="status" size="small" />,
@@ -645,15 +640,7 @@ export function SessionSidePanel(props: {
                               </Show>
                             </Tabs.Content>
 
-                            {/* 260615 Red Plan 标签页内容 */}
-                            <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
-                              <Show when={activeTab() === "plan"}>
-                                <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                                  <SessionPlanTab />
-                                </div>
-                              </Show>
-                            </Tabs.Content>
-
+                            {/* 261115 Red：计划面板不再占用面板 tab——由右侧独立胶囊承载。 */}
                             <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
                               <Show when={activeTab() === "status"}>
                                 <Suspense fallback={<div class="flex-1 min-h-0" />}>

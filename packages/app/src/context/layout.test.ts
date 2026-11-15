@@ -120,10 +120,10 @@ describe("DEFAULT_SESSION_TABS", () => {
   })
 
   test("tabs().open still appends to an existing tab list", () => {
-    const next = sessionTabsForOpen({ all: ["context", "outline"], active: "outline" }, "plan")
+    const next = sessionTabsForOpen({ all: ["context", "outline"], active: "outline" }, "file://c.ts")
 
-    expect(next.all).toEqual(["context", "outline", "plan"])
-    expect(next.active).toBe("plan")
+    expect(next.all).toEqual(["context", "outline", "file://c.ts"])
+    expect(next.active).toBe("file://c.ts")
   })
 
   test("opening context from the default keeps it first and active", () => {
@@ -142,11 +142,11 @@ describe("DEFAULT_SESSION_TABS", () => {
   })
 })
 
-// 260923 Red C4：五项固定 system tab 全部不可关闭（文档第 14 节）。此前 close("context")
-// 会把它从 all[] 里删掉，Context 入口随之消失。
+// 260923 Red C4：固定 system tab 全部不可关闭（文档第 14 节）。此前 close("context")
+// 会把它从 all[] 里删掉，Context 入口随之消失。261115 Red：plan 退役后剩四项。
 describe("nextSessionTabsForClose", () => {
   test("refuses to close any fixed system tab", () => {
-    for (const tab of ["review", "context", "outline", "plan", "status"]) {
+    for (const tab of ["review", "context", "outline", "status"]) {
       expect(nextSessionTabsForClose({ all: ["context", "outline", "file://a.ts"], active: tab }, tab)).toBeUndefined()
     }
   })

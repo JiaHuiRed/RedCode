@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router"
 import { createMemo, type Accessor } from "solid-js"
-import { SYSTEM_TABS, useLayout } from "@/context/layout"
+import { SYSTEM_TABS, RETIRED_TABS, useLayout } from "@/context/layout"
 import { same } from "@/utils/same"
 
 // 261024 Red 从 pages/session/session-layout.ts 上移：useSessionLayout 是 layout context
@@ -57,8 +57,9 @@ export const createSessionTabs = (input: TabsInput) => {
         .tabs()
         .all()
         .flatMap((tab) => {
-          // 260923 Red C2 统一走 SYSTEM_TABS（含 outline，此前漏网会被当成文件标签）
-          if (SYSTEM_TABS.has(tab)) return []
+          // 260923 Red C2 统一走 SYSTEM_TABS（含 outline，此前漏网会被当成文件标签）；
+          // 261115 Red 退役的 plan tab 同口径排除。
+          if (SYSTEM_TABS.has(tab) || RETIRED_TABS.has(tab)) return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
           seen.add(value)
