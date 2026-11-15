@@ -42,6 +42,8 @@ export function SessionSidePanel(props: {
   size: Sizing
   docked: () => boolean
   dockWidth: () => string
+  /** 261115 Red UX-18：文件 tab 的「返回变更」动作（数据与定位都在 session.tsx）。 */
+  onFileReturn: () => void
 }) {
   const layout = useLayout()
   const platform = usePlatform()
@@ -667,7 +669,7 @@ export function SessionSidePanel(props: {
                             </Tabs.Content>
 
                             <Show when={activeFileTab()} keyed>
-                              {(tab) => <FileTabContent tab={tab} />}
+                              {(tab) => <FileTabContent tab={tab} onReturn={props.onFileReturn} />}
                             </Show>
                           </Suspense>
                         </Tabs>

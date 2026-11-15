@@ -842,6 +842,8 @@ export const dict = {
   "terminal.connectionLost.description": "终端连接已中断。这可能发生在服务器重启时。",
 
   "common.closeTab": "关闭标签页",
+  "common.pinTab": "固定标签页",
+  "file.returnToChanges": "返回变更列表",
   "common.dismiss": "忽略",
   "common.requestFailed": "请求失败",
   "common.retry": "重试",

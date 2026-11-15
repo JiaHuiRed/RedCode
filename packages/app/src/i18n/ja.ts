@@ -687,6 +687,8 @@ export const dict = {
   "terminal.connectionLost.description":
     "ターミナルの接続が中断されました。これはサーバーが再起動したときに発生することがあります。",
   "common.closeTab": "タブを閉じる",
+  "common.pinTab": "タブを固定",
+  "file.returnToChanges": "変更一覧に戻る",
   "common.dismiss": "閉じる",
   "common.requestFailed": "リクエスト失敗",
   "common.retry": "再試行",

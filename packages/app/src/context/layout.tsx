@@ -55,6 +55,12 @@ type SessionView = {
   // 261109 Karina UX-04：已审查标记，file → diff 指纹。指纹不匹配即自动失效，
   // 避免把「改过之后的新 diff」误当成已检查。
   reviewed?: Record<string, string>
+  // 261115 Red UX-18 预览标签：一次性浏览（diff「打开文件」/工具输出点文件名）共用
+  // 的可替换槽位，新的一次性打开会顶掉旧的；固定（pin）后清空标记变常驻。
+  previewTab?: string
+  // 261115 Red UX-18 返回来源：文件 tab 是从审查列表哪个文件打开的，供「返回变更」
+  // chip 回跳（review 面板/标签 + activeDiff 定位）。
+  fileReturn?: { tab: string; file: string }
 }
 
 // 260926 Red 并排宽度和聊天栏扣除量共用同一表达式，避免 flex 宽度与面板视觉宽度分叉。
@@ -940,6 +946,25 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               if (reviewed[file] === fingerprint) delete reviewed[file]
               else reviewed[file] = fingerprint
               setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, reviewed })
+              prune(usage.active ?? session)
+            },
+          },
+          // 261115 Red UX-18：预览槽位与打开来源（含清除）。运行时状态，随会话视图存取。
+          previewTab: {
+            current: createMemo(() => s().previewTab),
+            set(tab: string | undefined) {
+              const session = key()
+              const current = store.sessionView[session]
+              setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, previewTab: tab })
+              prune(usage.active ?? session)
+            },
+          },
+          fileReturn: {
+            current: createMemo(() => s().fileReturn),
+            set(value: { tab: string; file: string } | undefined) {
+              const session = key()
+              const current = store.sessionView[session]
+              setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, fileReturn: value })
               prune(usage.active ?? session)
             },
           },

@@ -919,7 +919,30 @@ export default function Page() {
     openTab: tabs().open,
     setActive: tabs().setActive,
     loadFile: file.load,
+    // 261115 Red UX-18：一次性浏览共用预览槽位——新的一次性打开顶掉旧的，
+    // 文件树普通打开或固定后不再被顶掉。
+    closeTab: tabs().close,
+    previewTab: () => view().previewTab.current(),
+    setPreviewTab: (tab) => view().previewTab.set(tab),
   })
+
+  // 261115 Red UX-18：审查列表「打开文件」是带来源的一次性浏览——记录来源 tab，
+  // 文件内容上方出现「返回变更」；工具输出来源不记录（对话流始终可见）。
+  const openReviewFileFromDiff = (path: string) => {
+    view().fileReturn.set({ tab: file.tab(path), file: path })
+    openReviewFile(path)
+  }
+
+  // 从审查来源返回：回审查标签/面板并重新定位那个 diff（focusReviewDiff 自带
+  // pendingDiff 重试，覆盖目标尚未渲染的情况）。
+  const returnToFileSource = () => {
+    const source = view().fileReturn.current()
+    if (!source) return
+    view().fileReturn.set(undefined)
+    if (reviewTab()) tabs().setActive("review")
+    else view().reviewPanel.open()
+    focusReviewDiff(source.file)
+  }
 
   // 260831 cc 点工具行里的文件名 → 在侧栏打开它（read / edit / write 三种工具）。
   //   哥哥要的场景：模型 read 了一张图，想直接看到，而不是去文件树里找路径。
@@ -931,6 +954,7 @@ export default function Page() {
     if (!path) return
     const panel = view().reviewPanel
     if (!panel.opened()) panel.open()
+    view().fileReturn.set(undefined)
     openReviewFile(path)
   }
 
@@ -1034,7 +1058,7 @@ export default function Page() {
         comments={comments.all()}
         focusedComment={comments.focus()}
         onFocusedCommentChange={comments.setFocus}
-        onViewFile={openReviewFile}
+        onViewFile={openReviewFileFromDiff}
         reviewed={reviewedFiles(reviewDiffs(), view().reviewed.map())}
         onToggleReviewed={(file) => {
           const diff = reviewDiffs().find((item) => item.file === file)
@@ -2124,6 +2148,7 @@ export default function Page() {
             size={size}
             docked={workbenchDocked}
             dockWidth={reviewWidth}
+            onFileReturn={returnToFileSource}
           />
         </div>
 

@@ -13,18 +13,24 @@ export const createOpenReviewFile = (input: {
   openTab: (tab: string) => void
   setActive: (tab: string) => void
   loadFile: (path: string) => any | Promise<void>
+  // 261115 Red UX-18 预览槽位：一次性浏览共用一个可替换标签，连看多个文件不堆标签。
+  closeTab?: (tab: string) => void
+  previewTab?: () => string | undefined
+  setPreviewTab?: (tab: string | undefined) => void
 }) => {
   return (path: string) => {
     batch(() => {
       input.showAllFiles()
-      const maybePromise = input.loadFile(path)
-      const open = () => {
-        const tab = input.tabForPath(path)
-        input.openTab(tab)
-        input.setActive(tab)
-      }
-      if (maybePromise instanceof Promise) void maybePromise.then(open)
-      else open()
+      const tab = input.tabForPath(path)
+      // 上一槽位还开着且不是本次目标 → 顶掉；已关闭（或用户固定后清了标记）则不补刀。
+      const prev = input.previewTab?.()
+      if (prev && prev !== tab) input.closeTab?.(prev)
+      input.setPreviewTab?.(tab)
+      // 立即开标签：点文件的下一次绘制就能看到目标标签与读取状态，加载期由
+      // FileTabContent 自带的 Loading 态接住——不再「先加载后开标签」让人感觉没点上。
+      input.openTab(tab)
+      input.setActive(tab)
+      void input.loadFile(path)
     })
   }
 }
@@ -36,6 +42,10 @@ export const createOpenSessionFileTab = (input: {
   loadFile: (path: string) => void
   openReviewPanel: () => void
   setActive: (tab: string) => void
+  // 261115 Red UX-18：普通打开（文件树）若命中当前预览槽位，等于用户把它当常驻
+  // 标签用——清掉预览标记，之后的一次性打开不会再顶掉它。
+  setPreviewTab?: (tab: string | undefined) => void
+  previewTab?: () => string | undefined
 }) => {
   return (value: string) => {
     const next = input.normalizeTab(value)
@@ -44,6 +54,7 @@ export const createOpenSessionFileTab = (input: {
     const path = input.pathFromTab(next)
     if (!path) return
 
+    if (input.previewTab?.() === next) input.setPreviewTab?.(undefined)
     input.loadFile(path)
     input.openReviewPanel()
     input.setActive(next)

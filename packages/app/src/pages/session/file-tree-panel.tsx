@@ -126,6 +126,9 @@ export function FileTreePanel(props: {
     loadFile: file.load,
     openReviewPanel,
     setActive: tabs().setActive,
+    // 261115 Red UX-18：文件树普通打开命中预览槽位 → 清标记（用户当常驻标签用）
+    previewTab: () => view().previewTab.current(),
+    setPreviewTab: (tab) => view().previewTab.set(tab),
   })
 
   const fileTreeTab = () => layout.fileTree.tab()

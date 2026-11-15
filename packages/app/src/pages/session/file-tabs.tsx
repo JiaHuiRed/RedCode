@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -171,7 +171,7 @@ function createScrollSync(input: { tab: () => string; view: ReturnType<typeof us
   }
 }
 
-export function FileTabContent(props: { tab: string }) {
+export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
   const file = useFile()
   const comments = useComments()
   const language = useLanguage()
@@ -441,8 +441,20 @@ export function FileTabContent(props: { tab: string }) {
   )
 
   return (
-    <Tabs.Content value={props.tab} class="mt-3 relative h-full">
-      <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
+    <Tabs.Content value={props.tab} class="mt-3 relative h-full flex flex-col">
+      {/* 261115 Red UX-18：从审查列表某个 diff 打开的文件，在内容上方留一条「返回变更」，
+          一次点击回到刚才那条证据（review 面板/标签 + activeDiff 定位），不用靠记忆找路。 */}
+      <Show when={props.onReturn && view().fileReturn.current()?.tab === props.tab}>
+        <button
+          type="button"
+          data-action="file-return-source"
+          onClick={() => props.onReturn?.()}
+          class="mx-3 mb-1 self-start rounded px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-surface-raised hover:text-text-strong"
+        >
+          ← {language.t("file.returnToChanges")}
+        </button>
+      </Show>
+      <ScrollView class="flex-1 min-h-0" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
         <Switch>
           <Match when={state()?.loaded}>{renderFile(contents())}</Match>
           <Match when={state()?.loading}>
