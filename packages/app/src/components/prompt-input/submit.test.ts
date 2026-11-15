@@ -146,8 +146,13 @@ beforeAll(async () => {
 
   mock.module("@/context/prompt", () => ({
     DEFAULT_PROMPT: [{ type: "text", content: "", start: 0, end: 0 }],
+    // 261115 Red RX-01：真实现 prompt.set 会克隆（见 context/prompt.tsx clonePrompt），
+    // 提交快照与后续编辑是不同对象；mock 同样每次返回副本，值比较才有真实语义。
+    isPromptEqual: (a: Prompt, b: Prompt) => JSON.stringify(a) === JSON.stringify(b),
+    contextItemKey: (item: { path: string; comment?: string; commentID?: string }) =>
+      `file:${item.path}:${item.commentID ?? item.comment ?? ""}`,
     usePrompt: () => ({
-      current: () => promptValue,
+      current: () => [...promptValue],
       dirty: () => dirtyValue,
       reset: (scope?: { dir: string; id?: string }) => {
         resetScopes.push(scope)
@@ -768,5 +773,88 @@ describe("prompt submit worktree selection", () => {
     expect(contextAdds.map((item) => item.scope)).toEqual([scope])
     // 261106 Red 发送失败报错通道收敛为横幅（sendError），不再同时弹 toast
     expect(submit.sendError()).toBeTruthy()
+  })
+
+  // 261115 Red RX-01：A 失败期间写下 B，横幅 Retry 必须重发 A（复用原 messageID 幂等），
+  // 不读取也不清空当前草稿 B。旧实现 Retry 直绑 handleSubmit，读到什么发什么。
+  test("retries the failed submission instead of the current draft", async () => {
+    params = { dir: "/repo/main", id: "session-1" }
+    promptFails = true
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(submit.sendError()).toBeTruthy()
+
+    // 用户在 A 在途期间写下的 B（A 失败时 restoreInput 因 dirty 被跳过的前提）
+    promptFails = false
+    promptValue.splice(0, promptValue.length, { type: "text", content: "busy editing B", start: 0, end: 14 })
+
+    submit.retryFailedSubmit()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(sentPrompts).toHaveLength(1)
+    const retried = sentPrompts[0] as unknown as {
+      messageID?: string
+      parts?: Array<{ type: string; text?: string }>
+    }
+    expect(retried.parts?.some((part) => part.type === "text" && part.text === "ls")).toBe(true)
+    expect(retried.parts?.some((part) => part.type === "text" && part.text === "busy editing B")).toBe(false)
+    // 幂等：重试复用失败那次生成的 messageID
+    expect(retried.messageID).toBe((optimistic[0].message as { id?: string }).id)
+    // 当前草稿 B 未被清空：reset 只发生在首次提交的 clearInput，一次
+    expect(resetScopes).toEqual([{ dir: "/repo/main", id: "session-1" }])
+    expect(submit.sendError()).toBeFalsy()
+  })
+
+  // 261115 Red RX-01：编辑器仍原样保留着失败稿（restoreInput 恢复且未被继续编辑）时，
+  // 重试成功要按正常提交后状态清空该 scope。
+  test("clears the restored failed draft after a successful retry", async () => {
+    params = { dir: "/repo/main", id: "session-1" }
+    promptFails = true
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    promptFails = false
+    submit.retryFailedSubmit()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(resetScopes).toEqual([
+      { dir: "/repo/main", id: "session-1" },
+      { dir: "/repo/main", id: "session-1" },
+    ])
+    expect(submit.sendError()).toBeFalsy()
   })
 })

@@ -349,6 +349,9 @@ export const dict = {
   "prompt.toast.draftRestoreSkipped.title": "Draft not restored",
   "prompt.toast.draftRestoreSkipped.description":
     "Sending failed, but this session already has new text, so the failed draft was not written back to avoid overwriting it.",
+  "prompt.error.retryOriginal":
+    "Retry resends the failed message “{{preview}}” — what you are typing now stays untouched.",
+  "prompt.error.imageOnly": "image attachment",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

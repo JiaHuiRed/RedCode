@@ -112,7 +112,9 @@ function clonePrompt(prompt: Prompt): Prompt {
   return prompt.map(clonePart)
 }
 
-function contextItemKey(item: ContextItem) {
+// 261115 Red RX-01 导出：重试成功清空失败稿时，要按同一 key 规则从上下文里移除
+// 已随失败稿发出的评论项（add/remove 共用这把 key 才对得上）。
+export function contextItemKey(item: ContextItem) {
   if (item.type !== "file") return item.type
   const start = item.selection?.startLine
   const end = item.selection?.endLine

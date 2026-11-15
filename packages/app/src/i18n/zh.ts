@@ -362,6 +362,8 @@ export const dict = {
   "prompt.toast.draftRestoreSkipped.title": "草稿未恢复",
   "prompt.toast.draftRestoreSkipped.description":
     "发送失败，但该会话已经有了新的输入，为避免覆盖，这次未发送的内容没有写回输入框。",
+  "prompt.error.retryOriginal": "重试将重发此前失败的消息「{{preview}}」，当前输入框内容不受影响。",
+  "prompt.error.imageOnly": "图片附件",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",

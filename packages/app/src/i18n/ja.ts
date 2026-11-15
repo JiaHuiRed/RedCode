@@ -315,6 +315,9 @@ export const dict = {
   "prompt.toast.draftRestoreSkipped.title": "下書きを復元しませんでした",
   "prompt.toast.draftRestoreSkipped.description":
     "送信に失敗しましたが、このセッションには新しい入力があるため、上書きを避けて下書きは書き戻していません。",
+  "prompt.error.retryOriginal":
+    "再試行は失敗したメッセージ「{{preview}}」を再送します。現在の入力内容には影響しません。",
+  "prompt.error.imageOnly": "画像添付",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",

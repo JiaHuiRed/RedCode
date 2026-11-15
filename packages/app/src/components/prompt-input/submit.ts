@@ -10,7 +10,15 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
-import { type ContextItem, type ImageAttachmentPart, type Prompt, type Scope, usePrompt } from "@/context/prompt"
+import {
+  contextItemKey,
+  isPromptEqual,
+  type ContextItem,
+  type ImageAttachmentPart,
+  type Prompt,
+  type Scope,
+  usePrompt,
+} from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { setSessionHandoff } from "@/utils/session-handoff"
@@ -223,12 +231,30 @@ type PromptSubmitInput = {
 }
 
 type CommentItem = {
+  type: "file"
   path: string
   selection?: FileSelection
   comment?: string
   commentID?: string
   commentOrigin?: "review" | "file"
   preview?: string
+}
+
+// 261115 Red RX-01 提交失败快照：重试必须绑定「失败那一刻的完整提交」，而不是读当前
+// 输入框。A 失败期间用户写下的 B 留在原处，重试从这份快照取 A 的草稿/上下文/模型/
+// 交付方式，并复用同一条 messageID 走服务端幂等去重。
+export type FailedSubmission = {
+  scope: Scope
+  draft: FollowupDraft
+  messageID: string
+  delivery?: "queue" | "steer"
+  intent: "send" | "interrupt"
+  client: ReturnType<typeof useSDK>["client"]
+  // 提交时会话目录是否等于当前 SDK 目录（失败回退 idle 状态用同一条件）。
+  sameDirectory: boolean
+  before?: () => Promise<boolean> | boolean
+  commentItems: CommentItem[]
+  error: string
 }
 
 export function createPromptSubmit(input: PromptSubmitInput) {
@@ -246,6 +272,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const [sendError, setSendError] = createSignal<string | null>(null)
 
   const clearSendError = () => setSendError(null)
+
+  // 261115 Red RX-01 失败提交快照。重试语义：永远重发失败那份，不读不清当前草稿；
+  // 记录在「重试成功」或「用户放弃（dismiss）」时清除。
+  const [failedSubmission, setFailedSubmission] = createSignal<FailedSubmission | null>(null)
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
@@ -724,7 +754,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       before: waitForWorktree,
     })
       .then((sent) => {
-        if (sent) input.onDeliveryReset?.()
+        if (!sent) return
+        input.onDeliveryReset?.()
+        // 261115 Red RX-01 新提交成功后旧失败记录即失效，一并清掉，不留隐形重试入口。
+        setFailedSubmission(null)
       })
       .catch((err) => {
         pending.delete(session.id)
@@ -736,8 +769,74 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         removeOptimisticMessage()
         restoreCommentItems(commentItems, scope)
         restoreInput()
+        const message = errorMessage(err)
+        // 261115 Red RX-01 失败操作留快照：重试绑原提交（草稿/上下文/模型/交付方式/
+        // messageID），不再让横幅 Retry 读到用户后来写的新草稿。
+        setFailedSubmission({
+          scope,
+          draft,
+          messageID,
+          delivery,
+          intent,
+          client,
+          sameDirectory: sessionDirectory === projectDirectory,
+          before: waitForWorktree,
+          commentItems,
+          error: message,
+        })
+        setSendError(message)
+      })
+  }
+
+  // 261115 Red RX-01 横幅 Retry 走这条通道：重发失败快照（同 messageID 幂等），当前
+  // 输入框内容既不读取也不清空——A 失败期间写下的 B 完好保留。
+  const retryFailedSubmit = () => {
+    const failed = failedSubmission()
+    if (!failed) return
+    clearSendError()
+    void sendFollowupDraft({
+      client: failed.client,
+      sync,
+      globalSync,
+      draft: failed.draft,
+      messageID: failed.messageID,
+      delivery: failed.delivery,
+      intent: failed.intent,
+      optimisticBusy: failed.delivery !== "queue" && failed.sameDirectory,
+      before: failed.before,
+    })
+      .then((sent) => {
+        if (!sent) return
+        input.onDeliveryReset?.()
+        // 编辑器仍原样保留着失败稿（restoreInput 恢复的 A 且未被继续编辑）时，按正常
+        // 提交后状态清空该 scope；编辑器是用户后来写的内容（B）一律不动。
+        if (isPromptEqual(prompt.current(failed.scope), failed.draft.prompt)) {
+          prompt.reset(failed.scope)
+          for (const item of failed.commentItems) {
+            prompt.context.remove(contextItemKey(item), failed.scope)
+          }
+        }
+        setFailedSubmission(null)
+      })
+      .catch((err) => {
+        pending.delete(failed.draft.sessionID)
+        if (failed.sameDirectory) {
+          sync.set("session_status", failed.draft.sessionID, { type: "idle" })
+        }
+        sync.session.optimistic.remove({
+          directory: failed.draft.sessionDirectory,
+          sessionID: failed.draft.sessionID,
+          messageID: failed.messageID,
+        })
+        restoreCommentItems(failed.commentItems, failed.scope)
         setSendError(errorMessage(err))
       })
+  }
+
+  // 放弃重试：失败记录一并清掉。恢复过编辑器的失败稿仍留在输入框/输入历史里。
+  const dismissSendError = () => {
+    clearSendError()
+    setFailedSubmission(null)
   }
 
   const handleSubmit = (event: Event) => runSubmit(event, "send")
@@ -748,7 +847,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     abort,
     interruptSend,
     handleSubmit,
+    retryFailedSubmit,
     sendError,
-    clearSendError,
+    failedSubmission,
+    dismissSendError,
   }
 }

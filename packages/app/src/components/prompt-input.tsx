@@ -21,6 +21,7 @@ import {
   DEFAULT_PROMPT,
   isPromptEqual,
   Prompt,
+  Scope,
   usePrompt,
   ImageAttachmentPart,
   AgentPart,
@@ -75,7 +76,7 @@ import {
   serializePromptHistory,
   stripPromptHistoryImages,
 } from "./prompt-input/history"
-import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
+import { createPromptSubmit, type FailedSubmission, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
@@ -910,7 +911,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const handleInput = () => {
-    clearSendError()
+    // 261115 Red RX-01：打字不再自动清错误横幅——A 失败后继续写 B 正是要支持的场景，
+    // 横幅（含 Retry 入口）必须存活到用户显式 dismiss / 重试成功 / 新提交成功。
     clearGhost()
     const rawParts = parseFromDOM(editorRef)
     const images = imageAttachments()
@@ -1155,7 +1157,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
  // 261031 Red interruptSend = 忙碌时打断发送入口（见下方打断按钮）。
- const { abort, handleSubmit, interruptSend, sendError, clearSendError } = createPromptSubmit({
+  const { abort, handleSubmit, retryFailedSubmit, interruptSend, sendError, failedSubmission, dismissSendError } =
+    createPromptSubmit({
     info,
     imageAttachments,
     commentCount,
@@ -1899,19 +1902,49 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
           </Tooltip>
         </div>
-        <PromptErrorBanner error={sendError} onRetry={handleSubmit} onDismiss={clearSendError} />
+        <PromptErrorBanner
+          error={sendError}
+          failed={failedSubmission}
+          currentDraft={prompt.current}
+          onRetry={retryFailedSubmit}
+          onDismiss={dismissSendError}
+        />
       </DockShellForm>
     </div>
   )
 }
 
+// 261115 Red RX-01：横幅 Retry 绑失败快照而非当前草稿。编辑器已被用户写入别的内容时，
+// 补一行提示与失败稿预览，讲清「重试重发的是哪条、当前输入不受影响」。
 function PromptErrorBanner(props: {
   error: Accessor<string | null>
-  onRetry: (e: Event) => void
+  failed?: Accessor<FailedSubmission | null>
+  currentDraft?: (scope?: Scope) => Prompt
+  onRetry: () => void
   onDismiss: () => void
 }) {
   // 260909 Red 横幅按钮走 i18n；长报错 line-clamp-3 可见更多内容（手机上单行 truncate 全是省略号）
   const language = useLanguage()
+  const PREVIEW_MAX = 60
+  // 编辑器内容 ≠ 失败稿时才提示：说明当前输入不会随重试发出。
+  const drifted = createMemo(() => {
+    const failed = props.failed?.()
+    if (!failed || !props.currentDraft) return false
+    return !isPromptEqual(props.currentDraft(failed.scope), failed.draft.prompt)
+  })
+  const preview = createMemo(() => {
+    const failed = props.failed?.()
+    if (!failed) return ""
+    const text = failed.draft.prompt
+      .map((part) => ("content" in part ? part.content : ""))
+      .join("")
+      .trim()
+      .replace(/\s+/g, " ")
+    const images = failed.draft.prompt.filter((part) => part.type === "image").length
+    const body = text || (images > 0 ? `[${language.t("prompt.error.imageOnly")}]` : "")
+    if (body.length <= PREVIEW_MAX) return body
+    return `${body.slice(0, PREVIEW_MAX)}…`
+  })
   return (
     <Show when={props.error()}>
       <div class="mx-2 mb-2 rounded-lg border border-border-warning-base bg-surface-warning-weak px-3 py-2 text-13-regular text-text-on-warning-strong">
@@ -1919,7 +1952,7 @@ function PromptErrorBanner(props: {
           <span class="flex-1 line-clamp-3 break-words min-w-0">{props.error()}</span>
           <button
             type="button"
-            onClick={() => props.onRetry(new Event("submit"))}
+            onClick={() => props.onRetry()}
             class="shrink-0 rounded px-2 py-0.5 text-13-medium text-text-on-warning-strong hover:bg-surface-warning-base active:bg-surface-warning-strong"
           >
             {language.t("common.retry")}
@@ -1932,6 +1965,11 @@ function PromptErrorBanner(props: {
             ×
           </button>
         </div>
+        <Show when={drifted() && preview()}>
+          <div class="mt-1 line-clamp-2 min-w-0 flex-1 break-words text-12-regular text-text-on-warning-base opacity-90">
+            {language.t("prompt.error.retryOriginal", { preview: preview() })}
+          </div>
+        </Show>
       </div>
     </Show>
   )
