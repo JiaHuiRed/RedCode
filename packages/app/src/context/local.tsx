@@ -211,7 +211,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       current() {
         return pickAgent(scope()?.agent ?? store.current)
       },
-      set(name: string | undefined) {
+      // 261115 Red UX-14：options.keepModel 显式保留当前会话已选模型——Agent 自带绑定
+      // 模型/档位时不一并应用。没有可保留的（首次选择、scope 还没有 model）时退回
+      // Agent 配置，保证 model 链（scope → agent → fallback）不断。默认语义不变：
+      // 跟随 Agent 配置。
+      set(name: string | undefined, options?: { keepModel?: boolean }) {
         const item = pickAgent(name)
         if (!item) {
           setStore("current", undefined)
@@ -220,17 +224,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
         batch(() => {
           setStore("current", item.name)
+          const prev = scope()
+          const model = options?.keepModel ? (prev?.model ?? item.model) : (item.model ?? prev?.model)
+          const variant = options?.keepModel ? (prev?.variant ?? item.variant) : (item.variant ?? prev?.variant)
           setStore("last", {
             type: "agent",
             agent: item.name,
-            model: item.model,
-            variant: item.variant ?? null,
+            model,
+            variant: variant ?? null,
           })
-          const prev = scope()
           const next = {
             agent: item.name,
-            model: item.model ?? prev?.model,
-            variant: item.variant ?? prev?.variant,
+            model,
+            variant,
           } satisfies State
           const session = id()
           if (session) {

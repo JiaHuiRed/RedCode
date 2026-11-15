@@ -370,6 +370,9 @@ export const dict = {
   "settings.general.preview.code": "代码",
   "settings.general.preview.terminal": "终端",
   "settings.general.preview.messageBody": "这是一条消息样例。字体、字号与行高跟随上方设置即时变化。",
+  "prompt.agent.title": "智能体",
+  "prompt.agent.followConfig": "跟随 Agent 配置（{{model}}）",
+  "prompt.agent.keepModel": "保留当前模型（{{model}}）",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",

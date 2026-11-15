@@ -359,6 +359,9 @@ export const dict = {
   "settings.general.preview.terminal": "Terminal",
   "settings.general.preview.messageBody":
     "A sample message. Font, size and line height follow the settings above instantly.",
+  "prompt.agent.title": "Agents",
+  "prompt.agent.followConfig": "Follow agent config ({{model}})",
+  "prompt.agent.keepModel": "Keep current model ({{model}})",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

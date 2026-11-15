@@ -32,6 +32,8 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useComments } from "@/context/comments"
 import { Button } from "@redcode-ai/ui/button"
+import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
+import type { Agent } from "@redcode-ai/sdk/v2/client"
 import { DockShellForm } from "@redcode-ai/ui/dock-surface"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
@@ -1443,6 +1445,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     window.addEventListener("pointercancel", stop)
   }
 
+  // 261115 Red UX-14：Agent 选择行说清用途与联动——描述 + 绑定模型/推理档直接摆在
+  // 行上，带绑定的 Agent 走子菜单给出「跟随配置 / 保留当前模型」的明确选择，
+  // 切完再回头调模型的意外不再发生。local.agent.set 的默认语义不变（跟随配置）。
+  const agentRow = (item: Agent) => (
+    <div class="flex min-w-0 flex-col gap-0.5">
+      <div class="flex min-w-0 items-center gap-2">
+        <Show when={local.agent.current()?.name === item.name}>✓ </Show>
+        <span class="truncate text-13-medium">{item.displayName ?? item.name}</span>
+        <Show when={item.model}>
+          <span class="shrink-0 text-11-regular text-text-weaker">
+            {item.model!.modelID}
+            <Show when={item.variant}>{` · ${item.variant}`}</Show>
+          </span>
+        </Show>
+      </div>
+      <Show when={item.description}>
+        <span class="truncate text-11-regular text-text-weaker">{item.description}</span>
+      </Show>
+    </div>
+  )
+
+  const agentBoundLabel = (item: Agent) =>
+    item.model ? `${item.model.modelID}${item.variant ? ` · ${item.variant}` : ""}` : ""
+
+  const selectAgent = (name: string, keepModel = false) => {
+    local.agent.set(name, { keepModel })
+    restoreFocus()
+  }
+
   const agentControl = () => (
     <Show when={local.agent.list().length > 1}>
       <div
@@ -1457,24 +1488,63 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           title={language.t("command.agent.cycle")}
           keybind={command.keybind("agent.cycle")}
         >
-          <Select
-            size="normal"
-            options={local.agent.list()}
-            current={local.agent.current()}
-            value={(item) => item.name}
-            label={(item) => item.displayName ?? item.name}
-            onSelect={(item) => {
-              if (item) {
-                local.agent.set(item.name)
-                restoreFocus()
-              }
-            }}
-            class="capitalize max-w-[160px] text-text-base"
-            valueClass="truncate text-14-regular"
-            triggerStyle={control()}
-            triggerProps={{ "data-action": "prompt-agent" }}
-            variant="ghost"
-          />
+          <DropdownMenu gutter={4} placement="top-start">
+            <DropdownMenu.Trigger
+              as={Button}
+              type="button"
+              variant="ghost"
+              size="normal"
+              data-action="prompt-agent"
+              class="max-w-[160px] justify-start gap-1 capitalize text-text-base"
+              style={control()}
+            >
+              <span class="truncate text-14-regular">
+                {local.agent.current()?.displayName ?? local.agent.current()?.name}
+              </span>
+              <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content style={{ "max-height": "340px", "overflow-y": "auto", "min-width": "260px" }}>
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
+                    {language.t("prompt.agent.title")}
+                  </DropdownMenu.GroupLabel>
+                  <For each={local.agent.list()}>
+                    {(item) => (
+                      <Show
+                        when={item.model}
+                        fallback={
+                          <DropdownMenu.Item onSelect={() => selectAgent(item.name)}>
+                            <DropdownMenu.ItemLabel>{agentRow(item)}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        }
+                      >
+                        <DropdownMenu.Sub>
+                          <DropdownMenu.SubTrigger>{agentRow(item)}</DropdownMenu.SubTrigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.SubContent class="min-w-[220px]">
+                              <DropdownMenu.Item onSelect={() => selectAgent(item.name)}>
+                                <DropdownMenu.ItemLabel>
+                                  {language.t("prompt.agent.followConfig", { model: agentBoundLabel(item) })}
+                                </DropdownMenu.ItemLabel>
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item onSelect={() => selectAgent(item.name, true)}>
+                                <DropdownMenu.ItemLabel>
+                                  {language.t("prompt.agent.keepModel", {
+                                    model: local.model.current()?.id ?? "",
+                                  })}
+                                </DropdownMenu.ItemLabel>
+                              </DropdownMenu.Item>
+                            </DropdownMenu.SubContent>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Sub>
+                      </Show>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
         </TooltipKeybind>
       </div>
     </Show>

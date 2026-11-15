@@ -325,6 +325,9 @@ export const dict = {
   "settings.general.preview.terminal": "ターミナル",
   "settings.general.preview.messageBody":
     "メッセージのサンプルです。フォント・サイズ・行間は上の設定に即時反映されます。",
+  "prompt.agent.title": "エージェント",
+  "prompt.agent.followConfig": "エージェント設定に従う（{{model}}）",
+  "prompt.agent.keepModel": "現在のモデルを保持（{{model}}）",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",
