@@ -29,6 +29,7 @@ import {
 } from "@/context/settings"
 import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
+import { AppearanceSamples } from "@/components/settings-appearance-preview"
 import { Link } from "./link"
 import { SettingsList, SettingsRow } from "./settings-list"
 import { SettingsMobileCompanion } from "./settings-mobile-companion"
@@ -759,6 +760,10 @@ export const SettingsGeneral: Component = () => {
             </div>
           </SettingsRow>
         </SettingsList>
+
+        {/* 261115 Red UX-20：外观实时样例——消息/代码/终端三块与主界面同一套
+            token 与壁纸遮罩规则，上方调整即时反映；含本次外观改动的局部撤销。 */}
+        <AppearanceSamples />
       </div>
     )
   }

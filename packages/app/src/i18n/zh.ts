@@ -364,6 +364,12 @@ export const dict = {
     "发送失败，但该会话已经有了新的输入，为避免覆盖，这次未发送的内容没有写回输入框。",
   "prompt.error.retryOriginal": "重试将重发此前失败的消息「{{preview}}」，当前输入框内容不受影响。",
   "prompt.error.imageOnly": "图片附件",
+  "settings.general.preview.title": "实时样例",
+  "settings.general.preview.undo": "撤销本次外观改动",
+  "settings.general.preview.message": "消息",
+  "settings.general.preview.code": "代码",
+  "settings.general.preview.terminal": "终端",
+  "settings.general.preview.messageBody": "这是一条消息样例。字体、字号与行高跟随上方设置即时变化。",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",

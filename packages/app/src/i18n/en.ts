@@ -352,6 +352,13 @@ export const dict = {
   "prompt.error.retryOriginal":
     "Retry resends the failed message “{{preview}}” — what you are typing now stays untouched.",
   "prompt.error.imageOnly": "image attachment",
+  "settings.general.preview.title": "Live preview",
+  "settings.general.preview.undo": "Revert appearance changes",
+  "settings.general.preview.message": "Message",
+  "settings.general.preview.code": "Code",
+  "settings.general.preview.terminal": "Terminal",
+  "settings.general.preview.messageBody":
+    "A sample message. Font, size and line height follow the settings above instantly.",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

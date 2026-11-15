@@ -318,6 +318,13 @@ export const dict = {
   "prompt.error.retryOriginal":
     "再試行は失敗したメッセージ「{{preview}}」を再送します。現在の入力内容には影響しません。",
   "prompt.error.imageOnly": "画像添付",
+  "settings.general.preview.title": "ライブプレビュー",
+  "settings.general.preview.undo": "外観の変更を元に戻す",
+  "settings.general.preview.message": "メッセージ",
+  "settings.general.preview.code": "コード",
+  "settings.general.preview.terminal": "ターミナル",
+  "settings.general.preview.messageBody":
+    "メッセージのサンプルです。フォント・サイズ・行間は上の設定に即時反映されます。",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",
