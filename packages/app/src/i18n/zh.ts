@@ -384,6 +384,8 @@ export const dict = {
   "dialog.background.result.openSession": "打开会话",
   "dialog.background.result.parent": "父任务",
   "dialog.background.result.empty": "该任务结束但没有输出。",
+  "settings.personalization.copySoul": "复制此 Soul",
+  "settings.personalization.create.startNew": "以此 Soul 新建会话",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",

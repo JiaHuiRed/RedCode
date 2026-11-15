@@ -373,6 +373,8 @@ export const dict = {
   "dialog.background.result.openSession": "Open session",
   "dialog.background.result.parent": "Parent task",
   "dialog.background.result.empty": "This job finished without output.",
+  "settings.personalization.copySoul": "Duplicate this Soul",
+  "settings.personalization.create.startNew": "Start a session with this Soul",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

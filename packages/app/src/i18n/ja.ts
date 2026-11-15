@@ -341,6 +341,8 @@ export const dict = {
   "dialog.background.result.openSession": "セッションを開く",
   "dialog.background.result.parent": "親タスク",
   "dialog.background.result.empty": "このジョブは出力なしで終了しました。",
+  "settings.personalization.copySoul": "このSoulを複製",
+  "settings.personalization.create.startNew": "このSoulでセッションを開始",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",

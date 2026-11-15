@@ -4,7 +4,7 @@ import { Markdown } from "@redcode-ai/ui/markdown"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, For, on, Show, type Component } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, For, on, Show, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -209,6 +209,25 @@ export const SettingsPersonalization: Component = () => {
     return created
   }
 
+  // 261115 Red UX-13 从现有 Soul 复制：预填创建表单（fields 模式），生成独立 ID
+  // （-copy 后缀，撞号时用户可改），原 Soul 不被覆盖。正文编辑需要写入接口，
+  // 本批不携带——复制用的是 detail 里已读到的字段。
+  const [seed, setSeed] = createSignal<SoulCreateSeed | undefined>()
+  const copySoul = () => {
+    const data = detail.data
+    if (!data) return
+    setSeed({
+      id: `${data.id}-copy`,
+      name: data.name,
+      displayName: data.displayName,
+      commitPrefix: data.commitPrefix,
+      avatar: data.avatar,
+      description: data.description,
+      content: data.content,
+    })
+    setView("createOpen", true)
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -325,7 +344,8 @@ export const SettingsPersonalization: Component = () => {
           </div>
           {/* 收起用 hidden 不用 Show：不卸载 SoulCreateForm，草稿在收起后保留。 */}
           <div id="soul-create-body" classList={{ hidden: !view.createOpen }} aria-hidden={!view.createOpen}>
-            <SoulCreateForm create={createSoul} />
+            {/* 261115 Red UX-13：seed = 复制现有 Soul 的预填；onStart = 创建成功后立即用它开新会话。 */}
+            <SoulCreateForm create={createSoul} seed={seed()} onStart={startWithSoul} />
           </div>
         </section>
 
@@ -420,6 +440,11 @@ export const SettingsPersonalization: Component = () => {
                       <Show when={directory()}>
                         <Button size="small" variant="secondary" onClick={() => startWithSoul(soul().id)}>
                           {language.t("settings.personalization.startWithSoul")}
+                        </Button>
+                      </Show>
+                      <Show when={detail.data}>
+                        <Button size="small" variant="secondary" onClick={copySoul}>
+                          {language.t("settings.personalization.copySoul")}
                         </Button>
                       </Show>
                       <Show when={soul().id !== effectiveDefaultId()}>
@@ -552,9 +577,27 @@ const DetailField: Component<{ label: string; value?: string; source: string }> 
   </div>
 )
 
-export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Promise<SoulCreated> }> = (props) => {
+// 261115 Red UX-13 复制预填：从现有 Soul 带字段进创建表单。
+export type SoulCreateSeed = {
+  id: string
+  name: string
+  displayName?: string
+  commitPrefix?: string
+  avatar?: string
+  description?: string
+  content: string
+}
+
+export const SoulCreateForm: Component<{
+  create: (input: SoulCreateInput) => Promise<SoulCreated>
+  seed?: SoulCreateSeed | undefined
+  // 创建成功后「以此 Soul 新建会话」（UX-13 创建即用）；无目标目录的入口不传。
+  onStart?: (id: string) => void
+}> = (props) => {
   const language = useLanguage()
-  const [state, setState] = createStore({
+  // 261115 Red UX-13 草稿持久化：写到一半关设置再打开可恢复（此前是组件局部 store，
+  // 弹层一关就没了）。busy/error/message 是瞬态，留在 state 不落盘。
+  const [draft, setDraft] = createStore({
     mode: "markdown" as "markdown" | "fields",
     markdown: "",
     id: "",
@@ -564,11 +607,38 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
     avatar: "",
     description: "",
     content: "",
+  })
+  persisted("settings.personalization.createDraft.v1", [draft, setDraft])
+  const [state, setState] = createStore({
     busy: false,
     error: "",
     message: "",
     fieldErrors: { id: "", name: "", content: "" },
+    created: undefined as SoulCreated | undefined,
   })
+
+  // 复制预填：seed 变化（每次点「复制此 Soul」都是新对象）就整体覆盖草稿并切 fields 模式。
+  createEffect(
+    on(
+      () => props.seed,
+      (value) => {
+        if (!value) return
+        batch(() => {
+          setDraft({
+            mode: "fields",
+            id: value.id,
+            name: value.name,
+            displayName: value.displayName ?? "",
+            commitPrefix: value.commitPrefix ?? "",
+            avatar: value.avatar ?? "",
+            description: value.description ?? "",
+            content: value.content,
+          })
+        })
+        setState({ fieldErrors: { id: "", name: "", content: "" }, error: "", created: undefined })
+      },
+    ),
+  )
 
   // 所有提交共用：busy 期间直接返回（按钮已 disabled，这里是第二道闸）；失败保留输入。
   const submit = async (input: SoulCreateInput) => {
@@ -576,17 +646,22 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
     setState({ busy: true, error: "", message: "" })
     try {
       const created = await props.create(input)
+      batch(() => {
+        setDraft({
+          markdown: "",
+          id: "",
+          name: "",
+          displayName: "",
+          commitPrefix: "",
+          avatar: "",
+          description: "",
+          content: "",
+        })
+      })
       setState({
         busy: false,
-        markdown: "",
-        id: "",
-        name: "",
-        displayName: "",
-        commitPrefix: "",
-        avatar: "",
-        description: "",
-        content: "",
         fieldErrors: { id: "", name: "", content: "" },
+        created,
         message: language.t("settings.personalization.create.created", {
           name: created.displayName || created.name || created.id,
         }),
@@ -601,19 +676,19 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
 
   const submitMarkdown = (event: SubmitEvent) => {
     event.preventDefault()
-    if (!state.markdown.trim()) {
+    if (!draft.markdown.trim()) {
       setState({ error: language.t("settings.personalization.create.markdownRequired"), message: "" })
       return
     }
     // 整份原文直接交给服务端按同一套 frontmatter 规则解析，不在浏览器里拆分字段。
-    void submit({ markdown: state.markdown })
+    void submit({ markdown: draft.markdown })
   }
 
   const submitFields = (event: SubmitEvent) => {
     event.preventDefault()
-    const id = state.id.trim()
-    const name = state.name.trim()
-    const content = state.content.trim()
+    const id = draft.id.trim()
+    const name = draft.name.trim()
+    const content = draft.content.trim()
     const fieldErrors = {
       id: !id
         ? language.t("settings.personalization.create.idRequired")
@@ -628,10 +703,10 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
     void submit({
       id,
       name,
-      displayName: state.displayName.trim() || undefined,
-      commitPrefix: state.commitPrefix.trim() || undefined,
-      avatar: state.avatar.trim() || undefined,
-      description: state.description.trim() || undefined,
+      displayName: draft.displayName.trim() || undefined,
+      commitPrefix: draft.commitPrefix.trim() || undefined,
+      avatar: draft.avatar.trim() || undefined,
+      description: draft.description.trim() || undefined,
       content,
     })
   }
@@ -646,32 +721,41 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
         <Button
           type="button"
           size="small"
-          variant={state.mode === "markdown" ? "secondary" : "ghost"}
-          aria-pressed={state.mode === "markdown"}
+          variant={draft.mode === "markdown" ? "secondary" : "ghost"}
+          aria-pressed={draft.mode === "markdown"}
           disabled={state.busy}
-          onClick={() => setState({ mode: "markdown", error: "" })}
+          onClick={() => {
+            setDraft("mode", "markdown")
+            setState("error", "")
+          }}
         >
           {language.t("settings.personalization.create.modeMarkdown")}
         </Button>
         <Button
           type="button"
           size="small"
-          variant={state.mode === "fields" ? "secondary" : "ghost"}
-          aria-pressed={state.mode === "fields"}
+          variant={draft.mode === "fields" ? "secondary" : "ghost"}
+          aria-pressed={draft.mode === "fields"}
           disabled={state.busy}
-          onClick={() => setState({ mode: "fields", error: "" })}
+          onClick={() => {
+            setDraft("mode", "fields")
+            setState("error", "")
+          }}
         >
           {language.t("settings.personalization.create.modeFields")}
         </Button>
       </div>
-      <Show when={state.mode === "markdown"}>
+      <Show when={draft.mode === "markdown"}>
         <form class="flex flex-col gap-3" onSubmit={submitMarkdown}>
           <TextField
             label={language.t("settings.personalization.create.markdownLabel")}
             description={language.t("settings.personalization.create.markdownDescription")}
             placeholder={language.t("settings.personalization.create.markdownPlaceholder")}
-            value={state.markdown}
-            onChange={(value) => setState({ markdown: value, error: "" })}
+            value={draft.markdown}
+            onChange={(value) => {
+              setDraft("markdown", value)
+              setState("error", "")
+            }}
             disabled={state.busy}
             multiline
             spellcheck={false}
@@ -689,15 +773,18 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
           </div>
         </form>
       </Show>
-      <Show when={state.mode === "fields"}>
+      <Show when={draft.mode === "fields"}>
         <form class="flex flex-col gap-3" onSubmit={submitFields}>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TextField
               label={language.t("settings.personalization.create.idLabel")}
               description={language.t("settings.personalization.create.idDescription")}
               placeholder={language.t("settings.personalization.create.idPlaceholder")}
-              value={state.id}
-              onChange={(value) => setState({ id: value, error: "", fieldErrors: { ...state.fieldErrors, id: "" } })}
+              value={draft.id}
+              onChange={(value) => {
+                setDraft("id", value)
+                setState({ error: "", fieldErrors: { ...state.fieldErrors, id: "" } })
+              }}
               error={state.fieldErrors.id}
               validationState={state.fieldErrors.id ? "invalid" : undefined}
               disabled={state.busy}
@@ -706,8 +793,11 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
             />
             <TextField
               label={language.t("settings.personalization.create.nameLabel")}
-              value={state.name}
-              onChange={(value) => setState({ name: value, error: "", fieldErrors: { ...state.fieldErrors, name: "" } })}
+              value={draft.name}
+              onChange={(value) => {
+                setDraft("name", value)
+                setState({ error: "", fieldErrors: { ...state.fieldErrors, name: "" } })
+              }}
               error={state.fieldErrors.name}
               validationState={state.fieldErrors.name ? "invalid" : undefined}
               disabled={state.busy}
@@ -715,23 +805,32 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
             />
             <TextField
               label={language.t("settings.personalization.create.displayNameLabel")}
-              value={state.displayName}
-              onChange={(value) => setState({ displayName: value, error: "" })}
+              value={draft.displayName}
+              onChange={(value) => {
+                setDraft("displayName", value)
+                setState("error", "")
+              }}
               disabled={state.busy}
               autocomplete="off"
             />
             <TextField
               label={language.t("settings.personalization.create.commitPrefixLabel")}
-              value={state.commitPrefix}
-              onChange={(value) => setState({ commitPrefix: value, error: "" })}
+              value={draft.commitPrefix}
+              onChange={(value) => {
+                setDraft("commitPrefix", value)
+                setState("error", "")
+              }}
               disabled={state.busy}
               autocomplete="off"
             />
             <TextField
               label={language.t("settings.personalization.create.avatarLabel")}
               description={language.t("settings.personalization.create.avatarDescription")}
-              value={state.avatar}
-              onChange={(value) => setState({ avatar: value, error: "" })}
+              value={draft.avatar}
+              onChange={(value) => {
+                setDraft("avatar", value)
+                setState("error", "")
+              }}
               disabled={state.busy}
               spellcheck={false}
               autocomplete="off"
@@ -739,16 +838,22 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
             <TextField
               label={language.t("settings.personalization.create.descriptionLabel")}
               description={language.t("settings.personalization.create.descriptionHint")}
-              value={state.description}
-              onChange={(value) => setState({ description: value, error: "" })}
+              value={draft.description}
+              onChange={(value) => {
+                setDraft("description", value)
+                setState("error", "")
+              }}
               disabled={state.busy}
             />
           </div>
           <TextField
             label={language.t("settings.personalization.create.contentLabel")}
             placeholder={language.t("settings.personalization.create.contentPlaceholder")}
-            value={state.content}
-            onChange={(value) => setState({ content: value, error: "", fieldErrors: { ...state.fieldErrors, content: "" } })}
+            value={draft.content}
+            onChange={(value) => {
+              setDraft("content", value)
+              setState({ error: "", fieldErrors: { ...state.fieldErrors, content: "" } })
+            }}
             error={state.fieldErrors.content}
             validationState={state.fieldErrors.content ? "invalid" : undefined}
             disabled={state.busy}
@@ -767,9 +872,17 @@ export const SoulCreateForm: Component<{ create: (input: SoulCreateInput) => Pro
           </div>
         </form>
       </Show>
-      <p data-testid="soul-create-message" aria-live="polite" class="text-12-regular text-text-success-base">
-        {state.message}
-      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <p data-testid="soul-create-message" aria-live="polite" class="text-12-regular text-text-success-base">
+          {state.message}
+        </p>
+        {/* 261115 Red UX-13 创建即用：成功创建后立即以它开新会话（有目标目录的入口才有意义）。 */}
+        <Show when={state.created && props.onStart}>
+          <Button size="small" variant="secondary" onClick={() => props.onStart?.(state.created!.id)}>
+            {language.t("settings.personalization.create.startNew")}
+          </Button>
+        </Show>
+      </div>
       <Show when={state.error}>
         <p data-testid="soul-create-error" role="alert" class="text-12-regular text-text-danger-base">
           {state.error}
