@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { Effect, Layer, Context, Schema } from "effect"
 import { Bus } from "../bus"
 import { Snapshot } from "../snapshot"
@@ -52,7 +53,7 @@ export const layer = Layer.effect(
       let rev: Session.Info["revert"]
       const patches: Snapshot.Patch[] = []
       for (const msg of all) {
-        if (msg.info.role === "user") lastUser = msg.info
+        if (isUserTurn(msg.info, msg.parts)) lastUser = msg.info
         const remaining = []
         for (const part of msg.parts) {
           if (rev) {

@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
 import type { MessageVersions } from "@redcode-ai/ui/message-part"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -292,7 +293,7 @@ export default function Page() {
       equals: same,
     },
   )
-  const lastUserMessage = createMemo(() => visibleUserMessages().at(-1))
+  const lastUserMessage = createMemo(() => visibleUserMessages().findLast((m) => isUserTurn(m, sync.data.part[m.id])))
 
   createEffect(() => {
     const tab = activeFileTab()

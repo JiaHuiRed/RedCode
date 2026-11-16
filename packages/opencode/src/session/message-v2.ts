@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { BusEvent } from "@/bus/bus-event"
 import { SessionID, MessageID, PartID } from "./schema"
 import { ImageTokens } from "@/session/image-tokens"
@@ -1381,13 +1382,19 @@ export function stitchModelMessages(
 // Session.messages 无 limit 全量翻页——compaction 恰恰发生在会话最长的时候，
 // 等于把几百 MB 级历史（含 base64 parts）整体拖进内存只为读一个字符串字段。
 // 单行 SQL 走 (session_id, time_created, id) 既有索引，语义与
-// messages.findLast(role === "user") 完全一致。
+// latest() 的回合口径一致；人工补充留痕不改变模型/agent 选择。
 export const lastUserAgent = Effect.fn("MessageV2.lastUserAgent")(function* (sessionID: SessionID) {
   const row = Database.use((db) =>
     db
       .select({ agent: sql<string | null>`json_extract(${MessageTable.data}, '$.agent')` })
       .from(MessageTable)
-      .where(and(eq(MessageTable.session_id, sessionID), sql`json_extract(${MessageTable.data}, '$.role') = 'user'`))
+      .where(and(
+        eq(MessageTable.session_id, sessionID),
+        sql`json_extract(${MessageTable.data}, '$.role') = 'user'`,
+        sql`not exists (select 1 from ${PartTable} where ${PartTable.message_id} = ${MessageTable.id}
+          and json_extract(${PartTable.data}, '$.type') = 'text'
+          and json_type(${PartTable.data}, '$.metadata.task_steer_record') is not null)`,
+      ))
       .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
       .limit(1)
       .get(),
@@ -1792,7 +1799,7 @@ export function latest(msgs: WithParts[]) {
   const failedCompactions = new Set<MessageID>()
   for (const msg of msgs) {
     const info = msg.info
-    if (info.role === "user" && (!user || compareTime(info, user) > 0)) user = info
+    if (isUserTurn(info, msg.parts) && (!user || compareTime(info, user) > 0)) user = info
     if (info.role === "assistant" && (!assistant || compareTime(info, assistant) > 0)) assistant = info
     if (info.role === "assistant" && info.finish && (!finished || compareTime(info, finished) > 0)) finished = info
     if (info.role === "assistant" && info.summary && info.error && info.time.completed !== undefined)

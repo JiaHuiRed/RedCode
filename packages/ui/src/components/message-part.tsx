@@ -1,3 +1,4 @@
+import { isTaskSteerRecord } from "@redcode-ai/core/util/message-turn"
 import {
   Component,
   createEffect,
@@ -1031,7 +1032,7 @@ export function UserMessageDisplay(props: {
   const versions = createMemo(() => props.actions?.versions?.(props.message.id))
 
   const textPart = createMemo(
-    () => props.parts?.find((p) => p.type === "text" && !(p as TextPart).synthetic) as TextPart | undefined,
+    () => props.parts?.find((p) => p.type === "text" && (!p.synthetic || isTaskSteerRecord([p]))) as TextPart | undefined,
   )
 
   const text = createMemo(() => textPart()?.text || "")
@@ -1239,7 +1240,7 @@ export function UserMessageDisplay(props: {
                 </>
               )}
             </Show>
-            <Show when={props.actions?.fork}>
+            <Show when={props.actions?.fork && !isTaskSteerRecord(props.parts)}>
               <Tooltip value={i18n.t("ui.message.forkMessage")} placement="top" gutter={4}>
                 <IconButton
                   icon="fork"
@@ -1255,7 +1256,7 @@ export function UserMessageDisplay(props: {
                 />
               </Tooltip>
             </Show>
-            <Show when={props.actions?.revert}>
+            <Show when={props.actions?.revert && !isTaskSteerRecord(props.parts)}>
               <Tooltip value={i18n.t("ui.message.revertMessage")} placement="top" gutter={4}>
                 <IconButton
                   icon="reset"

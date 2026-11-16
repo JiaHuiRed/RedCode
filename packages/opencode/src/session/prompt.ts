@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import path from "path"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
@@ -1850,7 +1851,7 @@ export const layer = Layer.effect(
           .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
         const outcome: "break" | "continue" = yield* Effect.gen(function* () {
-          const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+          const lastUserMsg = msgs.findLast((m) => isUserTurn(m.info, m.parts))
           const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
           const promptOps = yield* ops()
 
@@ -1952,7 +1953,7 @@ export const layer = Layer.effect(
             const parts: string[] = []
             for (const m of msgs) {
               if (
-                m.info.role !== "user" ||
+                !isUserTurn(m.info, m.parts) ||
                 m.info.delivery === "queued" ||
                 // 261031 Red 未领取的引导不进 reminder；promote 转 steer 后下一轮收集。
                 m.info.delivery === "pending_steer" ||
@@ -2047,7 +2048,7 @@ export const layer = Layer.effect(
           // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
           const turnStart = turnStartUserID
           const visibleMsgs = msgs.filter((m) => {
-            if (m.info.role !== "user") return true
+            if (!isUserTurn(m.info, m.parts)) return true
             if (m.info.delivery === "queued") return m.info.id === ownedQueuedMessageID
             // 261031 Red 引导未领取（pending_steer）对模型隐藏，防止 promote 后、投影读取前
             // 落库的窗口竞态把未领取内容漏进模型历史；领取转 steer 后按 steer 放行。

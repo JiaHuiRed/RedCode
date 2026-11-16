@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { Show, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
@@ -27,7 +28,7 @@ export function SessionActivityHud(props: {
   // 回合范围：最后一条用户消息及其后的消息才算本轮；找不到说明起点不在已加载窗口里。
   const turnStart = createMemo(() => {
     if (!params.id) return -1
-    return (sync.data.message[params.id] ?? []).findLastIndex((message) => message.role === "user")
+    return (sync.data.message[params.id] ?? []).findLastIndex((message) => isUserTurn(message, sync.data.part[message.id]))
   })
   // 261114 Red UX-11：部件带上所属消息 id，点击定位用它滚到对应消息。
   const parts = createMemo<(ActivityPart & { messageID: string })[]>(() => {

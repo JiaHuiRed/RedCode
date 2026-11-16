@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import * as Tool from "./tool"
 import DESCRIPTION from "./task.md" with { type: "text" }
 import { ToolJsonSchema } from "./json-schema"
@@ -883,7 +884,7 @@ export const TaskTool = Tool.define(
         function* (input: ResumeInput) {
           const deadline = input.deadline ?? (yield* Clock.currentTimeMillis) + RESUME_IDLE_TIMEOUT_MS
           const latest = yield* sessions
-            .findMessage(ctx.sessionID, (item) => item.info.role === "user")
+            .findMessage(ctx.sessionID, (item) => isUserTurn(item.info, item.parts))
             .pipe(Effect.orDie)
           if (Option.isNone(latest)) return
           if (latest.value.info.id !== input.userID) return
