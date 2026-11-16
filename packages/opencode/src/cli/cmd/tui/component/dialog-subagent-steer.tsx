@@ -6,7 +6,7 @@ import {
   MouseButton,
   type MouseEvent,
 } from "@opentui/core"
-import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js"
 import { errorMessage } from "@/util/error"
 import { useDialog } from "@tui/ui/dialog"
 import { useSDK } from "@tui/context/sdk"
@@ -65,9 +65,14 @@ export function DialogSubagentSteer(props: {
     clearInterval(timer)
     timer = undefined
   }
-  onCleanup(stopPolling)
+  let closed = false
+  onCleanup(() => {
+    closed = true
+    stopPolling()
+  })
 
   function close() {
+    closed = true
     stopPolling()
     if (props.onDone) {
       props.onDone()
@@ -77,9 +82,7 @@ export function DialogSubagentSteer(props: {
   }
 
   async function readBack(messageID: string, fallback: SteerDelivery): Promise<SteerDelivery> {
-    const page = await sdk.client.session
-      .messages({ sessionID: props.sessionID, limit: 100 })
-      .catch(() => undefined)
+    const page = await sdk.client.session.messages({ sessionID: props.sessionID, limit: 100 }).catch(() => undefined)
     const info = page?.data?.find((item) => item.info.id === messageID)?.info
     if (!info || info.role !== "user") return fallback
     return steerDelivery(info.delivery)
@@ -87,6 +90,7 @@ export function DialogSubagentSteer(props: {
 
   // 排队只在下一个安全执行点转送达；面板开着时有界跟进，不把排队谎报成已执行。
   function pollDelivery(messageID: string) {
+    if (closed) return
     stopPolling()
     let attempts = 0
     timer = setInterval(() => {
@@ -96,7 +100,7 @@ export function DialogSubagentSteer(props: {
         return
       }
       void readBack(messageID, "queued").then((next) => {
-        if (next !== "delivered") return
+        if (closed || next !== "delivered") return
         const current = phase()
         if (current.kind === "sent") setPhase({ ...current, state: "delivered" })
         stopPolling()
@@ -106,6 +110,7 @@ export function DialogSubagentSteer(props: {
 
   async function send(text: string) {
     const draft = steerRequest(props.sessionID, text)
+    setDraftText(draft.text)
     const invalid = validateSteerMessage(draft.text, draft.requestID)
     if (invalid) {
       setPhase({ kind: "failed", text: draft.text, requestID: draft.requestID, error: invalid })
@@ -119,6 +124,7 @@ export function DialogSubagentSteer(props: {
           : result.data.some((job) => job.sessionID === props.sessionID && job.status === "running"),
       () => undefined,
     )
+    if (closed) return
     if (running === false) {
       setPhase({
         kind: "failed",
@@ -148,6 +154,7 @@ export function DialogSubagentSteer(props: {
         }),
       )
     if (response.error || !response.messageID || !response.state) {
+      if (closed) return
       setPhase({
         kind: "failed",
         text: draft.text,
@@ -156,8 +163,11 @@ export function DialogSubagentSteer(props: {
       })
       return
     }
-    clearSteerDraft(props.sessionID)
+    const currentDraft = getSteerDraft(props.sessionID)
+    if (currentDraft.requestID === draft.requestID && currentDraft.text === draft.text) clearSteerDraft(props.sessionID)
+    if (closed) return
     const state = await readBack(response.messageID, response.state)
+    if (closed) return
     setPhase({
       kind: "sent",
       text: draft.text,
@@ -175,89 +185,107 @@ export function DialogSubagentSteer(props: {
   }
 
   function edit() {
-    setPhase({ kind: "edit" })
     setDraftText(getSteerDraft(props.sessionID).text)
+    setPhase({ kind: "edit" })
   }
+
+  useBindings(() => ({
+    priority: 2,
+    bindings: [{ key: "escape", desc: "返回后台（保留草稿）", group: "Dialog", cmd: close }],
+  }))
+  useBindings(() => ({
+    enabled: phase().kind === "failed",
+    priority: 2,
+    bindings: [
+      { key: "r", desc: "重试补充要求", group: "Dialog", cmd: retry },
+      { key: "e", desc: "编辑补充要求", group: "Dialog", cmd: edit },
+    ],
+  }))
 
   onMount(() => {
     dialog.setSize("medium")
   })
 
   return (
-    <Switch>
-      <Match when={phase().kind === "edit" || phase().kind === "sending"}>
-        <SteerEditor
-          sessionID={props.sessionID}
-          title={`补充要求 · ${taskTitle()}`}
-          busy={phase().kind === "sending"}
-          value={draftText()}
-          description={
-            <box>
-              <text fg={theme.textMuted} wrapMode="word">
-                {`所属主任务：${parentLabel()}`}
-              </text>
-              <text fg={theme.textMuted} wrapMode="word">
-                {`目标会话：${props.sessionID}`}
-              </text>
-              <text fg={theme.textMuted} wrapMode="word">
-                补充要求会在下一个安全执行点送达，不打断正在运行的工具；已结束的任务不会自动续跑。
-              </text>
-            </box>
-          }
-          onSend={(text) => void send(text)}
-          onCancel={close}
-        />
-      </Match>
-      <Match when={phase().kind === "sent" || phase().kind === "failed"}>
-        {(() => {
-          const current = () => phase() as Extract<Phase, { kind: "sent" | "failed" }>
-          const state = () => (phase().kind === "sent" ? (phase() as Extract<Phase, { kind: "sent" }>).state : "failed")
-          const color = () =>
-            phase().kind === "failed" ? theme.error : state() === "delivered" ? theme.success : theme.warning
-          return (
-            <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
-              <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme.text} attributes={TextAttributes.BOLD}>{`补充要求 · ${taskTitle()}`}</text>
-                <text fg={theme.textMuted} onMouseUp={close}>
-                  esc
+    // Keep the dialog factory rooted in a node: a root Switch accessor is unwrapped
+    // by OpenTUI and would rerun the factory (resetting phase) when its branch changes.
+    <box>
+      <Switch>
+        <Match when={phase().kind === "edit" || phase().kind === "sending"}>
+          <SteerEditor
+            sessionID={props.sessionID}
+            title={`补充要求 · ${taskTitle()}`}
+            busy={phase().kind === "sending"}
+            value={draftText()}
+            description={
+              <box>
+                <text fg={theme.textMuted} wrapMode="word">
+                  {`所属主任务：${parentLabel()}`}
+                </text>
+                <text fg={theme.textMuted} wrapMode="word">
+                  {`目标会话：${props.sessionID}`}
+                </text>
+                <text fg={theme.textMuted} wrapMode="word">
+                  补充要求会在下一个安全执行点送达，不打断正在运行的工具；已结束的任务不会自动续跑。
                 </text>
               </box>
-              <text fg={theme.textMuted} wrapMode="word">{`所属主任务：${parentLabel()}`}</text>
-              <text fg={theme.textMuted} wrapMode="word">{`目标会话：${props.sessionID}`}</text>
-              <text fg={color()} wrapMode="word">
-                {steerStateText(phase().kind === "failed" ? "failed" : state())}
-              </text>
-              <Show when={phase().kind === "failed"}>
-                <text fg={theme.error} wrapMode="word">
-                  {(phase() as Extract<Phase, { kind: "failed" }>).error}
+            }
+            onSend={(text) => void send(text)}
+            onCancel={close}
+          />
+        </Match>
+        <Match when={phase().kind === "sent" || phase().kind === "failed"}>
+          {(() => {
+            const current = () => phase() as Extract<Phase, { kind: "sent" | "failed" }>
+            const state = () =>
+              phase().kind === "sent" ? (phase() as Extract<Phase, { kind: "sent" }>).state : "failed"
+            const color = () =>
+              phase().kind === "failed" ? theme.error : state() === "delivered" ? theme.success : theme.warning
+            return (
+              <box paddingLeft={2} paddingRight={2} gap={1} paddingBottom={1}>
+                <box flexDirection="row" justifyContent="space-between">
+                  <text fg={theme.text} attributes={TextAttributes.BOLD}>{`补充要求 · ${taskTitle()}`}</text>
+                  <text fg={theme.textMuted} onMouseUp={close}>
+                    esc
+                  </text>
+                </box>
+                <text fg={theme.textMuted} wrapMode="word">{`所属主任务：${parentLabel()}`}</text>
+                <text fg={theme.textMuted} wrapMode="word">{`目标会话：${props.sessionID}`}</text>
+                <text fg={color()} wrapMode="word">
+                  {steerStateText(phase().kind === "failed" ? "failed" : state())}
                 </text>
-              </Show>
-              <Show when={phase().kind === "sent"}>
-                <text fg={theme.textMuted} wrapMode="word">
-                  {`message ${(current() as Extract<Phase, { kind: "sent" }>).messageID.slice(-8)} · request ${current().requestID.slice(0, 8)}`}
-                </text>
-              </Show>
-              <text fg={theme.textMuted} wrapMode="word">
-                {current().text}
-              </text>
-              <box flexDirection="row" justifyContent="flex-end" gap={2}>
                 <Show when={phase().kind === "failed"}>
-                  <box paddingLeft={2} paddingRight={2} onMouseUp={edit}>
-                    <text fg={theme.textMuted}>编辑</text>
-                  </box>
-                  <box paddingLeft={2} paddingRight={2} backgroundColor={theme.primary} onMouseUp={retry}>
-                    <text fg={theme.selectedListItemText}>重试</text>
-                  </box>
+                  <text fg={theme.error} wrapMode="word">
+                    {(phase() as Extract<Phase, { kind: "failed" }>).error}
+                  </text>
                 </Show>
-                <box paddingLeft={2} paddingRight={2} backgroundColor={theme.primary} onMouseUp={close}>
-                  <text fg={theme.selectedListItemText}>关闭</text>
+                <Show when={phase().kind === "sent"}>
+                  <text fg={theme.textMuted} wrapMode="word">
+                    {`message ${(current() as Extract<Phase, { kind: "sent" }>).messageID.slice(-8)} · request ${current().requestID.slice(0, 8)}`}
+                  </text>
+                </Show>
+                <text fg={theme.textMuted} wrapMode="word">
+                  {current().text}
+                </text>
+                <box flexDirection="row" justifyContent="flex-end" gap={2}>
+                  <Show when={phase().kind === "failed"}>
+                    <box paddingLeft={2} paddingRight={2} onMouseUp={edit}>
+                      <text fg={theme.textMuted}>e 编辑</text>
+                    </box>
+                    <box paddingLeft={2} paddingRight={2} backgroundColor={theme.primary} onMouseUp={retry}>
+                      <text fg={theme.selectedListItemText}>r 重试</text>
+                    </box>
+                  </Show>
+                  <box paddingLeft={2} paddingRight={2} backgroundColor={theme.primary} onMouseUp={close}>
+                    <text fg={theme.selectedListItemText}>esc 返回</text>
+                  </box>
                 </box>
               </box>
-            </box>
-          )
-        })()}
-      </Match>
-    </Switch>
+            )
+          })()}
+        </Match>
+      </Switch>
+    </box>
   )
 }
 
@@ -306,6 +334,16 @@ function SteerEditor(props: {
       textarea.focus()
     }, 1)
     textarea.gotoLineEnd()
+  })
+
+  createEffect(() => {
+    if (!textarea || textarea.isDestroyed) return
+    textarea.traits = props.busy ? { suspend: true, status: "BUSY" } : {}
+    if (props.busy) {
+      textarea.blur()
+      return
+    }
+    textarea.focus()
   })
 
   return (
@@ -363,7 +401,7 @@ function SteerEditor(props: {
               {submitShortcut()} <span style={{ fg: theme.textMuted }}>submit</span>
             </text>
           </Show>
-          <text fg={theme.textMuted}>esc cancel</text>
+          <text fg={theme.textMuted}>esc 返回（保留草稿）</text>
         </Show>
       </box>
     </box>
