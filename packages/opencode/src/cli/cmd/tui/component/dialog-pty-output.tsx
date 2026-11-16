@@ -1,4 +1,4 @@
-import { createMemo, createResource, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, onCleanup, onMount, Show } from "solid-js"
 import { TextAttributes } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import stripAnsi from "strip-ansi"
@@ -8,6 +8,7 @@ import { useDialog } from "@tui/ui/dialog"
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
+import { useBindings } from "../keymap"
 import {
   ptyCommandLine,
   ptyOutputNotice,
@@ -31,19 +32,43 @@ export function DialogPtyOutput(props: { pty: BackgroundPty; onBack: () => void 
     dialog.setSize("large")
   })
 
-  const [result] = createResource(
+  type Snapshot = { data?: PtyOutput; status?: BackgroundPty["status"]; error?: string }
+  const [result, { refetch }] = createResource(
     () => props.pty.id,
-    () =>
-      sdk.client.pty
-        .output({ ptyID: props.pty.id, directory: sync.path.directory || sdk.directory })
-        .then(
-          (value): { data?: PtyOutput; error?: string } => ({
-            data: value.data,
-            error: value.error ? errorMessage(value.error) : undefined,
-          }),
-          (error): { data?: PtyOutput; error?: string } => ({ data: undefined, error: errorMessage(error) }),
-        ),
+    async (id, previous): Promise<Snapshot> => {
+      const input = { ptyID: id, directory: sync.path.directory || sdk.directory }
+      const info = await sdk.client.pty.get(input).then(
+        (value) => ({ status: value.data?.status, error: value.error ? errorMessage(value.error) : undefined }),
+        (error) => ({ status: undefined, error: errorMessage(error) }),
+      )
+      if (!info.status || info.error) return { data: previous.value?.data, error: info.error ?? "终端已不存在" }
+      return sdk.client.pty.output(input).then(
+        (value) => ({
+          data: value.data ?? previous.value?.data,
+          status: info.status,
+          error: value.error ? errorMessage(value.error) : undefined,
+        }),
+        (error) => ({ data: previous.value?.data, status: info.status, error: errorMessage(error) }),
+      )
+    },
   )
+
+  const status = createMemo(() => result()?.status ?? (result()?.error ? undefined : props.pty.status))
+  const refresh = () => {
+    if (!result.loading) void refetch()
+  }
+  createEffect(() => {
+    if (result.loading || result()?.error || status() !== "running") return
+    const timer = setTimeout(refresh, 1000)
+    onCleanup(() => clearTimeout(timer))
+  })
+  useBindings(() => ({
+    priority: 2,
+    bindings: [
+      { key: "r", desc: "刷新终端输出", group: "Dialog", cmd: refresh },
+      { key: "escape", desc: "返回后台", group: "Dialog", cmd: props.onBack },
+    ],
+  }))
 
   const view = createMemo(() => {
     const value = result()
@@ -78,10 +103,10 @@ export function DialogPtyOutput(props: { pty: BackgroundPty; onBack: () => void 
           {`命令：${ptyCommandLine(props.pty)}`}
         </text>
         <text fg={theme.textMuted} wrapMode="word">
-          {`目录：${props.pty.cwd} · PID ${props.pty.pid} · ${PTY_STATUS[props.pty.status]}`}
+          {`目录：${props.pty.cwd} · PID ${props.pty.pid} · ${status() ? PTY_STATUS[status()!] : "状态未知"}`}
         </text>
         <text fg={theme.textMuted} wrapMode="word">
-          {ptyStatusNote(props.pty.status)}
+          {status() ? ptyStatusNote(status()!) : "无法确认终端状态，自动刷新已暂停。"}
         </text>
         <text fg={theme.textMuted} wrapMode="word">
           {ptySourceNote()}
@@ -90,7 +115,7 @@ export function DialogPtyOutput(props: { pty: BackgroundPty; onBack: () => void 
       <Show when={result()?.error}>
         {(error) => (
           <text fg={theme.error} wrapMode="word">
-            {`输出不可用：${error()}`}
+            {`输出刷新失败：${error()}（保留上次快照；按 r 重试）`}
           </text>
         )}
       </Show>
@@ -99,6 +124,9 @@ export function DialogPtyOutput(props: { pty: BackgroundPty; onBack: () => void 
           <box gap={1}>
             <text fg={theme.textMuted}>{output().notice}</text>
             <scrollbox
+              focused
+              stickyScroll
+              stickyStart="bottom"
               height={Math.max(6, Math.floor(dimensions().height / 2))}
               scrollbarOptions={{ visible: false }}
             >
@@ -112,6 +140,7 @@ export function DialogPtyOutput(props: { pty: BackgroundPty; onBack: () => void 
       <Show when={result.loading}>
         <text fg={theme.textMuted}>加载输出…</text>
       </Show>
+      <text fg={theme.textMuted}>r 刷新 · ↑/↓ 滚动 · esc 返回后台 · 仅在尾部跟随新输出</text>
     </box>
   )
 }
