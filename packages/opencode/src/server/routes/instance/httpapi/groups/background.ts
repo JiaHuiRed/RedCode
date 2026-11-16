@@ -3,6 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+import { ApiNotFoundError, ConflictError, ForbiddenError, InvalidRequestError, TimeoutError } from "../errors"
 import { described } from "./metadata"
 
 const root = "/background"
@@ -40,6 +41,20 @@ export const JobResult = Schema.Struct({
 })
 export type JobResult = typeof JobResult.Type
 
+// 261116 Red 用户直接给运行中的子任务补充要求：requestID 是客户端重试幂等键；
+// state 只反映消息持久化后的 delivery，不代表模型已理解或执行。
+export const SteerPayload = Schema.Struct({
+  message: Schema.String,
+  requestID: Schema.String,
+})
+export type SteerPayload = typeof SteerPayload.Type
+
+export const SteerReceipt = Schema.Struct({
+  messageID: Schema.String,
+  state: Schema.Literals(["queued", "delivered"]),
+})
+export type SteerReceipt = typeof SteerReceipt.Type
+
 export const BackgroundApi = HttpApi.make("background")
   .add(
     HttpApiGroup.make("background")
@@ -76,6 +91,20 @@ export const BackgroundApi = HttpApi.make("background")
             summary: "Get a background job result",
             description:
               "On-demand result of a finished background job. The output is bounded to the last 32,000 characters with a truncation flag and total size; open the linked session for the full transcript. Jobs are recycled 30 minutes after completion.",
+          }),
+        ),
+        HttpApiEndpoint.post("steer", `${root}/tasks/:sessionID/steer`, {
+          params: { sessionID: Schema.String },
+          query: WorkspaceRoutingQuery,
+          payload: SteerPayload,
+          success: described(SteerReceipt, "Steering delivery receipt"),
+          error: [InvalidRequestError, ForbiddenError, ApiNotFoundError, ConflictError, TimeoutError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "background.steer",
+            summary: "Send guidance to a running background task",
+            description:
+              "Persist user guidance into a running child task. The guidance is applied at the next safe step and does not interrupt a running tool. The receipt reflects the persisted message state; 'delivered' means the message was included in a request, not that the model understood or executed it.",
           }),
         ),
       )

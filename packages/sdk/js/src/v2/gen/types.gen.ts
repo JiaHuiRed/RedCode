@@ -1124,6 +1124,13 @@ export type Model = {
   reasoningOptions?: unknown
 }
 
+export type PtyOutput = {
+  output: string
+  startCursor: number
+  endCursor: number
+  truncated: boolean
+}
+
 export type McpStatusNeedsClientRegistration = {
   status: "needs_client_registration"
   error: string
@@ -3700,6 +3707,30 @@ export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
 }
 
+export type TimeoutError = {
+  _tag: "TimeoutError"
+  message: string
+  operation?: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
+export type ForbiddenError = {
+  _tag: "ForbiddenError"
+  message: string
+}
+
 export type InvalidRequestError = {
   _tag: "InvalidRequestError"
   message: string
@@ -3724,13 +3755,6 @@ export type WorkspaceWarpError = {
 
 export type EffectHttpApiErrorBadRequest = {
   _tag: "BadRequest"
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
-  }
 }
 
 export type UnauthorizedError = {
@@ -4067,12 +4091,6 @@ export type SessionInfo = {
     archived?: number
   }
   title: string
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
 }
 
 export type SessionBusyError = {
@@ -7075,6 +7093,44 @@ export type PtyUpdateResponses = {
 }
 
 export type PtyUpdateResponse = PtyUpdateResponses[keyof PtyUpdateResponses]
+
+export type PtyOutputData = {
+  body?: never
+  path: {
+    ptyID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/pty/{ptyID}/output"
+}
+
+export type PtyOutputErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type PtyOutputError = PtyOutputErrors[keyof PtyOutputErrors]
+
+export type PtyOutputResponses = {
+  /**
+   * Bounded PTY output snapshot
+   */
+  200: PtyOutput
+}
+
+export type PtyOutputResponse = PtyOutputResponses[keyof PtyOutputResponses]
 
 export type PtyConnectTokenData = {
   body?: never
@@ -10487,6 +10543,58 @@ export type BackgroundResultResponses = {
 }
 
 export type BackgroundResultResponse = BackgroundResultResponses[keyof BackgroundResultResponses]
+
+export type BackgroundSteerData = {
+  body?: {
+    message: string
+    requestID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background/tasks/{sessionID}/steer"
+}
+
+export type BackgroundSteerErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ForbiddenError
+   */
+  403: ForbiddenError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * TimeoutError
+   */
+  504: TimeoutError
+}
+
+export type BackgroundSteerError = BackgroundSteerErrors[keyof BackgroundSteerErrors]
+
+export type BackgroundSteerResponses = {
+  /**
+   * Steering delivery receipt
+   */
+  200: {
+    messageID: string
+    state: "queued" | "delivered"
+  }
+}
+
+export type BackgroundSteerResponse = BackgroundSteerResponses[keyof BackgroundSteerResponses]
 
 export type PtyConnectData = {
   body?: never

@@ -15,7 +15,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import * as Socket from "effect/socket/Socket"
 import { InstanceHttpApi } from "../api"
-import * as ApiError from "../errors"
+import { ConflictError, notFound } from "../errors"
 import { CursorQuery, Params, PtyPaths } from "../groups/pty"
 import { WebSocketTracker } from "../websocket-tracker"
 
@@ -47,8 +47,32 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
 
     const get = Effect.fn("PtyHttpApi.get")(function* (ctx: { params: { ptyID: PtyID } }) {
       const info = yield* pty.get(ctx.params.ptyID)
-      if (!info) return yield* ApiError.notFound("Session not found")
+      if (!info) return yield* notFound("Session not found")
       return info
+    })
+
+    // 261116 Red 只读输出快照：不解码 cursor、不 attach socket；不可用/结束/孤儿显式说明。
+    const output = Effect.fn("PtyHttpApi.output")(function* (ctx: { params: { ptyID: PtyID } }) {
+      const result = yield* pty.output(ctx.params.ptyID)
+      if (result.type === "not_found") return yield* notFound("Session not found")
+      if (result.type === "orphaned")
+        return yield* new ConflictError({
+          message:
+            "PTY output is unavailable: this terminal was restored as an orphan after a server restart and its output was not persisted.",
+        })
+      if (result.type === "exited")
+        return yield* new ConflictError({
+          message:
+            result.exitCode === undefined
+              ? "PTY session has exited and no output is retained."
+              : `PTY session has exited (code ${result.exitCode}) and no output is retained.`,
+        })
+      return {
+        output: result.output,
+        startCursor: result.startCursor,
+        endCursor: result.endCursor,
+        truncated: result.truncated,
+      }
     })
 
     const update = Effect.fn("PtyHttpApi.update")(function* (ctx: {
@@ -59,7 +83,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
         ...ctx.payload,
         size: ctx.payload.size ? { ...ctx.payload.size } : undefined,
       })
-      if (!info) return yield* ApiError.notFound("Session not found")
+      if (!info) return yield* notFound("Session not found")
       return info
     })
 
@@ -73,7 +97,8 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.headers[PTY_CONNECT_TOKEN_HEADER] !== PTY_CONNECT_TOKEN_HEADER_VALUE || !validOrigin(request, cors))
         return yield* new HttpApiError.Forbidden({})
-      if (!(yield* pty.get(ctx.params.ptyID))) return yield* ApiError.notFound("Session not found")
+      const info = yield* pty.get(ctx.params.ptyID)
+      if (!info || info.status !== "running") return yield* notFound("Session not found")
       return yield* tickets.issue({ ptyID: ctx.params.ptyID, ...(yield* PtyTicket.scope) })
     })
 
@@ -82,6 +107,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       .handle("list", list)
       .handle("create", create)
       .handle("get", get)
+      .handle("output", output)
       .handle("update", update)
       .handle("remove", remove)
       .handle("connectToken", connectToken)
@@ -98,7 +124,8 @@ export const ptyConnectRoute = HttpRouter.use((router) =>
       PtyPaths.connect,
       Effect.gen(function* () {
         const params = yield* HttpRouter.schemaPathParams(Params)
-        if (!(yield* pty.get(params.ptyID))) return HttpServerResponse.empty({ status: 404 })
+        const info = yield* pty.get(params.ptyID)
+        if (!info || info.status !== "running") return HttpServerResponse.empty({ status: 404 })
 
         const query = yield* HttpServerRequest.schemaSearchParams(CursorQuery)
         const request = yield* HttpServerRequest.HttpServerRequest

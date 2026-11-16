@@ -12,7 +12,7 @@ import { Config } from "@/config/config"
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Clock, Effect, Exit, Option, Schema } from "effect"
-import { steerTask } from "./task"
+import { isSteeringMessageValid, steerTask } from "./task"
 
 const DEFAULT_TIMEOUT = 60_000
 const POLL_MS = 300
@@ -189,7 +189,7 @@ export const TaskStatusTool = Tool.define(
             'To send guidance, omit wait, timeout_ms, and cancel: {"task_id":"<task_id>","message":"<guidance>"}. ' +
             'An empty message is not an omitted field.',
           ))
-        if (!params.message.trim() || Buffer.byteLength(params.message, "utf8") > 16_384)
+        if (!isSteeringMessageValid(params.message))
           return yield* Effect.fail(new Error("Steering message must be nonblank and at most 16384 UTF-8 bytes"))
         const child = yield* sessions.get(params.task_id)
         if (child.parentID !== ctx.sessionID || child.id === ctx.sessionID)

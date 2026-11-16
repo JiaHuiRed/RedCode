@@ -14,8 +14,10 @@ import type { SessionPrompt } from "../session/prompt"
 import { SessionStatus } from "@/session/status"
 import { Config } from "@/config/config"
 import { TuiEvent } from "@/cli/cmd/tui/event"
-import { Cause, Clock, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
+import { InstanceRef } from "@/effect/instance-ref"
+import type { InstanceContext } from "@/project/instance-context"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
 import { profileCapabilitySet } from "./capability"
@@ -40,20 +42,87 @@ export interface TaskPromptOps {
   ): Effect.Effect<{ worktree: { name: string; directory: string; branch?: string }; result: A }, E>
 }
 
+type SteeringTrace = Deferred.Deferred<void, Error>
+
+type SteeringSend = {
+  messageID: MessageID
+  fiber: Fiber.Fiber<unknown, unknown>
+  // 261116 Red 只等「父会话关联记录已落库」，不等子任务模型结束。
+  trace: SteeringTrace
+  replayed: boolean
+}
+
+type SteeringMessage = {
+  message: string
+  messageID: MessageID
+  fiber?: Fiber.Fiber<unknown, unknown>
+  trace: SteeringTrace
+  persisted: boolean
+  traceSucceeded: boolean
+  traceFailed: boolean
+  // 261116 Red 父 trace 失败后的修复入口：只补父记录，不重跑子消息。
+  repair?: () => Effect.Effect<void, unknown>
+}
+
 type Steering = {
   parentSessionID: SessionID
-  send: (message: string, callID?: string) => {
-    messageID: MessageID
-    fiber: Fiber.Fiber<MessageV2.WithParts, unknown>
-  }
+  requests: Map<string, SteeringMessage>
+  send: (message: string, options?: { callID?: string; requestID?: string; source?: "agent" | "user" }) => SteeringSend
 }
 
 const steering = new Map<SessionID, Steering>()
 
+// 261116 Red 用户引导的硬预算：正文 16,384 UTF-8 bytes，requestID 只做内存幂等键。
+export const STEERING_MESSAGE_MAX_BYTES = 16_384
+export const STEERING_REQUEST_ID_MAX_BYTES = 256
+
+export function isSteeringMessageValid(message: string) {
+  return message.trim().length > 0 && Buffer.byteLength(message, "utf8") <= STEERING_MESSAGE_MAX_BYTES
+}
+
+// 261116 Red 用户来源不伪装成父代理工具调用：正文前缀让模型看见来源与冲突优先级，metadata
+// 留机读字段。冲突语义按产品约定——同一任务的明确目标冲突以用户最新要求为准，但仍在既有
+// 项目/工具/子代理权限内执行。
+function userSteeringText(message: string) {
+  return [
+    "[User steering from the user reviewing this subagent, not from the parent agent.",
+    "If it conflicts with the current task goal, this latest user requirement takes priority.",
+    "It applies at the next safe step; do not interrupt a running tool.]",
+    "",
+    message,
+  ].join("\n")
+}
+
+function userSteeringNotice(input: {
+  taskID: SessionID
+  title: string | undefined
+  message: string
+  state: "queued" | "delivered"
+  requestID: string
+}) {
+  return [
+    `User steering sent to background task ${input.taskID}${input.title ? ` (${input.title})` : ""}.`,
+    `state: ${input.state}`,
+    `request_id: ${input.requestID}`,
+    "",
+    input.message,
+  ].join("\n")
+}
+
 // 261014 Red 控制通道只在任务执行期存在；捕获子任务的 InstanceRef/隔离边界，而非父实例。
 // 决策：docs/notes/implemented/feature/2026-10-14-subagent-steering.md
+// 261116 Red 用户引导复用同一控制通道，但父记录必须在父真实实例里写：isolated child 的
+// bridge 只用于子消息；parentInstance 在 TaskTool.execute 的父上下文捕获。回执分两段：
+// 子消息持久化后马上写父记录并完成 trace，prompt 的 loop 仍由任务收尾 join，不阻塞父记录。
+// 决策：docs/notes/implemented/feature/2026-11-16-experience-roadmap-v2.md
 export const runSteerableTask = (
-  input: { sessionID: SessionID; parentSessionID: SessionID; ops: TaskPromptOps; sessions: Session.Interface },
+  input: {
+    sessionID: SessionID
+    parentSessionID: SessionID
+    ops: TaskPromptOps
+    sessions: Session.Interface
+    parentInstance?: InstanceContext
+  },
   run: Effect.Effect<MessageV2.WithParts, unknown>,
 ) => Effect.gen(function* () {
   const bridge = yield* EffectBridge.make()
@@ -62,14 +131,61 @@ export const runSteerableTask = (
     Effect.sync(() => {
       steering.set(input.sessionID, {
         parentSessionID: input.parentSessionID,
-        send(message, callID) {
+        requests: new Map(),
+        send(message, options) {
+          const requestID = options?.requestID
+          const source = options?.source ?? "agent"
+          const existing = requestID ? steering.get(input.sessionID)?.requests.get(requestID) : undefined
+          if (existing) {
+            if (existing.message !== message)
+              throw new Error(`Steering requestID "${requestID}" was already used for different guidance to this task`)
+            if (!existing.fiber) throw new Error("Steering request is still being registered")
+            // 261116 Red 父 trace 失败但子消息已落库：同 requestID 重试只修复父记录，
+            // 不重跑模型、不重复子消息。
+            if (existing.traceFailed && existing.persisted && existing.repair) {
+              const trace = Deferred.makeUnsafe<void, Error>()
+              existing.trace = trace
+              existing.traceSucceeded = false
+              existing.traceFailed = false
+              const fiber = bridge.fork(
+                existing.repair().pipe(
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      existing.traceSucceeded = true
+                    }),
+                  ),
+                  Effect.tap(() => Deferred.succeed(trace, undefined).pipe(Effect.ignore)),
+                  Effect.onError((cause) => {
+                    existing.traceFailed = true
+                    const squashed = Cause.squash(cause)
+                    const error = squashed instanceof Error ? squashed : new Error(String(squashed))
+                    return Deferred.fail(trace, error).pipe(Effect.ignore)
+                  }),
+                ),
+              )
+              return { messageID: existing.messageID, fiber, trace, replayed: true }
+            }
+            return { messageID: existing.messageID, fiber: existing.fiber, trace: existing.trace, replayed: true }
+          }
           const messageID = MessageID.ascending()
+          const text = source === "user" ? userSteeringText(message) : message
+          const trace = Deferred.makeUnsafe<void, Error>()
+          const record: SteeringMessage = {
+            message,
+            messageID,
+            trace,
+            persisted: false,
+            traceSucceeded: false,
+            traceFailed: false,
+          }
           const fiber = bridge.fork(Effect.gen(function* () {
             const latest = yield* input.sessions.findMessage(input.sessionID, (item) => item.info.role === "user")
             if (Option.isNone(latest) || latest.value.info.role !== "user")
               return yield* Effect.fail(new Error("Task has no active user message to steer"))
             const user = latest.value.info
-            return yield* input.ops.prompt({
+            // 261116 Red 先把 prompt 作为子 fiber 启动：它内部的 loop 会跨到任务后续步骤，
+            // 不能在这里同步等待；父记录只等子消息持久化。
+            const promptFiber = yield* Effect.forkChild(input.ops.prompt({
               sessionID: input.sessionID,
               messageID,
               agent: user.agent,
@@ -78,13 +194,219 @@ export const runSteerableTask = (
               delivery: "steer",
               parts: [{
                 type: "text",
-                text: message,
-                metadata: { task_steer: { parent_session_id: input.parentSessionID, call_id: callID } },
+                text,
+                metadata: {
+                  task_steer: {
+                    parent_session_id: input.parentSessionID,
+                    call_id: options?.callID,
+                    request_id: requestID,
+                    source,
+                    priority: source === "user" ? "user_override" : "task_goal",
+                  },
+                },
               }],
+            }))
+            const deadline = (yield* Clock.currentTimeMillis) + 10_000
+            let childMessage: MessageV2.WithParts | undefined
+            while (true) {
+              childMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(
+                Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+              )
+              if (childMessage?.info.role === "user") {
+                record.persisted = true
+                break
+              }
+              const exit = promptFiber.pollUnsafe()
+              if (exit && Exit.isFailure(exit))
+                return yield* Effect.fail(
+                  new Error(`Steering failed before the message was persisted: ${Cause.pretty(exit.cause)}`),
+                )
+              if ((yield* Clock.currentTimeMillis) >= deadline)
+                return yield* Effect.fail(new Error("Timed out waiting for steering message persistence"))
+              yield* Effect.sleep("50 millis")
+            }
+            if (childMessage?.info.role !== "user")
+              return yield* Effect.fail(new Error("Steering message did not persist"))
+            if (source !== "user" || !requestID) {
+              record.traceSucceeded = true
+              yield* Deferred.succeed(trace, undefined).pipe(Effect.ignore)
+              return yield* Fiber.join(promptFiber)
+            }
+            const [child, parent] = yield* Effect.all([
+              input.sessions.get(input.sessionID).pipe(Effect.catchCause(() => Effect.succeed(undefined))),
+              input.sessions.get(input.parentSessionID).pipe(Effect.catchCause(() => Effect.succeed(undefined))),
+            ])
+            // 261116 Red 父记录按 requestID 做幂等查找：父 prompt 已落库但返回失败时，
+            // 重试更新原记录而不是再造一条。
+            const findParentTrace = Effect.gen(function* () {
+              const messages = yield* input.sessions.messages({ sessionID: input.parentSessionID })
+              for (const candidate of messages) {
+                const part = candidate.parts.find(
+                  (item): item is MessageV2.TextPart =>
+                    item.type === "text" &&
+                    item.metadata?.task_steer_record?.request_id === requestID &&
+                    item.metadata?.task_steer_record?.task_session_id === input.sessionID,
+                )
+                if (part) return part
+              }
+              return undefined
             })
-          }))
+            const writeParentTrace = (nextState: "queued" | "delivered") =>
+              Effect.gen(function* () {
+                const existingTrace = yield* findParentTrace
+                if (existingTrace) {
+                  yield* input.sessions.updatePart({
+                    ...existingTrace,
+                    text: userSteeringNotice({
+                      taskID: input.sessionID,
+                      title: child?.title,
+                      message,
+                      state: nextState,
+                      requestID,
+                    }),
+                    metadata: {
+                      ...existingTrace.metadata,
+                      task_steer_record: {
+                        ...(existingTrace.metadata?.task_steer_record as Record<string, unknown> | undefined),
+                        state: nextState,
+                      },
+                    },
+                  })
+                  return existingTrace
+                }
+                // 261116 Red 父记录在父真实实例/目录执行；isolated child 的 provider 不能把
+                // noReply 写进子 worktree 的实例上下文。失败不吞：trace 会失败并让 HTTP 如实报错。
+                const parentPrompt = input.ops.prompt({
+                  sessionID: input.parentSessionID,
+                  noReply: true,
+                  agent: parent?.agent,
+                  parts: [{
+                    type: "text",
+                    synthetic: true,
+                    text: userSteeringNotice({
+                      taskID: input.sessionID,
+                      title: child?.title,
+                      message,
+                      state: nextState,
+                      requestID,
+                    }),
+                    metadata: {
+                      task_steer_record: {
+                        task_session_id: input.sessionID,
+                        parent_session_id: input.parentSessionID,
+                        request_id: requestID,
+                        source: "user",
+                        priority: "user_override",
+                        state: nextState,
+                      },
+                    },
+                  }],
+                })
+                const parentInstance = input.parentInstance
+                const parentTrace = yield* (parentInstance === undefined
+                  ? parentPrompt
+                  : parentPrompt.pipe(Effect.provideService(InstanceRef, parentInstance)))
+                const part = parentTrace.parts.find(
+                  (item): item is MessageV2.TextPart =>
+                    item.type === "text" && item.metadata?.task_steer_record !== undefined,
+                )
+                if (!part) return yield* Effect.fail(new Error("Parent steering trace part is missing"))
+                return part
+              })
+            const repair = Effect.gen(function* () {
+              const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(
+                Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+              )
+              const nextState: "queued" | "delivered" =
+                current?.info.role === "user" && current.info.delivery === "delivered" ? "delivered" : "queued"
+              return { part: yield* writeParentTrace(nextState), state: nextState }
+            })
+            record.repair = () => repair.pipe(Effect.asVoid)
+            const { part: tracePart, state } = yield* repair
+            record.traceSucceeded = true
+            yield* Deferred.succeed(trace, undefined).pipe(Effect.ignore)
+            const updateTrace = (nextState: "queued" | "delivered") =>
+              input.sessions.updatePart({
+                ...tracePart,
+                text: userSteeringNotice({
+                  taskID: input.sessionID,
+                  title: child?.title,
+                  message,
+                  state: nextState,
+                  requestID,
+                }),
+                metadata: {
+                  ...tracePart.metadata,
+                  task_steer_record: {
+                    ...(tracePart.metadata?.task_steer_record as Record<string, unknown> | undefined),
+                    state: nextState,
+                  },
+                },
+              })
+            if (state === "queued") {
+              yield* Effect.forkChild(Effect.gen(function* () {
+                while (true) {
+                  const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(
+                    Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+                  )
+                  if (current?.info.role === "user" && current.info.delivery === "delivered") {
+                    yield* updateTrace("delivered").pipe(
+                      Effect.catchCause(() =>
+                        Effect.sync(() =>
+                          log.warn("failed to update parent steering trace delivery", {
+                            sessionID: input.parentSessionID,
+                            taskSessionID: input.sessionID,
+                            requestID,
+                          }),
+                        ),
+                      ),
+                    )
+                    return
+                  }
+                  if (promptFiber.pollUnsafe() !== undefined) return
+                  yield* Effect.sleep("250 millis")
+                }
+              }))
+            }
+            // 261116 Red 最后一步竞态：watcher 可能随 send fiber 关闭被打断；join 后
+            // 同步读最终 delivery（成功/失败都读），保证 delivered 时父记录不会永远 queued。
+            const outcome = yield* Effect.exit(Fiber.join(promptFiber))
+            if (state === "queued") {
+              const final = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(
+                Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+              )
+              if (final?.info.role === "user" && final.info.delivery === "delivered")
+                yield* updateTrace("delivered").pipe(
+                  Effect.catchCause(() =>
+                    Effect.sync(() =>
+                      log.warn("failed to update final parent steering trace delivery", {
+                        sessionID: input.parentSessionID,
+                        taskSessionID: input.sessionID,
+                        requestID,
+                      }),
+                    ),
+                  ),
+                )
+            }
+            if (Exit.isSuccess(outcome)) return outcome.value
+            return yield* Effect.failCause(outcome.cause)
+          }).pipe(
+            Effect.onError((cause) => {
+              const squashed = Cause.squash(cause)
+              const error = squashed instanceof Error ? squashed : new Error(String(squashed))
+              const requests = steering.get(input.sessionID)?.requests
+              // 261116 Red 只在子消息未落库时撤销幂等登记；已落库的投递保留同一条记录，
+              // 重试不会重复写子消息（父记录失败也不制造第二条）。
+              if (!record.persisted && requestID && requests?.get(requestID)?.messageID === messageID)
+                requests.delete(requestID)
+              record.traceFailed = !record.traceSucceeded
+              return Deferred.fail(trace, error).pipe(Effect.ignore)
+            }),
+          ))
+          record.fiber = fiber
+          if (requestID) steering.get(input.sessionID)?.requests.set(requestID, record)
           pending.push(fiber)
-          return { messageID, fiber }
+          return { messageID, fiber, trace, replayed: false }
         },
       })
     }),
@@ -93,7 +415,11 @@ export const runSteerableTask = (
       // 261014 Red 收尾先关闭准入；已接受的投递等待原 runner 并复用既有收尾重试，不能丢回执。
       steering.delete(input.sessionID)
       for (const fiber of pending) {
-        const delivered = yield* Fiber.join(fiber)
+        // 261116 Red 单条引导（含父记录 trace）失败不应把子任务本身判失败；失败已通过
+        // task_status / HTTP 回执返回给发起方。
+        const outcome = yield* Effect.exit(Fiber.join(fiber))
+        if (!Exit.isSuccess(outcome)) continue
+        const delivered = outcome.value
         if (MessageV2.compareTime(delivered.info, result.info) > 0) result = delivered
       }
       return result
@@ -105,11 +431,51 @@ export const runSteerableTask = (
   )
 })
 
-export function steerTask(taskID: SessionID, parentSessionID: SessionID, message: string, callID?: string) {
+function steeringControl(taskID: SessionID, parentSessionID: SessionID) {
   const control = steering.get(taskID)
   if (!control || control.parentSessionID !== parentSessionID)
     throw new Error("Task is not accepting steering messages")
-  return control.send(message, callID)
+  return control
+}
+
+export function steerTask(taskID: SessionID, parentSessionID: SessionID, message: string, callID?: string) {
+  return steeringControl(taskID, parentSessionID).send(message, { callID, source: "agent" })
+}
+
+// 261116 Red 用户入口复用同一个 task 实例控制通道；source=user 只改来源标记与父记录，
+// 不伪造父代理 ctx，也不走工具调用。
+export function steerTaskFromUser(input: {
+  taskID: SessionID
+  parentSessionID: SessionID
+  message: string
+  requestID: string
+}) {
+  if (!isSteeringMessageValid(input.message))
+    throw new Error("Steering message must be nonblank and at most 16384 UTF-8 bytes")
+  if (!input.requestID.trim()) throw new Error("Steering requestID must be nonblank")
+  if (Buffer.byteLength(input.requestID, "utf8") > STEERING_REQUEST_ID_MAX_BYTES)
+    throw new Error(`Steering requestID must be at most ${STEERING_REQUEST_ID_MAX_BYTES} UTF-8 bytes`)
+  return steeringControl(input.taskID, input.parentSessionID).send(input.message, {
+    requestID: input.requestID,
+    source: "user",
+  })
+}
+
+export type SteeringTargetRejection = "cross_project" | "not_child" | "not_running"
+
+// 261116 Red HTTP 入口的实际归属校验：项目 ID 由 middleware 提供的实例上下文给出，
+// 不信任客户端路径参数；父子关系取目标会话的真实 parentID。
+export function steeringTargetRejection(input: {
+  child: Session.Info
+  parent: Session.Info | undefined
+  projectID: Session.Info["projectID"]
+  job: BackgroundJob.Info | undefined
+}): SteeringTargetRejection | undefined {
+  if (input.child.projectID !== input.projectID) return "cross_project"
+  if (!input.child.parentID || input.child.parentID === input.child.id || !input.parent) return "not_child"
+  if (input.parent.projectID !== input.projectID) return "cross_project"
+  if (input.job?.type !== "task" || input.job.status !== "running") return "not_running"
+  return undefined
 }
 
 const id = "task"
@@ -440,6 +806,8 @@ export const TaskTool = Tool.define(
 
       const ops = ctx.extra?.promptOps as TaskPromptOps
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
+      // 261116 Red 父记录要写回父真实实例/目录；在 runIsolated 包住 runTask 之前捕获。
+      const parentInstance = yield* InstanceRef
       const runCancel = yield* EffectBridge.make()
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
@@ -452,7 +820,7 @@ export const TaskTool = Tool.define(
         }) {
           const parts = yield* ops.resolvePromptParts(params.prompt)
           const result = yield* runSteerableTask(
-            { sessionID: nextSession.id, parentSessionID: ctx.sessionID, ops, sessions },
+            { sessionID: nextSession.id, parentSessionID: ctx.sessionID, ops, sessions, parentInstance },
             ops.prompt({
             messageID: MessageID.ascending(),
             sessionID: nextSession.id,

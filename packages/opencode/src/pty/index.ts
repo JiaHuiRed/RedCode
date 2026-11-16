@@ -18,6 +18,10 @@ const log = Log.create({ service: "pty" })
 
 const BUFFER_LIMIT = 1024 * 1024 * 2
 const BUFFER_CHUNK = 64 * 1024
+// 261116 Red 只读快照上限：每次最多返回末尾 32,000 字符；已退出终端的尾部只在内存保留
+// 最近 20 个，总量有界且不落盘（短命令可回看，不冒充完整历史）。
+const OUTPUT_CHAR_CAP = 32_000
+const EXITED_OUTPUT_KEEP = 20
 // 261105 Red PTY 终端登记落盘：与任务快照共用 background 目录但单列文件（namespace 隔离）。
 // 孤儿记录条数与 store 的完成态上限同口径。决策见
 // docs/notes/implemented/feature/2026-11-04-background-center.md
@@ -100,6 +104,23 @@ function alive(pid: number) {
   }
 }
 
+export const Output = Schema.Struct({
+  output: Schema.String,
+  startCursor: NonNegativeInt,
+  endCursor: NonNegativeInt,
+  truncated: Schema.Boolean,
+}).annotate({ identifier: "PtyOutput" })
+
+export type Output = Types.DeepMutable<Schema.Schema.Type<typeof Output>>
+
+// 261116 Red 内部结果区分「不可用」与「不存在」：正常退出但没留尾部要显式说明，
+// 孤儿记录不能凭空造历史；ok.exited 表示输出来自已退出终端的尾部快照。
+export type OutputResult =
+  | ({ readonly type: "ok"; readonly exited: boolean } & Output)
+  | { readonly type: "not_found" }
+  | { readonly type: "orphaned" }
+  | { readonly type: "exited"; readonly exitCode?: number }
+
 type Active = {
   info: Info
   started_at: number
@@ -108,6 +129,8 @@ type Active = {
   bufferCursor: number
   cursor: number
   subscribers: Map<unknown, Socket>
+  // 261116 Red 显式 remove 的终端不保留退出尾部；自然退出才进 exited 快照。
+  discard?: boolean
 }
 
 // 261105 Red 从快照恢复的孤儿登记：进程随上次退出失去归属（Unix 下可能仍在跑），
@@ -122,6 +145,21 @@ type State = {
   store: string
   sessions: Map<PtyID, Active>
   orphans: Map<PtyID, Orphan>
+  // 261116 Red 自然退出的尾部快照：不持久化，只在内存保留最近 EXITED_OUTPUT_KEEP 个；
+  // Info 一并保留（status=exited），否则短命令一结束就从列表消失、J04 没有入口。
+  exited: Map<PtyID, { info: Info; output: Output; exitCode: number }>
+}
+
+// 261116 Red 从既有有界缓冲截取，不读写 PTY、不 attach socket。cursor 只描述本次返回的
+// 窗口；bufferCursor>0 表示更早输出已被有界缓冲淘汰，同样标记 truncated。
+function snapshotOutput(session: Active): Output {
+  const cut = Math.max(0, session.buffer.length - OUTPUT_CHAR_CAP)
+  return {
+    output: cut > 0 ? session.buffer.slice(cut) : session.buffer,
+    startCursor: session.bufferCursor + cut,
+    endCursor: session.cursor,
+    truncated: cut > 0 || session.bufferCursor > 0,
+  }
 }
 
 // WebSocket control frame: 0x00 + UTF-8 JSON.
@@ -182,6 +220,8 @@ export const Event = {
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: PtyID) => Effect.Effect<Info | undefined>
+  // 261116 Red 只读快照：不 attach、不写入；错误语义由 OutputResult 区分。
+  readonly output: (id: PtyID) => Effect.Effect<OutputResult>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info | undefined>
   // 261105 Red 返回终止结果：false = 进程可能仍存活、登记保留，API 层如实透传。
@@ -261,6 +301,7 @@ export const layer = Layer.effect(
           dir: ctx.directory,
           store,
           sessions: new Map<PtyID, Active>(),
+          exited: new Map(),
           orphans,
         }
 
@@ -300,7 +341,12 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       const session = s.sessions.get(id)
       // 261105 Red 不存在视为已删除（幂等），与旧 void 行为对调用方等价。
-      if (!session) return true
+      // 261116 Red 已退出终端的 clean remove 只删自己的尾部快照，不碰其它已退出 PID。
+      if (!session) {
+        if (s.exited.delete(id)) yield* bus.publish(Event.Deleted, { id })
+        return true
+      }
+      session.discard = true
       // 261105 Red 审计 RC-015-05：先确认终止再删登记。此前先删记录再发起 taskkill，
       // 杀失败时面板已经看不到这个终端，实际进程还在跑。
       if (!(yield* stop(session))) {
@@ -315,17 +361,60 @@ export const layer = Layer.effect(
       return true
     })
 
+    // 261116 Red 自然退出先留尾部再走既有 remove：只保留最近 EXITED_OUTPUT_KEEP 个，
+    // 不落盘、不复活登记；显式 remove 的终端不保留（用户明确要丢）。
+    const retire = Effect.fn("Pty.retire")(function* (session: Active, exitCode: number) {
+      const s = yield* InstanceState.get(state)
+      if (!session.discard && s.sessions.get(session.info.id) === session) {
+        s.exited.delete(session.info.id)
+        s.exited.set(session.info.id, {
+          info: { ...session.info, status: "exited" },
+          output: snapshotOutput(session),
+          exitCode,
+        })
+        while (s.exited.size > EXITED_OUTPUT_KEEP) {
+          const oldest = s.exited.keys().next().value
+          if (oldest === undefined) break
+          s.exited.delete(oldest)
+        }
+      }
+      // 261116 Red 自然退出只摘运行登记，保留 exited Info/尾部；Deleted 留给显式 remove，
+      // 否则客户端会在短命令结束时把刚出现的只读行又删掉。
+      if (s.sessions.get(session.info.id) === session) {
+        s.sessions.delete(session.info.id)
+        yield* persist()
+      }
+    })
+
     const list = Effect.fn("Pty.list")(function* () {
       const s = yield* InstanceState.get(state)
       return [
         ...Array.from(s.sessions.values()).map((session) => session.info),
         ...Array.from(s.orphans.values()).map((orphan) => orphan.info),
+        ...Array.from(s.exited.values()).map((exited) => exited.info),
       ]
     })
 
     const get = Effect.fn("Pty.get")(function* (id: PtyID) {
       const s = yield* InstanceState.get(state)
-      return s.sessions.get(id)?.info ?? s.orphans.get(id)?.info
+      return s.sessions.get(id)?.info ?? s.orphans.get(id)?.info ?? s.exited.get(id)?.info
+    })
+
+    // 261116 Red 真正只读：只切片既有缓冲，不 connect、不 write、不 resize、不 create。
+    // 活跃终端返回当前窗口；自然退出返回最近尾部；孤儿/已无尾部显式不可用，不造历史。
+    const output = Effect.fn("Pty.output")(function* (id: PtyID) {
+      const s = yield* InstanceState.get(state)
+      const session = s.sessions.get(id)
+      if (session) {
+        const snapshot = snapshotOutput(session)
+        if (session.info.status === "exited" && !snapshot.output) return { type: "exited" as const }
+        return { type: "ok" as const, exited: session.info.status === "exited", ...snapshot }
+      }
+      if (s.orphans.has(id)) return { type: "orphaned" as const }
+      const exited = s.exited.get(id)
+      if (!exited) return { type: "not_found" as const }
+      if (!exited.output.output) return { type: "exited" as const, exitCode: exited.exitCode }
+      return { type: "ok" as const, exited: true, ...exited.output }
     })
 
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
@@ -417,7 +506,7 @@ export const layer = Layer.effect(
         log.info("session exited", { id, exitCode })
         session.info.status = "exited"
         bridge.fork(bus.publish(Event.Exited, { id, exitCode }))
-        bridge.fork(remove(id))
+        bridge.fork(retire(session, exitCode))
       })
       yield* persist()
       yield* bus.publish(Event.Created, { info })
@@ -517,7 +606,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, resize, write, connect })
+    return Service.of({ list, get, output, create, update, remove, resize, write, connect })
   }),
 )
 

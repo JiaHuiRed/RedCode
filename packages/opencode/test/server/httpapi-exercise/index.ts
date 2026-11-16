@@ -456,6 +456,33 @@ const scenarios: Scenario[] = [
       check(body.truncated === false, "result of an unknown job should not be truncated")
       check(body.totalChars === 0, "result of an unknown job should have zero total chars")
     }),
+  // 261116 Red 用户直接给运行中后台任务补充要求：空正文在会话查找前就拒绝（400），
+  // 非子会话目标走到真实归属校验（409）；成功路径由 test/tool 与 prompt.test 覆盖。
+  http.protected
+    .post("/background/tasks/{sessionID}/steer", "background.steer.invalid")
+    .at((ctx) => ({
+      path: route("/background/tasks/{sessionID}/steer", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { message: "   ", requestID: "httpapi-steer-1" },
+    }))
+    .status(400),
+  http.protected
+    .post("/background/tasks/{sessionID}/steer", "background.steer")
+    .seeded((ctx) => ctx.session({ title: "Steer target" }))
+    .at((ctx) => ({
+      path: route("/background/tasks/{sessionID}/steer", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { message: "review the sync entry", requestID: "httpapi-steer-2" },
+    }))
+    .status(409),
+  // 261116 Red PTY 只读快照：未知 id 明确 404；孤儿/已退出无尾部是 409。
+  http.protected
+    .get("/pty/{ptyID}/output", "pty.output")
+    .at((ctx) => ({
+      path: route("/pty/{ptyID}/output", { ptyID: "pty_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
   http.protected
     .post("/pty", "pty.create")
     .mutating()

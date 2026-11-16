@@ -76,9 +76,10 @@ describe("pty", () => {
   )
 
   ptyTest(
-    "publishes created, exited, deleted in order for a short-lived process",
+    "publishes created and exited for a short-lived process, then deleted on clean remove",
     () =>
       Effect.gen(function* () {
+        const pty = yield* Pty.Service
         const events = yield* subscribePtyEvents()
         const info = yield* createPty({
           command: "/usr/bin/env",
@@ -86,13 +87,17 @@ describe("pty", () => {
           title: "sleep",
         })
 
-        expect(yield* waitForEvents(events, info.id, 3)).toEqual(["created", "exited", "deleted"])
+        expect(yield* waitForEvents(events, info.id, 2)).toEqual(["created", "exited"])
+        // 261116 Red 短命令结束后保留有界 exited Info/尾部，显式 remove 才清掉。
+        expect((yield* pty.list()).find((item) => item.id === info.id)?.status).toBe("exited")
+        yield* pty.remove(info.id)
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["deleted"])
       }),
     { git: true },
   )
 
   ptyTest(
-    "publishes created, exited, deleted in order for /bin/sh + remove",
+    "publishes created and exited for /bin/sh + remove",
     () =>
       Effect.gen(function* () {
         const pty = yield* Pty.Service
@@ -101,8 +106,9 @@ describe("pty", () => {
 
         expect(yield* waitForEvents(events, info.id, 1)).toEqual(["created"])
         yield* pty.write(info.id, "exit\n")
-        expect(yield* waitForEvents(events, info.id, 2)).toEqual(["exited", "deleted"])
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["exited"])
         yield* pty.remove(info.id)
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["deleted"])
       }),
     { git: true },
   )

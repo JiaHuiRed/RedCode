@@ -23,6 +23,8 @@ import type {
   BackgroundListResponses,
   BackgroundResultErrors,
   BackgroundResultResponses,
+  BackgroundSteerErrors,
+  BackgroundSteerResponses,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -161,6 +163,8 @@ import type {
   PtyGetResponses,
   PtyListErrors,
   PtyListResponses,
+  PtyOutputErrors,
+  PtyOutputResponses,
   PtyRemoveErrors,
   PtyRemoveResponses,
   PtyShellsErrors,
@@ -2774,6 +2778,38 @@ export class Pty extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Read PTY output
+   *
+   * Read a read-only snapshot of the terminal's existing output buffer. Returns at most the last 32,000 characters. Does not attach, write, resize, create, or terminate the PTY. Orphaned or exited terminals without retained output return an explicit error.
+   */
+  public output<ThrowOnError extends boolean = false>(
+    parameters: {
+      ptyID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "ptyID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PtyOutputResponses, PtyOutputErrors, ThrowOnError>({
+      url: "/pty/{ptyID}/output",
+      ...options,
+      ...params,
     })
   }
 
@@ -5933,6 +5969,47 @@ export class Background extends HeyApiClient {
       url: "/background/{jobID}/result",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Send guidance to a running background task
+   *
+   * Persist user guidance into a running child task. The guidance is applied at the next safe step and does not interrupt a running tool. The receipt reflects the persisted message state; 'delivered' means the message was included in a request, not that the model understood or executed it.
+   */
+  public steer<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      message?: string
+      requestID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "message" },
+            { in: "body", key: "requestID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<BackgroundSteerResponses, BackgroundSteerErrors, ThrowOnError>({
+      url: "/background/tasks/{sessionID}/steer",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

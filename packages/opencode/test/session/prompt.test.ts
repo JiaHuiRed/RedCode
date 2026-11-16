@@ -64,7 +64,7 @@ import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
-import { runSteerableTask, steerTask, TaskTool, type TaskPromptOps } from "@/tool/task"
+import { runSteerableTask, steerTask, steerTaskFromUser, TaskTool, type TaskPromptOps } from "@/tool/task"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import { TaskStatusTool } from "@/tool/task_status"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -2296,6 +2296,146 @@ for (const isolated of [false, true]) {
     )
   }
 }
+
+it.instance("user steering records the parent trace before the child model turn finishes", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const jobs = yield* BackgroundJob.Service
+    const parent = yield* sessions.create({})
+    const child = yield* sessions.create({ parentID: parent.id })
+    const ops: TaskPromptOps = {
+      cancel: prompt.cancel,
+      prompt: (input) => prompt.prompt(input).pipe(Effect.catch(Effect.die)),
+      loop: prompt.loop,
+      resolvePromptParts: prompt.resolvePromptParts,
+      runIsolated: () => Effect.die("unexpected isolation setup"),
+    }
+    const held = defer<void>()
+    yield* llm.hold("original answer", held.promise)
+    yield* llm.text("corrected answer")
+    yield* jobs.start({
+      id: child.id,
+      type: "task",
+      metadata: { parentSessionId: parent.id },
+      run: runSteerableTask(
+        { sessionID: child.id, parentSessionID: parent.id, ops, sessions },
+        ops.prompt({
+          sessionID: child.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "initial task" }],
+        }),
+      ).pipe(Effect.as("completed")),
+    })
+    yield* llm.wait(1)
+
+    const sent = steerTaskFromUser({
+      taskID: child.id,
+      parentSessionID: parent.id,
+      message: "只核查 KH 的同步入口，先别看归档",
+      requestID: "req-real-prompt-1",
+    })
+    // 261116 Red 关键时序：父记录必须在 held 模型请求结束前落库，不能等 prompt loop 返回。
+    yield* Deferred.await(sent.trace).pipe(Effect.timeout("2 seconds"))
+    expect(yield* llm.hits).toHaveLength(1)
+
+    const parentTrace = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID: parent.id })
+        const message = messages.find((item) =>
+          item.parts.some((part) => part.type === "text" && part.metadata?.task_steer_record !== undefined),
+        )
+        return message?.parts.find(
+          (part) => part.type === "text" && part.metadata?.task_steer_record !== undefined,
+        )
+      }),
+      "parent steering trace was not written while the child was running",
+    )
+    if (parentTrace?.type !== "text") return yield* Effect.die("expected parent trace text part")
+    expect(parentTrace.text).toContain("state: queued")
+    expect(parentTrace.metadata?.task_steer_record).toMatchObject({
+      source: "user",
+      state: "queued",
+      request_id: "req-real-prompt-1",
+    })
+
+    const persisted = yield* MessageV2.get({ sessionID: child.id, messageID: sent.messageID })
+    expect(persisted.info.role).toBe("user")
+    if (persisted.info.role !== "user") return yield* Effect.die("expected a user message")
+    expect(persisted.info.delivery).not.toBe("delivered")
+    const persistedText = persisted.parts.find((part) => part.type === "text")
+    if (persistedText?.type !== "text") return yield* Effect.die("expected a text part")
+    expect(persistedText.text).toContain("User steering from the user")
+    expect(persistedText.metadata?.task_steer).toMatchObject({
+      source: "user",
+      priority: "user_override",
+      request_id: "req-real-prompt-1",
+    })
+
+    const replay = steerTaskFromUser({
+      taskID: child.id,
+      parentSessionID: parent.id,
+      message: "只核查 KH 的同步入口，先别看归档",
+      requestID: "req-real-prompt-1",
+    })
+    expect(replay.replayed).toBe(true)
+    expect(replay.messageID).toBe(sent.messageID)
+    yield* Deferred.await(replay.trace)
+
+    held.resolve()
+    const completed = yield* jobs.wait({ id: child.id, timeout: 5_000 })
+    expect(completed.info?.status).toBe("completed")
+    const delivered = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const message = yield* MessageV2.get({ sessionID: child.id, messageID: sent.messageID })
+        return message.info.role === "user" && message.info.delivery === "delivered" ? message : undefined
+      }),
+      "steering message was never delivered",
+    )
+    expect(delivered.info.role).toBe("user")
+    const updatedTrace = yield* pollWithTimeout(
+      Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID: parent.id })
+        const message = messages.find((item) =>
+          item.parts.some((part) => part.type === "text" && part.metadata?.task_steer_record !== undefined),
+        )
+        const part = message?.parts.find(
+          (item) => item.type === "text" && item.metadata?.task_steer_record !== undefined,
+        )
+        return part?.type === "text" && part.metadata?.task_steer_record?.state === "delivered" ? part : undefined
+      }),
+      "parent steering trace did not update to delivered",
+    )
+    if (updatedTrace?.type !== "text") return yield* Effect.die("expected updated parent trace")
+    expect(updatedTrace.text).toContain("state: delivered")
+
+    // 261116 Red 父记录必须自然进入模型视野，而不是只留在数据库里。
+    yield* llm.text("parent acknowledged the steering trace")
+    yield* prompt.prompt({
+      sessionID: parent.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "continue the main task" }],
+    })
+    const parentHit = (yield* llm.hits).at(-1)
+    expect(JSON.stringify(parentHit?.body)).toContain("User steering sent to background task")
+
+    const childUsers = (yield* sessions.messages({ sessionID: child.id })).filter(
+      (message) => message.info.role === "user",
+    )
+    expect(childUsers).toHaveLength(2)
+    expect(() =>
+      steerTaskFromUser({
+        taskID: child.id,
+        parentSessionID: parent.id,
+        message: "after finish",
+        requestID: "req-real-prompt-2",
+      }),
+    ).toThrow("not accepting")
+  }),
+)
 
 it.instance("user permission rejection does not restart the queued turn", () =>
   Effect.gen(function* () {

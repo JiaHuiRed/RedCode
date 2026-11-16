@@ -10,7 +10,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError } from "../errors"
+import { ApiNotFoundError, ConflictError } from "../errors"
 import { described } from "./metadata"
 
 const root = "/pty"
@@ -30,6 +30,7 @@ export const PtyPaths = {
   list: root,
   create: root,
   get: `${root}/:ptyID`,
+  output: `${root}/:ptyID/output`,
   update: `${root}/:ptyID`,
   remove: `${root}/:ptyID`,
   connectToken: `${root}/:ptyID/connect-token`,
@@ -82,6 +83,19 @@ export const PtyApi = HttpApi.make("pty")
             identifier: "pty.get",
             summary: "Get PTY session",
             description: "Retrieve detailed information about a specific pseudo-terminal (PTY) session.",
+          }),
+        ),
+        HttpApiEndpoint.get("output", PtyPaths.output, {
+          params: { ptyID: PtyID },
+          query: WorkspaceRoutingQuery,
+          success: described(Pty.Output, "Bounded PTY output snapshot"),
+          error: [ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "pty.output",
+            summary: "Read PTY output",
+            description:
+              "Read a read-only snapshot of the terminal's existing output buffer. Returns at most the last 32,000 characters. Does not attach, write, resize, create, or terminate the PTY. Orphaned or exited terminals without retained output return an explicit error.",
           }),
         ),
         HttpApiEndpoint.put("update", PtyPaths.update, {
