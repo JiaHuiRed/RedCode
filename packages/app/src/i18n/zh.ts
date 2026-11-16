@@ -3,6 +3,24 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "session.deliverables.title": "本轮成果",
+  "session.deliverables.subtitle": "写好的文件，点开就能看。",
+  "session.deliverables.read": "阅读文档",
+  "session.deliverables.open": "打开文件",
+  "session.deliverables.preview": "查看预览",
+  "session.deliverables.source": "查看来源",
+  "session.deliverables.currentVersion": "打开的是当前工作区版本",
+  "session.deliverables.less": "收起",
+  "session.deliverables.more": "再看 {{count}} 个",
+  "session.deliverables.kind.document": "文档",
+  "session.deliverables.kind.page": "网页",
+  "session.deliverables.kind.image": "图片",
+  "session.deliverables.kind.audio": "音频",
+  "session.deliverables.kind.file": "文件",
+  "session.deliverables.change.created": "已创建",
+  "session.deliverables.change.updated": "已更新",
+  "session.deliverables.change.moved": "已移动",
+
   "command.category.suggested": "建议",
   "command.category.view": "视图",
   "command.category.project": "项目",

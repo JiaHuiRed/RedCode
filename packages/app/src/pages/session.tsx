@@ -2052,6 +2052,7 @@ export default function Page() {
       <div
         id="session-root"
         class="relative size-full overflow-hidden flex flex-col"
+        style={{ "--panel-width": `${layout.session.width()}px` }}
         // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
         classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
       >

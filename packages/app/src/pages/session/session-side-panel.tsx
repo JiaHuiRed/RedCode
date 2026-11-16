@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { Tabs } from "@redcode-ai/ui/tabs"
+import { useTabsContext } from "@kobalte/core/tabs"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { TooltipKeybind } from "@redcode-ai/ui/tooltip"
@@ -227,7 +228,17 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
+  let isTabRegistered = (_tab: string) => false
+  function TabRegistration() {
+    const context = useTabsContext()
+    isTabRegistered = (tab) => !!context.listState().collection().getItem(tab)
+    return null
+  }
+
   const changeTab = (tab: string) => {
+    // 261116 Red 新文件标签还未登记时，Kobalte 会回退到第一个系统标签；保留应用选中的文件。
+    const active = activeFileTab()
+    if (open() && active && SYSTEM_TABS.has(tab) && !isTabRegistered(active)) return
     if (!SYSTEM_TABS.has(tab)) {
       openTab(tab)
       return
@@ -247,6 +258,7 @@ export function SessionSidePanel(props: {
   let drawer: HTMLElement | undefined
   let systemTabStrip: HTMLElement | undefined
   let focusFrame: number | undefined
+  let lostFocusOnClose = false
   let wasOpen = open()
   let contextResizeObserver: ResizeObserver | undefined
   const [contextPanelHeight, setContextPanelHeight] = createSignal<number>()
@@ -290,16 +302,21 @@ export function SessionSidePanel(props: {
 
   createEffect(() => {
     const next = open()
+    if (next && focusFrame !== undefined) {
+      cancelAnimationFrame(focusFrame)
+      focusFrame = undefined
+    }
     if (
       wasOpen &&
       !next &&
       typeof document !== "undefined" &&
-      drawer?.contains(document.activeElement) &&
+      (lostFocusOnClose || drawer?.contains(document.activeElement)) &&
       systemTabStrip
     ) {
       if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
       focusFrame = requestAnimationFrame(() => {
         focusFrame = undefined
+        if (open() || (document.activeElement !== document.body && !drawer?.contains(document.activeElement))) return
         // 260923 Red C5：收起入口从单个按钮变成 strip，焦点回到当前选中的那个 tab
         const target =
           systemTabStrip?.querySelector<HTMLElement>('[aria-selected="true"]') ??
@@ -307,6 +324,7 @@ export function SessionSidePanel(props: {
         target?.focus()
       })
     }
+    lostFocusOnClose = false
     wasOpen = next
   })
 
@@ -401,6 +419,9 @@ export function SessionSidePanel(props: {
         }}
       >
         <aside
+          onFocusOut={(event) => {
+            if (!open() && !event.relatedTarget) lostFocusOnClose = true
+          }}
           ref={(el) => {
             drawer = el
           }}
@@ -418,7 +439,6 @@ export function SessionSidePanel(props: {
             "session-side-panel__capsule--closed": !open(),
           }}
           style={{
-            "--panel-width": `${layout.session.width()}px`,
             width: floating() ? `${floatingRect().width}px` : overlay() || props.docked() ? undefined : "100%",
             left: floating() ? `${floatingRect().x}px` : undefined,
             top: floating() ? `${floatingRect().y}px` : undefined,
@@ -465,6 +485,7 @@ export function SessionSidePanel(props: {
                         <DragDropSensors />
                         <ConstrainDragYAxis />
                         <Tabs value={activeTab()} onChange={changeTab}>
+                          <TabRegistration />
                           {/* 260924 Red L3/L4：header 拆成「导航行 + 文件行」两级，actions 移出
                         Tabs.List。Tab 管内容、Action 管行为，「+」不再靠 sticky+z-index
                         覆盖最后一个系统 tab，命中区从结构上分家。 */}

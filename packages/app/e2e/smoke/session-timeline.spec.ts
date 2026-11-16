@@ -11,6 +11,7 @@ type SmokeState = {
   visibleIds: string[]
   messageIds: string[]
   visibleMessageIds: string[]
+  visibleDeliverables: boolean
   topVisibleId?: string
   signature: string
   scrollTop: number
@@ -98,6 +99,7 @@ async function configureSmokePage(page: Page, directory: string) {
           visibleIds: [],
           messageIds: [],
           visibleMessageIds: [],
+          visibleDeliverables: false,
           topVisibleId: undefined,
           signature: "",
           scrollTop: 0,
@@ -125,6 +127,12 @@ async function configureSmokePage(page: Page, directory: string) {
 
       const messageIds: string[] = []
       const visibleMessageIds: string[] = []
+      const visibleDeliverables = [...scroller.querySelectorAll<HTMLElement>('[data-component="turn-deliverables"]')].some(
+        (el) => {
+          const rect = el.getBoundingClientRect()
+          return rect.bottom >= scrollerRect.top && rect.top <= scrollerRect.bottom
+        },
+      )
       const rows = [...scroller.querySelectorAll<HTMLElement>("[data-message-id]")].map((el) => {
         const rect = el.getBoundingClientRect()
         const id = el.dataset.messageId
@@ -150,6 +158,7 @@ async function configureSmokePage(page: Page, directory: string) {
         visibleIds,
         messageIds,
         visibleMessageIds,
+        visibleDeliverables,
         topVisibleId,
         signature,
         scrollTop: Math.round(scroller.scrollTop),
@@ -207,9 +216,11 @@ async function expectCanScrollToStart(
     samples.push(sampleTraversal(current, seenParts.size, seenMessages.size))
     expectNoSmokeErrors(errors, current.errorToasts, current.forbiddenText)
     expectOrderedIDs(expectedPartIDs, current.ids, "mounted part")
-    expectOrderedIDs(expectedPartIDs, current.visibleIds, "visible part")
+    if (current.visibleIds.length) expectOrderedIDs(expectedPartIDs, current.visibleIds, "visible part")
+    else expect(current.visibleDeliverables, "a deliverables panel should occupy the viewport").toBe(true)
     expectOrderedIDs(expectedMessageIDs, unique(current.messageIds), "mounted message")
-    expectOrderedIDs(expectedMessageIDs, unique(current.visibleMessageIds), "visible message")
+    if (current.visibleMessageIds.length) expectOrderedIDs(expectedMessageIDs, unique(current.visibleMessageIds), "visible message")
+    else expect(current.visibleDeliverables, "a deliverables panel should occupy the viewport").toBe(true)
 
     if (
       current.scrollTop <= 1 &&
@@ -241,6 +252,7 @@ async function timelineState(page: Page) {
         visibleIds: [],
         messageIds: [],
         visibleMessageIds: [],
+        visibleDeliverables: false,
         topVisibleId: undefined,
         signature: "",
         scrollTop: 0,
@@ -382,9 +394,11 @@ async function expectSessionTimelineReady(
   const currentState = await timelineState(page)
   expectNoSmokeErrors(errors, currentState.errorToasts, currentState.forbiddenText)
   expectOrderedIDs(expectedPartIDs, currentState.ids, "mounted part")
-  expectOrderedIDs(expectedPartIDs, currentState.visibleIds, "visible part")
+  if (currentState.visibleIds.length) expectOrderedIDs(expectedPartIDs, currentState.visibleIds, "visible part")
+  else expect(currentState.visibleDeliverables, "a deliverables panel should occupy the viewport").toBe(true)
   expectOrderedIDs(expectedMessageIDs, unique(currentState.messageIds), "mounted message")
-  expectOrderedIDs(expectedMessageIDs, unique(currentState.visibleMessageIds), "visible message")
+  if (currentState.visibleMessageIds.length) expectOrderedIDs(expectedMessageIDs, unique(currentState.visibleMessageIds), "visible message")
+  else expect(currentState.visibleDeliverables, "a deliverables panel should occupy the viewport").toBe(true)
 }
 
 function expectCompleteScroll(
