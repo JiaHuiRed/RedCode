@@ -706,6 +706,7 @@ export const dict = {
   "terminal.loading": "ターミナルを読み込み中...",
   "terminal.title": "ターミナル",
   "terminal.title.numbered": "ターミナル {{number}}",
+  "terminal.detach": "表示を閉じる（プロセスは継続）",
   "terminal.close": "ターミナルを閉じる",
   "terminal.maximize": "ターミナルを最大化",
   "terminal.restore": "ターミナルの高さを戻す",

@@ -920,6 +920,7 @@ export const dict = {
   "terminal.loading": "Loading terminal...",
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
+  "terminal.detach": "Close view (keep process running)",
   "terminal.close": "Close terminal",
   "terminal.maximize": "Maximize terminal",
   "terminal.restore": "Restore terminal height",

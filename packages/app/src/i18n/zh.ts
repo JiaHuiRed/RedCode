@@ -858,6 +858,7 @@ export const dict = {
   "terminal.loading": "正在加载终端...",
   "terminal.title": "终端",
   "terminal.title.numbered": "终端 {{number}}",
+  "terminal.detach": "关闭查看（保留运行中的进程）",
   "terminal.close": "关闭终端",
   "terminal.maximize": "最大化终端",
   "terminal.restore": "恢复终端高度",

@@ -161,7 +161,7 @@ export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[], plat
   }
 }
 
-function createWorkspaceTerminalSession(
+export function createWorkspaceTerminalSession(
   sdk: ReturnType<typeof useSDK>,
   dir: string,
   legacySessionID?: string,
@@ -200,11 +200,11 @@ function createWorkspaceTerminalSession(
     )
   }
 
-  const removeExited = (id: string) => {
+  const detach = (id: string) => {
     const all = store.all
     const index = all.findIndex((x) => x.id === id)
     if (index === -1) return
-    const active = store.active === id ? (index === 0 ? all[1]?.id : all[0]?.id) : store.active
+    const active = store.active === id ? (index > 0 ? all[index - 1]?.id : all[1]?.id) : store.active
     batch(() => {
       setStore("active", active)
       setStore(
@@ -217,12 +217,14 @@ function createWorkspaceTerminalSession(
   }
 
   const unsub = sdk.event.on("pty.exited", (event: { properties: { id: string } }) => {
-    removeExited(event.properties.id)
+    detach(event.properties.id)
   })
   onCleanup(unsub)
+  onCleanup(sdk.event.on("pty.deleted", (event: { properties: { id: string } }) => detach(event.properties.id)))
 
   const update = (client: ReturnType<typeof useSDK>["client"], pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
+    if (index === -1) return
     const previous = index >= 0 ? store.all[index] : undefined
     if (index >= 0) {
       setStore("all", index, (item) => ({ ...item, ...pty }))
@@ -353,7 +355,8 @@ function createWorkspaceTerminalSession(
           id,
           title: info.title,
           titleNumber: numberFromTitle(info.title) ?? 0,
-          attached: true,
+          // Existing GUI-owned terminals keep their original close semantics.
+          attached: index === -1 ? true : store.all[index].attached,
           command: info.command,
           args: info.args,
           cwd: info.cwd,
@@ -376,21 +379,12 @@ function createWorkspaceTerminalSession(
       setStore("active", store.all[prevIndex]?.id)
     },
     async close(id: string) {
-      const index = store.all.findIndex((f) => f.id === id)
-      if (index !== -1) {
-        batch(() => {
-          if (store.active === id) {
-            const next = index > 0 ? store.all[index - 1]?.id : store.all[1]?.id
-            setStore("active", next)
-          }
-          setStore(
-            "all",
-            produce((all) => {
-              all.splice(index, 1)
-            }),
-          )
-        })
-      }
+      const pty = store.all.find((item) => item.id === id)
+      if (!pty) return
+      detach(id)
+      // Background tabs are views of an existing process. Termination remains
+      // the explicit, confirmed action in the background activity dialog.
+      if (pty.attached) return
 
       await sdk.client.pty.remove({ ptyID: id }).catch((error: unknown) => {
         console.error("Failed to close terminal", error)
