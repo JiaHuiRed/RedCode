@@ -19,6 +19,8 @@ import type {
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { isTrustedRendererUrl } from "./renderer-url"
 import { getStore } from "./store"
+import { closeBrowserPreview, openHtmlPreview } from "./browser-preview"
+import type { UpdateCheckResult, UpdateInstallResult } from "./updater"
 import type { SidecarState } from "./sidecar-supervisor"
 import { getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 
@@ -49,8 +51,8 @@ type Deps = {
   wslPaths: (paths: string[], mode: "windows" | "linux" | null) => Promise<string[]>
   resolveAppPath: (appName: string) => Promise<string | null>
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
-  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
-  installUpdate: () => Promise<void> | void
+  checkUpdate: () => Promise<UpdateCheckResult>
+  installUpdate: () => Promise<UpdateInstallResult> | UpdateInstallResult
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   saveGuiDiagnostics: (payload: string) => string | undefined
@@ -212,6 +214,13 @@ export function registerIpcHandlers(deps: Deps) {
     openExternalURL(url)
   })
 
+  // 261116 Red A05 桌面浏览器预览：只收字符串文档，经回环 HTTP（随机 token）交给默认浏览器。
+  //   不放宽 open-link 白名单，也不走 openPath/下载来冒充「用浏览器打开」。
+  ipcMain.handle("open-html-preview", (_event: IpcMainInvokeEvent, document: unknown) => {
+    if (typeof document !== "string") throw new Error("open-html-preview expects an HTML document string")
+    return openHtmlPreview(document, { openExternal: (url) => shell.openExternal(url) })
+  })
+
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app) return shell.openPath(path)
     await new Promise<void>((resolve, reject) => {
@@ -296,6 +305,11 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action)
+  })
+
+  // 261116 Red 预览服务器跟随应用退出关闭：unref 只保证不阻塞退出，监听端口与缓存也要收口。
+  app.once("will-quit", () => {
+    void closeBrowserPreview()
   })
 }
 

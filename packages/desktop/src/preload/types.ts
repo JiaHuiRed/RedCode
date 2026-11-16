@@ -1,5 +1,6 @@
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
 import type { SidecarState } from "../main/sidecar-supervisor"
+import type { UpdateCheckResult, UpdateInstallResult } from "../main/updater"
 
 export type { SidecarState }
 
@@ -96,6 +97,8 @@ export type ElectronAPI = {
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
+  // 261116 Red A05 桌面浏览器预览：文档经主进程回环 HTTP（随机 token）在默认浏览器打开
+  openHtmlPreview: (document: string) => Promise<void>
   writeAttachment: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   showNotification: (title: string, body?: string) => void
   // 260801 Red 任务栏闪烁：失焦时收到通知/权限请求闪任务栏（仿 TUI attention.bell）
@@ -113,8 +116,8 @@ export type ElectronAPI = {
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   runUpdater: (alertOnFail: boolean) => Promise<void>
-  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
-  installUpdate: () => Promise<void>
+  checkUpdate: () => Promise<UpdateCheckResult>
+  installUpdate: () => Promise<UpdateInstallResult>
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   saveGuiDiagnostics: (payload: string) => Promise<string | null>

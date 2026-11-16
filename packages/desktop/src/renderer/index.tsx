@@ -27,6 +27,7 @@ import type { SidecarState } from "../preload/types"
 import { initI18n, t } from "./i18n"
 import { platformFetch } from "./fetch"
 import { notifyDesktop } from "./notifications"
+import { checkUpdateForWindow, installUpdateForWindow } from "./update-bridge"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { useTheme } from "@redcode-ai/ui/theme"
 import { Splash } from "@redcode-ai/ui/logo"
@@ -193,6 +194,9 @@ const createPlatform = (): Platform => {
     openLink(url: string) {
       window.api.openLink(url)
     },
+    // 261116 Red A05：预览文档由主进程落成回环 HTTP URL 再用默认浏览器打开，
+    //   这里不做下载/Blob 兜底（那不算"用浏览器打开"）。
+    openHtmlPreview: (document: string) => window.api.openHtmlPreview(document),
     async openPath(path: string, app?: string) {
       if (os === "windows") {
         const resolvedApp = app ? await window.api.resolveAppPath(app).catch(() => null) : null
@@ -220,14 +224,12 @@ const createPlatform = (): Platform => {
 
     checkUpdate: async () => {
       const config = await window.api.getWindowConfig().catch(() => ({ updaterEnabled: false }))
-      if (!config.updaterEnabled) return { updateAvailable: false }
-      return window.api.checkUpdate()
+      return checkUpdateForWindow(config, () => window.api.checkUpdate())
     },
 
     updateAndRestart: async () => {
       const config = await window.api.getWindowConfig().catch(() => ({ updaterEnabled: false }))
-      if (!config.updaterEnabled) return
-      await window.api.installUpdate()
+      return installUpdateForWindow(config, () => window.api.installUpdate())
     },
 
     exportDebugLogs: () => window.api.exportDebugLogs(),
