@@ -458,14 +458,16 @@
   }
 }
 
-/* 260922 Red 右侧胶囊只是 overlay，不能因为展开/折叠切换就让聊天内容重新居中。
-   两种状态都给 chat panel 保留同一段 348px 的内容让位（胶囊 320 + 右边距 12 + 呼吸 16），
-   Timeline / Header / Composer 便始终共用同一条中心线；文件树的宽度已由
-   sessionPanelWidth 和同级 flex 项从 chat panel 外侧扣除。 */
+/* 261116 Red 折叠胶囊保留 348px；展开后按实际面板宽让位，避免遮住消息和输入框。
+   面板和聊天区共用 session-root 上的 --panel-width，文件树宽度由同级 flex 项扣除。 */
 @media (min-width: 1280px) {
   body:has(#review-panel.session-side-panel__capsule--wide) #session-chat-panel {
     box-sizing: border-box;
     padding-inline-end: 348px;
+  }
+
+  body:has(#review-panel.session-side-panel__capsule--wide.session-side-panel__capsule--open) #session-chat-panel {
+    padding-inline-end: calc(min(var(--panel-width, 420px), 560px, 100vw - 24px) + 28px);
   }
 }
 

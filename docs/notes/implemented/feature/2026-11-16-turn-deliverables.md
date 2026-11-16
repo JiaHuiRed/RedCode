@@ -14,6 +14,9 @@ Markdown 阅读、HTML 隔离预览、文件侧栏与返回工具已经存在，
 - 默认四张，按需每次增加八张，可以收起。仅在可见的轮次末行挂载并归集；没有额外网络轮询或文件预加载。
 - 点击卡片复用 FileOpenProvider 和既有预览槽，显式设置工具来源，因此键盘触发也有「返回工具」目标。「查看来源」复用搜索/引用的 jumpToTarget。Markdown/PDF 等走已有查看器；HTML 先打开文件，再由文件头的「浏览器打开」明确触发执行。
 - 颜色使用既有主题变量，文件类型采用轻量色彩区分；自适应列宽、长文件名换行、可见键盘焦点、减少动态效果偏好及中英日文案同时覆盖。
+- 宽桌面胶囊展开时，聊天区按面板实际宽度让位；折叠仍保留 348px。展开/收起会重新居中，换取消息、输入框和成果操作不被侧栏遮住；并排与浮动模式不增加此让位。
+- 新文件触发器尚未进入 Kobalte 标签集合时，忽略其自动回退系统标签的选择；待文件登记后正常接受系统标签切换。胶囊折叠时仍按既有语义切回 Context。
+- 关闭胶囊安排的焦点恢复帧在重新展开时取消；如果用户已把焦点移到面板外，也不再把焦点抢回。
 
 ## 备选与否决理由
 
@@ -28,7 +31,8 @@ Markdown 阅读、HTML 隔离预览、文件侧栏与返回工具已经存在，
 - 不修改模型提示词、工具协议、权限、会话数据或后台任务。没有新增模型调用及上下文注入。
 - 定向测试：`turn-deliverables.test.ts` 6 项（归属、成功状态、去重、移动/删除、Windows 路径、排序）；真实 Solid DOM 组件测试 2 项（打开/来源参数、聚焦、分批展开、收起、空态与来源更新）；连同 timeline-locate、message-timeline.data、i18n parity 共 67 pass / 0 fail。
 - `packages/app` 的 `bun run typecheck`、`bun run build` 通过。构建仍报告超过 500 kB 的 chunk 提示；本次不扩大到拆包优化。
-- 新增 `e2e/smoke/turn-deliverables.spec.ts`，覆盖完整会话里的展开、键盘打开 Markdown、成品阅读、返回工具及另一文件来源；本地浏览器执行 **not_run**。远程浏览器访问本地端口返回 `ERR_CONNECTION_REFUSED`，本地 Vite 监听全接口后在 `uv_interface_addresses` 报系统限制退出；当前容器 Chromium 另有 Unix socket 限制。未将 DOM 断言写成浏览器布局验收。
+- 原分支的浏览器验收因远程环境限制未执行。Windows 本地 Chromium 使用模拟服务通过 `e2e/smoke/turn-deliverables.spec.ts`：覆盖 1279/1280/1440/1600 宽度、胶囊开合与并排/浮动切换、展开更多、鼠标打开 Markdown、键盘打开文件、返回工具、替换预览、快捷键收起后的焦点恢复和系统标签切换；不代表真实后端或 Electron 验收。
+- 修复后本地定向单测 80 项、app 类型检查和构建通过；Chromium 的成果卡片及长会话分页冒烟共 2 项通过，成果卡片场景另重复运行两次通过。长会话断言允许成果卡片单独占满视口，但仍检查可见消息顺序及完整分页覆盖。
 - Windows Electron 真机、深浅主题与 1366×768/大字号视觉验收 **not_run**。合并后可让模型通过 write/edit/apply_patch 产出一份 Markdown、一份 HTML 和几个代码文件，检查回答末尾卡片、打开文件、返回来源与更多/收起。
 
 实现入口：`packages/app/src/pages/session/turn-deliverables.ts`、`turn-deliverables-panel.tsx`、`message-timeline.tsx`。
