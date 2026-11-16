@@ -31,7 +31,13 @@ bun run check:openapi-drift
 # 没有 ~/.redcode/redcode.jsonc 时自动跳过（全新 clone 不因此拦下 push）；本机定制
 # 登记在脚本的 LOCAL_OVERRIDES 里并写清理由。
 bun run check:config-shadowing
+# 261116 Red httpapi 路由覆盖门禁：新增端点忘了写 exercise 场景，原来只能等 nightly
+# coverage 模式报 missing——同型事故已五次（0.17.0 instructions，261115 UX-15 query /
+# UX-17 result，e2e mock 兜底 {} 崩页面还有三次）。coverage 只做路由↔场景对账、不执行
+# 场景，实测 ~6s、内存近零，与 openapi-drift 同档。
+(cd packages/opencode && bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip)
 # 261013 Red 全仓 typecheck 移出 pre-push：tsgo 崩溃回退 tsc 时是分钟级，每次 push 都付
 # 不划算；CI typecheck.yml 同一条全量兜底（防本地跳过钩子与并行会话合并）。留在 pre-push
-# 的是秒级扫描（超时不变量/工具描述预算/控制字节/openapi-drift），拦截成本近零。
+# 的是秒级扫描（超时不变量/工具描述预算/控制字节/openapi-drift/httpapi coverage 对账），
+# 拦截成本近零。
 

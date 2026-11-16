@@ -442,6 +442,20 @@ const scenarios: Scenario[] = [
       object(body)
       check(Array.isArray(body.cancelled), "cancelling an unknown job is idempotent and returns an empty list")
     }),
+  // 261116 Red UX-17 按需结果端点：未知 job 是确定性分支（任务完成 30 分钟后被回收是常态）。
+  // 只钉 found=false 的空形状；真实 output 的 32K 截断语义由 handler 的 RESULT_CHAR_CAP 承担。
+  http.protected
+    .get("/background/{jobID}/result", "background.result")
+    .at((ctx) => ({
+      path: route("/background/{jobID}/result", { jobID: "missing_background_job" }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.found === false, "result of an unknown job should report found=false")
+      check(body.truncated === false, "result of an unknown job should not be truncated")
+      check(body.totalChars === 0, "result of an unknown job should have zero total chars")
+    }),
   http.protected
     .post("/pty", "pty.create")
     .mutating()
@@ -1704,6 +1718,32 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(404, object, "status"),
+  // 261116 Red UX-15 会话全文搜索：种子一条 user 消息，字面 q 命中即证明路由解码、
+  // 存储读取与有界响应形状接对了；扫描预算与游标翻页不在 exerciser 里钉。
+  http.protected
+    .get("/session/{sessionID}/query", "session.query")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Query session" })
+        const message = yield* ctx.message(session.id, { text: "needle in the stored history" })
+        return { session, message }
+      }),
+    )
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/query", { sessionID: ctx.state.session.id })}?${new URLSearchParams({ q: "needle" })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(typeof body.scannedParts === "number", "search should report the scanned part count")
+      array(body.results)
+      check(body.results.length === 1, "literal search should hit exactly the seeded part")
+      const hit = body.results[0]
+      object(hit)
+      check(hit.sessionID === ctx.state.session.id, "hit should identify the requested session")
+      check(hit.messageID === ctx.state.message.info.id, "hit should identify the seeded message")
+      check(hit.role === "user", "seeded prompt is a user message")
+    }),
   http.protected
     .post("/session/{sessionID}/permissions/{permissionID}", "permission.respond")
     .seeded((ctx) => ctx.session({ title: "Deprecated permission session" }))
@@ -1840,6 +1880,19 @@ const main = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => cleanupExercisePaths)
   yield* assertIsolated
   const options = parseOptions(Bun.argv.slice(2))
+  // 261116 Red 低内存机器的全量 effect 降级（typecheck.ts 的 32GB 判据同款）：全量
+  // effect 逐场景起真服务器实例，16GB 本机实测峰值 RSS ~12GB / Commit 17.5GB，Bun
+  // 直接 panic（Illegal instruction，exit 3/9）且整机页交换。跳过不是静默的，写明
+  // 原因与出路；CI（process.env.CI，含 nightly）不降级，完整门禁只在 CI 跑；本地
+  // --include 定向单场景内存可控，不受此限。
+  if (options.mode === "effect" && !options.include && !process.env.CI && os.totalmem() < 32 * 2 ** 30) {
+    console.warn(
+      `[httpapi-exercise] 低内存机器（os 报 ${Math.round(os.totalmem() / 2 ** 30)}GB）跳过全量 effect 模式：` +
+        `峰值 ~12GB 已知打穿 16GB 机器（261116 实测 Bun panic）。完整门禁由 CI nightly 执行；` +
+        `本地定向跑加 --include <场景名>；coverage/auth 模式不受限。`,
+    )
+    return undefined
+  }
   const modules = yield* Effect.promise(() => runtime())
   const effectRoutes = routeKeys(OpenApi.fromApi(modules.PublicApi))
   const selected = selectedScenarios(options, scenarios)

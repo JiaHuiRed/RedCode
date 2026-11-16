@@ -27,6 +27,7 @@
 - 跑单测**必须带完整文件路径过滤**：不带过滤的 `bun test` 会碰 live 配置（已修根因，但 plugin-loader 那类直接操作 live 文件名的用例仍靠路径隔离兜着）
 - `bun run typecheck` 走 `script/typecheck.ts`：先跑 tsgo，崩溃（OOM/panic）时自动回退 TypeScript 5.x 重跑
 - **子进程超时不变量**：`bun run check:subprocess-timeout`（已挂 pre-push）。新增 `appProcess.run` 调用点必须显式给 `timeout`，或在调用行上方写 `// subprocess-timeout: none — <理由>`。无界的子进程等待不触发 evloop drift 探针，挂起时日志里一个字都没有
+- **httpapi 路由覆盖门禁**（已挂 pre-push，~6s）：新增 HTTP 端点必须在 `httpapi-exercise` 里有场景，coverage 模式只做路由↔场景对账、不执行场景。同型事故已五次才红在 nightly（0.17.0 instructions、261115 UX-15 query / UX-17 result；e2e mock 兜底 `{}` 崩页面另有三次），推送时就拦
 
 ## 编辑后自动验证
 
@@ -51,7 +52,7 @@
 | lane | 命令（packages/opencode 下） | 用途 |
 |---|---|---|
 | unit（默认） | `bun run test` | 全量单进程顺序跑。写 `process.env` 的「进程绑定」文件与全局态耦合，排污染前先 `bun run script/lane-inventory.ts` 重新生成清单（约 41 个，会漂移，别背） |
-| httpapi | `bun run test:httpapi` | 真服务器 HTTP 覆盖 / auth / Effect 三模式 |
+| httpapi | `bun run test:httpapi` | 真服务器 HTTP 覆盖 / auth / Effect 三模式。< 32GB 且非 CI 的机器全量 effect 会响亮跳过（261116 实测峰值 ~12GB 打穿 16GB 机器，Bun panic）——完整门禁归 nightly，本地定向跑 `script/httpapi-exercise.ts --mode effect --include <名>`；coverage/auth 不受限 |
 | 套件计时 | `bun run bench:test` | 全套件耗时 sanity check，见 `perf/test-suite.md` |
 | 逐文件 profiler | `bun run profile:test` | 定位慢测试候选（`TEST_PROFILE_GLOB` 过滤） |
 | 性能预算 | `bun run bench:budget` | `filterCompactedEffect` 预算门禁（隔离临时 DB），开机先跑正负控制自检，门禁逻辑坏了直接拒跑 |

@@ -73,6 +73,16 @@ export async function mockRedCodeServer(page: Page, config: MockServerConfig) {
 
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
 
+    // 261116 Red 计划胶囊补拉空闲会话 goal（4f3e9901）后，smoke 打开历史会话也会打这个
+    // 路由。兜底的 {} 会被 sync 层写成缺 text 的 goal，session-plan-tab 的 text.trim()
+    // 随即 TypeError 崩掉整页（同型第三次：261013 soul、261115 message-versions）。
+    // 线上契约是「没钉目标回 404」（SDK goal 文档原文），但 smoke 断言零 console error，
+    // 浏览器会把任何 404 记成资源加载错误——mock 回 200 + cleared goal，UI 对 cleared
+    // 一律按无目标隐藏，与 404 写回 undefined 的最终渲染一致。
+    if (/^\/session\/[^/]+\/goal$/.test(path)) {
+      return json(route, { status: "cleared", text: "", tokens_used: 0, turn_count: 0 })
+    }
+
     // 261115 Red 消息树 Phase 3 的 version 列举：页面加载即请求，兜底 {} 会让
     // versionGroups 对对象取 find（TypeError）崩掉整树，顶栏动作槽位的按钮随之不渲染。
     if (/^\/session\/[^/]+\/message-versions$/.test(path)) return json(route, [])
