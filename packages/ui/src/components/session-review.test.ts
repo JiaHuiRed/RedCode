@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { nextUnreviewedTarget, reviewTotals, stepTarget } from "./session-review"
+import { nextUnreviewedTarget, reviewComplete, reviewFiles, reviewTotals, stepTarget } from "./session-review"
 
 const files = ["a.ts", "b.ts", "c.ts"]
 
@@ -83,5 +83,41 @@ describe("nextUnreviewedTarget", () => {
     expect(nextUnreviewedTarget(["only.ts"], new Set(), "only.ts")).toBeUndefined()
     expect(nextUnreviewedTarget(files, new Set(["a.ts", "b.ts", "c.ts"]), "b.ts")).toBeUndefined()
     expect(nextUnreviewedTarget([], new Set(), undefined)).toBeUndefined()
+  })
+})
+
+describe("reviewFiles", () => {
+  // 261116 Red B07：未审筛选只收窄列表。20 个文件审 18 个后剩两项，审完最后两项
+  // 列表会清空——这不能变成「本批没有改动」，批次规模与合计仍按全量算。
+  const batch = Array.from({ length: 20 }, (_, i) => `file-${i}.ts`)
+
+  test("未审筛选只留待审文件，不改变整批规模与合计", () => {
+    const reviewed = new Set(batch.slice(0, 18))
+    expect(reviewFiles(batch, reviewed, true)).toEqual(["file-18.ts", "file-19.ts"])
+    expect(batch).toHaveLength(20)
+    expect(reviewTotals(batch.map(() => ({ additions: 1, deletions: 0 })))).toEqual({
+      files: 20,
+      additions: 20,
+      deletions: 0,
+    })
+  })
+
+  test("最后一项审完时筛选为空，切回全部仍拿到整批", () => {
+    const reviewed = new Set(batch)
+    expect(reviewFiles(batch, reviewed, true)).toEqual([])
+    expect(reviewFiles(batch, reviewed, false)).toHaveLength(20)
+  })
+})
+
+describe("reviewComplete", () => {
+  // 261116 Red B07：完成态只由全量批次判定；空批次不是完成，筛选清空也不是。
+  test("部分审阅未完成，全量审完才完成", () => {
+    expect(reviewComplete(files, new Set(["a.ts", "b.ts"]))).toBe(false)
+    expect(reviewComplete(files, new Set(files))).toBe(true)
+  })
+
+  test("空批次永远不是完成态", () => {
+    expect(reviewComplete([], new Set())).toBe(false)
+    expect(reviewComplete([], new Set(["a.ts"]))).toBe(false)
   })
 })

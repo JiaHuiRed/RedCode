@@ -201,6 +201,21 @@ export function reviewTotals(diffs: readonly { additions?: number; deletions?: n
   )
 }
 
+// 261116 Red B07：未审筛选只收窄列表，批次规模、进度与收尾合计永远按全量文件算。
+// 20 个文件审完最后两项后筛选结果为空，头部与汇总不能跟着一起消失。
+export function reviewFiles(
+  all: readonly string[],
+  reviewed: ReadonlySet<string>,
+  unreviewedOnly: boolean,
+): string[] {
+  return unreviewedOnly ? all.filter((file) => !reviewed.has(file)) : [...all]
+}
+
+// 261116 Red B07：完成态只由全量批次判定；筛选清空不等于没有改动，空批次也不算完成。
+export function reviewComplete(all: readonly string[], reviewed: ReadonlySet<string>) {
+  return all.length > 0 && all.every((file) => reviewed.has(file))
+}
+
 export const SessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
@@ -226,13 +241,10 @@ export const SessionReview = (props: SessionReviewProps) => {
     Object.fromEntries(list(props.diffs).map((diff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
   )
   const allFiles = createMemo(() => props.diffs.map((diff) => diff.file!))
+  const reviewedSet = createMemo(() => new Set(props.reviewed ?? []))
   // 261115 Red UX-16 未审筛选：只影响列表与导航，进度仍按全部文件计。
   const [unreviewedOnly, setUnreviewedOnly] = createSignal(false)
-  const files = createMemo(() => {
-    if (!unreviewedOnly()) return allFiles()
-    const reviewed = reviewedSet()
-    return allFiles().filter((file) => !reviewed.has(file))
-  })
+  const files = createMemo(() => reviewFiles(allFiles(), reviewedSet(), unreviewedOnly()))
   const grouped = createMemo(() => {
     const next = new Map<string, SessionReviewComment[]>()
     for (const comment of props.comments ?? []) {
@@ -247,7 +259,8 @@ export const SessionReview = (props: SessionReviewProps) => {
   })
   const diffStyle = () => props.diffStyle ?? (props.split ? "split" : "unified")
   const hasDiffs = () => files().length > 0
-  const reviewedSet = createMemo(() => new Set(props.reviewed ?? []))
+  // 261116 Red B07：筛选头按整批是否存在文件决定展示，不跟随当前筛选结果。
+  const hasFiles = () => allFiles().length > 0
 
   // 上一/下一文件：按文件列表顺序移动，展开目标并滚到它的顶部。
   // 261110 Red 焦点必须回写给宿主（受控）：不回写则宿主 activeDiff 停在旧值，
@@ -278,9 +291,7 @@ export const SessionReview = (props: SessionReviewProps) => {
   }
 
   // 全批已审（按全部文件计，不受筛选影响）。筛选模式下列表清空时用它给出收尾状态。
-  const allReviewed = createMemo(
-    () => allFiles().length > 0 && allFiles().every((file) => reviewedSet().has(file)),
-  )
+  const allReviewed = createMemo(() => reviewComplete(allFiles(), reviewedSet()))
   const totals = createMemo(() => reviewTotals(props.diffs))
 
   const syncVisible = () => {
@@ -425,7 +436,7 @@ export const SessionReview = (props: SessionReviewProps) => {
           {props.title === undefined ? i18n.t("ui.sessionReview.title") : props.title}
         </div>
         <div data-slot="session-review-actions">
-          <Show when={hasDiffs() && props.onToggleReviewed}>
+          <Show when={hasFiles() && props.onToggleReviewed}>
             {/* 261115 Red UX-16：进度按全部文件计（筛选只收窄列表，不改变进度语义）；
                 全批已审时给出收尾状态而不是悬着的 N/N。 */}
             <div
@@ -806,18 +817,28 @@ export const SessionReview = (props: SessionReviewProps) => {
                   }}
                 </For>
               </Accordion>
-              {/* 261115 Red A-UX-04：全批审完的收尾汇总——文件数与增删行合计。
-                  只描述看过的规模，不冒充测试或暂存状态。 */}
-              <Show when={allReviewed()}>
-                <div data-slot="session-review-complete">
-                  <span data-slot="session-review-complete-title">
-                    {i18n.t("ui.sessionReview.complete.title", { count: totals().files })}
-                  </span>
-                  <span data-slot="session-review-complete-stats">
-                    <span data-slot="session-review-complete-add">+{totals().additions}</span>
-                    <span data-slot="session-review-complete-del">−{totals().deletions}</span>
-                  </span>
-                </div>
+            </div>
+          </Show>
+          {/* 261116 Red B07：收尾汇总与复查入口放在筛选分支之外——未审筛选清空后
+              列表为空，但整批文件数与增删合计仍要留在眼前。 */}
+          <Show when={allReviewed()}>
+            <div data-slot="session-review-complete">
+              <span data-slot="session-review-complete-title">
+                {i18n.t("ui.sessionReview.complete.title", { count: totals().files })}
+              </span>
+              <span data-slot="session-review-complete-stats">
+                <span data-slot="session-review-complete-add">+{totals().additions}</span>
+                <span data-slot="session-review-complete-del">−{totals().deletions}</span>
+              </span>
+              <Show when={unreviewedOnly()}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  data-slot="session-review-review-all"
+                  onClick={() => setUnreviewedOnly(false)}
+                >
+                  {i18n.t("ui.sessionReview.reviewAll")}
+                </Button>
               </Show>
             </div>
           </Show>

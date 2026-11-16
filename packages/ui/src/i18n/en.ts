@@ -13,6 +13,7 @@ export const dict: Record<string, string> = {
   "ui.sessionReview.reviewed.done": "All reviewed",
   "ui.sessionReview.reviewed.allDone": "Every file in this batch is reviewed.",
   "ui.sessionReview.complete.title": "All {{count}} files reviewed",
+  "ui.sessionReview.reviewAll": "Review all",
   "ui.sessionReview.filter.all": "All",
   "ui.sessionReview.filter.unreviewed": "Unreviewed",
   "ui.sessionReview.expandAll": "Expand all",

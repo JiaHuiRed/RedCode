@@ -11,6 +11,7 @@ export const dict = {
   "ui.sessionReview.reviewed.done": "すべて確認済み",
   "ui.sessionReview.reviewed.allDone": "この変更バッチはすべて確認済みです。",
   "ui.sessionReview.complete.title": "{{count}} ファイルをすべて確認済み",
+  "ui.sessionReview.reviewAll": "すべて確認",
   "ui.sessionReview.filter.all": "すべて",
   "ui.sessionReview.filter.unreviewed": "未確認",
   "ui.sessionReview.openFile": "ファイルを開く",

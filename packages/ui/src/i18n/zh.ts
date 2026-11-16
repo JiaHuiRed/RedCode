@@ -15,6 +15,7 @@ export const dict = {
   "ui.sessionReview.reviewed.done": "已全部审阅",
   "ui.sessionReview.reviewed.allDone": "本批改动已全部审阅。",
   "ui.sessionReview.complete.title": "{{count}} 个文件已全部审阅",
+  "ui.sessionReview.reviewAll": "复查全部",
   "ui.sessionReview.filter.all": "全部",
   "ui.sessionReview.filter.unreviewed": "未审阅",
   "ui.sessionReview.openFile": "打开文件",

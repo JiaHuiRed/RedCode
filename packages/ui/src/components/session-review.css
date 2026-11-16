@@ -323,6 +323,11 @@
     color: var(--syntax-critical);
   }
 
+  /* 261116 Red B07：完成态里直接回「全部」复查，按钮靠右不挤合计。 */
+  [data-slot="session-review-review-all"] {
+    margin-left: auto;
+  }
+
   [data-slot="session-review-step"] {
     display: inline-flex;
     align-items: center;

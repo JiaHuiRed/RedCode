@@ -581,7 +581,12 @@ export function AssistantParts(props: {
 
                 return (
                   <Show when={parts().length > 0 && kind()}>
-                    <ToolGroup kind={kind()!} parts={parts()} busy={busy()} />
+                    <ToolGroup
+                      kind={kind()!}
+                      parts={parts()}
+                      busy={busy()}
+                      getMessage={(part) => msgs().get(part.messageID)}
+                    />
                   </Show>
                 )
               })()}
@@ -801,7 +806,7 @@ export function AssistantMessageDisplay(props: {
 
                 return (
                   <Show when={parts().length > 0 && kind()}>
-                    <ToolGroup kind={kind()!} parts={parts()} />
+                    <ToolGroup kind={kind()!} parts={parts()} getMessage={() => props.message} />
                   </Show>
                 )
               })()}
@@ -832,10 +837,55 @@ export function AssistantMessageDisplay(props: {
   )
 }
 
+// 261116 Red B04：调用方还没提供 message 身份时的紧凑兜底行，保持旧观感与失败标色。
+function ContextToolRow(props: { part: ToolPart }) {
+  const i18n = useI18n()
+  const trigger = createMemo(() => contextToolTrigger(props.part, i18n))
+  const running = createMemo(
+    () => props.part.state.status === "pending" || props.part.state.status === "running",
+  )
+  const error = createMemo(() => props.part.state.status === "error")
+  return (
+    <div data-slot="context-tool-group-item" data-failed={error() || undefined}>
+      <div data-component="tool-trigger">
+        <div data-slot="basic-tool-tool-trigger-content">
+          <div data-slot="basic-tool-tool-info">
+            <div data-slot="basic-tool-tool-info-structured">
+              <div data-slot="basic-tool-tool-info-main">
+                <span data-slot="basic-tool-tool-title" style={error() ? { color: "var(--syntax-critical)" } : undefined}>
+                  <TextShimmer text={trigger().title} active={running()} />
+                </span>
+                <Show when={!running() && trigger().subtitle}>
+                  <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
+                </Show>
+                <Show when={!running() && trigger().args?.length}>
+                  <For each={trigger().args}>
+                    {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
+                  </For>
+                </Show>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // 261115 Red A-UX-03：探索 / 修改 / 命令三类共用一套折叠外壳——标题、摘要与失败提示
-// 按 kind 分派，展开后的单项渲染完全一致。失败不被折叠吞掉：组内出现 error 时强制
-// 展开一次（用户手动收起后不再抢回），摘要后跟红色失败数。
-export function ToolGroup(props: { kind: ToolGroupKind; parts: ToolPart[]; busy?: boolean }) {
+// 按 kind 分派。失败不被折叠吞掉：组内出现 error 时强制展开一次（用户手动收起后不再抢回），
+// 摘要后跟红色失败数。
+// 261116 Red B04：组内单项通过调用方提供的 message 身份复用真实工具详情组件（Part），
+// 输入/输出/错误/diff/命令日志/文件入口都走原渲染，不在这里复制一份；重内容仍由单项
+// 自己的折叠按需挂载。调用方尚未接线时退回原有紧凑行。
+export type ToolGroupMessageResolver = (part: ToolPart) => MessageType | undefined
+
+export function ToolGroup(props: {
+  kind: ToolGroupKind
+  parts: ToolPart[]
+  busy?: boolean
+  getMessage?: ToolGroupMessageResolver
+}) {
   const i18n = useI18n()
   const [open, setOpen] = createSignal(false)
   const pending = createMemo(
@@ -943,35 +993,15 @@ export function ToolGroup(props: { kind: ToolGroupKind; parts: ToolPart[]; busy?
         <div data-component="context-tool-group-list" class="part-expanded-panel">
           <Index each={props.parts}>
             {(partAccessor) => {
-              const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
-              const running = createMemo(
-                () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
-              )
-              const error = createMemo(() => partAccessor().state.status === "error")
+              const message = createMemo(() => props.getMessage?.(partAccessor()))
               return (
-                <div data-slot="context-tool-group-item" data-failed={error() || undefined}>
-                  <div data-component="tool-trigger">
-                    <div data-slot="basic-tool-tool-trigger-content">
-                      <div data-slot="basic-tool-tool-info">
-                        <div data-slot="basic-tool-tool-info-structured">
-                          <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title" style={error() ? { color: "var(--syntax-critical)" } : undefined}>
-                              <TextShimmer text={trigger().title} active={running()} />
-                            </span>
-                            <Show when={!running() && trigger().subtitle}>
-                              <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
-                            </Show>
-                            <Show when={!running() && trigger().args?.length}>
-                              <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
-                              </For>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
+                <Show when={message()} fallback={<ContextToolRow part={partAccessor()} />}>
+                  {(current) => (
+                    <div data-slot="context-tool-group-item">
+                      <Part part={partAccessor()} message={current()} />
                     </div>
-                  </div>
-                </div>
+                  )}
+                </Show>
               )
             }}
           </Index>
