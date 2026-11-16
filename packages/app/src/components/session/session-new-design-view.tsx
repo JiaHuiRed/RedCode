@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import type { Session } from "@redcode-ai/sdk/v2/client"
 import { useQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"
@@ -9,19 +10,30 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
+import { useNotification } from "@/context/notification"
+import { usePermission } from "@/context/permission"
+import { usePlatform } from "@/context/platform"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { useSettings } from "@/context/settings"
 import { pickGreetingKey } from "@/utils/greeting"
+import { compareSessionTime, sortedRootSessions } from "@/utils/session-helpers"
+import { classifySession } from "@/utils/session-status"
+import { sessionTitleParts } from "@/utils/session-title"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Icon } from "@redcode-ai/ui/icon"
+import { Spinner } from "@redcode-ai/ui/spinner"
 import { Select } from "@redcode-ai/ui/select"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Button } from "@redcode-ai/ui/button"
 import { SoulAvatar } from "@/components/soul-avatar"
 import { WordmarkV2 } from "@redcode-ai/ui/v2/components/wordmark-v2.jsx"
+import { readSessionDraft, sessionNextAction } from "./session-next-action"
 
 const MAIN_WORKTREE = "main"
+
+// 261116 Red B03：新会话页只放 3—5 条最近任务；再多就成了第二个首页。
+const RECENT_LIMIT = 5
 
 export function NewSessionDesignView(props: {
   worktree: string
@@ -39,6 +51,8 @@ export function NewSessionDesignView(props: {
   const sync = useSync()
   const language = useLanguage()
   const settings = useSettings()
+  const notification = useNotification()
+  const permission = usePermission()
   const dialog = useDialog()
   const [greetingKey] = createSignal(pickGreetingKey(new Date().getHours()))
 
@@ -67,6 +81,34 @@ export function NewSessionDesignView(props: {
     layout.projects.open(directory)
     server.projects.touch(directory)
     navigate(`/${base64Encode(directory)}/session`)
+  }
+
+  // 261116 Red B03：当前项目（含 sandbox）最近 3—5 个任务，作为「继续已有任务」的轻量入口。
+  // 根会话过滤与排序复用首页同一套 helper；peek 只读内存 store，不为列表 bootstrap 目录。
+  const recentTasks = createMemo((): Session[] => {
+    const dirs = [projectRoot(), ...(sync.project?.sandboxes ?? [])]
+    const seen = new Set<string>()
+    return dirs
+      .flatMap((dir) => sortedRootSessions(globalSync.peek(dir, { bootstrap: false })[0], Date.now()))
+      .filter((session) => {
+        if (seen.has(session.id)) return false
+        seen.add(session.id)
+        return true
+      })
+      .sort(compareSessionTime)
+      .slice(0, RECENT_LIMIT)
+  })
+
+  // 继续入口落到具体会话，而不是只回项目首页。项目行固定开当前项目根，
+  // sandbox 里的会话不会被当成新项目塞进侧栏。
+  // 261116 Red B03：有草稿的行带 ?focus=prompt —— 由 session.tsx 消费后把光标送回输入框
+  // （契约：读 searchParams.focus === "prompt" 时调已有的 focusInput() 并清掉该参数）。
+  // 消费者未落地前该参数无副作用，草稿本身仍会随会话恢复。
+  const openRecent = (session: Session, focus?: "prompt") => {
+    const root = projectRoot()
+    layout.projects.open(root)
+    server.projects.touch(root)
+    navigate(`/${base64Encode(session.directory)}/session/${session.id}${focus ? "?focus=prompt" : ""}`)
   }
 
   // 260814 Red 毛玻璃 B 遗漏点：下面这层的实色底盖住了整窗壁纸，新建会话页黑成一块
@@ -187,6 +229,8 @@ export function NewSessionDesignView(props: {
                 onSelect={openProject}
                 class="max-w-[203px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
                 valueClass="truncate text-[length:13px] font-[440] text-v2-text-text-faint"
+                // 261116 Red B03：长路径可确认完整信息（名字被截断时悬停即见绝对路径）。
+                triggerProps={{ title: projectRoot() }}
               />
               {/* 260828 cc 原来这里是个 <Select>，但 options 只有 `[branch()]` 一个元素、
                   也没有 onSelect —— 渲染出下拉箭头、看起来能点，点开只有它自己、选了没反应。
@@ -198,9 +242,105 @@ export function NewSessionDesignView(props: {
                 <span class="truncate text-[13px] font-[440]">{branch()}</span>
               </div>
             </div>
+            {/* 261116 Red B03：最近任务 =「继续已有任务」，与上方输入（开始新任务）分开。
+                只放轻量文本行，不加卡片；加载/为空时整块不渲染，保持字标与输入区的视觉中心。 */}
+            <Show when={recentTasks().length > 0}>
+              <div
+                data-component="new-session-recent"
+                class="mt-3"
+                aria-label={language.t("session.new.recent.title")}
+              >
+                <div class="flex min-w-0 items-baseline gap-2 px-2 pb-0.5">
+                  <span class="shrink-0 text-sm [font-weight:530] text-v2-text-text-muted">
+                    {language.t("session.new.recent.title")}
+                  </span>
+                  <span class="min-w-0 truncate text-sm [font-weight:440] text-v2-text-text-faint">
+                    {language.t("session.new.recent.hint")}
+                  </span>
+                </div>
+                <div class="flex flex-col">
+                  <For each={recentTasks()}>
+                    {(session) => <RecentTaskRow session={session} onOpen={openRecent} />}
+                  </For>
+                </div>
+              </div>
+            </Show>
           </div>
         </div>
       </div>
     </main>
+  )
+}
+
+// 261116 Red B03：最近任务行——标题 + 一条真实行动信息，点击直接进入该会话。
+// 运行时状态优先（提问/授权/出错/未读），都没有时才读一次已落盘草稿（见 session-next-action）。
+function RecentTaskRow(props: { session: Session; onOpen: (session: Session, focus?: "prompt") => void }) {
+  const globalSync = useServerSync()
+  const notification = useNotification()
+  const permission = usePermission()
+  const platform = usePlatform()
+  const language = useLanguage()
+  const deps = { sync: globalSync, notification, permission }
+  const title = createMemo(() => sessionTitleParts(props.session.title).text || props.session.id)
+  const action = createMemo(() => sessionNextAction(props.session, deps))
+  const [draft] = createResource(
+    () => (action() ? null : props.session),
+    (session) => readSessionDraft(session.directory, session.id, platform),
+  )
+  const working = createMemo(() => classifySession(props.session, deps) === "working")
+
+  const entry = createMemo((): { label: string; tone: string; dot?: string; spinner?: boolean } => {
+    const info = action()
+    if (info?.kind === "question") {
+      return {
+        label: language.t("session.action.viewQuestion"),
+        tone: "text-v2-state-fg-warning",
+        dot: "bg-v2-state-fg-warning",
+      }
+    }
+    if (info?.kind === "permission") {
+      return {
+        label: language.t("session.action.viewApproval"),
+        tone: "text-v2-state-fg-warning",
+        dot: "bg-v2-state-fg-warning",
+      }
+    }
+    if (info?.kind === "error") {
+      return { label: language.t("session.action.viewError"), tone: "text-v2-state-fg-danger", dot: "bg-v2-state-fg-danger" }
+    }
+    if (info?.kind === "unseen") {
+      return { label: language.t("session.action.viewResult"), tone: "text-v2-state-fg-info", dot: "bg-v2-state-fg-info" }
+    }
+    if (draft()) {
+      return {
+        label: language.t("session.action.resumeDraft"),
+        tone: "text-v2-text-text-muted",
+        dot: "bg-v2-text-text-muted",
+      }
+    }
+    if (working()) {
+      return { label: language.t("home.session.status.working"), tone: "text-v2-text-text-faint", spinner: true }
+    }
+    return { label: language.t("common.continue"), tone: "text-v2-text-text-faint" }
+  })
+
+  return (
+    <button
+      type="button"
+      data-component="new-session-recent-task"
+      class="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
+      onClick={() => props.onOpen(props.session, draft() ? "prompt" : undefined)}
+    >
+      <span class="flex size-3.5 shrink-0 items-center justify-center">
+        <Show
+          when={entry().spinner}
+          fallback={<span class={`size-1.5 rounded-full ${entry().dot ?? "bg-transparent"}`} />}
+        >
+          <Spinner class="size-[13px]" />
+        </Show>
+      </span>
+      <span class="min-w-0 flex-1 truncate text-sm [font-weight:440] text-v2-text-text-faint">{title()}</span>
+      <span class={`shrink-0 text-sm [font-weight:440] ${entry().tone}`}>{entry().label}</span>
+    </button>
   )
 }

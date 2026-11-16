@@ -26,6 +26,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
+  onSelectionText?: (text: string) => void
 }
 
 let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
@@ -74,6 +75,7 @@ const useTerminalUiBindings = (input: {
   cleanups: VoidFunction[]
   handlePointerDown: () => void
   handleLinkClick: (event: MouseEvent) => void
+  onSelectionChange?: (text: string) => void
 }) => {
   const handleCopy = (event: ClipboardEvent) => {
     const selection = input.term.getSelection()
@@ -125,6 +127,11 @@ const useTerminalUiBindings = (input: {
   input.term.textarea?.addEventListener("blur", handleTextareaBlur)
   input.cleanups.push(() => input.term.textarea?.removeEventListener("focus", handleTextareaFocus))
   input.cleanups.push(() => input.term.textarea?.removeEventListener("blur", handleTextareaBlur))
+  const selection = () => input.onSelectionChange?.(input.term.getSelection())
+  input.container.addEventListener("pointerup", selection)
+  input.container.addEventListener("keyup", selection)
+  input.cleanups.push(() => input.container.removeEventListener("pointerup", selection))
+  input.cleanups.push(() => input.container.removeEventListener("keyup", selection))
 }
 
 const persistTerminal = (input: {
@@ -169,7 +176,7 @@ export const Terminal = (props: TerminalProps) => {
   const password = auth?.password ?? ""
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError"])
+  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError", "onSelectionText"])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
@@ -404,6 +411,7 @@ export const Terminal = (props: TerminalProps) => {
         cleanups,
         handlePointerDown,
         handleLinkClick,
+        onSelectionChange: local.onSelectionText,
       })
 
       if (local.autoFocus !== false) focusTerminal()

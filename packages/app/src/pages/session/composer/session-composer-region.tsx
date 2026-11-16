@@ -2,7 +2,13 @@ import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@redcode-ai/ui/motion-spring"
+import { showToast } from "@redcode-ai/ui/toast"
+import { Button } from "@redcode-ai/ui/button"
+import { Dialog } from "@redcode-ai/ui/dialog"
+import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 import { PromptInput } from "@/components/prompt-input"
+import { TaskSteering } from "@/components/task-steering"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { useSync } from "@/context/sync"
@@ -60,6 +66,7 @@ export function SessionComposerRegion(props: {
   const route = useSessionKey()
   const sync = useSync()
   const sdk = useSDK()
+  const dialog = useDialog()
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
@@ -140,7 +147,14 @@ export function SessionComposerRegion(props: {
   const openParent = () => {
     const id = parentID()
     if (!id) return
-    navigate(`/${route.params.dir}/session/${id}`)
+    void sdk.client.session.get({ sessionID: id }).then((response) => {
+      if (response.error || !response.data) throw response.error ?? new Error(language.t("dialog.background.sessionUnavailable"))
+      navigate(`/${base64Encode(response.data.directory)}/session/${id}`)
+    }).catch((error: unknown) => showToast({
+      variant: "error",
+      title: language.t("dialog.background.sessionUnavailable"),
+      description: error instanceof Error ? error.message : String(error),
+    }))
   }
 
   // 261107 Red 子会话此前只有「返回主会话」，没有停止入口——子代理卡住时用户无处下手。
@@ -148,7 +162,11 @@ export function SessionComposerRegion(props: {
   const stopChild = () => {
     const id = route.params.id
     if (!id) return
-    void sdk.client.session.abort({ sessionID: id }).catch(() => {})
+    void sdk.client.session.abort({ sessionID: id }).catch((error: unknown) => showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: error instanceof Error ? error.message : String(error),
+    }))
   }
 
   return (
@@ -295,7 +313,27 @@ export function SessionComposerRegion(props: {
                 ref={props.inputRef}
                 class="w-full rounded-lg border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
               >
-                <span>{language.t("session.child.promptDisabled")} </span>
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                  <Button
+                    data-action="subagent-guidance"
+                    variant="secondary"
+                    size="small"
+                    onClick={() => {
+                      const sessionID = route.params.id
+                      if (!sessionID) return
+                      const parent = parentID()
+                      const title = info()?.title
+                      dialog.show(() => (
+                        <Dialog title={language.t("task.steer.title")}>
+                          <div class="p-4">
+                            <TaskSteering sessionID={sessionID} parentID={parent} title={title} />
+                          </div>
+                        </Dialog>
+                      ))
+                    }}
+                  >
+                    {language.t("task.steer.title")}
+                  </Button>
                 <Show when={status() === "busy" || status() === "retry"}>
                   <button
                     type="button"
@@ -314,6 +352,7 @@ export function SessionComposerRegion(props: {
                     {language.t("session.child.backToParent")}
                   </button>
                 </Show>
+                </div>
               </div>
             </Show>
           </div>

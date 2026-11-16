@@ -166,7 +166,27 @@ export default function Layout(props: ParentProps) {
     return updateQuery.data.version ?? ""
   }
   const installUpdate = () => {
-    runUpdateAndRestart(platform.updateAndRestart, (installing) => setUpdate("installing", installing))
+    // 261116 Red 标题栏安装失败不能只清 installing 状态：给出重试与日志入口
+    runUpdateAndRestart(platform.updateAndRestart, (installing) => setUpdate("installing", installing), (error) => {
+      const description = language.t("settings.updates.toast.downloadFailed.description")
+      const actions: { label: string; onClick: () => void }[] = [
+        { label: language.t("common.retry"), onClick: installUpdate },
+      ]
+      if (platform.exportDebugLogs) {
+        actions.push({
+          label: language.t("error.page.action.exportLogs"),
+          onClick: () => void platform.exportDebugLogs?.(),
+        })
+      }
+      showToast({
+        persistent: true,
+        variant: "error",
+        icon: "circle-x",
+        title: language.t("settings.updates.toast.downloadFailed.title"),
+        description: error ? `${description} ${error}` : description,
+        actions,
+      })
+    })
   }
   const titlebarUpdate: TitlebarUpdate = {
     version: updateVersion,

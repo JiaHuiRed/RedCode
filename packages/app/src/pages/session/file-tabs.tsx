@@ -11,11 +11,15 @@ import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
+import { Button } from "@redcode-ai/ui/button"
+import { Markdown } from "@redcode-ai/ui/markdown"
 import { showToast } from "@redcode-ai/ui/toast"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
+import { usePlatform } from "@/context/platform"
+import { htmlPreviewDocument } from "@/utils/file-preview"
 import { getSessionHandoff } from "@/utils/session-handoff"
 import { useSessionLayout } from "@/context/session-layout"
 import { createSessionTabs } from "@/context/session-layout"
@@ -176,6 +180,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
   const comments = useComments()
   const language = useLanguage()
   const prompt = usePrompt()
+  const platform = usePlatform()
   const fileComponent = useFileComponent()
   const { sessionKey, tabs, view } = useSessionLayout()
   const activeFileTab = createSessionTabs({
@@ -199,6 +204,39 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
     return file.get(p)
   })
   const contents = createMemo(() => state()?.content?.content ?? "")
+  const markdown = createMemo(() => /\.(md|markdown)$/i.test(path() ?? ""))
+  const html = createMemo(() => /\.html?$/i.test(path() ?? ""))
+  const [preview, setPreview] = createStore({ source: false })
+  const htmlPreview = createMemo(() => {
+    if (!html() || !state()?.loaded) return
+    // 261116 Red HTML only executes after an explicit click, inside an opaque-origin sandbox.
+    return URL.createObjectURL(new Blob([htmlPreviewDocument(contents())], { type: "text/html;charset=utf-8" }))
+  })
+  createEffect(() => {
+    const url = htmlPreview()
+    if (url) onCleanup(() => URL.revokeObjectURL(url))
+  })
+  // 261116 Red A05：Markdown/HTML 的阅读与源码切换、HTML 显式浏览器预览。桌面走独立回环
+  // 来源（desktop/src/main/browser-preview.ts），web 走 blob；未实现该能力时明确报不可用，
+  // 不用下载或 openPath 冒充。相对本地资源在隔离来源里不可用，界面直说。
+  // 决策：docs/notes/implemented/feature/2026-11-16-experience-roadmap-v2.md
+  const openHtml = () => {
+    const url = htmlPreview()
+    if (!url) return
+    if (platform.platform === "web") {
+      window.open(url, "_blank", "noopener,noreferrer")
+      return
+    }
+    if (!platform.openHtmlPreview) {
+      showToast({ variant: "error", title: language.t("file.view.previewUnavailable") })
+      return
+    }
+    void platform.openHtmlPreview(htmlPreviewDocument(contents())).catch((error: unknown) => showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: error instanceof Error ? error.message : String(error),
+    }))
+  }
   const cacheKey = createMemo(() => sampledChecksum(contents()))
   const selectedLines = createMemo<SelectedLineRange | null>(() => {
     const p = path()
@@ -207,7 +245,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
     return (getSessionHandoff(sessionKey())?.files[p] as SelectedLineRange | undefined) ?? null
   })
   const scrollSync = createScrollSync({
-    tab: () => props.tab,
+    tab: () => markdown() && !preview.source ? `${props.tab}:reading` : props.tab,
     view,
   })
 
@@ -348,6 +386,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
 
       event.preventDefault()
       event.stopPropagation()
+      if (markdown()) setPreview("source", true)
       find?.focus()
     }
 
@@ -359,6 +398,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
       path,
       () => {
         commentsUi.note.reset()
+        setPreview("source", false)
       },
       { defer: true },
     ),
@@ -374,6 +414,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
     const target = fileComments().find((comment) => comment.id === focus.id)
     if (!target) return
 
+    setPreview("source", true)
     commentsUi.note.openComment(target.id, target.selection, { cancelDraft: true })
     requestAnimationFrame(() => comments.clearFocus())
   })
@@ -451,12 +492,37 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
           onClick={() => props.onReturn?.()}
           class="mx-3 mb-1 self-start rounded px-1.5 py-0.5 text-12-regular text-text-weak hover:bg-surface-raised hover:text-text-strong"
         >
-          ← {language.t("file.returnToChanges")}
+          ← {language.t(view().fileReturn.current()?.kind === "tool" ? "file.returnToTool" : "file.returnToChanges")}
         </button>
+      </Show>
+      <Show when={state()?.loaded && (markdown() || html())}>
+        <div class="mx-3 mb-2 flex shrink-0 flex-wrap items-center gap-2" data-component="file-reading-toolbar">
+          <Show when={markdown()}>
+            <Button size="small" variant={preview.source ? "ghost" : "secondary"} onClick={() => setPreview("source", false)}>
+              {language.t("file.view.reading")}
+            </Button>
+            <Button size="small" variant={preview.source ? "secondary" : "ghost"} onClick={() => setPreview("source", true)}>
+              {language.t("file.view.source")}
+            </Button>
+          </Show>
+          <Show when={html()}>
+            <Button size="small" variant="secondary" onClick={openHtml}>
+              {language.t("file.view.browser")}
+            </Button>
+            <Button size="small" variant="ghost" onClick={() => setPreview("source", true)}>
+              {language.t("file.view.source")}
+            </Button>
+            <span class="text-sm text-text-weak">{language.t("file.view.htmlHint")}</span>
+          </Show>
+        </div>
       </Show>
       <ScrollView class="flex-1 min-h-0" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
         <Switch>
-          <Match when={state()?.loaded}>{renderFile(contents())}</Match>
+          <Match when={state()?.loaded}>
+            <Show when={markdown() && !preview.source} fallback={renderFile(contents())}>
+              <Markdown class="mx-auto w-full max-w-[75ch] px-6 py-4 pb-40 select-text" text={contents()} cacheKey={cacheKey()} />
+            </Show>
+          </Match>
           <Match when={state()?.loading}>
             <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
           </Match>

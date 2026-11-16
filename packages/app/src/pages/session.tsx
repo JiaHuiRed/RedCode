@@ -56,7 +56,7 @@ import { createDeferRender } from "./session-defer-render"
 import { diffFingerprint, reviewedFiles } from "./session/review-progress"
 import { anonKey, guiDiagnostics, hashId } from "@/context/gui-diagnostics"
 import { createSessionKeyboard } from "@/pages/session/session-keyboard"
-import { MessageTimeline } from "@/pages/session/message-timeline"
+import { MessageTimeline, type FileOpenSource, type RevealTarget } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/context/session-layout"
 import { SessionMessageRail, SessionTurnOutline } from "@/pages/session/turn-outline"
@@ -106,7 +106,7 @@ export default function Page() {
   const prompt = usePrompt()
   const comments = useComments()
   const terminal = useTerminal()
-  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; soul?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; soul?: string; focus?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { params, sessionKey, tabs, view } = useSessionLayout()
@@ -529,10 +529,14 @@ export default function Page() {
   }
 
   let inputRef!: HTMLDivElement
+  const [composerInput, setComposerInput] = createSignal<HTMLDivElement>()
   let promptDock: HTMLDivElement | undefined
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let revealMessage = (_id: string) => {}
+  // 261116 Red B05/B06：时间线注册的片段定位与文件打开来源读取器（与 revealMessage 同一条注册链）。
+  let revealPartTarget: ((target: RevealTarget) => Promise<boolean>) | undefined
+  let takeFileOpenSource: (() => FileOpenSource | undefined) | undefined
   const scrollGestureWindowMs = 250
 
   const markScrollGesture = (target?: EventTarget | null) => {
@@ -906,6 +910,17 @@ export default function Page() {
     inputRef?.focus()
   }
 
+  createEffect(() => {
+    const input = composerInput()
+    if (!params.id || searchParams.focus !== "prompt" || !prompt.ready() || isChildSession() || !input) return
+    const frame = requestAnimationFrame(() => {
+      if (input !== composerInput() || !input.isConnected) return
+      input.focus()
+      setSearchParams({ focus: undefined }, { replace: true })
+    })
+    onCleanup(() => cancelAnimationFrame(frame))
+  })
+
   useSessionCommands({
     navigateMessageByOffset: (offset) => nav.navigateMessageByOffset(offset, store.messageId),
     setActiveMessage: nav.setActiveMessage,
@@ -940,6 +955,17 @@ export default function Page() {
     const source = view().fileReturn.current()
     if (!source) return
     view().fileReturn.set(undefined)
+    // 261116 Red B06：工具来源与搜索命中共用同一条加载/滚动/展开链（含阅读位置兜底）。
+    if (source.kind === "tool") {
+      if (!source.messageID) return
+      void jumpToTarget({
+        messageID: source.messageID,
+        partID: source.partID,
+        userMessageID: source.userMessageID,
+        scrollTop: source.scrollTop,
+      })
+      return
+    }
     if (reviewTab()) tabs().setActive("review")
     else view().reviewPanel.open()
     focusReviewDiff(source.file)
@@ -955,7 +981,14 @@ export default function Page() {
     if (!path) return
     const panel = view().reviewPanel
     if (!panel.opened()) panel.open()
-    view().fileReturn.set(undefined)
+    // 261116 Red B06：工具内容打开的文件记录来源会话/消息/片段与阅读位置，供「返回工具」；
+    // 非工具来源保持旧行为，不冒充可回跳来源。
+    const source = takeFileOpenSource?.()
+    view().fileReturn.set(
+      source && source.sessionID === params.id
+        ? { tab: file.tab(path), file: path, kind: "tool", ...source }
+        : undefined,
+    )
     openReviewFile(path)
   }
 
@@ -1301,6 +1334,8 @@ export default function Page() {
     sessionID: () => params.id,
     boundary: () => messages()[0]?.id,
     visibleUserMessages,
+    // 261116 Red B05：搜索命中的归属解析要看助手消息的 parentID；只给用户消息列表判断不了。
+    loadedMessages: () => messages(),
     historyMore,
     historyLoading,
     loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
@@ -1363,6 +1398,50 @@ export default function Page() {
     }
   }
 
+  /**
+   * 261116 Red B05/B06：搜索命中与「返回工具」共用的精确定位。
+   *
+   * 与 jumpToTurn 的区别只有第一步：命中可能是助手消息/工具片段，先把命中消息翻进窗口并
+   * 解析所属用户轮次（locateTarget，父关系优先），再走同一条 loadThrough → revealMessage →
+   * revealPart 链。翻不到、片段找不到都明确提示，不退化成「最近的轮次」。
+   */
+  const jumpToTarget = async (target: RevealTarget) => {
+    if (jumpingTurn()) return
+    const id = params.id
+    if (!id) return
+    const directory = sdk.directory
+    setJumpingTurn(true)
+    try {
+      const turnID =
+        target.userMessageID ??
+        (await historyLoader.locateTarget({ messageID: target.messageID, createdAt: target.createdAt }))
+      if (params.id !== id || sdk.directory !== directory) return
+      if (!turnID) {
+        showToast({ variant: "error", title: language.t("session.outline.unreachable") })
+        return
+      }
+      if (!(await historyLoader.loadThrough(turnID))) {
+        if (params.id === id && sdk.directory === directory)
+          showToast({ variant: "error", title: language.t("session.outline.unreachable") })
+        return
+      }
+      nav.setActiveMessage(visibleUserMessages().find((message) => message.id === turnID))
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          if (params.id === id && sdk.directory === directory) revealMessage(turnID)
+          resolve()
+        }),
+      )
+      if (!target.partID || !revealPartTarget) return
+      const located = await revealPartTarget({ ...target, userMessageID: turnID })
+      // 片段找不到时仍停在所属轮次；提示原因（历史压缩/内容被删），不假装已定位。
+      if (!located && params.id === id && sdk.directory === directory)
+        showToast({ variant: "error", title: language.t("session.outline.unreachable") })
+    } finally {
+      setJumpingTurn(false)
+    }
+  }
+
   const outlinePanel = () => (
     <SessionTurnOutline
       directory={sdk.directory}
@@ -1370,6 +1449,14 @@ export default function Page() {
       activeMessageID={store.messageId}
       busy={jumpingTurn()}
       onJump={(id) => void jumpToTurn(id)}
+      onSearchHit={(hit, query) =>
+        void jumpToTarget({
+          messageID: hit.messageID,
+          partID: hit.partID,
+          createdAt: Number(hit.createdAt),
+          query,
+        })
+      }
     />
   )
 
@@ -1904,8 +1991,9 @@ export default function Page() {
       revealMessage={(id) => revealMessage(id)}
       centered={placement === "dock" && centered()}
       placement={placement}
-      inputRef={(el) => {
-        inputRef = el
+                inputRef={(el) => {
+                  inputRef = el
+                  setComposerInput(el)
       }}
       newSessionWorktree={newSessionWorktree()}
       newSessionSoul={newSessionSoul}
@@ -2120,6 +2208,13 @@ export default function Page() {
                       setRevealMessage={(fn) => {
                         revealMessage = fn
                       }}
+                      setRevealPart={(fn) => {
+                        revealPartTarget = fn
+                      }}
+                      setFileOpenSource={(fn) => {
+                        takeFileOpenSource = fn
+                      }}
+                      onJumpTarget={(target) => void jumpToTarget(target)}
                       setRetainViewport={(fn) => {
                         retainViewport = fn
                       }}

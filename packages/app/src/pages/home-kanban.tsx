@@ -1,16 +1,19 @@
 import type { Session } from "@redcode-ai/sdk/v2/client"
 import { DateTime } from "luxon"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createResource, For, Show } from "solid-js"
 import { Spinner } from "@redcode-ai/ui/spinner"
 import { ContextMenu } from "@redcode-ai/ui/context-menu"
+import { Icon } from "@redcode-ai/ui/icon"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 import { useServerSync } from "@/context/server-sync"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { sessionTitleParts } from "@/utils/session-title"
 import { messageAgentColor } from "@/utils/agent"
 import { classifySession } from "@/utils/session-status"
+import { readSessionDraft, sessionNextAction } from "@/components/session/session-next-action"
 import type { LocalProject } from "@/context/layout"
 
 type KanbanRecord = {
@@ -37,7 +40,7 @@ export function HomeKanban(props: {
   records: KanbanRecord[]
   /** 当前选中的项目名。卡片只在自己不属于它时才印项目名 —— 否则那是个常量。 */
   selectedProjectName?: string
-  openSession: (session: Session) => void
+  openSession: (session: Session, focus?: "prompt") => void
   onArchive: (session: Session) => void
   onUnarchive?: (session: Session) => void
 }) {
@@ -157,7 +160,7 @@ export function HomeKanban(props: {
                       record={record}
                       columnId={column.id}
                       selectedProjectName={props.selectedProjectName}
-                      onClick={() => props.openSession(record.session)}
+                      onClick={(focus) => props.openSession(record.session, focus)}
                       onArchive={() => props.onArchive(record.session)}
                       onUnarchive={() => props.onUnarchive?.(record.session)}
                     />
@@ -183,11 +186,14 @@ function KanbanCard(props: {
   record: KanbanRecord
   columnId: KanbanColumn["id"]
   selectedProjectName?: string
-  onClick: () => void
+  onClick: (focus?: "prompt") => void
   onArchive: () => void
   onUnarchive?: () => void
 }) {
   const globalSync = useServerSync()
+  const notification = useNotification()
+  const permission = usePermission()
+  const platform = usePlatform()
   const language = useLanguage()
   const [store] = globalSync.child(props.record.session.directory, { bootstrap: false })
   // 260828 cc 人格前缀（`[宋雨琦] …`）从标题里拆出来降到第二行。同一批卡片的前缀几乎
@@ -212,6 +218,35 @@ function KanbanCard(props: {
     return dt.toFormat("MM-dd")
   })
 
+  // 261116 Red B03：卡片只给一条「下一步该处理什么」，文案直接用对应入口的动作名，
+  // 点卡片即进入该会话；优先级见 session-next-action。运行时状态（提问/授权/出错/未读）
+  // 优先，都没有时才读一次草稿（只读 prompt 键，不创建 prompt store，避免为每张卡加载
+  // 6.9MB 的媒体文件）。没有可靠状态就不渲染这一行。
+  const action = createMemo(() =>
+    sessionNextAction(props.record.session, { sync: globalSync, notification, permission }),
+  )
+  const [draft] = createResource(
+    () => (action() ? null : props.record.session),
+    (session) => readSessionDraft(session.directory, session.id, platform),
+  )
+  const next = createMemo((): { text: string; tone: string; focus?: "prompt" } | undefined => {
+    const info = action()
+    if (info?.kind === "question") {
+      return { text: language.t("session.action.viewQuestion"), tone: "text-v2-state-fg-warning" }
+    }
+    if (info?.kind === "permission") {
+      return { text: language.t("session.action.viewApproval"), tone: "text-v2-state-fg-warning" }
+    }
+    if (info?.kind === "error") {
+      return { text: language.t("session.action.viewError"), tone: "text-v2-state-fg-danger" }
+    }
+    if (info?.kind === "unseen") {
+      return { text: language.t("session.action.viewResult"), tone: "text-v2-state-fg-info" }
+    }
+    if (draft()) return { text: language.t("session.action.resumeDraft"), tone: "text-v2-text-text-muted", focus: "prompt" }
+    return undefined
+  })
+
   return (
     // 260710 Red 看板卡片右键菜单：归档
     <ContextMenu>
@@ -220,7 +255,7 @@ function KanbanCard(props: {
         type="button"
         data-component="kanban-card"
         class="flex flex-col gap-2.5 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base px-4 py-3.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none cursor-default"
-        onClick={props.onClick}
+        onClick={() => props.onClick(next()?.focus)}
       >
         <div class="flex items-center gap-2 min-w-0 w-full">
           <Show when={props.columnId === "working"}>
@@ -253,6 +288,19 @@ function KanbanCard(props: {
           </Show>
           <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[11px]">{dateLabel()}</span>
         </div>
+        {/* 261116 Red B03：一条行动信息 + 指向入口的箭头；点卡片本身即进入该会话，
+            提问/授权弹层与最新结果都在会话底部，不必再翻旧消息。 */}
+        <Show when={next()}>
+          {(value) => (
+            <div
+              data-component="kanban-card-next"
+              class={`flex min-w-0 w-full items-center gap-1 text-sm [font-weight:440] ${value().tone}`}
+            >
+              <span class="truncate">{value().text}</span>
+              <Icon name="chevron-right" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+            </div>
+          )}
+        </Show>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>

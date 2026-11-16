@@ -4,6 +4,8 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { IconButton } from "@redcode-ai/ui/icon-button"
+import { Button } from "@redcode-ai/ui/button"
+import { showToast } from "@redcode-ai/ui/toast"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
@@ -20,6 +22,8 @@ import { createSizing } from "@/pages/session/helpers"
 import { focusTerminalById } from "@/utils/terminal-focus"
 import { getTerminalHandoff, setTerminalHandoff } from "@/utils/session-handoff"
 import { useSessionLayout } from "@/context/session-layout"
+import { usePrompt } from "@/context/prompt"
+import { appendReference, buildReference } from "@/utils/reference"
 
 export function TerminalPanel() {
   const delays = [120, 240]
@@ -27,6 +31,7 @@ export function TerminalPanel() {
   const terminal = useTerminal()
   const language = useLanguage()
   const command = useCommand()
+  const prompt = usePrompt()
   const { params, view } = useSessionLayout()
 
   const opened = createMemo(() => view().terminal.opened())
@@ -41,7 +46,23 @@ export function TerminalPanel() {
     activeDraggable: undefined as string | undefined,
     recovered: {} as Record<string, boolean>,
     view: typeof window === "undefined" ? 1000 : (window.visualViewport?.height ?? window.innerHeight),
+    selection: "",
   })
+
+  createEffect(on(terminal.active, () => setStore("selection", "")))
+  const quoteSelection = () => {
+    if (!store.selection) return
+    const current = terminal.all().find((item) => item.id === terminal.active())
+    const reference = buildReference({
+      text: store.selection,
+      anchor: { kind: "terminal", terminalID: current?.id, title: current?.title },
+    })
+    const next = appendReference(prompt.current(), reference)
+    prompt.set(next.prompt, next.cursor)
+    window.dispatchEvent(new CustomEvent("redcode:reference-added", { detail: { anchor: reference.anchor } }))
+    setStore("selection", "")
+    showToast({ title: language.t("dialog.background.result.quoted") })
+  }
 
   const max = () => store.view * 0.6
   // 261114 Red UX-12：最大化是临时态——占满父容器工作区高度，不写回 layout.terminal.height，
@@ -69,6 +90,13 @@ export function TerminalPanel() {
     sync()
     makeEventListener(window, "resize", sync)
     if (port) makeEventListener(port, "resize", sync)
+    makeEventListener(window, "redcode:reference-terminal", (event: Event) => {
+      const id = (event as CustomEvent<{ terminalID: string }>).detail.terminalID
+      void terminal.attach(id).then(() => view().terminal.open()).catch(() => showToast({
+        variant: "error",
+        title: language.t("terminal.output.unavailable"),
+      }))
+    })
   })
 
   createEffect(() => {
@@ -77,7 +105,12 @@ export function TerminalPanel() {
       return
     }
 
-    if (!terminal.ready() || terminal.all().length !== 0 || store.autoCreated) return
+    if (!terminal.ready()) return
+    if (terminal.all().length !== 0) {
+      setStore("autoCreated", true)
+      return
+    }
+    if (store.autoCreated) return
     terminal.new()
     setStore("autoCreated", true)
   })
@@ -295,6 +328,11 @@ export function TerminalPanel() {
                     <For each={all()}>{(pty) => <SortableTerminalTab terminal={pty} onClose={close} />}</For>
                   </SortableProvider>
                   <div class="h-full flex items-center justify-center">
+                    <Show when={store.selection}>
+                      <Button variant="ghost" size="small" onClick={quoteSelection}>
+                        {language.t("reference.quoteSelection")}
+                      </Button>
+                    </Show>
                     <TooltipKeybind
                       title={language.t("command.terminal.new")}
                       keybind={command.keybind("terminal.new")}
@@ -327,13 +365,30 @@ export function TerminalPanel() {
                     return (
                       <Show when={all().find((pty) => pty.id === id)}>
                         {(pty) => (
-                          <div id={`terminal-wrapper-${id}`} class="absolute inset-0">
+                          <div id={`terminal-wrapper-${id}`} class="absolute inset-0 flex flex-col">
+                            <Show when={pty().command}>
+                              <div class="shrink-0 border-b border-border-weaker-base px-3 py-1 text-sm text-text-weak select-text">
+                                <div class="truncate" title={`${pty().command} ${pty().args?.join(" ") ?? ""}`}>
+                                  {pty().command} {pty().args?.join(" ")}
+                                </div>
+                                <div class="truncate" title={pty().cwd}>{pty().cwd}</div>
+                                <div>{language.t("terminal.source.unknown")}</div>
+                              </div>
+                            </Show>
                             <Terminal
+                              class="flex-1 min-h-0"
                               pty={pty()}
                               autoFocus={opened()}
                               onConnect={() => markTerminalConnected(terminalRecoveryKey(pty()), id, ops.trim)}
                               onCleanup={ops.update}
-                              onConnectError={() => recoverTerminal(terminalRecoveryKey(pty()), id, ops.clone)}
+                              onSelectionText={(text) => setStore("selection", text)}
+                              onConnectError={() => {
+                                if (!pty().attached) {
+                                  recoverTerminal(terminalRecoveryKey(pty()), id, ops.clone)
+                                  return
+                                }
+                                showToast({ variant: "error", title: language.t("terminal.output.unavailable") })
+                              }}
                             />
                           </div>
                         )}

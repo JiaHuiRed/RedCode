@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createMediaQuery } from "@solid-primitives/media"
 import { MessageNav } from "@redcode-ai/ui/message-nav"
@@ -12,8 +12,13 @@ import type { SessionOutlineResponse, SessionQueryResponses } from "@redcode-ai/
 
 type Entry = SessionOutlineResponse["entries"][number]
 // SDK codegen 把 Schema.Number 展开成 number | "Infinity" | … 联合，这里沿用生成形状。
-type SearchHit = SessionQueryResponses[200]["results"][number]
+export type SessionSearchHit = SessionQueryResponses[200]["results"][number]
 const EMPTY: Entry[] = []
+
+// 261116 Red B05：搜索状态按会话留在模块级缓存里——跳到命中消息、切标签或收/开面板后
+// 回来仍能看到同一份关键词、分页游标与结果滚动位置，不必重新扫一遍历史。
+type SearchCacheEntry = { input: string; state: SearchState | undefined; scrollTop: number }
+const searchCache = new Map<string, SearchCacheEntry>()
 
 /**
  * 取数容器。**只在「轮次」标签真的被激活时才挂载** —— side panel 的
@@ -26,6 +31,8 @@ export function SessionTurnOutline(props: {
   activeMessageID?: string
   busy: boolean
   onJump: (messageID: string) => void
+  /** 261116 Red B05：搜索命中要落到真实消息/片段，不能只按 messageID 当轮次跳。 */
+  onSearchHit?: (hit: SessionSearchHit, query: string) => void
 }) {
   const options = useQueryOptions()
   const query = useQuery(() => ({
@@ -45,30 +52,47 @@ export function SessionTurnOutline(props: {
       loading={query.isLoading}
       busy={props.busy}
       onJump={props.onJump}
-      toolbar={<SessionSearchPanel sessionID={props.sessionID} busy={props.busy} onJump={props.onJump} />}
+      toolbar={
+        <SessionSearchPanel
+          sessionID={props.sessionID}
+          busy={props.busy}
+          onHit={props.onSearchHit ?? ((hit) => props.onJump(hit.messageID))}
+        />
+      }
     />
   )
 }
 
 // 261115 Red UX-15 查找本会话：只记得一个报错、路径或承诺时按字面找回原文。
 // 服务端 GET /session/:id/query 是有界字面子串扫描（复用 session_query 的预算判据）；
-// 这里 Enter 触发（不逐键扫描），命中显示片段 + 角色 + 时间，点击走 onJump 跳到
-// 对应消息（loadThrough 负责把窗口外旧消息翻进来）；有 nextCursor 时「继续搜索」
-// 续传——空一页不等于全部没有，扫描预算未覆盖的部分要用户显式追。
+// 这里 Enter 触发（不逐键扫描），命中显示片段 + 角色 + 时间，点击交给 onHit 精确落到
+// 命中消息/片段；有 nextCursor 时「继续搜索」续传——空一页不等于全部没有，扫描预算
+// 未覆盖的部分要用户显式追。
 type SearchState = {
   q: string
-  hits: SearchHit[]
+  hits: SessionSearchHit[]
   scannedParts: number
   nextCursor?: string
   error?: string
 }
 
-function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (messageID: string) => void }) {
+function SessionSearchPanel(props: {
+  sessionID: string
+  busy: boolean
+  onHit: (hit: SessionSearchHit, query: string) => void
+}) {
   const sdk = useSDK()
   const language = useLanguage()
-  const [input, setInput] = createSignal("")
-  const [state, setState] = createSignal<SearchState | undefined>()
+  const cached = searchCache.get(props.sessionID)
+  const [input, setInput] = createSignal(cached?.input ?? "")
+  const [state, setState] = createSignal<SearchState | undefined>(cached?.state)
   const [running, setRunning] = createSignal(false)
+  let resultScrollTop = cached?.scrollTop ?? 0
+  let resultsEl: HTMLDivElement | undefined
+
+  createEffect(() => {
+    searchCache.set(props.sessionID, { input: input(), state: state(), scrollTop: resultScrollTop })
+  })
 
   // 261115 Red UX-15 复审：分页锚定已执行查询的关键词——用户在结果页改了输入框再点
   // 「继续搜索」，仍按首次查询的 q + 旧游标续传，不把新词混进旧结果；新搜索（无游标）
@@ -77,6 +101,11 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
   const runSearch = async (cursor?: string) => {
     const q = cursor ? (state()?.q ?? "") : input().trim()
     if (!q || running()) return
+    // 新搜索从结果列表顶部开始；续页保持当前位置。
+    if (!cursor) {
+      resultScrollTop = 0
+      if (resultsEl) resultsEl.scrollTop = 0
+    }
     setRunning(true)
     try {
       const response = await sdk.client.session.query({ sessionID: props.sessionID, q, cursor }, { throwOnError: true })
@@ -109,7 +138,7 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
   }
 
   // 命中片段按同一字面语义在客户端切三段高亮（服务端是大小写敏感子串）。
-  const snippet = (hit: SearchHit) => {
+  const snippet = (hit: SessionSearchHit) => {
     const text = hit.text.replace(/\s+/g, " ").trim()
     const index = text.indexOf(state()?.q ?? "")
     if (index === -1) return { before: text, match: undefined, after: undefined }
@@ -155,6 +184,8 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
                 onClick={() => {
                   setInput("")
                   setState(undefined)
+                  resultScrollTop = 0
+                  searchCache.delete(props.sessionID)
                 }}
               >
                 ← {language.t("session.search.backToOutline")}
@@ -165,7 +196,18 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
                 {data().error}
               </div>
             </Show>
-            <div class="max-h-[320px] overflow-y-auto">
+            <div
+              class="max-h-[320px] overflow-y-auto"
+              ref={(el) => {
+                resultsEl = el
+                el.scrollTop = resultScrollTop
+              }}
+              onScroll={(event) => {
+                resultScrollTop = event.currentTarget.scrollTop
+                const current = state()
+                if (current) searchCache.set(props.sessionID, { input: input(), state: current, scrollTop: resultScrollTop })
+              }}
+            >
               <Show
                 when={data().hits.length > 0}
                 fallback={
@@ -181,7 +223,7 @@ function SessionSearchPanel(props: { sessionID: string; busy: boolean; onJump: (
                       <button
                         type="button"
                         disabled={props.busy}
-                        onClick={() => props.onJump(hit.messageID)}
+                        onClick={() => props.onHit(hit, data().q)}
                         class="group w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-raised-base disabled:opacity-60"
                       >
                         <div class="flex items-center gap-2 text-11-regular text-text-weaker">

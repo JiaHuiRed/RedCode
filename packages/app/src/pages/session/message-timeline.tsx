@@ -72,6 +72,15 @@ import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { messageAgentColor } from "@/utils/agent"
+import { buildReference, appendReference, referenceLabel, referenceTime, type ReferenceAnchor } from "@/utils/reference"
+import { usePrompt } from "@/context/prompt"
+import {
+  pushRecentReference,
+  recentReferences,
+  referenceLocatable,
+  type RecentReference,
+} from "./reference-links"
+import { findGroupHost, findPartHost, nextFrame, openGroupTrigger, revealWithinHost } from "./timeline-locate"
 import { sessionTitle } from "@/utils/session-title"
 import { guiDiagnostics } from "@/context/gui-diagnostics"
 import { makeTimer } from "@solid-primitives/timer"
@@ -91,6 +100,28 @@ const emptyTools: ToolPart[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 const CODING_TOOLS = new Set(["edit", "write", "apply_patch"])
+
+/** 261116 Red B05/B06：搜索命中与文件来源的精确片段定位目标。 */
+export type RevealTarget = {
+  messageID: string
+  partID?: string
+  userMessageID?: string
+  /** 命中消息/cited 消息的 time.created；窗口外定位用它选翻页方向。 */
+  createdAt?: number
+  /** 命中词（后端语义：字面、大小写敏感），用于在正文/工具内容上高亮。 */
+  query?: string
+  /** 片段找不到时恢复的阅读位置（B06 返回工具）。 */
+  scrollTop?: number
+}
+
+/** 261116 Red B06：从工具内容打开文件时记录来源。 */
+export type FileOpenSource = {
+  sessionID: string
+  messageID: string
+  partID: string
+  userMessageID?: string
+  scrollTop?: number
+}
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "BottomSpacer" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
@@ -338,6 +369,10 @@ export function MessageTimeline(props: {
   userMessages: UserMessage[]
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
+  setRevealPart?: (fn: (target: RevealTarget) => Promise<boolean>) => void
+  setFileOpenSource?: (fn: () => FileOpenSource | undefined) => void
+  /** 261116 Red A04：最近引用 chip 的跳转入口（由 session 的 jumpToTarget 承接）。 */
+  onJumpTarget?: (target: RevealTarget) => void
   setRetainViewport?: (fn: () => () => void) => void
 }) {
   let touchGesture: number | undefined
@@ -640,6 +675,19 @@ export function MessageTimeline(props: {
       if (!("userMessageID" in row)) return
       if (result.has(row.userMessageID)) return
       result.set(row.userMessageID, index)
+    })
+    return result
+  })
+  // 261116 Red B05：片段 → 行号。工具组行按组内 refs 逐个登记，命中落在折叠组里也能先滚到组。
+  const partRowIndex = createMemo(() => {
+    const result = new Map<string, number>()
+    timelineRows().forEach((row, index) => {
+      if (row._tag !== "AssistantPart") return
+      if (row.group.type === "part") {
+        result.set(row.group.ref.partID, index)
+        return
+      }
+      for (const ref of row.group.refs) if (!result.has(ref.partID)) result.set(ref.partID, index)
     })
     return result
   })
@@ -962,6 +1010,319 @@ export function MessageTimeline(props: {
   createEffect(() => {
     props.setRevealMessage?.(revealMessage)
   })
+
+  // 261116 Red B05/B06：精确到片段的定位。与 revealMessage 共用同一套 renderer 判断：
+  //   先按行号让 virtua 把目标行挂上，再展开折叠的工具组与组内目标工具自己的正文折叠
+  //   （见 timeline-locate.ts，按已挂载 DOM 观测、有界重试），最后按 data-timeline-part-id
+  //   找真实 DOM；命中词用 CSS Custom Highlight 画在正文上，不改写 Solid 管理的 DOM。
+  const scrollHostIntoView = (host: HTMLElement) => {
+    const root = listRoot
+    if (!root) return
+    const box = root.getBoundingClientRect()
+    const target = host.getBoundingClientRect()
+    const sticky = root.querySelector("[data-session-title]")
+    const inset = sticky instanceof HTMLElement ? sticky.offsetHeight : 0
+    root.scrollTo({ top: Math.max(0, target.top - box.top + root.scrollTop - inset - 12), behavior: "auto" })
+  }
+
+  const LOCATE_HIGHLIGHT = "redcode-locate"
+  let highlightStyle: HTMLStyleElement | undefined
+  type HighlightRegistry = { set(name: string, value: unknown): void; delete(name: string): void }
+  const highlightRegistry = () => (globalThis as { CSS?: { highlights?: HighlightRegistry } }).CSS?.highlights
+  const HighlightCtor = () => (globalThis as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight
+  const ensureHighlightStyle = () => {
+    if (typeof document === "undefined" || highlightStyle?.isConnected) return
+    highlightStyle = document.createElement("style")
+    highlightStyle.textContent = `::highlight(${LOCATE_HIGHLIGHT}){background-color:rgba(235,175,45,0.45);color:inherit}`
+    document.head.append(highlightStyle)
+  }
+  // 后端搜索是字面大小写敏感子串；这里同语义 indexOf（不构造正则，特殊字符不会被解释）。
+  const applyLocateHighlight = (host: HTMLElement | undefined, query: string | undefined) => {
+    const registry = highlightRegistry()
+    if (!registry) return
+    registry.delete(LOCATE_HIGHLIGHT)
+    const Highlight = HighlightCtor()
+    if (!host || !query || !Highlight) return
+    const ranges: Range[] = []
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node && ranges.length < 200; node = walker.nextNode()) {
+      const value = node.nodeValue ?? ""
+      for (let from = 0; ; ) {
+        const index = value.indexOf(query, from)
+        if (index === -1) break
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + query.length)
+        ranges.push(range)
+        from = index + query.length
+      }
+    }
+    if (!ranges.length) return
+    ensureHighlightStyle()
+    registry.set(LOCATE_HIGHLIGHT, new Highlight(...ranges))
+  }
+
+  const revealPart = async (target: RevealTarget) => {
+    const partID = target.partID
+    if (!partID) return false
+    const root = listRoot
+    if (!root) return false
+
+    const index = partRowIndex().get(partID)
+    if (!usingNative() && index !== undefined && mounted) mounted.handle.scrollToIndex(index, { align: "center" })
+
+    let groupToggled = false
+    let host: HTMLElement | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      host = findPartHost(root, partID)
+      if (host) break
+      // 组渲染出来才点一次；逐帧重复点会把刚展开的组又关回去。
+      if (!groupToggled) {
+        const group = findGroupHost(root, partID)
+        if (group) {
+          groupToggled = true
+          openGroupTrigger(group)
+        }
+      }
+      await nextFrame()
+      if (!usingNative() && index !== undefined && mounted && attempt === 12) {
+        mounted.handle.scrollToIndex(index, { align: "center" })
+      }
+    }
+
+    if (!host) {
+      applyLocateHighlight(undefined, undefined)
+      if (target.scrollTop === undefined) return false
+      root.scrollTop = target.scrollTop
+      return true
+    }
+
+    // 组已展开不等于命中可见：组内目标工具自己的折叠未开时正文还没挂载，交给 DOM 观察层
+    // 逐层展开（命中词出现即停；返回工具时只展开该工具自身的正文）。
+    let live: HTMLElement | undefined = host
+    const located = await revealWithinHost({
+      host: () => {
+        if (live?.isConnected) return live
+        live = findPartHost(root, partID)
+        return live
+      },
+      query: target.query,
+      frame: nextFrame,
+      onFound: (found) => {
+        scrollHostIntoView(found)
+        applyLocateHighlight(found, target.query)
+      },
+    })
+    if (located) return true
+
+    applyLocateHighlight(undefined, undefined)
+    if (target.scrollTop === undefined) return false
+    root.scrollTop = target.scrollTop
+    return true
+  }
+
+  createEffect(() => props.setRevealPart?.(revealPart))
+  onCleanup(() => {
+    props.setRevealPart?.(async () => false)
+    applyLocateHighlight(undefined, undefined)
+  })
+
+  // 261116 Red A04：消息/工具选区 → 带来源引用追加到当前草稿；不发送、不动已有附件。
+  const prompt = usePrompt()
+  const [selectionChip, setSelectionChip] = createSignal<
+    { anchor: ReferenceAnchor; text: string; x: number; y: number } | undefined
+  >()
+
+  const partOwner = (partID: string) => {
+    for (const message of sessionMessages()) {
+      for (const part of getMsgParts(message.id)) if (part.id === partID) return { message, part }
+    }
+  }
+
+  const anchorFor = (part: PartType, messageID: string, userMessageID: string | undefined): ReferenceAnchor => {
+    const role = messageByID().get(messageID)?.role
+    if (part.type === "tool")
+      return { kind: "tool", sessionID: sessionID(), messageID, partID: part.id, userMessageID, tool: part.tool }
+    return {
+      kind: "message",
+      sessionID: sessionID(),
+      messageID,
+      partID: part.id,
+      userMessageID,
+      role: role === "user" ? "user" : "assistant",
+    }
+  }
+
+  const partText = (part: PartType) => {
+    if (part.type === "text" || part.type === "reasoning") return part.text
+    if (part.type !== "tool") return ""
+    const state = part.state
+    const input = state.input === undefined ? "" : JSON.stringify(state.input)
+    const output = "output" in state && typeof state.output === "string" ? state.output : ""
+    const error = state.status === "error" ? state.error : ""
+    return [input, output, error].filter((item) => !!item).join("\n")
+  }
+
+  const appendQuote = (anchor: ReferenceAnchor, text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const next = appendReference(prompt.current(), buildReference({ anchor, text: trimmed }))
+    prompt.set(next.prompt, next.cursor)
+    const createdAt =
+      (anchor.kind === "message" || anchor.kind === "tool") && anchor.messageID
+        ? messageByID().get(anchor.messageID)?.time?.created
+        : undefined
+    pushRecentReference({ sessionID: sessionID() ?? "", anchor, preview: trimmed, createdAt })
+    showToast({ title: language.t("dialog.background.result.quoted") })
+    setSelectionChip(undefined)
+    window.getSelection()?.removeAllRanges()
+  }
+
+  // 261116 Red A04：草稿旁的「引用来源」轻列表（每会话 8 条、最多 4 个会话）。
+  // 终端来源由 TerminalPanel 通过 CustomEvent 接入（terminal → redcode:reference-added；
+  // 点击 → redcode:reference-terminal），不扩 prompt 类型；跳转复用 jumpToTarget，不另造
+  // 历史加载器。导航只移动阅读位置，不改 draft。
+  const recentList = createMemo(() => recentReferences(sessionID() ?? ""))
+  const [recentOpen, setRecentOpen] = createSignal(false)
+  const canOpenReference = (anchor: ReferenceAnchor) =>
+    anchor.kind === "terminal" ? !!anchor.terminalID : referenceLocatable(anchor)
+  const openReference = (item: RecentReference) => {
+    const anchor = item.anchor
+    if (anchor.kind === "terminal") {
+      if (!anchor.terminalID) return
+      window.dispatchEvent(new CustomEvent("redcode:reference-terminal", { detail: { terminalID: anchor.terminalID } }))
+      return
+    }
+    if (anchor.kind !== "message" && anchor.kind !== "tool") return
+    if (!anchor.messageID) return
+    props.onJumpTarget?.({
+      messageID: anchor.messageID,
+      partID: anchor.partID,
+      userMessageID: anchor.userMessageID,
+      createdAt: item.createdAt,
+    })
+  }
+
+  onMount(() => {
+    const onReferenceAdded = (event: Event) => {
+      const anchor = (event as CustomEvent<{ anchor?: ReferenceAnchor }>).detail?.anchor
+      if (!anchor) return
+      // file/unknown 分支没有 sessionID 字段，按 kind 缩窄后再取。
+      const owner =
+        anchor.kind === "message" || anchor.kind === "tool" || anchor.kind === "terminal"
+          ? (anchor.sessionID ?? sessionID() ?? "")
+          : (sessionID() ?? "")
+      pushRecentReference({ sessionID: owner, anchor, preview: referenceLabel(anchor) })
+    }
+    window.addEventListener("redcode:reference-added", onReferenceAdded)
+    onCleanup(() => window.removeEventListener("redcode:reference-added", onReferenceAdded))
+  })
+
+  // 无选区时的整条引用：范围由被点的那一行决定（用户消息 / 助手片段 / 工具组），
+  // 来源头部同样写明消息与片段 id。
+  const quoteRow = (row: TimelineRow.TimelineRow) => {
+    if (row._tag === "UserMessage") {
+      const text = getMsgParts(row.userMessageID)
+        .filter((part) => part.type === "text")
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n")
+      appendQuote(
+        {
+          kind: "message",
+          sessionID: sessionID(),
+          messageID: row.userMessageID,
+          userMessageID: row.userMessageID,
+          role: "user",
+        },
+        text,
+      )
+      return
+    }
+    if (row._tag !== "AssistantPart") return
+    if (row.group.type === "part") {
+      const part = getMsgPart(row.group.ref.messageID, row.group.ref.partID)
+      if (part) appendQuote(anchorFor(part, row.group.ref.messageID, row.userMessageID), partText(part))
+      return
+    }
+    const text = row.group.refs
+      .map((ref) => {
+        const part = getMsgPart(ref.messageID, ref.partID)
+        return part ? partText(part) : ""
+      })
+      .filter((item) => !!item)
+      .join("\n")
+    appendQuote(
+      {
+        kind: "message",
+        sessionID: sessionID(),
+        messageID: row.group.refs[0]?.messageID,
+        userMessageID: row.userMessageID,
+        role: "assistant",
+      },
+      text,
+    )
+  }
+
+  const readSelection = () => {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return
+    const range = selection.getRangeAt(0)
+    const text = range.toString()
+    if (!text.trim()) return
+    const root = listRoot
+    const node = range.commonAncestorContainer
+    const element = node instanceof Element ? node : node.parentElement
+    if (!root || !element || !root.contains(element)) return
+    if (element.closest("input, textarea, [contenteditable='true']")) return
+
+    const partEl = element.closest("[data-timeline-part-id]")
+    const partID = partEl instanceof HTMLElement ? partEl.dataset.timelinePartId : undefined
+    const rowEl = element.closest("[data-message-id]")
+    const userMessageID = rowEl instanceof HTMLElement ? rowEl.dataset.messageId : undefined
+    const owner = partID ? partOwner(partID) : undefined
+    const anchor: ReferenceAnchor = owner
+      ? anchorFor(owner.part, owner.message.id, userMessageID)
+      : { kind: "message", sessionID: sessionID(), userMessageID }
+
+    const rect = range.getBoundingClientRect()
+    setSelectionChip({
+      anchor,
+      text,
+      x: Math.max(8, Math.min(rect.left + rect.width / 2 - 60, window.innerWidth - 136)),
+      y: Math.min(rect.bottom + 8, window.innerHeight - 44),
+    })
+  }
+
+  // 261116 Red B06：工具内容里点文件名时，先由 pointerdown 记录「这个片段是工具」，再让
+  //   FileOpenProvider 的回调取走——ui/message-part 只传 path，来源只能在时间线这层补。
+  let fileOpenSource: FileOpenSource | undefined
+  const captureFileOpenSource = (event: PointerEvent) => {
+    fileOpenSource = undefined
+    const target = event.target instanceof Element ? event.target : undefined
+    const partEl = target?.closest("[data-timeline-part-id]")
+    if (!(partEl instanceof HTMLElement)) return
+    const partID = partEl.dataset.timelinePartId
+    const id = sessionID()
+    if (!partID || !id) return
+    const owner = partOwner(partID)
+    if (!owner || owner.part.type !== "tool") return
+    const rowEl = partEl.closest("[data-message-id]")
+    fileOpenSource = {
+      sessionID: id,
+      messageID: owner.message.id,
+      partID,
+      userMessageID: rowEl instanceof HTMLElement ? rowEl.dataset.messageId : undefined,
+      scrollTop: listRoot?.scrollTop,
+    }
+  }
+  createEffect(() =>
+    props.setFileOpenSource?.(() => {
+      const source = fileOpenSource
+      fileOpenSource = undefined
+      return source
+    }),
+  )
+  onCleanup(() => props.setFileOpenSource?.(() => undefined))
 
   // 261009 Red 双侧裁边同时增删且总行数不变，virtua 的 shift 不够；按实际可见行恢复相对位置。
   const retainViewport = () => {
@@ -1774,6 +2135,8 @@ export function MessageTimeline(props: {
               busy={
                 workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
               }
+              // 261116 Red B04：组内单项复用真实工具详情（ui/message-part 的 Part），消息身份由本层解析。
+              getMessage={(part) => messageByID().get(part.messageID)}
             />
           )}
         </Show>
@@ -1816,6 +2179,10 @@ export function MessageTimeline(props: {
     )
   }
 
+  // 261116 Red A04：没有选区时也能明确范围——按行引用整条消息/片段。用行级 hover 状态
+  //   代替祖先 group（不改变既有组件最近的 group 语义）。
+  const [hoverRowKey, setHoverRowKey] = createSignal<string>()
+
   function TimelineRowFrame(input: { row: Accessor<FramedTimelineRow>; children: JSX.Element }) {
     const anchor = () => {
       const row = input.row()
@@ -1836,7 +2203,12 @@ export function MessageTimeline(props: {
         data-message-id={input.row().userMessageID}
         data-timeline-row={input.row()._tag}
         data-timeline-key={TimelineRow.key(input.row())}
+        onPointerEnter={() => setHoverRowKey(TimelineRow.key(input.row()))}
+        onPointerLeave={() =>
+          setHoverRowKey((current) => (current === TimelineRow.key(input.row()) ? undefined : current))
+        }
         classList={{
+          relative: true,
           "min-w-0 w-full max-w-full": true,
           "md:max-w-200 2xl:max-w-[1400px]": props.centered,
           "md:mx-auto": props.centered,
@@ -1844,6 +2216,27 @@ export function MessageTimeline(props: {
           "pt-3": previousAssistantPart(),
         }}
       >
+        {/* 261116 Red A04：没有选区时也能明确范围——按行引用整条消息/片段。 */}
+        <Show
+          when={
+            hoverRowKey() === TimelineRow.key(input.row()) &&
+            (input.row()._tag === "UserMessage" || input.row()._tag === "AssistantPart")
+          }
+        >
+          <button
+            type="button"
+            data-action="quote-row"
+            aria-label={language.t("dialog.background.result.quote")}
+            title={language.t("dialog.background.result.quote")}
+            class="absolute right-2 top-1 z-10 rounded px-1.5 py-0.5 text-sm text-text-weak hover:bg-surface-raised hover:text-text-strong"
+            onClick={(event) => {
+              event.stopPropagation()
+              quoteRow(input.row())
+            }}
+          >
+            {language.t("dialog.background.result.quote")}
+          </button>
+        </Show>
         <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
           {input.children}
         </div>
@@ -2173,7 +2566,12 @@ export function MessageTimeline(props: {
   }
 
   return (
-    <div class="relative w-full h-full min-w-0">
+    <div
+      class="relative w-full h-full min-w-0"
+      onPointerDown={captureFileOpenSource}
+      onMouseDown={() => setSelectionChip(undefined)}
+      onMouseUp={readSelection}
+    >
       <div
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
         classList={{
@@ -2218,7 +2616,10 @@ export function MessageTimeline(props: {
         onTouchEnd={handleListTouchEnd}
         onTouchCancel={handleListTouchEnd}
         onPointerDown={handleListPointerDown}
-        onScroll={handleListScroll}
+        onScroll={(event) => {
+          handleListScroll(event)
+          setSelectionChip(undefined)
+        }}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
         style={{
@@ -2593,6 +2994,61 @@ export function MessageTimeline(props: {
           </Show>
         </Show>
       </ScrollView>
+      {/* 261116 Red A04：草稿旁的引用来源 chip + 有界最近列表（点击回到来源片段）。 */}
+      <Show when={recentList().length > 0}>
+        <div class="absolute bottom-2 right-3 z-40 flex flex-col items-end gap-1">
+          <Show when={recentOpen()}>
+            <div class="w-64 rounded-md border border-border-weak-base bg-surface-raised-stronger p-1 shadow-md">
+              <For each={recentList()}>
+                {(item) => (
+                  <button
+                    type="button"
+                    data-action="reference-open"
+                    disabled={!canOpenReference(item.anchor)}
+                    title={canOpenReference(item.anchor) ? item.preview : language.t("session.outline.unreachable")}
+                    class="flex w-full flex-col gap-0.5 rounded px-1.5 py-1 text-left text-sm hover:bg-surface-raised disabled:opacity-50"
+                    onClick={() => openReference(item)}
+                  >
+                    <span class="flex w-full items-center justify-between gap-2">
+                      <span class="truncate text-text-strong">{item.label}</span>
+                      <span class="shrink-0 tabular-nums text-text-weak">{referenceTime(item.at)}</span>
+                    </span>
+                    <span class="truncate text-text-weak">
+                      {canOpenReference(item.anchor) ? item.preview : language.t("session.outline.unreachable")}
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <button
+            type="button"
+            data-action="reference-links"
+            aria-expanded={recentOpen()}
+            class="rounded-full border border-border-weak-base bg-surface-raised-stronger px-2 py-0.5 text-sm text-text-strong shadow-md hover:bg-surface-raised"
+            onClick={() => setRecentOpen((open) => !open)}
+          >
+            {language.t("dialog.background.result.quote")} · {recentList().length}
+          </button>
+        </div>
+      </Show>
+      {/* 261116 Red A04：时间线选区 → 「引用这段」浮层；只追加草稿，不发送。 */}
+      <Show when={selectionChip()}>
+        {(chip) => (
+          <Portal>
+            <button
+              type="button"
+              data-action="quote-selection"
+              class="fixed z-[80] rounded-md border border-border-weak-base bg-surface-raised-stronger px-2 py-1 text-sm text-text-strong shadow-md"
+              style={{ left: `${chip().x}px`, top: `${chip().y}px` }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => appendQuote(chip().anchor, chip().text)}
+            >
+              {language.t("dialog.background.result.quote")}
+            </button>
+          </Portal>
+        )}
+      </Show>
     </div>
   )
 }

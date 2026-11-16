@@ -215,11 +215,11 @@ function HomeDesign() {
     navigate(`/${base64Encode(project.worktree)}/session`)
   }
 
-  function openSession(session: Session) {
+  function openSession(session: Session, focus?: "prompt") {
     const project = projectForSession(session, projects(), projectByID())
     layout.projects.open(project?.worktree ?? session.directory)
     server.projects.touch(project?.worktree ?? session.directory)
-    navigate(`/${base64Encode(session.directory)}/session/${session.id}`)
+    navigate(`/${base64Encode(session.directory)}/session/${session.id}${focus ? "?focus=prompt" : ""}`)
   }
 
   async function chooseProject() {

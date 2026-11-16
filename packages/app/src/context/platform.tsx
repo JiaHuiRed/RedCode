@@ -8,7 +8,13 @@ type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
 type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: string[]; extensions?: string[] }
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
-type UpdateInfo = { updateAvailable: boolean; version?: string }
+export type UpdateCheckStatus = "disabled" | "available" | "up-to-date" | "failed"
+// status 缺失只可能是旧的渲染层桥（例如布局兜底对象）：调用方按「失败」处理，不降级成「已是最新版」。
+export type UpdateInfo = { updateAvailable: boolean; status?: UpdateCheckStatus; version?: string; error?: string }
+export type UpdateInstallResult =
+  | { status: "downloaded"; version?: string }
+  | { status: "skipped"; reason: "disabled" | "no-update" }
+  | { status: "failed"; reason: "check" | "download" | "install"; error: string; version?: string }
 type PlatformName = "web" | "desktop"
 type DesktopOS = "macos" | "windows" | "linux"
 
@@ -52,6 +58,9 @@ export type Platform = {
   /** Open a URL in the default browser */
   openLink(url: string): void
 
+  /** Open a self-contained HTML document preview in the default browser (desktop only) */
+  openHtmlPreview?(document: string): Promise<void>
+
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>
 
@@ -82,8 +91,8 @@ export type Platform = {
   /** Check for a downloadable desktop update */
   checkUpdate?(): Promise<UpdateInfo>
 
-  /** Install the downloaded update using the platform restart flow */
-  updateAndRestart?(): Promise<void>
+  /** Download and install the available update, reporting where it stopped */
+  updateAndRestart?(): Promise<UpdateInstallResult>
 
   /** Fetch override */
   fetch?: typeof fetch

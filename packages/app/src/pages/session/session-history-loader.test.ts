@@ -4,8 +4,15 @@ import { createStore } from "solid-js/store"
 import type { UserMessage } from "@redcode-ai/sdk/v2"
 import { createSessionHistoryLoader } from "./session-history-loader"
 
-const message = (id: string) => ({ id }) as UserMessage
+const message = (id: string, created?: number) =>
+  ({ id, time: created === undefined ? undefined : { created } }) as UserMessage
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
+const node = (id: string, role: "user" | "assistant", created: number, parentID?: string) => ({
+  id,
+  role,
+  parentID,
+  time: { created },
+})
 
 // 260918 Red 回归锁：拉历史失败后必须停手。500 的失败不只在 UI 转圈——session.tsx 的 fill()
 // effect 依赖 historyLoading()，失败让 loading 从 true 翻回 false，effect 重跑，而
@@ -15,6 +22,7 @@ type SetupOptions = {
   historyMore?: () => boolean
   historyNewer?: () => boolean
   targetOrder?: () => string[] | undefined
+  loadedMessages?: () => { id: string; role: string; parentID?: string; time?: { created?: number } }[]
 }
 
 function setup(loadMore: (id: string) => Promise<void>, loadNewer = loadMore, options: SetupOptions = {}) {
@@ -43,6 +51,7 @@ function setup(loadMore: (id: string) => Promise<void>, loadNewer = loadMore, op
         await loadNewer(id)
       },
       targetOrder: options.targetOrder,
+      loadedMessages: options.loadedMessages,
       retainViewport: () => () => restores++,
       onLoadError: () => errors++,
       userScrolled: () => true,
@@ -335,6 +344,57 @@ describe("createSessionHistoryLoader", () => {
 
     await ctx.loader.loadAndReveal()
     expect(ctx.count()).toBe(2)
+    ctx.dispose()
+  })
+
+  // 261116 Red B05 回归锁：命中归属先看 parentID。并发 steer 会让用户消息插在同一毫秒，
+  //   按「不晚于它的最后一条用户消息」会把命中归到插话那轮；父关系才是真实归属。
+  test("locates an assistant hit by parentID when a steer message shares its millisecond", async () => {
+    const u1 = node("u1", "user", 100)
+    const u2 = node("u2", "user", 100)
+    const a1 = node("a1", "assistant", 100, "u1")
+    const ctx = setup(async () => {}, undefined, { loadedMessages: () => [u1, u2, a1] })
+    ctx.setMessages([message("u1", 100), message("u2", 100)])
+
+    expect(await ctx.loader.locateTarget({ messageID: "a1", createdAt: 100 })).toBe("u1")
+    ctx.dispose()
+  })
+
+  test("falls back to time only when the parent relation is unavailable", async () => {
+    const u1 = node("u1", "user", 100)
+    const u2 = node("u2", "user", 140)
+    const a1 = node("a1", "assistant", 150)
+    const ctx = setup(async () => {}, undefined, { loadedMessages: () => [u1, u2, a1] })
+    ctx.setMessages([message("u1", 100), message("u2", 140)])
+
+    expect(await ctx.loader.locateTarget({ messageID: "a1", createdAt: 150 })).toBe("u2")
+    ctx.dispose()
+  })
+
+  test("pages to an out-of-window hit and still resolves its owning turn by parentID", async () => {
+    const all = [
+      node("u1", "user", 10),
+      node("a1", "assistant", 11, "u1"),
+      node("u2", "user", 20),
+      node("a2", "assistant", 21, "u2"),
+      node("u3", "user", 30),
+      node("a3", "assistant", 31, "u3"),
+    ]
+    let start = 4
+    let ctx!: ReturnType<typeof setup>
+    const publish = () =>
+      ctx.setMessages(all.slice(start).filter((item) => item.role === "user") as unknown as UserMessage[])
+    ctx = setup(
+      async () => {
+        start = Math.max(0, start - 2)
+        publish()
+      },
+      async () => {},
+      { loadedMessages: () => all.slice(start) },
+    )
+    publish()
+
+    expect(await ctx.loader.locateTarget({ messageID: "a1", createdAt: 11 })).toBe("u1")
     ctx.dispose()
   })
 })

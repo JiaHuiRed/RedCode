@@ -17,6 +17,10 @@ export type LocalPTY = {
   buffer?: string
   scrollY?: number
   cursor?: number
+  attached?: boolean
+  command?: string
+  args?: string[]
+  cwd?: string
 }
 
 const WORKSPACE_KEY = "__workspace__"
@@ -61,6 +65,10 @@ function pty(value: unknown): LocalPTY | undefined {
     ...(buffer !== undefined ? { buffer } : {}),
     ...(scrollY !== undefined ? { scrollY } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(value.attached === true ? { attached: true } : {}),
+    ...(typeof value.command === "string" ? { command: value.command } : {}),
+    ...(Array.isArray(value.args) && value.args.every((item) => typeof item === "string") ? { args: value.args } : {}),
+    ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
   }
 }
 
@@ -334,6 +342,27 @@ function createWorkspaceTerminalSession(
     open(id: string) {
       setStore("active", id)
     },
+    async attach(id: string) {
+      const response = await sdk.client.pty.get({ ptyID: id })
+      if (response.error) throw response.error
+      const info = response.data
+      if (!info || info.status !== "running") throw new Error("Terminal is no longer running")
+      batch(() => {
+        const index = store.all.findIndex((item) => item.id === id)
+        const next = {
+          id,
+          title: info.title,
+          titleNumber: numberFromTitle(info.title) ?? 0,
+          attached: true,
+          command: info.command,
+          args: info.args,
+          cwd: info.cwd,
+        }
+        if (index === -1) setStore("all", store.all.length, next)
+        if (index !== -1) setStore("all", index, (item) => ({ ...item, ...next }))
+        setStore("active", id)
+      })
+    },
     next() {
       const index = store.all.findIndex((x) => x.id === store.active)
       if (index === -1) return
@@ -460,6 +489,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       clone: (id: string) => workspace().clone(id),
       bind: () => workspace(),
       open: (id: string) => workspace().open(id),
+      attach: (id: string) => workspace().attach(id),
       close: (id: string) => workspace().close(id),
       move: (id: string, to: number) => workspace().move(id, to),
       next: () => workspace().next(),

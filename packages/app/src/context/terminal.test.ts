@@ -126,4 +126,24 @@ describe("migrateTerminalState", () => {
       ],
     })
   })
+
+  test("preserves attached terminal identity and launch details without enabling recovery", () => {
+    const terminal = {
+      id: "existing",
+      title: "service",
+      titleNumber: 0,
+      attached: true,
+      command: "bun",
+      args: ["run", "dev"],
+      cwd: "E:/project",
+    }
+    expect(migrateTerminalState({ active: terminal.id, all: [terminal] })).toEqual({
+      active: terminal.id,
+      all: [terminal],
+    })
+    expect(migrateTerminalState({ all: [{ ...terminal, args: [1], attached: "true" }] })).toEqual({
+      active: terminal.id,
+      all: [{ id: terminal.id, title: terminal.title, titleNumber: 0, command: terminal.command, cwd: terminal.cwd }],
+    })
+  })
 })

@@ -398,9 +398,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const toggleBusyEnter = () => {
     const current = sync.data.config.busy_enter ?? "steer"
     const next = current === "steer" ? ("queue" as const) : ("steer" as const)
+    // 261116 Red C01：先写，再读回实际生效的配置。只有读回值与目标一致才提示成功——
+    // 配置被更高优先层遮蔽或写入失败时，不能报「已切换」。读回值同时写进本目录 store，
+    // 输入框的投递芯片读的就是 sync.data.config.busy_enter，不写回会一直显示旧默认。
     void sdk.client.config
-      .update({ config: { busy_enter: next } })
-      .then(() => {
+      .update({ config: { busy_enter: next } }, { throwOnError: true })
+      .then(() => sdk.client.config.get(undefined, { throwOnError: true }))
+      .then((result) => {
+        const actual = result.data?.busy_enter ?? "steer"
+        sync.set("config", "busy_enter", actual)
+        if (actual !== next) {
+          showToast({ title: language.t("toast.busyEnter.failed"), variant: "error" })
+          return
+        }
         showToast({
           title: language.t(next === "queue" ? "toast.busyEnter.queue.title" : "toast.busyEnter.steer.title"),
           description: language.t(

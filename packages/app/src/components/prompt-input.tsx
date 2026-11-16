@@ -289,7 +289,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     placeholder: number
     draggingType: "image" | "@mention" | null
     mode: "normal" | "shell"
-    delivery: "queue" | "steer"
+    // 261116 Red C01：这里只存「本条消息的临时覆盖」，undefined = 跟随实际生效的
+    // busy_enter 默认（出厂 steer）。覆盖在提交成功后、或离开忙态时复位，不跨消息累积。
+    delivery: "queue" | "steer" | undefined
     applyingHistory: boolean
   }>({
     popover: null,
@@ -300,13 +302,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     mode: "normal",
     // 261027 Red 默认插话（steer），与服务端 busy_enter 默认对齐——忙时插话多为纠偏/补充，
     // 进当前轮比排到轮末更有用（用户拍板，审计 UX-005 的遗留确认项）。
-    delivery: "steer",
+    // 261116 Red C01：出厂默认仍是 steer，但改用「无覆盖」表达，实际值从配置解析（见下方
+    // defaultDelivery），避免输入框把默认值钉死成与设置不一致的字面量。
+    delivery: undefined,
     applyingHistory: false,
   })
 
+  // 261116 Red C01：忙时投递的默认值直接读 sync.data.config.busy_enter（与服务端同一份
+  // 配置，缺省 steer）。单条临时覆盖只作用于当前这条，提交成功或离开忙态后回到默认。
+  // 未知值不猜：只有明确的 "queue" 才排队，其余（含 undefined）走出厂 steer。
+  const defaultDelivery = createMemo<"queue" | "steer">(() =>
+    sync.data.config.busy_enter === "queue" ? "queue" : "steer",
+  )
+  const effectiveDelivery = createMemo<"queue" | "steer">(() => store.delivery ?? defaultDelivery())
+
   createEffect(() => {
-    if (props.shouldQueue?.() || store.delivery === "steer") return
-    setStore("delivery", "steer")
+    // 没有待投递的单条消息（不在忙态）时丢弃上一轮的临时覆盖，下次忙时重新从生效默认开始。
+    if (props.shouldQueue?.()) return
+    if (store.delivery !== undefined) setStore("delivery", undefined)
   })
 
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
@@ -1185,8 +1198,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     shouldQueue: props.shouldQueue,
-    delivery: () => store.delivery,
-    onDeliveryReset: () => setStore("delivery", "steer"),
+    // 261116 Red C01：没有单条覆盖时这里返回真正生效的默认（busy_enter），而不是输入框
+    // 自己的常量；失败快照仍由 submit.ts 原样记录/重发这一条的值。
+    delivery: () => effectiveDelivery(),
+    onDeliveryReset: () => setStore("delivery", undefined),
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
     // 261114 Red UX-03 评审：Soul 选择挪到新会话页上下文行（设计视图渲染），
@@ -1495,7 +1510,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               variant="ghost"
               size="normal"
               data-action="prompt-agent"
-              class="max-w-[160px] justify-start gap-1 capitalize text-text-base"
+              class="max-w-[160px] justify-start gap-1 capitalize text-text-base @max-[400px]:max-w-[110px]"
               style={control()}
             >
               <span class="truncate text-14-regular">
@@ -1675,7 +1690,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               variant: "ghost",
               size: "normal",
               style: control(),
-              class: "min-w-0 max-w-[280px] justify-start text-sm font-medium leading-4 text-v2-text-text-faint group",
+              class: "min-w-0 max-w-[280px] justify-start text-sm font-medium leading-4 text-v2-text-text-faint group @max-[520px]:max-w-[200px] @max-[380px]:max-w-[150px]",
               "data-action": "prompt-model",
             }}
             onClose={restoreFocus}
@@ -1702,7 +1717,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               size: "normal",
               style: control(),
               class:
-                "min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize text-v2-text-text-accent",
+                "min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize text-v2-text-text-accent @max-[380px]:max-w-[88px]",
               "data-action": "prompt-variant",
             }}
             onClose={restoreFocus}
@@ -1858,120 +1873,134 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </div>
           </div>
         </div>
-        {/* 261114 Red UX-07：工具栏按聊天列实际宽度换行（两行兜底），发送/停止常显；
-            输入与标签字号走 --font-size-* token 随外观设置缩放。 */}
-        <div class="flex min-h-[46px] flex-wrap items-center gap-y-1 px-2 py-1">
-          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-y-1">
-            {fileAttachmentInput()}
-            <TooltipKeybind
-              placement="top"
-              title={language.t("prompt.action.attachFile")}
-              keybind={command.keybind("file.attach")}
-            >
-              <IconButton
-                data-action="prompt-attach"
-                type="button"
-                icon="plus"
-                variant="ghost"
-                class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-                style={buttons()}
-                onClick={pick}
-                disabled={store.mode !== "normal"}
-                tabIndex={store.mode === "normal" ? undefined : -1}
-                aria-label={language.t("prompt.action.attachFile")}
-              />
-            </TooltipKeybind>
-            <Show when={newSession()}>
-              <div class="relative">
-                <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center">
-                  <Icon name="sliders" size="small" />
-                </div>
-                <Select
-                  size="normal"
-                  options={worktrees()}
-                  current={currentWorktree()}
-                  label={worktreeLabel}
-                  onSelect={(value) => {
-                    if (value) props.onNewSessionWorktreeChange?.(value)
-                    restoreFocus()
-                  }}
-                  class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
-                  valueClass="truncate pl-5 [font-size:var(--font-size-base)] font-[440] leading-[1.3] text-v2-text-text-faint"
-                  triggerStyle={control()}
-                  triggerProps={{ "data-action": "prompt-workspace" }}
-                  variant="ghost"
-                />
-              </div>
-            </Show>
-            {agentControl()}
-            {modelControl()}
-            {/* 260819 cc 上下文窗口指示器紧跟模型/档位——用户真正在看的位置（选模型的那一行）。
-                组件自带 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。
-                261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
-                开上下文面板走右侧常驻 tab。 */}
-            <SessionContextUsage placement="top" />
-            <BackgroundActivityButton />
-          </div>
-          <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
-            <Button
-              data-action="prompt-delivery"
-              type="button"
-              variant="ghost"
-              size="small"
-              class="max-w-32 shrink-0 truncate text-13-medium text-v2-text-text-faint"
-              aria-pressed={store.delivery === "steer"}
-              onClick={() => setStore("delivery", store.delivery === "queue" ? "steer" : "queue")}
-            >
-              {language.t(store.delivery === "queue" ? "prompt.delivery.queue" : "prompt.delivery.steer")}
-            </Button>
-          </Show>
-         {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
-             纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
-         {/* 261114 Red UX-06：展开/收起编辑区。 */}
-         <Show when={store.mode === "normal"}>
-           <Tooltip placement="top" value={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}>
+       {/* 261114 Red UX-07：工具栏按聊天列实际宽度换行（两行兜底），发送/停止常显；
+           输入与标签字号走 --font-size-* token 随外观设置缩放。 */}
+       {/* 261116 Red B01：工具栏拆成两栏——次级动作（附件/工作位置/Agent/模型/档位/上下文/
+           后台/投递）在左栏按容器实际宽度自行换行并收窄名称；发送与停止在右栏固定位置，
+           不参与换行。聊天列再窄、模型名再长，主操作也不会被挤到第二行或被截掉。
+           只重排外层布局：编辑器、草稿、附件、选区与焦点都不重建。 */}
+       <div class="flex min-h-[46px] items-end gap-2 px-2 py-1">
+         <div
+           data-component="prompt-toolbar-secondary"
+           class="@container flex min-w-0 flex-1 flex-wrap items-center gap-y-1"
+         >
+           {fileAttachmentInput()}
+           <TooltipKeybind
+             placement="top"
+             title={language.t("prompt.action.attachFile")}
+             keybind={command.keybind("file.attach")}
+           >
              <IconButton
-               data-action="prompt-expand"
+               data-action="prompt-attach"
                type="button"
-               icon={promptSize.expanded ? "restore" : "maximize"}
+               icon="plus"
                variant="ghost"
-               classList={{ "bg-surface-raised text-v2-icon-icon-base": promptSize.expanded }}
                class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-               aria-label={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}
-               onClick={togglePromptExpand}
+               style={buttons()}
+               onClick={pick}
+               disabled={store.mode !== "normal"}
+               tabIndex={store.mode === "normal" ? undefined : -1}
+               aria-label={language.t("prompt.action.attachFile")}
              />
-           </Tooltip>
-         </Show>
-         <Show when={canInterruptSend()}>
-           <Tooltip placement="top" value={language.t("prompt.action.interruptSend")}>
-             <IconButton
-               data-action="prompt-interrupt-send"
+           </TooltipKeybind>
+           <Show when={newSession()}>
+             <div class="relative">
+               <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center">
+                 <Icon name="sliders" size="small" />
+               </div>
+               <Select
+                 size="normal"
+                 options={worktrees()}
+                 current={currentWorktree()}
+                 label={worktreeLabel}
+                 onSelect={(value) => {
+                   if (value) props.onNewSessionWorktreeChange?.(value)
+                   restoreFocus()
+                 }}
+                 class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted @max-[460px]:max-w-[120px]"
+                 valueClass="truncate pl-5 [font-size:var(--font-size-base)] font-[440] leading-[1.3] text-v2-text-text-faint"
+                 triggerStyle={control()}
+                 triggerProps={{ "data-action": "prompt-workspace" }}
+                 variant="ghost"
+               />
+             </div>
+           </Show>
+           {agentControl()}
+           {modelControl()}
+           {/* 260819 cc 上下文窗口指示器紧跟模型/档位——用户真正在看的位置（选模型的那一行）。
+               组件自带 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。
+               261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
+               开上下文面板走右侧常驻 tab。 */}
+           <SessionContextUsage placement="top" />
+           <BackgroundActivityButton />
+           <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
+             {/* 261116 Red C01：显示的是真正生效的投递方式（临时覆盖优先，否则取
+                 busy_enter 默认）。点一下只改这一条，提交成功后回到默认。 */}
+             <Button
+               data-action="prompt-delivery"
                type="button"
-               icon="enter"
                variant="ghost"
-               class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted hover:bg-surface-raised hover:text-v2-icon-icon-base"
-               aria-label={language.t("prompt.action.interruptSend")}
-               onClick={() => interruptSend()}
+               size="small"
+               class="max-w-32 shrink-0 truncate text-13-medium text-v2-text-text-faint"
+               aria-pressed={effectiveDelivery() === "steer"}
+               aria-label={language.t(
+                 effectiveDelivery() === "queue" ? "prompt.delivery.queue" : "prompt.delivery.steer",
+               )}
+               onClick={() => setStore("delivery", effectiveDelivery() === "queue" ? "steer" : "queue")}
+             >
+               {language.t(effectiveDelivery() === "queue" ? "prompt.delivery.queue" : "prompt.delivery.steer")}
+             </Button>
+           </Show>
+         </div>
+         <div data-component="prompt-toolbar-primary" class="flex shrink-0 items-center gap-1">
+           {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
+               纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
+           {/* 261114 Red UX-06：展开/收起编辑区。 */}
+           <Show when={store.mode === "normal"}>
+             <Tooltip placement="top" value={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}>
+               <IconButton
+                 data-action="prompt-expand"
+                 type="button"
+                 icon={promptSize.expanded ? "restore" : "maximize"}
+                 variant="ghost"
+                 classList={{ "bg-surface-raised text-v2-icon-icon-base": promptSize.expanded }}
+                 class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+                 aria-label={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}
+                 onClick={togglePromptExpand}
+               />
+             </Tooltip>
+           </Show>
+           <Show when={canInterruptSend()}>
+             <Tooltip placement="top" value={language.t("prompt.action.interruptSend")}>
+               <IconButton
+                 data-action="prompt-interrupt-send"
+                 type="button"
+                 icon="enter"
+                 variant="ghost"
+                 class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted hover:bg-surface-raised hover:text-v2-icon-icon-base"
+                 aria-label={language.t("prompt.action.interruptSend")}
+                 onClick={() => interruptSend()}
+               />
+             </Tooltip>
+           </Show>
+           <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+             <IconButton
+               data-action="prompt-submit"
+               type="submit"
+               disabled={!working() && blank()}
+               tabIndex={store.mode === "normal" ? undefined : -1}
+               icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+               variant="primary"
+               class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
+               style={{
+                 "background-image":
+                   "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
+               }}
+               aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
              />
            </Tooltip>
-         </Show>
-          <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-            <IconButton
-              data-action="prompt-submit"
-              type="submit"
-              disabled={!working() && blank()}
-              tabIndex={store.mode === "normal" ? undefined : -1}
-              icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-              variant="primary"
-              class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
-              style={{
-                "background-image":
-                  "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
-              }}
-              aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-            />
-          </Tooltip>
-        </div>
+         </div>
+       </div>
         <PromptErrorBanner
           error={sendError}
           failed={failedSubmission}

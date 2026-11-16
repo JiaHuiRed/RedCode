@@ -107,6 +107,11 @@ export const SettingsGeneral: Component = () => {
 
   const [store, setStore] = createStore({
     checking: false,
+    // 261116 Red 更新状态单列：检查中/禁用/无新版/有新版/失败 不能都塌缩成「已是最新版」
+    updateStatus: "idle" as "idle" | "disabled" | "up-to-date" | "available" | "failed",
+    updateVersion: undefined as string | undefined,
+    installing: false,
+    installError: undefined as string | undefined,
   })
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
@@ -137,14 +142,60 @@ export const SettingsGeneral: Component = () => {
   }
   const desktop = createMemo(() => platform.platform === "desktop")
 
+  const exportLogs = () => {
+    void platform.exportDebugLogs?.().catch(() => undefined)
+  }
+
+  const updateFailureActions = (retry: () => void) => {
+    const actions: { label: string; onClick: () => void }[] = [{ label: language.t("common.retry"), onClick: retry }]
+    if (platform.exportDebugLogs) {
+      actions.push({ label: language.t("error.page.action.exportLogs"), onClick: exportLogs })
+    }
+    return actions
+  }
+
+  // 261116 Red 失败必须可重试、可取证：toast 带「重试」和日志导出入口，原始错误原样显示
+  const showUpdateFailure = (kind: "check" | "install", error: string | undefined, retry: () => void) => {
+    const title =
+      kind === "check" ? "settings.updates.toast.failed.title" : "settings.updates.toast.downloadFailed.title"
+    const description =
+      kind === "check"
+        ? "settings.updates.toast.failed.description"
+        : "settings.updates.toast.downloadFailed.description"
+    const message = language.t(description)
+    showToast({
+      persistent: true,
+      variant: "error",
+      icon: "circle-x",
+      title: language.t(title),
+      description: error ? `${message} ${error}` : message,
+      actions: updateFailureActions(retry),
+    })
+  }
+
   const check = () => {
     if (!platform.checkUpdate) return
     setStore("checking", true)
+    setStore("installError", undefined)
 
     void platform
       .checkUpdate()
       .then((result) => {
-        if (!result.updateAvailable) {
+        setStore("updateVersion", result.version)
+        const status = result.status ?? (result.updateAvailable ? "available" : "failed")
+        setStore("updateStatus", status)
+        if (status === "failed") {
+          showUpdateFailure("check", result.error, check)
+          return
+        }
+        if (status === "disabled") {
+          showToast({
+            title: language.t("settings.updates.toast.disabled.title"),
+            description: language.t("settings.updates.toast.disabled.description"),
+          })
+          return
+        }
+        if (status !== "available") {
           showToast({
             variant: "success",
             icon: "circle-check",
@@ -158,9 +209,7 @@ export const SettingsGeneral: Component = () => {
           ? [
               {
                 label: language.t("toast.update.action.installRestart"),
-                onClick: async () => {
-                  await platform.updateAndRestart!()
-                },
+                onClick: install,
               },
               {
                 label: language.t("toast.update.action.notYet"),
@@ -184,9 +233,69 @@ export const SettingsGeneral: Component = () => {
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
+        setStore("updateStatus", "failed")
+        showUpdateFailure("check", message, check)
       })
       .finally(() => setStore("checking", false))
+  }
+
+  const install = () => {
+    const updateAndRestart = platform.updateAndRestart
+    if (!updateAndRestart || store.installing) return
+    setStore("installing", true)
+    setStore("installError", undefined)
+
+    void updateAndRestart()
+      .then((result) => {
+        if (result.status === "failed") {
+          setStore("installError", result.error)
+          if (result.reason === "check") {
+            setStore("updateStatus", "failed")
+            showUpdateFailure("check", result.error, check)
+            return
+          }
+          showUpdateFailure("install", result.error, install)
+          return
+        }
+        if (result.status === "skipped") {
+          setStore("updateStatus", result.reason === "disabled" ? "disabled" : "up-to-date")
+          showToast(
+            result.reason === "disabled"
+              ? {
+                  title: language.t("settings.updates.toast.disabled.title"),
+                  description: language.t("settings.updates.toast.disabled.description"),
+                }
+              : {
+                  title: language.t("settings.updates.toast.latest.title"),
+                  description: language.t("settings.updates.toast.latest.description", { version: platform.version ?? "" }),
+                },
+          )
+          return
+        }
+        showToast({
+          icon: "download",
+          title: language.t("settings.updates.toast.downloaded.title"),
+          description: language.t("settings.updates.toast.downloaded.description"),
+        })
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        setStore("installError", message)
+        showUpdateFailure("install", message, install)
+      })
+      .finally(() => setStore("installing", false))
+  }
+
+  const updateDescription = () => {
+    const base = language.t("settings.updates.row.check.description")
+    if (store.installError) return `${base} ${language.t("settings.updates.toast.downloadFailed.title")}`
+    if (store.updateStatus === "available") {
+      return `${base} ${language.t("settings.updates.status.available", { version: store.updateVersion ?? "" })}`
+    }
+    if (store.updateStatus === "failed") return `${base} ${language.t("settings.updates.toast.failed.title")}`
+    if (store.updateStatus === "disabled") return language.t("settings.updates.toast.disabled.description")
+    if (store.updateStatus === "up-to-date") return language.t("settings.updates.toast.latest.title")
+    return base
   }
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
@@ -1132,13 +1241,22 @@ export const SettingsGeneral: Component = () => {
 
         <SettingsRow
           title={language.t("settings.updates.row.check.title")}
-          description={language.t("settings.updates.row.check.description")}
+          description={updateDescription()}
         >
-          <Button size="small" variant="secondary" disabled={store.checking || !platform.checkUpdate} onClick={check}>
-            {store.checking
-              ? language.t("settings.updates.action.checking")
-              : language.t("settings.updates.action.checkNow")}
-          </Button>
+          <div class="flex items-center gap-2" data-action="settings-updates-check">
+            <Show when={store.updateStatus === "available" && platform.updateAndRestart}>
+              <Button size="small" variant="primary" disabled={store.installing} onClick={install}>
+                {store.installing
+                  ? language.t("settings.updates.action.downloading")
+                  : language.t("toast.update.action.installRestart")}
+              </Button>
+            </Show>
+            <Button size="small" variant="secondary" disabled={store.checking || !platform.checkUpdate} onClick={check}>
+              {store.checking
+                ? language.t("settings.updates.action.checking")
+                : language.t("settings.updates.action.checkNow")}
+            </Button>
+          </div>
         </SettingsRow>
       </SettingsList>
     </div>

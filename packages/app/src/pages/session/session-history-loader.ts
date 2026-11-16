@@ -2,10 +2,23 @@ import { createEffect, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { UserMessage } from "@redcode-ai/sdk/v2"
 
+/** 261116 Red B05：搜索命中的定位目标（助手消息/工具片段都可能不在已加载窗口里）。 */
+export type HistoryLocateTarget = {
+  messageID: string
+  /** 命中消息的 time.created；窗口内找不到该消息时用它判断该往哪一侧翻。 */
+  createdAt?: number
+}
+
 type SessionHistoryWindowInput = {
   sessionID: () => string | undefined
   boundary: () => string | undefined
   visibleUserMessages: () => UserMessage[]
+  /**
+   * 261116 Red B05：已加载窗口里的全部消息（含助手消息）。搜索命中可能落在助手消息上，
+   * 只有用户消息列表判断不了「它在窗口的哪一侧」；缺省时退回 visibleUserMessages。
+   * `parentID` 沿用 SDK 的 assistant.parentID：轮次归属优先看父关系，时间只作兜底。
+   */
+  loadedMessages?: () => { id: string; role: string; parentID?: string; time?: { created?: number } }[]
   historyMore: () => boolean
   historyLoading: () => boolean
   loadMore: (sessionID: string) => Promise<void>
@@ -193,8 +206,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     return target < anchor ? ("older" as const) : ("newer" as const)
   }
 
-  const walk = async (id: string, messageID: string, direction: Direction) => {
-    const arrived = () => input.visibleUserMessages().some((message) => message.id === messageID)
+  const walkUntil = async (id: string, arrived: () => boolean, direction: Direction) => {
     let boundary = pageBoundary(direction)
     let stalls = 0
     for (let page = 0; page < MAX_JUMP_PAGES; page++) {
@@ -215,6 +227,9 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     }
     return arrived()
   }
+
+  const walk = (id: string, messageID: string, direction: Direction) =>
+    walkUntil(id, () => input.visibleUserMessages().some((message) => message.id === messageID), direction)
 
   const loadThrough = async (messageID: string) => {
     const id = input.sessionID()
@@ -237,6 +252,80 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     } catch {
       // 260918 Red 跳转途中拉页失败：当作"够不到"返回 false，别把 rejection 冒给 void 调用方变 uncaught。
       return false
+    } finally {
+      if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
+      if (input.sessionID() === id) scheduleShiftReset()
+    }
+  }
+
+  // 261116 Red B05：搜索命中 → 所属用户轮次。命中消息本身可能是助手消息/工具片段，不能拿
+  //   messageID 直接当轮次锚点。**先走 SDK 的 parentID 父关系**：并发 steer 会让用户消息插在
+  //   同一/更早毫秒，时间判据会把命中归到错轮；父关系是真实归属。父消息未加载时才退回
+  //   「不晚于前半段的最后一条用户消息」。
+  const loadedMessages = () => input.loadedMessages?.() ?? input.visibleUserMessages()
+
+  const parentTurn = (hit: { id: string; role: string; parentID?: string }) => {
+    if (!hit.parentID) return undefined
+    const visible = input.visibleUserMessages()
+    const byID = new Map(loadedMessages().map((message) => [message.id, message] as const))
+    let current = byID.get(hit.parentID)
+    for (let hop = 0; current && hop < 32; hop++) {
+      if (current.role === "user") return visible.some((message) => message.id === current!.id) ? current.id : undefined
+      if (!current.parentID) return undefined
+      current = byID.get(current.parentID)
+    }
+    return undefined
+  }
+
+  const userTurnFor = (target: HistoryLocateTarget) => {
+    const hit = loadedMessages().find((message) => message.id === target.messageID)
+    if (hit) {
+      if (hit.role === "user" && input.visibleUserMessages().some((message) => message.id === hit.id)) return hit.id
+      const parent = parentTurn(hit)
+      if (parent !== undefined) return parent
+    }
+
+    // 父关系缺失（消息未加载/旧数据）时兜底按时间：轮次边界就是用户消息。
+    const cutoff = hit?.time?.created ?? target.createdAt
+    if (cutoff === undefined) return undefined
+    let anchor: string | undefined
+    for (const message of input.visibleUserMessages()) {
+      const created = message.time?.created
+      if (typeof created !== "number" || created > cutoff) break
+      anchor = message.id
+    }
+    return anchor
+  }
+
+  const targetDirection = (target: HistoryLocateTarget): Direction | undefined => {
+    const oldest = loadedMessages()[0]?.time?.created
+    if (oldest === undefined || target.createdAt === undefined) return undefined
+    return target.createdAt < oldest ? "older" : "newer"
+  }
+
+  /**
+   * 把搜索命中翻进窗口并返回它所属的用户轮次 id（可直接交给 loadThrough/revealMessage）。
+   * 返回 undefined 表示命中确实够不到（历史被压缩/删除、翻页失败）——调用方必须明说，
+   * 不能悄悄退回「最近的轮次」。
+   */
+  const locateTarget = async (target: HistoryLocateTarget) => {
+    const id = input.sessionID()
+    if (!id) return undefined
+    if (loadedMessages().some((message) => message.id === target.messageID)) return userTurnFor(target)
+
+    cancelShiftReset()
+    setState("shift", true)
+    const token = Symbol()
+    setState("stagedHistory", { sessionID: id, token, messages: input.visibleUserMessages() })
+    try {
+      const arrived = () => loadedMessages().some((message) => message.id === target.messageID)
+      const preferred = targetDirection(target)
+      if (preferred !== "newer" && (await walkUntil(id, arrived, "older"))) return userTurnFor(target)
+      if (preferred !== "older" && (await walkUntil(id, arrived, "newer"))) return userTurnFor(target)
+      return undefined
+    } catch {
+      // 与 loadThrough 同口径：拉页失败当作够不到，由调用方提示。
+      return undefined
     } finally {
       if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
       if (input.sessionID() === id) scheduleShiftReset()
@@ -275,6 +364,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     shift: () => state.shift,
     loadAndReveal,
     loadThrough,
+    locateTarget,
     loadNewer: fetchNewerMessages,
     onNewerScroll: () => {
       if (input.userScrolled()) void fetchNewerMessages()

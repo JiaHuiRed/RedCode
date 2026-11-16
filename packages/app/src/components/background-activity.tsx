@@ -16,6 +16,10 @@ import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { errorMessage } from "@/utils/session-helpers"
+import { useTerminal } from "@/context/terminal"
+import { useSessionLayout } from "@/context/session-layout"
+import { TaskSteering } from "@/components/task-steering"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 
 type JobStatus = "running" | "completed" | "error" | "cancelled"
 
@@ -28,6 +32,7 @@ type Job = {
   completedAt?: number | "Infinity" | "-Infinity" | "NaN"
   error?: string
   sessionID?: string
+  parentSessionID?: string
 }
 
 type JobResult = {
@@ -49,6 +54,8 @@ type Terminal = {
   cwd: string
   status: "running" | "exited" | "orphaned"
   pid: number
+  command: string
+  args: string[]
 }
 
 type Row = {
@@ -62,6 +69,8 @@ type Row = {
   done?: boolean
   unseen?: boolean
   sessionID?: string
+  parentSessionID?: string
+  terminal?: Terminal
 }
 
 // 已看结果记录是进程内的轻量状态：跨对话框实例共享（关掉面板再开不复活「待查看」），
@@ -82,6 +91,8 @@ export function DialogBackground() {
   const dialog = useDialog()
   const params = useParams()
   const navigate = useNavigate()
+  const terminal = useTerminal()
+  const { view } = useSessionLayout()
 
   const [data, { refetch }] = createResource(async () => {
     const [jobs, terminals] = await Promise.all([sdk.client.background.list(), sdk.client.pty.list()])
@@ -98,7 +109,7 @@ export function DialogBackground() {
   })
 
   const rows = createMemo<Row[]>(() => {
-    const current = data()
+    const current = data.latest
     if (!current) return []
     const now = Date.now()
     const jobs = [...current.jobs]
@@ -117,6 +128,7 @@ export function DialogBackground() {
         done: job.status !== "running",
         unseen: job.status !== "running" && !seenResults.has(job.id),
         sessionID: job.sessionID,
+        parentSessionID: job.parentSessionID,
       }))
     const terminals = [...current.terminals]
       .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
@@ -128,11 +140,12 @@ export function DialogBackground() {
         status:
           pty.status === "running"
             ? language.t("dialog.background.status.running")
-            : pty.status === "orphaned"
-              ? language.t("dialog.background.status.orphaned")
-              : undefined,
+              : pty.status === "orphaned"
+                ? language.t("dialog.background.status.orphaned")
+                : language.t("dialog.background.status.exited"),
         detail: `${language.t("dialog.background.type.terminal")} · PID ${pty.pid} · ${pty.cwd}`,
         running: pty.status === "running",
+        terminal: pty,
       }))
     return [...jobs, ...terminals]
   })
@@ -153,6 +166,22 @@ export function DialogBackground() {
         }}
       />
     ))
+  }
+
+  const openSession = async (sessionID?: string) => {
+    if (!sessionID) {
+      showToast({ variant: "error", title: language.t("dialog.background.sessionUnavailable") })
+      return
+    }
+    await sdk.client.session.get({ sessionID }).then((response) => {
+      if (response.error || !response.data) throw response.error ?? new Error(language.t("dialog.background.sessionUnavailable"))
+      dialog.close()
+      navigate(`/${base64Encode(response.data.directory)}/session/${sessionID}`)
+    }).catch((error) => showToast({
+      variant: "error",
+      title: language.t("dialog.background.sessionUnavailable"),
+      description: errorMessage(error, language.t("common.requestFailed")),
+    }))
   }
 
   const stop = (row: Row) => {
@@ -200,6 +229,30 @@ export function DialogBackground() {
     ))
   }
 
+  const openTerminal = async (row: Row) => {
+    const info = row.terminal ?? data.latest?.terminals.find((item) => item.id === row.id)
+    if (!info) {
+      showToast({ variant: "error", title: language.t("terminal.output.unavailable") })
+      return
+    }
+    if (!row.running) {
+      dialog.push(() => <TerminalOutputDialog terminal={info} />)
+      return
+    }
+    await terminal.attach(row.id).then(() => {
+      view().terminal.open()
+      dialog.close()
+      showToast({
+        title: info.title,
+        description: `${info.command} ${info.args.join(" ")}\n${info.cwd}\n${language.t("terminal.source.unknown")}`,
+      })
+    }).catch((error) => showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: errorMessage(error, language.t("terminal.output.unavailable")),
+    }))
+  }
+
   return (
     <Dialog
       title={language.t("dialog.background.title")}
@@ -217,11 +270,13 @@ export function DialogBackground() {
         items={rows}
         filterKeys={["title", "kind", "status"]}
         onSelect={(row) => {
-          if (!row || row.kind !== "job") return
+          if (!row) return
+          if (row.kind === "terminal") {
+            void openTerminal(row)
+            return
+          }
           if (row.running) {
-            if (!row.sessionID || !params.dir) return
-            dialog.close()
-            navigate(`/${params.dir}/session/${row.sessionID}`)
+            void openSession(row.sessionID)
             return
           }
           openResult(row)
@@ -252,6 +307,24 @@ export function DialogBackground() {
               <span class="truncate text-11-regular text-text-weaker">{row.detail}</span>
             </div>
             <div class="flex shrink-0 items-center gap-1">
+              <Show when={row.kind === "job" && row.running && row.sessionID}>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  onClick={(event: MouseEvent) => {
+                    event.stopPropagation()
+                    dialog.push(() => (
+                      <Dialog title={language.t("task.steer.title")}>
+                        <div class="p-4">
+                          <TaskSteering sessionID={row.sessionID!} parentID={row.parentSessionID} title={row.title} />
+                        </div>
+                      </Dialog>
+                    ))
+                  }}
+                >
+                  {language.t("task.steer.title")}
+                </Button>
+              </Show>
               <Show when={row.running}>
                 <span onClick={(event) => event.stopPropagation()}>
                   <Button
@@ -272,6 +345,51 @@ export function DialogBackground() {
           </div>
         )}
       </List>
+    </Dialog>
+  )
+}
+
+function TerminalOutputDialog(props: { terminal: Terminal }) {
+  const sdk = useSDK()
+  const language = useLanguage()
+  const [output, { refetch }] = createResource(async () => {
+    const response = await sdk.client.pty.output({ ptyID: props.terminal.id })
+    if (response.error) throw response.error
+    return response.data
+  })
+  return (
+    <Dialog title={props.terminal.title}>
+      <div class="flex min-h-0 flex-col gap-3 p-4 text-base">
+        <div class="text-sm text-text-weak select-text">
+          <div class="break-all">{props.terminal.command} {props.terminal.args.join(" ")}</div>
+          <div class="break-all">{props.terminal.cwd}</div>
+          <div>{language.t("terminal.source.unknown")}</div>
+          <div>{language.t(`dialog.background.status.${props.terminal.status}`)}</div>
+        </div>
+        <Show when={output.loading}>{language.t("common.loading")}</Show>
+        <Show when={output.error}>
+          <div role="alert" class="text-sm text-v2-state-fg-danger">
+            {errorMessage(output.error, language.t("terminal.output.unavailable"))}
+          </div>
+        </Show>
+        <Show when={output.latest}>
+          {(snapshot) => (
+            <>
+              <Show when={snapshot().truncated}>
+                <div class="text-sm text-text-weak">{language.t("terminal.output.truncated")}</div>
+              </Show>
+              <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-base p-3 text-sm select-text">
+                {snapshot().output || language.t("dialog.background.result.empty")}
+              </pre>
+            </>
+          )}
+        </Show>
+        <div class="flex justify-end">
+          <Button variant="ghost" size="small" onClick={() => void refetch()}>
+            {language.t("common.retry")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   )
 }
@@ -319,7 +437,7 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   const params = useParams()
   const prompt = usePrompt()
 
-  const [result] = createResource(
+  const [result, { refetch }] = createResource(
     () => props.row.id,
     async (jobID) => {
       const response = await sdk.client.background.result({ jobID })
@@ -332,19 +450,26 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   // 不清待查看标记（旧实现进对话框就标记，失败后用户再也分不出哪条没看过）。
   let seen = false
   createEffect(() => {
-    if (!result() || seen) return
+    if (!result.latest || seen) return
     seen = true
     props.onSeen?.()
   })
 
   const jump = (sessionID?: string) => {
-    if (!sessionID || !params.dir) return
-    dialog.close()
-    navigate(`/${params.dir}/session/${sessionID}`)
+    if (!sessionID) return
+    void sdk.client.session.get({ sessionID }).then((response) => {
+      if (response.error || !response.data) throw response.error ?? new Error(language.t("dialog.background.sessionUnavailable"))
+      dialog.close()
+      navigate(`/${base64Encode(response.data.directory)}/session/${sessionID}`)
+    }).catch((error) => showToast({
+      variant: "error",
+      title: language.t("dialog.background.sessionUnavailable"),
+      description: errorMessage(error, language.t("common.requestFailed")),
+    }))
   }
 
   const copy = () => {
-    const output = result()?.output
+    const output = result.latest?.output
     if (!output) return
     void navigator.clipboard.writeText(output)
     showToast({ title: language.t("session.share.copy.copied") })
@@ -355,7 +480,7 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   // 261115 Red UX-17 复审：上限独立于服务端截断标记——服务端只标自己的 32K 上限，
   // 20K 的完整输出仍远超引用预算，不能整段塞进草稿。
   const quote = () => {
-    const data = result()
+    const data = result.latest
     if (!data?.output) return
     const header = `\n\n[后台任务「${props.row.title}」]\n`
     const over = data.output.length > QUOTE_CHAR_CAP
@@ -374,12 +499,16 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   return (
     <Dialog title={props.row.title} description={props.row.detail} fit>
       <div class="flex min-w-0 flex-col gap-3 pb-3 pl-6 pr-2.5">
+        <Show when={result.loading}>
+          <div role="status" class="text-sm text-text-weak">{language.t("common.loading")}</div>
+        </Show>
         <Show when={result.error}>
           <div class="text-12-regular text-v2-state-fg-danger">
             {language.t("common.requestFailed")}: {errorMessage(result.error, language.t("error.chain.unknown"))}
+            <Button variant="ghost" size="small" onClick={() => void refetch()}>{language.t("common.retry")}</Button>
           </div>
         </Show>
-        <Show when={result()}>
+        <Show when={result.latest}>
           {(data) => (
             <>
               <Show
@@ -423,13 +552,13 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
                     {language.t("dialog.background.result.quote")}
                   </Button>
                 </Show>
-                <Show when={data().parentSessionID && params.dir}>
-                  <Button variant="ghost" size="small" onClick={() => jump(data().parentSessionID)}>
+                <Show when={data().parentSessionID ?? props.row.parentSessionID}>
+                  <Button variant="ghost" size="small" onClick={() => jump(data().parentSessionID ?? props.row.parentSessionID)}>
                     {language.t("dialog.background.result.parent")}
                   </Button>
                 </Show>
-                <Show when={data().sessionID && params.dir}>
-                  <Button variant="secondary" size="small" onClick={() => jump(data().sessionID)}>
+                <Show when={data().sessionID ?? props.row.sessionID}>
+                  <Button variant="secondary" size="small" onClick={() => jump(data().sessionID ?? props.row.sessionID)}>
                     {language.t("dialog.background.result.openSession")}
                   </Button>
                 </Show>

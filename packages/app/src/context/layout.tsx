@@ -60,7 +60,18 @@ type SessionView = {
   previewTab?: string
   // 261115 Red UX-18 返回来源：文件 tab 是从审查列表哪个文件打开的，供「返回变更」
   // chip 回跳（review 面板/标签 + activeDiff 定位）。
-  fileReturn?: { tab: string; file: string }
+  // 261116 Red B06：`kind: "tool"` 表示从工具内容打开，字段记录来源会话/消息/片段与
+  // 打开时的阅读位置，供「返回工具」走与搜索命中相同的定位链。
+  fileReturn?: {
+    tab: string
+    file: string
+    kind?: "review" | "tool"
+    sessionID?: string
+    messageID?: string
+    partID?: string
+    userMessageID?: string
+    scrollTop?: number
+  }
 }
 
 // 260926 Red 并排宽度和聊天栏扣除量共用同一表达式，避免 flex 宽度与面板视觉宽度分叉。
@@ -964,7 +975,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           fileReturn: {
             current: createMemo(() => s().fileReturn),
-            set(value: { tab: string; file: string } | undefined) {
+            set(value: SessionView["fileReturn"]) {
               const session = key()
               const current = store.sessionView[session]
               setStore("sessionView", session, { ...current, scroll: current?.scroll ?? {}, fileReturn: value })
