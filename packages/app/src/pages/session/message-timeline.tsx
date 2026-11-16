@@ -60,7 +60,7 @@ import { Binary } from "@redcode-ai/core/util/binary"
 import { getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { normalize } from "@redcode-ai/ui/session-diff"
-import { useFileComponent } from "@redcode-ai/ui/context/file"
+import { useFileComponent, useFileOpen } from "@redcode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
@@ -93,6 +93,8 @@ import {
   TimelineRowMap,
 } from "./message-timeline.data"
 import type { CompactionState } from "./compaction-state"
+import { collectTurnDeliverables, type TurnDeliverable } from "./turn-deliverables"
+import { TurnDeliverables } from "./turn-deliverables-panel"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -380,6 +382,7 @@ export function MessageTimeline(props: {
   const navigate = useNavigate()
   const serverSDK = useServerSDK()
   const sdk = useSDK()
+  const openFile = useFileOpen()
   const sync = useSync()
   const settings = useSettings()
   const globalSDK = useGlobalSDK()
@@ -2114,6 +2117,40 @@ export function MessageTimeline(props: {
 
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
 
+  function TurnOutputs(input: { userMessageID: string }) {
+    const files = createMemo(() =>
+      collectTurnDeliverables({
+        userMessageID: input.userMessageID,
+        directory: sdk.directory,
+        messages: assistantMessagesByParent().get(input.userMessageID) ?? emptyAssistantMessages,
+        parts: getMsgParts,
+      }),
+    )
+    const source = (file: TurnDeliverable) => ({
+      sessionID: sessionID(),
+      userMessageID: input.userMessageID,
+      messageID: file.messageID,
+      partID: file.partID,
+      scrollTop: listRoot?.scrollTop,
+    })
+    return (
+      <TurnDeliverables
+        files={files()}
+        onOpen={(file) => {
+          const id = sessionID()
+          if (!id) return
+          // Explicitly capture the producing tool for both pointer and keyboard activation.
+          fileOpenSource = { ...source(file), sessionID: id }
+          openFile?.(file.path)
+        }}
+        onSource={(file) => props.onJumpTarget?.({
+          ...source(file),
+          createdAt: messageByID().get(file.messageID)?.time.created,
+        })}
+      />
+    )
+  }
+
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>) => {
     if (row().group.type !== "part") {
       const kind = createMemo(() => {
@@ -2462,6 +2499,12 @@ export function MessageTimeline(props: {
                   aria-hidden={workingTurn(assistantPartRow().userMessageID)}
                 >
                   {renderAssistantPartGroup(assistantPartRow)}
+                  <Show
+                    when={openFile && !workingTurn(assistantPartRow().userMessageID) &&
+                      lastAssistantGroupKey().get(assistantPartRow().userMessageID) === assistantPartRow().group.key}
+                  >
+                    <TurnOutputs userMessageID={assistantPartRow().userMessageID} />
+                  </Show>
                 </div>
               </div>
             </div>
