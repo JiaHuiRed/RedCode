@@ -86,6 +86,10 @@ export const Definitions = {
   session_new: keybind("<leader>n", "Create a new session"),
   session_list: keybind("<leader>l", "List all sessions"),
   background_list: keybind("<leader>j", "List background activities"),
+  // 261116 Red A01/A03：后台面板里查看是 Enter，终止是独立次要动作（保留确认），
+  // 补充要求只对运行中的后台子任务开放。
+  background_cancel: keybind("ctrl+d", "Cancel selected background job or terminal"),
+  background_steer: keybind("ctrl+s", "Send guidance to a running background task"),
   session_timeline: keybind("<leader>g", "Show session timeline"),
   session_fork: keybind("none", "分叉会话"),
   session_rename: keybind("ctrl+r", "Rename session"),
@@ -289,6 +293,8 @@ export const CommandMap = {
   session_new: "session.new",
   session_list: "session.list",
   background_list: "background.list",
+  background_cancel: "background.cancel",
+  background_steer: "background.steer",
   session_timeline: "session.timeline",
   session_fork: "session.fork",
   session_rename: "session.rename",

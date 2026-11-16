@@ -9,7 +9,7 @@ import {
 import type { Binding } from "@opentui/keymap"
 import { useTheme, selectedForeground } from "@tui/context/theme"
 import { entries, filter, flatMap, groupBy, pipe } from "remeda"
-import { batch, createEffect, createMemo, For, Show, type JSX, on } from "solid-js"
+import { batch, createEffect, createMemo, For, Show, type JSX, on, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTerminalDimensions } from "@opentui/solid"
 import * as fuzzysort from "fuzzysort"
@@ -47,6 +47,9 @@ export interface DialogSelectProps<T> {
   }[]
   bindings?: readonly Binding<Renderable, KeyEvent>[]
   current?: T
+  // 261116 Red 行列表会被刷新重排（如后台活动面板）：按稳定 key 记住选中，
+  // 而不是按下标——否则正要点开的条目会在两秒一轮的刷新后换成别的行。
+  selectedKey?: (option: DialogSelectOption<T>) => string
 }
 
 export interface DialogSelectOption<T = any> {
@@ -170,11 +173,22 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   // 261110 Red 搜索把列表缩短后选中索引可能越界，submit() 的 !option 守卫会把回车静默吞掉。
   // 必须放在 flat 之后：on(flat, …) 在建立时就要读它。
+  let lastSelectedKey: string | undefined
+  const keyOf = (option: DialogSelectOption<T> | undefined) =>
+    option && props.selectedKey ? props.selectedKey(option) : undefined
+
   createEffect(
     on(flat, (list) => {
       if (store.selected >= list.length) setStore("selected", 0)
+      if (!props.selectedKey || lastSelectedKey === undefined) return
+      const index = list.findIndex((option) => keyOf(option) === lastSelectedKey)
+      if (index >= 0 && index !== store.selected) setStore("selected", index)
     }),
   )
+
+  onMount(() => {
+    lastSelectedKey = keyOf(flat()[store.selected])
+  })
 
   const rows = createMemo(() => {
     const headers = grouped().reduce((acc, [category], i) => {
@@ -219,6 +233,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   function moveTo(next: number, center = false) {
     setStore("selected", next)
     const option = selected()
+    lastSelectedKey = keyOf(option) ?? lastSelectedKey
     if (option) props.onMove?.(option)
     if (!scroll) return
     const target = scroll.getChildren().find((child: { id?: string }) => {

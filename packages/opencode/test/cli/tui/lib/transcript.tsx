@@ -86,6 +86,8 @@ const session = {
   showTimestamps: () => false,
   showDetails: () => false,
   showGenericToolOutput: () => false,
+  // 261116 Red A06：快照守完整过程视图（结果阅读关闭），折叠模式由 util/result-view 的单测覆盖。
+  resultView: () => false,
   diffWrapMode: () => "word" as const,
   providers: () => new Map(),
 }

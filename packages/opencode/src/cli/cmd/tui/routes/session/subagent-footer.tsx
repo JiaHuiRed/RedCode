@@ -2,6 +2,8 @@ import { createMemo, createSignal, Show } from "solid-js"
 import { useRouteData } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
+import { useDialog } from "@tui/ui/dialog"
+import { DialogSubagentSteer } from "@tui/component/dialog-subagent-steer"
 import { SplitBorder } from "@tui/component/border"
 import { subagentUsage } from "./subagent-usage"
 import { Locale } from "@/util/locale"
@@ -11,6 +13,7 @@ import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 export function SubagentFooter() {
   const route = useRouteData("session")
   const sync = useSync()
+  const dialog = useDialog()
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
   const session = createMemo(() => sync.session.get(route.sessionID))
 
@@ -37,7 +40,7 @@ export function SubagentFooter() {
   const parentShortcut = useCommandShortcut("session.parent")
   const previousShortcut = useCommandShortcut("session.child.previous")
   const nextShortcut = useCommandShortcut("session.child.next")
-  const [hover, setHover] = createSignal<"parent" | "prev" | "next" | null>(null)
+  const [hover, setHover] = createSignal<"parent" | "prev" | "next" | "steer" | null>(null)
   useTerminalDimensions()
 
   return (
@@ -70,6 +73,14 @@ export function SubagentFooter() {
             </Show>
           </box>
           <box flexDirection="row" gap={2}>
+            <box
+              onMouseOver={() => setHover("steer")}
+              onMouseOut={() => setHover(null)}
+              onMouseUp={() => dialog.replace(() => <DialogSubagentSteer sessionID={route.sessionID} />)}
+              backgroundColor={hover() === "steer" ? theme.backgroundElement : theme.backgroundPanel}
+            >
+              <text fg={theme.text}>补充要求</text>
+            </box>
             <box
               onMouseOver={() => setHover("parent")}
               onMouseOut={() => setHover(null)}

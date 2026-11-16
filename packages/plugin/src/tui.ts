@@ -206,6 +206,8 @@ export type TuiPromptRef = {
   menuOpen?: boolean
   current: TuiPromptInfo
   set(prompt: TuiPromptInfo): void
+  /** 261116 Red A04：把引用追加到当前草稿末尾（保留原文本/附件，不发送）。 */
+  append(text: string): void
   reset(): void
   blur(): void
   focus(): void

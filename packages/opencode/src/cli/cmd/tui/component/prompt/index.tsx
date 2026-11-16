@@ -104,6 +104,8 @@ export type PromptRef = {
   menuOpen?: boolean
   current: PromptInfo
   set(prompt: PromptInfo): void
+  /** 261116 Red A04：把引用追加到当前草稿末尾，保留原文本、附件与已选配置，不发送。 */
+  append(text: string): void
   reset(): void
   blur(): void
   focus(): void
@@ -229,6 +231,12 @@ export function Prompt(props: PromptProps) {
   const dialog = useDialog()
   const toast = useToast()
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
+  // 261116 Red C01：忙碌时的默认投递取真正生效的 busy_enter（与服务端同一配置）；
+  // 单条临时覆盖只在本次发送生效，发完复位。出厂默认仍是 steer。
+  const busy = createMemo(() => status().type !== "idle")
+  const defaultDelivery = createMemo<"steer" | "queue">(() => (sync.data.config.busy_enter === "queue" ? "queue" : "steer"))
+  const [deliveryOverride, setDeliveryOverride] = createSignal<"steer" | "queue" | undefined>()
+  const effectiveDelivery = createMemo<"steer" | "queue">(() => deliveryOverride() ?? defaultDelivery())
   const history = usePromptHistory()
   const stash = usePromptStash()
   const keymap = useOpencodeKeymap()
@@ -495,6 +503,8 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setStore("placeholder", randomIndex(list().length))
+        // 261116 Red C01：单条投递覆盖只在一条消息上生效，换会话不带走。
+        setDeliveryOverride(undefined)
       },
       { defer: true },
     ),
@@ -574,6 +584,22 @@ export function Prompt(props: PromptProps) {
           dialog.clear()
         },
       },
+      // 261116 Red C01：键盘/面板入口与鼠标同一套「单条覆盖」语义，只切本条，不改默认配置。
+      ...(status().type !== "idle"
+        ? [
+            {
+              title: `本条投递：${effectiveDelivery() === "steer" ? "插话" : "排队"}${deliveryOverride() ? "（单条覆盖）" : "（默认）"} → 切换`,
+              name: "prompt.delivery",
+              category: "Prompt",
+              run: () => {
+                setDeliveryOverride((prev) =>
+                  prev === undefined ? (defaultDelivery() === "steer" ? "queue" : "steer") : undefined,
+                )
+                dialog.clear()
+              },
+            },
+          ]
+        : []),
       {
         title: "提交消息",
         name: "prompt.submit",
@@ -835,6 +861,22 @@ export function Prompt(props: PromptProps) {
       setPrompt(prompt)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
+    },
+    // 261116 Red A04：引用追加到当前草稿末尾。保留原文本、附件 part 与已选模型/Agent，
+    // 只插文本、不发送；extmark 都在插入点之前，位置不受影响。
+    append(text) {
+      if (!input || input.isDestroyed || !text) return
+      const separator = store.prompt.input && !store.prompt.input.endsWith("\n") ? "\n\n" : ""
+      input.gotoBufferEnd()
+      input.insertText(separator + text)
+      setStore("prompt", "input", input.plainText)
+      markDraftChanged()
+      if (!props.disabled) input.focus()
+      setTimeout(() => {
+        if (!input || input.isDestroyed) return
+        input.getLayoutNode().markDirty()
+        renderer.requestRender()
+      }, 0)
     },
     reset() {
       input.clear()
@@ -1413,15 +1455,10 @@ export function Prompt(props: PromptProps) {
     }
     if (!sessionID) return false
 
-    // 261031 Red 忙碌默认引导（steer）：与服务端 busy_enter 默认及 GUI 对齐。服务端忙碌时
-    // 自动落 pending_steer 待消费形态（可 /pending 编辑/撤销），不再默认排队到轮末。
+    // 261116 Red C01：默认投递取真正生效的 busy_enter（服务端同一配置），而不是写死 steer；
+    // 有单条临时覆盖时用它，发完复位。投递动作仅对会话内的普通消息生效。
     const delivery =
-      props.sessionID &&
-      submission.payload.mode === "normal" &&
-      !isCommand &&
-      (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
-        ? "steer"
-        : undefined
+      props.sessionID && submission.payload.mode === "normal" && !isCommand && busy() ? effectiveDelivery() : undefined
 
     if (submission.payload.mode === "shell") {
       const result = await sdk.client.session.shell({
@@ -1466,6 +1503,9 @@ export function Prompt(props: PromptProps) {
         toast.error(result.error)
         return false
       }
+      // 261116 Red C01：单条临时覆盖只作用这一条，发送成功后复位；失败保留，
+      // 重试仍带原来的投递方式（失败草稿不换快照语义）。
+      setDeliveryOverride(undefined)
     }
 
     history.append(submission.payload.history)
@@ -2088,6 +2128,20 @@ export function Prompt(props: PromptProps) {
                 </Show>
               </box>
               <box flexDirection="row" gap={1} alignItems="center">
+                {/* 261116 Red C01：忙碌时显示真正生效的投递方式；点一下切成单条覆盖，再点复位。 */}
+                <Show when={props.sessionID && busy()}>
+                  <box
+                    onMouseUp={() =>
+                      setDeliveryOverride((prev) =>
+                        prev === undefined ? (defaultDelivery() === "steer" ? "queue" : "steer") : undefined,
+                      )
+                    }
+                  >
+                    <text fg={deliveryOverride() ? theme.warning : theme.textMuted}>
+                      {`投递 ${effectiveDelivery() === "steer" ? "插话" : "排队"}${deliveryOverride() ? " · 单条" : ""}`}
+                    </text>
+                  </box>
+                </Show>
                 {props.right}
                 <BackgroundButton />
               </box>

@@ -67,6 +67,7 @@ import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
+import { DialogSubagentSteer } from "@tui/component/dialog-subagent-steer"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
@@ -88,6 +89,8 @@ import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
 import { copyAssistantText, formatTranscript, isVisibleTextPart } from "../../util/transcript"
+import { quoteMessageText, quoteSnippet } from "../../util/quote"
+import { canCollapseProcess, collapseProcessRows, processSummary } from "../../util/result-view"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode } from "../../context/thinking"
@@ -190,6 +193,11 @@ const context = createContext<{
   showTimestamps: () => boolean
   showDetails: () => boolean
   showGenericToolOutput: () => boolean
+  // 261116 Red A06：结果阅读模式（仅展示组织，不改模型上下文）。
+  resultView: () => boolean
+  // 261116 Red A04：消息/工具引用追加到当前草稿；测试夹具可不提供。
+  quote?: (text: string) => void
+  messageActions?: (messageID: string) => void
   diffWrapMode: () => "word" | "none"
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
@@ -340,6 +348,14 @@ export function Session() {
         continue
       }
       if (message.role !== "user") continue
+      // 261116 Red A03：父会话的人工补充回执也是 user 消息，但它不是待发送轮次，
+      // 不能因为「没有 assistant 子消息」被标成 QUEUED。
+      if (
+        (sync.data.part[message.id] ?? []).some(
+          (part) => part.type === "text" && part.metadata?.task_steer_record !== undefined,
+        )
+      )
+        continue
       // 正常轮首:有自己的 assistant 子消息 → 不标记
       if ((assistantByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)
@@ -372,6 +388,8 @@ export function Session() {
   const [diffWrapMode] = kv.signal<"word" | "none">("diff_wrap_mode", "word")
   const [_animationsEnabled, _setAnimationsEnabled] = kv.signal("animations_enabled", true)
   const [showGenericToolOutput, setShowGenericToolOutput] = kv.signal("generic_tool_output_visibility", false)
+  // 261116 Red A06：结果阅读模式（按轮折叠已完成的工具/思考过程），仅展示组织。
+  const [resultView, setResultView] = kv.signal("result_view", false)
 
   const wide = createMemo(() => dimensions().width > 120)
   const sidebarVisible = createMemo(() => {
@@ -707,7 +725,6 @@ export function Session() {
 
   // 260708 Red scroll to message by ID, expanding window if target is hidden
   function scrollToMessageByID(messageID: string) {
-    // check if target is in current window
     let child = scroll.getChildren().find((c) => c.id === messageID)
     if (!child) {
       // target is outside window — find its index in all messages and expand
@@ -725,6 +742,29 @@ export function Session() {
       }
     }
     if (child) scroll.scrollBy(child.y - scroll.y - 1)
+  }
+
+  // 261116 Red A06：切换阅读模式时保住当前顶部可见消息。折叠/展开改变高度，
+  // 不能让视野跳到别处，也不追底；草稿在输入框里，不受影响。
+  function toggleResultView() {
+    const anchor =
+      scroll && !scroll.isDestroyed
+        ? scroll.getChildren().find((child) => child.id && child.y + child.height > scroll.y)?.id
+        : undefined
+    setResultView((prev) => !prev)
+    toast.show({
+      message: resultView()
+        ? "结果阅读：已完成过程折叠为一行，点击过程行展开"
+        : "结果阅读：关闭，显示完整过程",
+      variant: "info",
+      duration: 3000,
+    })
+    if (!anchor) return
+    setTimeout(() => {
+      if (!scroll || scroll.isDestroyed) return
+      const child = scroll.getChildren().find((item) => item.id === anchor)
+      if (child) scroll.scrollBy(child.y - scroll.y - 1)
+    }, 50)
   }
 
   // 261110 Red 多项目返回时恢复基本阅读位置。保存锚点用「视口顶部第一条消息 + 像素」，
@@ -963,6 +1003,7 @@ export function Session() {
             onMove={(messageID) => scrollToMessageByID(messageID)}
             sessionID={route.sessionID}
             setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+            quote={(text) => prompt?.append(text)}
           />
         ))
       },
@@ -1025,13 +1066,37 @@ export function Session() {
       run: async () => {
         const current = sync.data.config.busy_enter ?? "steer"
         const next = current === "steer" ? ("queue" as const) : ("steer" as const)
-        await sdk.client.config.update({ config: { busy_enter: next } })
+        const label = (value: "steer" | "queue") =>
+          value === "queue"
+            ? "排队:繁忙时发的消息等本轮结束后作为新一轮输入"
+            : "插话:繁忙时发的消息在下个工具调用后立即送达模型"
+        const update = await sdk.client.config.update({ config: { busy_enter: next } }).then(
+          (result) => ({ error: result.error ? errorMessage(result.error) : undefined }),
+          (error) => ({ error: errorMessage(error) }),
+        )
+        if (update.error) {
+          toast.show({ message: `切换失败：${update.error}`, variant: "error", duration: 5000 })
+          dialog.clear()
+          return
+        }
+        // 261116 Red C01：写后读回实际生效值，再展示结果；读不到或没生效都不冒充已切换。
+        const actual = await sdk.client.config.get().then(
+          (result) => (result.error ? undefined : result.data?.busy_enter),
+          () => undefined,
+        )
+        if (actual === undefined) {
+          toast.show({
+            message: "配置写入已返回，但未能读回实际值；请稍后再打开 /busy-enter 确认",
+            variant: "warning",
+            duration: 5000,
+          })
+          dialog.clear()
+          return
+        }
+        sync.set("config", { ...sync.data.config, busy_enter: actual })
         toast.show({
-          message:
-            next === "queue"
-              ? "已切换为排队:繁忙时发的消息等本轮结束后作为新一轮输入"
-              : "已切换为插话:繁忙时发的消息在下个工具调用后立即送达模型",
-          variant: "info",
+          message: actual === next ? `已切换为${label(actual)}` : `设置未生效：当前实际仍是${label(actual)}`,
+          variant: actual === next ? "info" : "warning",
           duration: 4000,
         })
         dialog.clear()
@@ -1269,6 +1334,21 @@ export function Session() {
       },
     },
     {
+      // 261116 Red A06：结果阅读以轮组织显示——已完成过程折叠成一行，点开仍是原始记录；
+      // 运行中/失败/待权限/待回答不折叠。切换时用顶部可见消息做锚点，不追底。
+      title: resultView() ? "结果阅读：开（折叠已完成过程）→ 关闭" : "结果阅读：折叠已完成过程",
+      value: "session.result",
+      category: "Session",
+      slash: {
+        name: "result",
+        aliases: ["result-view"],
+      },
+      run: () => {
+        toggleResultView()
+        dialog.clear()
+      },
+    },
+    {
       title: "Page up",
       value: "session.page.up",
       category: "Session",
@@ -1440,6 +1520,36 @@ export function Session() {
       },
     },
     {
+      // 261116 Red A04：不带选区的消息动作——引用最后一条助手消息到当前草稿，不发送。
+      title: "引用最后一条助手消息",
+      value: "messages.quote",
+      category: "Session",
+      slash: {
+        name: "quote",
+      },
+      run: () => {
+        const last = messages().findLast(
+          (message): message is AssistantMessageInfo => message.role === "assistant" && message.mode !== "compaction",
+        )
+        if (!last) {
+          toast.show({ message: "未找到助手消息", variant: "error" })
+          dialog.clear()
+          return
+        }
+        const text = quoteMessageText(sync.data.part[last.id] ?? [])
+        if (!text) {
+          toast.show({ message: "最近的助手消息中没有正文", variant: "warning" })
+          dialog.clear()
+          return
+        }
+        prompt?.append(
+          quoteSnippet(text, { kind: "message", sessionID: route.sessionID, messageID: last.id, label: "助手消息" }),
+        )
+        toast.show({ message: "已追加到草稿（不会自动发送）", variant: "success" })
+        dialog.clear()
+      },
+    },
+    {
       title: "Copy session transcript",
       value: "session.copy",
       category: "Session",
@@ -1594,6 +1704,22 @@ export function Session() {
       },
       run: showPendingMessages,
     },
+    // 261116 Red A03：运行中子任务的补充要求，键盘/斜杠入口；鼠标入口在 SubagentFooter 与后台面板。
+    ...(session()?.parentID
+      ? [
+          {
+            title: "补充要求（子任务）",
+            value: "session.subagent.steer",
+            category: "Session",
+            slash: {
+              name: "steer",
+            },
+            run: () => {
+              dialog.replace(() => <DialogSubagentSteer sessionID={route.sessionID} />)
+            },
+          },
+        ]
+      : []),
   ])
 
   const sessionCommands = createMemo(() =>
@@ -1673,6 +1799,22 @@ export function Session() {
           showTimestamps,
           showDetails,
           showGenericToolOutput,
+          resultView,
+          // 261116 Red A04：消息/工具引用只追加到当前草稿，不发送、不动附件与模型/Agent。
+          get quote() {
+            return (text: string) => prompt?.append(text)
+          },
+          get messageActions() {
+            return (messageID: string) =>
+              dialog.replace(() => (
+                <DialogMessage
+                  messageID={messageID}
+                  sessionID={route.sessionID}
+                  setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                  quote={(text) => prompt?.append(text)}
+                />
+              ))
+          },
           diffWrapMode,
           providers,
           sync,
@@ -1793,6 +1935,7 @@ export function Session() {
                                   messageID={message.id}
                                   sessionID={route.sessionID}
                                   setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                                  quote={(text) => prompt?.append(text)}
                                 />
                               ))
                             }}
@@ -1916,14 +2059,14 @@ export function UserMessage(props: {
   const local = useLocal()
   const dimensions = useTerminalDimensions()
   const text = createMemo(() => {
-    const texts = props.parts
-      .map((x) => {
-        if (x.type === "text" && !x.synthetic) {
-          return x.text
-        }
-        return null
-      })
-      .filter(Boolean)
+    const texts = props.parts.flatMap((part) => {
+      if (part.type !== "text") return []
+      if (!part.synthetic) return [part.text as string]
+      // 261116 Red A03：父会话里的人工补充回执是 noReply 写入的 synthetic 记录；
+      // 普通 synthetic（系统提醒/编辑器上下文）仍隐藏，带 task_steer_record 的必须可见。
+      if (part.metadata?.task_steer_record === undefined) return []
+      return [`〔人工补充记录〕\n${part.text as string}`]
+    })
     return texts.join("\n\n")
   })
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
@@ -2309,22 +2452,58 @@ export function AssistantMessage(props: {
       props.parts.some((part) => part.type === "text" && part.text.trim().length > 0),
   )
 
+  // 261116 Red A06：结果阅读只折叠正常完成的过程；运行中、失败、待权限/待回答一律原样可见。
+  // 展开后渲染原始 parts，不做摘要；这是展示组织，不改模型上下文与持久记录。
+  const [processOpen, setProcessOpen] = createSignal(false)
+  const collapsible = createMemo(
+    () =>
+      ctx.resultView() &&
+      canCollapseProcess({ completed: props.message.time.completed, error: props.message.error }, props.parts),
+  )
+  const rows = createMemo(() =>
+    collapsible() && !processOpen()
+      ? collapseProcessRows(props.parts)
+      : props.parts.map((part) => ({ kind: "part" as const, part })),
+  )
+  const processCounts = createMemo(() => ({
+    tools: props.parts.filter((part) => part.type === "tool").length,
+    reasoning: props.parts.filter((part) => part.type === "reasoning").length,
+  }))
+
+  const renderer = useRenderer()
+
   return (
     <>
       <Show when={showSignature()}>
-        <box flexDirection="row" paddingLeft={1}>
+        <box
+          flexDirection="row"
+          paddingLeft={1}
+          onMouseUp={() => {
+            if (renderer.getSelection()?.getSelectedText()) return
+            ctx.messageActions?.(props.message.id)
+          }}
+        >
           <text fg={theme.accent}>
             {(local.soul.label(sync.session.get(props.message.sessionID)?.soul) ?? local.displayName.agent) + ": "}
           </text>
         </box>
       </Show>
-      <For each={props.parts}>
-        {(part, index) => {
+      <For each={rows()}>
+        {(row, index) => {
+          if (row.kind === "process")
+            return (
+              <box paddingLeft={3} marginTop={1} flexShrink={0} onMouseUp={() => setProcessOpen(true)}>
+                <text fg={theme.textMuted} wrapMode="word">
+                  {processSummary({ tools: row.tools, reasoning: row.reasoning, expanded: false })}
+                </text>
+              </box>
+            )
+          const part = row.part
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
           return (
             <Show when={component()}>
               <Dynamic
-                last={index() === props.parts.length - 1}
+                last={index() === rows().length - 1}
                 component={component()}
                 part={part as any}
                 message={props.message}
@@ -2333,6 +2512,13 @@ export function AssistantMessage(props: {
           )
         }}
       </For>
+      <Show when={collapsible() && processOpen()}>
+        <box paddingLeft={3} marginTop={1} flexShrink={0} onMouseUp={() => setProcessOpen(false)}>
+          <text fg={theme.textMuted} wrapMode="word">
+            {processSummary({ ...processCounts(), expanded: true })}
+          </text>
+        </box>
+      </Show>
       <Show when={props.parts.length === 0 && !props.message.time.completed && !props.message.error}>
         <WaitingForModel start={props.message.time.created} />
       </Show>
