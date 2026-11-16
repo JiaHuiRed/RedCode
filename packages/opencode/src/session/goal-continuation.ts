@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { Context, Effect, Layer, Option, Scope, Stream } from "effect"
 
 import { Bus } from "@/bus"
@@ -86,7 +87,7 @@ export const layer = Layer.effect(
       }
 
       // 6. 用户插话检查：最新 user 消息不是我们注入的那条就停
-      const latest = yield* sessions.findMessage(sessionID, (m) => m.info.role === "user").pipe(Effect.orDie)
+      const latest = yield* sessions.findMessage(sessionID, (m) => isUserTurn(m.info, m.parts)).pipe(Effect.orDie)
       if (Option.isNone(latest)) return
       const prev = lastSteer.get(sessionID)
       if (prev !== undefined && latest.value.info.id !== prev) return

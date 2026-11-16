@@ -180,7 +180,7 @@ export const runSteerableTask = (
             traceFailed: false,
           }
           const fiber = bridge.fork(Effect.gen(function* () {
-            const latest = yield* input.sessions.findMessage(input.sessionID, (item) => item.info.role === "user")
+            const latest = yield* input.sessions.findMessage(input.sessionID, (item) => isUserTurn(item.info, item.parts))
             if (Option.isNone(latest) || latest.value.info.role !== "user")
               return yield* Effect.fail(new Error("Task has no active user message to steer"))
             const user = latest.value.info
