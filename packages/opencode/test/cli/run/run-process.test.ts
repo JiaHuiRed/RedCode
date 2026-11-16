@@ -79,6 +79,22 @@ describe("redcode run (non-interactive subprocess)", () => {
         const text = events.find((e) => e.type === "text")
         expect(text).toBeDefined()
       }),
-    60_000,
-  )
+   60_000,
+ )
+
+ // 261116 Red 多步回合：run 必须把每一步的事件都镜像出来，不能只输出第一步。
+ // 工具要选不需要权限的——read 在非 TTY 的 run 里会触发询问并被自动拒绝，
+ // shouldBreak 直接终结回合，那测的就不是多步了（261116 实测踩过一次）。
+ cliIt.concurrent(
+   "runs every step of a multi-step turn",
+   ({ llm, redcode }) =>
+     Effect.gen(function* () {
+       yield* llm.tool("glob", { pattern: "*.definitely-missing-step-probe" })
+       yield* llm.text("finished after two steps")
+       const result = yield* redcode.run("search a missing pattern then answer", { timeoutMs: 30_000 })
+       redcode.expectExit(result, 0)
+       expect(result.stdout).toContain("finished after two steps")
+     }),
+   60_000,
+ )
 })
