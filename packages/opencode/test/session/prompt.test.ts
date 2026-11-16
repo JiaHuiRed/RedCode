@@ -2437,6 +2437,81 @@ it.instance("user steering records the parent trace before the child model turn 
   }),
 )
 
+for (const busyEnter of ["steer", "queue"] as const) {
+  it.instance(`concurrent user steering keeps the parent turn in ${busyEnter} mode`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), busy_enter: busyEnter }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const jobs = yield* BackgroundJob.Service
+      const parent = yield* sessions.create({})
+      const child = yield* sessions.create({ parentID: parent.id })
+      const parentGate = defer<void>()
+      const childGate = defer<void>()
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          parentGate.resolve()
+          childGate.resolve()
+        }),
+      )
+      yield* llm.push(reply().tool("todoread", {}).wait(parentGate.promise))
+      const runningParent = yield* prompt
+        .prompt({
+          sessionID: parent.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "keep working on the main task" }],
+        })
+        .pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      const original = MessageV2.latest(yield* sessions.messages({ sessionID: parent.id })).user!
+      const ops: TaskPromptOps = {
+        cancel: prompt.cancel,
+        prompt: (input) => prompt.prompt(input).pipe(Effect.catch(Effect.die)),
+        loop: prompt.loop,
+        resolvePromptParts: prompt.resolvePromptParts,
+        runIsolated: () => Effect.die("unexpected isolation setup"),
+      }
+      yield* llm.hold("initial child answer", childGate.promise)
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: parent.id },
+        run: runSteerableTask(
+          { sessionID: child.id, parentSessionID: parent.id, ops, sessions },
+          ops.prompt({
+            sessionID: child.id,
+            agent: "explore",
+            model: ref,
+            parts: [{ type: "text", text: "explore the background task" }],
+          }),
+        ).pipe(Effect.as("completed")),
+      })
+      yield* llm.wait(2)
+      const sent = steerTaskFromUser({
+        taskID: child.id,
+        parentSessionID: parent.id,
+        message: "only inspect the synchronization entry",
+        requestID: `concurrent-${busyEnter}`,
+      })
+      yield* Deferred.await(sent.trace).pipe(Effect.timeout("2 seconds"))
+      const history = yield* sessions.messages({ sessionID: parent.id })
+      expect(history.some((m) => m.parts.some((p) => p.type === "text" && p.metadata?.task_steer_record))).toBe(true)
+      expect(MessageV2.latest(history).user?.id).toBe(original.id)
+      expect(yield* MessageV2.lastUserAgent(parent.id)).toBe(original.agent)
+      yield* llm.text("main task complete")
+      parentGate.resolve()
+      const answer = yield* Fiber.join(runningParent)
+      expect(answer.info.role === "assistant" && answer.info.parentID).toBe(original.id)
+      expect(JSON.stringify((yield* llm.hits).at(-1)?.body)).toContain("only inspect the synchronization entry")
+      yield* llm.text("corrected child answer")
+      childGate.resolve()
+      expect((yield* jobs.wait({ id: child.id, timeout: 5_000 })).info?.status).toBe("completed")
+      expect(userDelivery(yield* MessageV2.get({ sessionID: child.id, messageID: sent.messageID }))).toBe("delivered")
+    }),
+  )
+}
+
 it.instance("user permission rejection does not restart the queued turn", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

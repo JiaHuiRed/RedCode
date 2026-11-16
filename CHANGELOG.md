@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **0.18.7 复审修复**：关闭后台终端查看标签只分离视图，不再终止原进程；子任务补充要求的父会话留痕不再抢占真实用户回合。TUI 后台输出支持持续刷新、失败恢复支持键盘操作，Markdown 源码首次打开时的查找焦点也已修复。定向测试与未完成的实机验收见 `docs/reviews/0.18.7-review-closeout.md`。
+
 > 依据 `docs/2026-11-16-experience-roadmap-v2.md`（原 HTML 导出）实施 0.18.7 体验包，决策、取舍与验证边界见 `docs/notes/implemented/feature/2026-11-16-experience-roadmap-v2.md`。
 
 - **A03 用户可对运行中子任务补充要求**（`packages/opencode/src/tool/{task,task_status}.ts`、`server/routes/instance/httpapi/{groups,handlers}/background.ts`、`packages/app/src/components/task-steering.tsx`、`packages/opencode/src/cli/cmd/tui/component/{dialog-subagent-steer,subagent-steer}.ts`）：新增 `POST /background/tasks/:sessionID/steer`（`{message, requestID}` → `{messageID, state}`），`requestID` 是幂等键（同 ID 同正文重放、同 ID 不同正文拒绝）。子消息带 `source=user` / `priority=user_override` 与来源前缀，**不伪装成父代理规划**；父会话在子消息落库后立刻写入 synthetic `noReply` 记录（在父真实实例下执行，isolated 子任务不会把记录写进子 worktree），不触发新的模型轮次。修掉两处竞态：queued→delivered 原先靠 `forkChild` 轮询、`send` 返回即关 scope，子回合最后一步结束时父记录会永久停在 queued，现于 join 后同步读最终 delivery；父记录写失败但子消息已落库时，同 `requestID` 重试只补父记录、不重复子消息。任务结束不接受引导，也不自动续跑。TUI / GUI 均把内联大表单改为紧凑入口（GUI 实测原布局的发送按钮会被右侧浮动工作台遮挡），草稿按会话保留、失败可重试、`delivered` 明示只代表投递成功。验证：task-steering 4、真实 SessionPrompt 时序集成 1（先复现「父记录未更新为 delivered」再修）、pty/httpapi 相关套件、Playwright 冒烟覆盖同 ID 重试与双会话草稿隔离。

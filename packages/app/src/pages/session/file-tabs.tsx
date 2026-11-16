@@ -190,10 +190,17 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
   }).activeFileTab
 
   let find: FileSearchHandle | null = null
+  let pendingFind = false
+  const focusFind = () => {
+    if (!pendingFind || !find || activeFileTab() !== props.tab) return
+    pendingFind = false
+    find.focus()
+  }
 
   const search = {
     register: (handle: FileSearchHandle | null) => {
       find = handle
+      focusFind()
     },
   }
 
@@ -207,6 +214,9 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
   const markdown = createMemo(() => /\.(md|markdown)$/i.test(path() ?? ""))
   const html = createMemo(() => /\.html?$/i.test(path() ?? ""))
   const [preview, setPreview] = createStore({ source: false })
+  createEffect(() => {
+    if (activeFileTab() !== props.tab || (markdown() && !preview.source)) pendingFind = false
+  })
   const htmlPreview = createMemo(() => {
     if (!html() || !state()?.loaded) return
     // 261116 Red HTML only executes after an explicit click, inside an opaque-origin sandbox.
@@ -381,13 +391,16 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (activeFileTab() !== props.tab) return
+      if (event.isComposing) return
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
       if (event.key.toLowerCase() !== "f") return
 
       event.preventDefault()
       event.stopPropagation()
+      // FileImpl is lazy-loaded; its search handle can arrive after the source view opens.
+      pendingFind = true
       if (markdown()) setPreview("source", true)
-      find?.focus()
+      focusFind()
     }
 
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
@@ -397,6 +410,7 @@ export function FileTabContent(props: { tab: string; onReturn?: () => void }) {
     on(
       path,
       () => {
+        pendingFind = false
         commentsUi.note.reset()
         setPreview("source", false)
       },

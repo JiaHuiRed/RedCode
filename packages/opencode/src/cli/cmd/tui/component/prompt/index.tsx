@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import {
   BoxRenderable,
   MouseButton,
@@ -514,7 +515,7 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return undefined
     const messages = sync.data.message[props.sessionID]
     if (!messages) return undefined
-    return messages.findLast((m): m is UserMessage => m.role === "user")
+    return messages.findLast((m): m is UserMessage => isUserTurn(m, sync.data.part[m.id]))
   })
 
   // 261011 Red 主动压缩键（footer 行，推理档右侧）：显示当前上下文与档位色，点击出确认窗

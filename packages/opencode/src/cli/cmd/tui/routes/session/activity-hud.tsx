@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import type { AssistantMessage as AssistantMessageInfo } from "@redcode-ai/sdk/v2"
 import { useSync } from "@tui/context/sync"
@@ -22,11 +23,11 @@ export function SessionActivityHud(props: { sessionID: string }) {
   // 回合范围：最后一条用户消息及其后的消息才算本轮；找不到说明起点不在已加载窗口里。
   const turnParts = createMemo<ActivityPart[]>(() => {
     const all = messages()
-    const start = all.findLastIndex((message) => message.role === "user")
+    const start = all.findLastIndex((message) => isUserTurn(message, sync.data.part[message.id]))
     const slice = start === -1 ? [] : all.slice(start)
     return slice.flatMap((message) => (sync.data.part[message.id] ?? []) as unknown as ActivityPart[])
   })
-  const turnIncomplete = createMemo(() => working() && messages().findLastIndex((message) => message.role === "user") === -1)
+  const turnIncomplete = createMemo(() => working() && messages().findLastIndex((message) => isUserTurn(message, sync.data.part[message.id])) === -1)
   const parts = turnParts
   const activity = createMemo(() => deriveActivity(parts()))
   const permissions = createMemo(() => (sync.data.permission[props.sessionID] ?? []).length)

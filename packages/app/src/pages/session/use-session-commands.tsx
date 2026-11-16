@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { useNavigate } from "@solidjs/router"
 import { createMemo } from "solid-js"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -82,7 +83,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!id) return []
     return sync.data.message[id] ?? []
   }
-  const userMessages = () => messages().filter((m) => m.role === "user") as UserMessage[]
+  const userMessages = () => messages().filter((m) => isUserTurn(m, sync.data.part[m.id])) as UserMessage[]
   const visibleUserMessages = () => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()

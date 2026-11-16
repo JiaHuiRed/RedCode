@@ -1,4 +1,5 @@
 import { createMemo } from "solid-js"
+import { isTaskSteerRecord } from "@redcode-ai/core/util/message-turn"
 import { useSync } from "@tui/context/sync"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useSDK } from "@tui/context/sdk"
@@ -180,7 +181,7 @@ export function DialogMessage(props: {
           title: "Copy",
           value: "message.copy",
           description: "message text to clipboard",
-          onSelect: async (dialog) => {
+          onSelect: async (dialog: { clear: () => void }) => {
             const msg = message()
             if (!msg) return
 
@@ -200,7 +201,7 @@ export function DialogMessage(props: {
           title: "Fork",
           value: "session.fork",
           description: "create a new session",
-          onSelect: async (dialog) => {
+          onSelect: async (dialog: { clear: () => void }) => {
             const result = await sdk.client.session.fork({
               sessionID: props.sessionID,
               messageID: props.messageID,
@@ -226,7 +227,7 @@ export function DialogMessage(props: {
             dialog.clear()
           },
         },
-      ]}
+      ].filter((option) => !isTaskSteerRecord(sync.data.part[props.messageID]) || !option.value.startsWith("session."))}
     />
   )
 }

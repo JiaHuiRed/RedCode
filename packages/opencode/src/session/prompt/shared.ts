@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 // 260630 Red P1-b: 从 prompt.ts 提取的共享工具函数
 import { Cause, Effect, Exit, Option } from "effect"
 import { SessionID } from "../schema"
@@ -45,7 +46,7 @@ export function makeShared(deps: { provider: Provider.Interface; bus: Bus.Interf
       }
     }
     const match = yield* sessions
-      .findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
+      .findMessage(sessionID, (m) => isUserTurn(m.info, m.parts) && !!m.info.model)
       .pipe(Effect.orDie)
     if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
     return yield* provider.defaultModel().pipe(Effect.orDie)

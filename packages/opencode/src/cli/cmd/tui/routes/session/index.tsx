@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import { filetype } from "@tui/util/filetype"
 import {
   batch,
@@ -330,7 +331,7 @@ export function Session() {
       const msgs = messages()
       for (let i = msgs.length - 1; i >= 0; i--) {
         const message = msgs[i]
-        if (message.role === "user" && !isPendingDelivery(message.delivery)) return message.id
+        if (isUserTurn(message, sync.data.part[message.id]) && !isPendingDelivery(message.delivery)) return message.id
       }
     }
     return undefined
@@ -347,15 +348,7 @@ export function Session() {
         maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
         continue
       }
-      if (message.role !== "user") continue
-      // 261116 Red A03：父会话的人工补充回执也是 user 消息，但它不是待发送轮次，
-      // 不能因为「没有 assistant 子消息」被标成 QUEUED。
-      if (
-        (sync.data.part[message.id] ?? []).some(
-          (part) => part.type === "text" && part.metadata?.task_steer_record !== undefined,
-        )
-      )
-        continue
+      if (!isUserTurn(message, sync.data.part[message.id])) continue
       // 正常轮首:有自己的 assistant 子消息 → 不标记
       if ((assistantByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)
@@ -928,7 +921,7 @@ export function Session() {
   const versionTarget = (delta: number) => {
     const groups = sync.data.message_versions?.[route.sessionID]
     if (!groups) return undefined
-    const users = messages().filter((x) => x.role === "user")
+    const users = messages().filter((x) => isUserTurn(x, sync.data.part[x.id]))
     for (let i = users.length - 1; i >= 0; i--) {
       const message = users[i]!
       const group = groups.find((g) => g.versions.some((v) => v.messageID === message.id))
@@ -1138,7 +1131,7 @@ export function Session() {
         const revert = session()?.revert?.messageID
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = revert ? messages().find((x) => x.id === revert) : undefined
-        const message = messages().findLast((x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && x.role === "user")
+        const message = messages().findLast((x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && isUserTurn(x, sync.data.part[x.id]))
         if (!message) return
         const parts = sync.data.part[message.id]
         const draft = parts.reduce(
@@ -1191,7 +1184,7 @@ export function Session() {
         if (!messageID) return
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = messages().find((x) => x.id === messageID)
-        const message = revertMsg ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0) : undefined
+        const message = revertMsg ? messages().find((x) => isUserTurn(x, sync.data.part[x.id]) && cmpTime(x, revertMsg) > 0) : undefined
         const failed = (error: unknown) =>
           toast.show({
             message: errorMessage(error),
@@ -1449,7 +1442,7 @@ export function Session() {
         // Find the most recent user message with non-ignored, non-synthetic text parts
         for (let i = messages.length - 1; i >= 0; i--) {
           const message = messages[i]
-          if (!message || message.role !== "user") continue
+          if (!message || !isUserTurn(message, sync.data.part[message.id])) continue
 
           const parts = sync.data.part[message.id]
           if (!parts || !Array.isArray(parts)) continue
@@ -1759,7 +1752,7 @@ export function Session() {
     // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）；revert 点消息不在列表时为 []
     const revertMsg = messages().find((x) => x.id === messageID)
     if (!revertMsg) return []
-    return messages().filter((x) => cmpTime(x, revertMsg) >= 0 && x.role === "user")
+    return messages().filter((x) => cmpTime(x, revertMsg) >= 0 && isUserTurn(x, sync.data.part[x.id]))
   })
 
   const revert = createMemo(() => {

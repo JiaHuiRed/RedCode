@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import path from "path"
 import { Effect } from "effect"
 import { Agent } from "@/agent/agent"
@@ -19,7 +20,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const fsys = yield* AppFileSystem.Service
   const sessions = yield* Session.Service
-  const userMessage = input.messages.findLast((msg) => msg.info.role === "user")
+  const userMessage = input.messages.findLast((msg) => isUserTurn(msg.info, msg.parts))
   if (!userMessage) return input.messages
 
   // 261108 Red 审计 RC-P3-04：plan_exit 只在 CLI 注册（registry.ts 按 flags.client 过滤），

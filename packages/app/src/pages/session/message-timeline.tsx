@@ -1,3 +1,4 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import {
   createEffect,
   createMemo,
@@ -497,7 +498,7 @@ export function MessageTimeline(props: {
       const messages = sessionMessages()
       for (let i = messages.length - 1; i >= 0; i--) {
         const message = messages[i]
-        if (message.role === "user" && message.delivery !== "queued") return message.id
+        if (isUserTurn(message, sync.data.part[message.id]) && message.delivery !== "queued") return message.id
       }
     }
 
@@ -517,7 +518,7 @@ export function MessageTimeline(props: {
         maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
         continue
       }
-      if (message.role !== "user") continue
+      if (!isUserTurn(message, sync.data.part[message.id])) continue
       // 正常轮首:有自己的 assistant 子消息 → 不标记
       if ((assistantMessagesByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)

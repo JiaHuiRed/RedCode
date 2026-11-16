@@ -49,6 +49,7 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
       props.onClose?.()
     }
   }
+  const closeLabel = () => language.t(props.terminal.attached ? "terminal.detach" : "terminal.close")
 
   const focus = () => {
     if (store.editing) return
@@ -139,7 +140,8 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
                 e.stopPropagation()
                 close()
               }}
-              aria-label={language.t("terminal.close")}
+              aria-label={closeLabel()}
+              title={closeLabel()}
             />
           }
         >
@@ -182,7 +184,7 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
               </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={close}>
                 <Icon name="close" class="w-4 h-4 mr-2" />
-                {language.t("common.close")}
+                {closeLabel()}
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
