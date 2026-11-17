@@ -25,7 +25,7 @@
     "check:injection-registry": "bun run script/check-injection-registry.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "gen:openapi": "bun run --cwd packages/redspace --conditions=browser src/index.ts generate > packages/sdk/openapi.json",
+    "gen:openapi": "bun --conditions=browser packages/redspace/src/index.ts generate > packages/sdk/openapi.json",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
     "postinstall": "bun run --cwd packages/redspace fix-node-pty && bun run script/fix-keymap-junction.ts",
     "prepare": "husky",

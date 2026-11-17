@@ -235,7 +235,7 @@ if (frozen) {
 const sources = Object.fromEntries(
   await Promise.all(
     sourcePaths.map(async (file) => {
-      const relative = `packages/opencode/src/${file}`
+      const relative = `packages/redspace/src/${file}`
       const text = frozen
         ? frozen.sources.find((item) => item.file === relative)?.text
         : await Bun.file(path.join(import.meta.dir, "../src", file)).text()

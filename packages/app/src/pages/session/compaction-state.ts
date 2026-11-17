@@ -1,7 +1,7 @@
 import type { AssistantMessage, Part } from "@redcode-ai/sdk/v2"
 
 // 261013 Red GUI 压缩状态可见性：纯函数判据与 TUI 逐字对齐
-// （packages/opencode/src/cli/cmd/tui/routes/session/index.tsx 的
+// （packages/redspace/src/cli/cmd/tui/routes/session/index.tsx 的
 // compactionMessage / compactionError / compacting 三个 memo）：
 // 见 docs/notes/implemented/feature/2026-10-10-native-compaction.md#中断恢复与状态可见性
 //   终态    = 摘要（mode "compaction" 且 parentID 为本条 user 消息的 assistant）带 error

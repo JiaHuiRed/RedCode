@@ -175,7 +175,7 @@ export function ensureNotificationShortcut(options: Options) {
 
   const shortcutPath = join(
     options.startMenuProgramsPath,
-    options.packaged ? `${options.displayName}.lnk` : "RedCode Dev (dev).lnk",
+    options.packaged ? `${options.displayName}.lnk` : "RedSpace Dev (dev).lnk",
   )
   let previousShortcut: ShortcutDetails | undefined
   if (existsSync(shortcutPath)) {

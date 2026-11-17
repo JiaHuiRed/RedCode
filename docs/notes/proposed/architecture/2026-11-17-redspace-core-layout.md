@@ -24,7 +24,7 @@ bun run dev:desktop
 Then verify TUI Chat/Code switching, imported companion read/write, GUI sidebar/Chat/Code switching, Electron sidecar boot, and existing `redcode` CLI compatibility. On Windows, inspect the generated binary packaging paths and update release scripts as needed.
 
 ## Remaining migration work
-- End-user product labels, installer names, deep links, settings directory, namespace and telemetry identity still use RedCode identifiers for backwards compatibility.
+- End-user product labels now read RedSpace (window title, tray, installer, Start menu shortcut, exit prompt, startup-failure dialog; dev/beta/prod render as RedSpace Dev / RedSpace Beta / RedSpace). `appId`, deep-link scheme, settings directory, workspace package names, the `redcode` executable and telemetry identity keep RedCode identifiers so existing installs, local data and external links stay continuous.
 - Historical architecture notes keep the previous paths for provenance.
 - Third-party package/provider names containing OpenCode refer to real upstream integrations and must not be mechanically replaced.
 - This refactor branch was prepared using GitHub source analysis, without a Windows/Bun runtime test; **do not merge until both TUI and GUI smoke tests pass**.

@@ -28,7 +28,7 @@ function fixture() {
   mkdirSync(startMenuProgramsPath, { recursive: true })
   mkdirSync(userDataPath, { recursive: true })
 
-  const execPath = join(root, "Application With Spaces", "RedCode Dev.exe")
+  const execPath = join(root, "Application With Spaces", "RedSpace Dev.exe")
   const appPath = join(root, "workspace with spaces", "packages", "desktop")
   const details = new Map<string, ShortcutDetails>()
   const events: string[] = []
@@ -56,7 +56,7 @@ function fixture() {
     packaged: true,
     appUserModelId: "ai.redcode.desktop.dev",
     packagedAppUserModelId: "ai.redcode.desktop.dev",
-    displayName: "RedCode Dev",
+    displayName: "RedSpace Dev",
     startMenuProgramsPath,
     userDataPath,
     execPath,
@@ -109,7 +109,7 @@ describe("notification shortcut identity", () => {
 
     ensureNotificationShortcut(f.options())
 
-    const replacementPath = join(f.startMenuProgramsPath, "RedCode Dev.lnk")
+    const replacementPath = join(f.startMenuProgramsPath, "RedSpace Dev.lnk")
     const replacement = f.details.get(replacementPath)
     expect(replacement).toMatchObject({
       target: f.execPath,
@@ -129,7 +129,7 @@ describe("notification shortcut identity", () => {
 
   test("writes unpackaged shortcut with absolute quoted app path and preserves existing app parameters", () => {
     const f = fixture()
-    const devPath = join(f.startMenuProgramsPath, "RedCode Dev (dev).lnk")
+    const devPath = join(f.startMenuProgramsPath, "RedSpace Dev (dev).lnk")
     f.seed(devPath, {
       target: f.execPath,
       args: `".\\packages\\desktop" --profile "custom profile"`,
@@ -153,7 +153,7 @@ describe("notification shortcut identity", () => {
 
   test("preserves args when the existing packaged shortcut already targets the current executable", () => {
     const f = fixture()
-    const packagedPath = join(f.startMenuProgramsPath, "RedCode Dev.lnk")
+    const packagedPath = join(f.startMenuProgramsPath, "RedSpace Dev.lnk")
     f.seed(packagedPath, {
       target: f.execPath,
       args: "--profile user-profile",
@@ -219,7 +219,7 @@ describe("notification shortcut identity", () => {
 
     ensureNotificationShortcut(f.options({ userDataPath: blockedUserData }))
 
-    expect(existsSync(join(f.startMenuProgramsPath, "RedCode Dev.lnk"))).toBe(true)
+    expect(existsSync(join(f.startMenuProgramsPath, "RedSpace Dev.lnk"))).toBe(true)
     expect(existsSync(oldPath)).toBe(true)
     expect(f.warnings[0]?.[0]).toBe("failed to back up conflicting Electron notification shortcut")
   })

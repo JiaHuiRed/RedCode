@@ -13,6 +13,7 @@
 - **RedSpace 首轮 Windows 验收修复**：伙伴档案在导入和读取时统一解析真实工作区，修复目录别名、junction 和 Windows 短路径导致 Chat 创建被误拒绝；档案落位与记忆索引提交复用已有的 Windows 有界 rename 重试。GUI 冷恢复会话时先等待绑定，不再把未加载的 Chat 当成 Code 新建；归档值 `0` 与 TUI 一样视为已归档。Chat 首页标题改用已定义的字号，避免不存在的工具类使主标题退回正文大小。
 - **本地维护与构建**：主要 push / PR 类型检查入口迁到 `master`；新增 `REDCODE_BUILD_DIR` 可将 TUI 构建输出到指定目录，自定义目录不做整目录清理，避免覆盖正在使用的 exe。没有变更 GitHub 默认分支或执行远端发布。
 - **接续链路复测**：真实档案目录离线导入保留 252 个来源文件并逐文件校验原字节；Chromium、真实隔离后端和编译版 TUI 验证双伙伴身份隔离、选择性记忆、新建、恢复与 Code 兼容。模型使用本地合成 provider，不代表真人格体验验收；完整旧运行配置与历史会话重建没有因档案导入而自动启用。详情见 `docs/notes/implemented/architecture/2026-11-17-redspace-companion-chat.md`。
+- **RedSpace 共享引擎与产品名**：引擎目录由 `packages/opencode` 迁到 `packages/redspace`（1364 个文件、765 个源文件），保留 `redcode` 可执行文件、`@redcode-ai/*` 包名、`~/.redcode` 数据目录与 `redcode://` 深链，新增 `redspace` 作为命令别名。搬迁遗漏的 11 处旧路径引用一并修正（web 构建脚本、desktop 类型声明、测试数据与注释）。GUI 用户可见名称改为 RedSpace——窗口标题、托盘、安装向导、开始菜单快捷方式、退出确认与启动失败提示，按 dev / beta / prod 三档分别为 RedSpace Dev / RedSpace Beta / RedSpace；`appId` 与深链 scheme 保持不变，已有安装的数据目录与外部链接继续有效。
 
 ### [0.19.0] - 2026-11-17
 

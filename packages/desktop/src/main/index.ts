@@ -66,9 +66,9 @@ import {
 import { Cause, Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "RedCode Dev",
-  beta: "RedCode Beta",
-  prod: "RedCode",
+  dev: "RedSpace Dev",
+  beta: "RedSpace Beta",
+  prod: "RedSpace",
 }
 const APP_IDS: Record<string, string> = {
   dev: "ai.redcode.desktop.dev",
@@ -422,7 +422,7 @@ function confirmQuit() {
         defaultId: 1,
         cancelId: 1,
         checkboxLabel: "不再询问",
-        message: "确定退出 RedCode？",
+        message: "确定退出 RedSpace？",
         detail: "后台可能还有正在运行的任务（模型生成、工具执行）。退出会停止服务进程及其全部子进程。",
       })
       if (result.response !== 0) return
@@ -436,7 +436,7 @@ function confirmQuit() {
 function showTray() {
   const menu = Menu.buildFromTemplate([
     {
-      label: "显示 RedCode",
+        label: "显示 RedSpace",
       click: () => {
         mainWindow?.show()
         mainWindow?.focus()
@@ -446,7 +446,7 @@ function showTray() {
     { label: "退出", click: confirmQuit },
   ])
   tray = new Tray(iconPath())
-  tray.setToolTip("RedCode")
+  tray.setToolTip("RedSpace")
   tray.setContextMenu(menu)
   tray.on("click", () => {
     mainWindow?.show()
@@ -546,7 +546,7 @@ const main = Effect.gen(function* () {
     process.env.XDG_STATE_HOME = join(root, "state")
     return root
   })()
-  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "RedCode Dev")
+  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "RedSpace Dev")
   app.setAppUserModelId(userModelId)
   app.setPath(
     "userData",
@@ -903,7 +903,7 @@ const main = Effect.gen(function* () {
     // 260929 Red 弹窗前落诊断报告，路径直接给到弹窗里，省去「该看哪个日志」的排查弯路
     const reportPath = writeCrashReport("sidecar startup failed", { error: message })
     dialog.showErrorBox(
-      "RedCode 启动失败",
+      "RedSpace 启动失败",
       `服务进程未能启动：${message}\n\n${reportPath ? `诊断报告：${reportPath}\n\n` : ""}请重启 RedCode 重试；若反复出现，请在反馈里附上这条原因。`,
     )
     app.quit()

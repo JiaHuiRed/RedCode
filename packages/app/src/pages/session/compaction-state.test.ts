@@ -4,7 +4,7 @@ import { resolveCompactionState } from "./compaction-state"
 import type { AssistantMessage, Part } from "@redcode-ai/sdk/v2"
 
 // 261013 Red GUI 压缩状态判据单测：与 TUI
-// packages/opencode/src/cli/cmd/tui/routes/session/index.tsx 的
+// packages/redspace/src/cli/cmd/tui/routes/session/index.tsx 的
 // compactionMessage / compactionError / compacting 三个 memo 逐条对齐。
 
 const compactionPart = (tokens?: { before?: number; after?: number }): Part =>

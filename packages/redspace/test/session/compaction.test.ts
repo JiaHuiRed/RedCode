@@ -3371,13 +3371,13 @@ describe("compaction file tags", () => {
         mkTool("read", { filePath: "C:\\Users\\x\\.redcode\\MEMORY.md" }),
         mkTool("read", { filePath: ".redcode/MEMORY-archive.md" }),
         mkTool("read", { filePath: "src/a.ts" }),
-        mkTool("edit", { filePath: "packages/opencode/AGENTS.md" }),
+        mkTool("edit", { filePath: "packages/redspace/AGENTS.md" }),
         mkTool("edit", { filePath: "src/c.ts" }),
       ]),
     ]
     const files = collectFiles(messages)
     expect(files.read).toEqual(["AGENTS.md", ".redcode/MEMORY-archive.md", "src/a.ts"])
-    expect(files.modified).toEqual(["packages/opencode/AGENTS.md", "src/c.ts"])
+    expect(files.modified).toEqual(["packages/redspace/AGENTS.md", "src/c.ts"])
   })
 
   test("parseFileTags parses both tags and dedupes", () => {

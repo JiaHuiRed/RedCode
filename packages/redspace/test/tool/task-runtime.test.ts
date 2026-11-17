@@ -15,7 +15,7 @@ const validPacket = {
   goal: "Inspect the provider resolution path",
   profile: "explore",
   scope: {
-    directories: ["packages/opencode/src/provider"],
+    directories: ["packages/redspace/src/provider"],
     files: [],
   },
   constraints: ["Do not modify files"],
@@ -30,9 +30,9 @@ describe("child task runtime contract", () => {
   })
 
   test("compiles the first explore profile with a bounded directory scope", () => {
-    expect(compileExploreTaskPacket({ goal: validPacket.goal, directory: "packages/opencode" })).toMatchObject({
+    expect(compileExploreTaskPacket({ goal: validPacket.goal, directory: "packages/redspace" })).toMatchObject({
       profile: "explore",
-      scope: { directories: ["packages/opencode"], files: [] },
+      scope: { directories: ["packages/redspace"], files: [] },
     })
   })
 
@@ -83,7 +83,7 @@ describe("child task runtime contract", () => {
       termination: "normal",
     })
 
-    expect(result.requestedScope).toEqual(["packages/opencode/src/provider"])
+    expect(result.requestedScope).toEqual(["packages/redspace/src/provider"])
     expect(result.uncertainties).toEqual(["Runtime did not independently execute Task Packet verification."])
     expect("changedFiles" in result).toBe(false)
     expect("verification" in result).toBe(false)

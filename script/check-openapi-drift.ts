@@ -38,7 +38,7 @@ function fail(lines: string[]): never {
 }
 
 const proc = Bun.spawn(["bun", "run", "--conditions=browser", "./src/index.ts", "generate"], {
-  cwd: join(root, "packages", "opencode"),
+  cwd: join(root, "packages", "redspace"),
   stdout: "pipe",
   stderr: "pipe",
   // subprocess-timeout: 显式上限，超时按失败处理而不是静默挂死
