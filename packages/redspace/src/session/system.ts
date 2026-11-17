@@ -82,12 +82,13 @@ export function provider(model: Provider.Model) {
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen"))
     return withDefaultPrompt(PROMPT_GLM)
-  // 260829 cc 腾讯混元 Hy 系列（hy4-preview / hy3 …）。用 `hy` + 数字并带边界，不能写成
+  // 260829 cc 腾讯混元 Hy 系列（hy4-preview / hy4Flash / hy3 …）。用 `hy` + 数字并带边界，不能写成
   // includes("hy") —— 那会命中任何名字里带 hy 的模型。provider 侧的 id 形态见 models.dev：
   // opencode-go 是 `hy4-preview`、nano-gpt 是 `tencent/hy4-preview`，所以边界要允许 `/`。
-  // 专属档的存在理由是官方自陈的两个已知问题（长思考、过度自我验证），不是逃开兜底——
-  // 260822 重写后的 default.md 本身已是一线水准，hy.md 就是以它为骨加那两条。
-  if (/(?:^|[/\-_])hy[0-9]/i.test(model.api.id)) return [PROMPT_HY]
+  // 261117 Red 转为公共基线 + Delta（同 260921 决策）：hy.md 原先是按旧 default.md 写的完整版，
+  // default.md 8e9dcc9d 重写后它已落后数段（缺 Autonomy/Context efficiency/Steering）。
+  // 现在只保留家族自陈的两条倾向（长思考、过度自我验证），其余交给 default.md；hy4Flash 同命中。
+  if (/(?:^|[/\-_])hy[0-9]/i.test(model.api.id)) return withDefaultPrompt(PROMPT_HY)
   // 260921 Red Step 5 与旧 Step 系列共用公共基线；step.md 只保留 Step 系列实测的通道与交付护栏。
   // 260729 Red grok 此前无专属提示词、落 default.md —— 而当时的 default.md 强制「不超过 4 行、
   // 单词回答最好」，会直接碾平 soul 的人格。见 grok.md。

@@ -60,9 +60,10 @@ describe("system prompt routing", () => {
 
   // 260829 cc hy 的判据是 `hy` + 数字并带边界。写成 includes("hy") 会命中任何名字里
   // 带 hy 的模型，这一组就是钉住那条边界。
-  test("Hy 系走 hy.md，两家 provider 的 id 形态都要命中", () => {
-    for (const id of ["hy4-preview", "hy3", "tencent/hy4-preview", "Hy4-Preview"])
-      expect(provider(model(id, "opencode-go"))).toEqual([PROMPT_HY])
+  // 261117 Red hy.md 并入公共基线（同 260921 决策），断言随之加上 default.md 前缀。
+  test("Hy 系走 default.md + hy.md，两家 provider 的 id 形态都要命中", () => {
+    for (const id of ["hy4-preview", "hy4Flash", "hy3", "tencent/hy4-preview", "Hy4-Preview"])
+      expect(provider(model(id, "opencode-go"))).toEqual([PROMPT_DEFAULT, PROMPT_HY])
   })
 
   test("名字里带 hy 但不是混元的，不许被 hy.md 捞走", () => {
