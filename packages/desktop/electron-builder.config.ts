@@ -121,7 +121,7 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.redcode.desktop.dev",
-        productName: "RedCode Dev",
+        productName: "RedSpace Dev",
         rpm: { packageName: "redcode-dev" },
       }
     }
@@ -129,8 +129,8 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.redcode.desktop.beta",
-        productName: "RedCode Beta",
-        protocols: { name: "RedCode Beta", schemes: ["redcode"] },
+        productName: "RedSpace Beta",
+        protocols: { name: "RedSpace Beta", schemes: ["redcode"] },
         publish: { provider: "github", owner: "JiaHuiRed", repo: "RedCode", channel: "latest" },
         rpm: { packageName: "redcode-beta" },
       }
@@ -139,8 +139,8 @@ function getConfig() {
       return {
         ...base,
         appId: "ai.redcode.desktop",
-        productName: "RedCode",
-        protocols: { name: "RedCode", schemes: ["redcode"] },
+        productName: "RedSpace",
+        protocols: { name: "RedSpace", schemes: ["redcode"] },
         publish: { provider: "github", owner: "JiaHuiRed", repo: "RedCode", channel: "latest" },
         rpm: { packageName: "redcode" },
       }

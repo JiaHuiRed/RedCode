@@ -3,7 +3,7 @@ rem 260913 Karina: one-click phone access entry. Starts a headless server on the
 rem on the same Wi-Fi can open the web UI. ASCII-only on purpose: a .bat containing non-ASCII
 rem must be GBK or the console mangles it.
 rem
-rem Why `cd packages\opencode`: the compiled exe resolves the web UI bundle from the current
+rem Why `cd packages\redspace`: the compiled exe resolves the web UI bundle from the current
 rem working directory (`redcode-web-ui.gen.ts` -> `../app/dist`). Started from the repo root the
 rem root page returns 500 (the in-binary import misses and the cwd fallback finds nothing).
 rem Keep the cd.
@@ -16,13 +16,13 @@ set "PORT=4097"
 
 rem --- locate the checkout (same probe order as %USERPROFILE%\.redcode\bin\redcode.cmd) ---
 set "ROOT="
-if defined REDCODE_HOME if exist "%REDCODE_HOME%\packages\opencode\src\index.ts" set "ROOT=%REDCODE_HOME%"
-if not defined ROOT if exist "E:\AI\RedCode\packages\opencode\src\index.ts" set "ROOT=E:\AI\RedCode"
-if not defined ROOT if exist "D:\AI\RedCode\packages\opencode\src\index.ts" set "ROOT=D:\AI\RedCode"
-if not defined ROOT if exist "D:\AI\KLX\RedCode\packages\opencode\src\index.ts" set "ROOT=D:\AI\KLX\RedCode"
-if not defined ROOT if exist "C:\AI\RedCode\packages\opencode\src\index.ts" set "ROOT=C:\AI\RedCode"
+if defined REDCODE_HOME if exist "%REDCODE_HOME%\packages\redspace\src\index.ts" set "ROOT=%REDCODE_HOME%"
+if not defined ROOT if exist "E:\AI\RedCode\packages\redspace\src\index.ts" set "ROOT=E:\AI\RedCode"
+if not defined ROOT if exist "D:\AI\RedCode\packages\redspace\src\index.ts" set "ROOT=D:\AI\RedCode"
+if not defined ROOT if exist "D:\AI\KLX\RedCode\packages\redspace\src\index.ts" set "ROOT=D:\AI\KLX\RedCode"
+if not defined ROOT if exist "C:\AI\RedCode\packages\redspace\src\index.ts" set "ROOT=C:\AI\RedCode"
 if not defined ROOT (
-  echo [RedCode] cannot locate a checkout. Set REDCODE_HOME to the repo root and retry.
+  echo [RedSpace] cannot locate a checkout. Set REDCODE_HOME to the repo root and retry.
   pause
   exit /b 1
 )
@@ -37,7 +37,7 @@ netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul 2>&1
 if errorlevel 1 goto start_server
 
 echo ==============================================================
-echo   RedCode - phone access (LAN) - already running
+echo   RedSpace - phone access (LAN) - already running
 echo ==============================================================
 echo   Port %PORT% is already listening. On your phone, open:
 powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.|172\.|198\.18\.|198\.19\.)' } | ForEach-Object { '       http://' + $_.IPAddress + ':%PORT%' }"
@@ -52,7 +52,7 @@ exit /b 0
 :start_server
 
 echo ==============================================================
-echo   RedCode - phone access (LAN)
+echo   RedSpace - phone access (LAN)
 echo ==============================================================
 echo   On your phone, open the "Network access" URL printed below.
 echo   Username :  redcode
@@ -63,7 +63,7 @@ echo   Close it (or press Ctrl+C) to stop the server.
 echo ==============================================================
 echo.
 
-cd /d "%ROOT%\packages\opencode"
+cd /d "%ROOT%\packages\redspace"
 if exist "%USERPROFILE%\.redcode\bin\redcode.cmd" (
   call "%USERPROFILE%\.redcode\bin\redcode.cmd" web --hostname 0.0.0.0 --port %PORT%
 ) else (
@@ -71,6 +71,6 @@ if exist "%USERPROFILE%\.redcode\bin\redcode.cmd" (
 )
 
 echo.
-echo [RedCode] server stopped.
+echo [RedSpace] server stopped.
 pause
 endlocal

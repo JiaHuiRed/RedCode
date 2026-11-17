@@ -1,0 +1,1940 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
+import { BusEvent } from "@/bus/bus-event"
+import { SessionID, MessageID, PartID } from "./schema"
+import { ImageTokens } from "@/session/image-tokens"
+import { NamedError } from "@redcode-ai/core/util/error"
+import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessage, type UIMessage } from "ai"
+import { LSP } from "@/lsp/lsp"
+import { Snapshot } from "@/snapshot"
+import { SyncEvent } from "../sync"
+import { Database } from "@/storage/db"
+import { NotFoundError } from "@/storage/storage"
+import { and, asc, sql } from "drizzle-orm"
+import { desc } from "drizzle-orm"
+import { eq } from "drizzle-orm"
+import { inArray } from "drizzle-orm"
+import { gt } from "drizzle-orm"
+import { lt } from "drizzle-orm"
+import { or } from "drizzle-orm"
+import { MessageTable, PartTable, SessionTable } from "./session.sql"
+import * as ProviderError from "@/provider/error"
+import { iife } from "@/util/iife"
+import { errorMessage } from "@/util/error"
+import { isMedia } from "@/util/media"
+import { isCompleteSummary } from "./summary-complete"
+import { visiblePath } from "./message-tree"
+import type { SystemError } from "bun"
+import type { Provider } from "@/provider/provider"
+import { ModelID, ProviderID } from "@/provider/schema"
+import { Effect, Schema, Types } from "effect"
+import { NonNegativeInt } from "@redcode-ai/core/schema"
+import * as EffectLogger from "@redcode-ai/core/effect/logger"
+import { MessageError } from "./message-error"
+import { AuthError, OutputLengthError } from "./message-error"
+export { AuthError, OutputLengthError } from "./message-error"
+
+/** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
+interface FetchDecompressionError extends Error {
+  code: "ZlibError"
+  errno: number
+  path: string
+}
+
+export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
+// 261024 Red 跨模型剥离推理后，纯思考轮 assistant 的占位文本——保住 user/assistant
+//   交替，同时告诉新模型「这里有段被移除的思考」而不是凭空少一轮。
+export const THINKING_REMOVED_PLACEHOLDER = "[Thinking removed]"
+
+// 260923 Red 工具结果被模型侧 token 预算裁掉时给模型的短标记。它自己走 fitToolResult
+// 的 notice 入账，占的是同一笔预算，不会把总账顶过线。
+const BUDGET_NOTICE = "\n[tool result truncated to fit the model-visible token budget]"
+export { isMedia }
+
+/**
+ * 把附件 url 规整成 AI SDK v7 能接受的形态。
+ *
+ * 260808 Red：v7 的 convertToModelMessages 对 file part 的 url 做**真 `new URL()` 解析**，
+ * 裸 base64 直接抛 `ERR_INVALID_URL`。v6 时代恰恰相反——那时要用 stripDataUrlPrefix 把
+ * `data:` 前缀剥掉，防 SDK 双重包裹；v7 语义反转后，那个剥前缀的动作从"必需"变成了"致命"。
+ *
+ * v7 迁移当时只改了工具结果附件那条路径，**用户手动粘贴/拖入的附件这条漏了**，于是：
+ * 会话里一旦有用户附的图，每轮 prompt 构造就抛异常 → 请求根本发不出去 → UI 永远停在
+ * "等待模型响应"，且日志只有一条 `service=server error="<整串 base64>" cannot be parsed as a URL`，
+ * token 全 0、message.time.completed 恒为 null。同供应商同模型的无图会话完全正常，
+ * 所以看起来像"供应商抽风"（实测 ses_020d51950ffe…，08-08）。
+ *
+ * 规则：已带 scheme（data:/http(s):/file: 等）的原样保留，裸 base64 补包成 data: URL。
+ */
+function toModelFileUrl(url: string, mime: string) {
+  if (url.startsWith("data:")) return url
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url
+  return `data:${mime};base64,${url}`
+}
+
+export const AbortedError = NamedError.create("MessageAbortedError", { message: Schema.String })
+export const StructuredOutputError = NamedError.create("StructuredOutputError", {
+  message: Schema.String,
+  retries: NonNegativeInt,
+})
+export const APIError = NamedError.create("APIError", {
+  message: Schema.String,
+  statusCode: Schema.optional(NonNegativeInt),
+  isRetryable: Schema.Boolean,
+  responseHeaders: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  responseBody: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+})
+export type APIError = Schema.Schema.Type<typeof APIError.Schema>
+export const ContextOverflowError = NamedError.create("ContextOverflowError", {
+  message: Schema.String,
+  responseBody: Schema.optional(Schema.String),
+})
+export const ContentFilterError = NamedError.create("ContentFilterError", {
+  message: Schema.String,
+})
+// 261104 Red 重复工具失败停止本轮：原先只往正文追加说明，finish 仍停在 "tool-calls"，
+// 被判成正常完成——task_status/子代理回执报 completed，父代理以为任务成功。
+export const ToolFailureStoppedError = NamedError.create("ToolFailureStoppedError", {
+  message: Schema.String,
+})
+// 261113 Red n-gram 流内重复命中停止本轮：与工具熔断同一个理由——只写正文说明时 finish 停在
+// 未设置/"tool-calls"，task 子代理回执与 task_status 会把它当正常完成，父代理以为任务成功。
+export const TextLoopStoppedError = NamedError.create("TextLoopStoppedError", {
+  message: Schema.String,
+})
+// 261113 Red 摘要输出撞上长度上限（finish="length"）：消息看起来"完成"了，正文其实只有
+// 半份。压缩入口必须显式失败，不能让它成为新边界把被压缩的原文顶掉。
+export const SummaryTruncatedError = NamedError.create("SummaryTruncatedError", {
+  message: Schema.String,
+})
+// 261113 Red 供应商正常收尾（finish="stop"）却没有吐出摘要正文：空摘要同样是半份结果，
+// 不能成为压缩边界。
+export const SummaryEmptyError = NamedError.create("SummaryEmptyError", {
+  message: Schema.String,
+})
+
+export class OutputFormatText extends Schema.Class<OutputFormatText>("OutputFormatText")({
+  type: Schema.Literal("text"),
+}) {}
+
+export class OutputFormatJsonSchema extends Schema.Class<OutputFormatJsonSchema>("OutputFormatJsonSchema")({
+  type: Schema.Literal("json_schema"),
+  schema: Schema.Record(Schema.String, Schema.Any).annotate({ identifier: "JSONSchema" }),
+  retryCount: NonNegativeInt.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(2))),
+}) {}
+
+export const Format = Schema.Union([OutputFormatText, OutputFormatJsonSchema]).annotate({
+  discriminator: "type",
+  identifier: "OutputFormat",
+})
+export type OutputFormat = Schema.Schema.Type<typeof Format>
+
+const partBase = {
+  id: PartID,
+  sessionID: SessionID,
+  messageID: MessageID,
+}
+
+export const SnapshotPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("snapshot"),
+  snapshot: Schema.String,
+}).annotate({ identifier: "SnapshotPart" })
+export type SnapshotPart = Types.DeepMutable<Schema.Schema.Type<typeof SnapshotPart>>
+
+export const PatchPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("patch"),
+  hash: Schema.String,
+  files: Schema.Array(Schema.String),
+}).annotate({ identifier: "PatchPart" })
+export type PatchPart = Types.DeepMutable<Schema.Schema.Type<typeof PatchPart>>
+
+export const TextPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("text"),
+  text: Schema.String,
+  synthetic: Schema.optional(Schema.Boolean),
+  ignored: Schema.optional(Schema.Boolean),
+  time: Schema.optional(
+    Schema.Struct({
+      start: NonNegativeInt,
+      end: Schema.optional(NonNegativeInt),
+    }),
+  ),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+}).annotate({ identifier: "TextPart" })
+export type TextPart = Types.DeepMutable<Schema.Schema.Type<typeof TextPart>>
+
+export const ReasoningPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("reasoning"),
+  text: Schema.String,
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  time: Schema.Struct({
+    start: NonNegativeInt,
+    end: Schema.optional(NonNegativeInt),
+  }),
+}).annotate({ identifier: "ReasoningPart" })
+export type ReasoningPart = Types.DeepMutable<Schema.Schema.Type<typeof ReasoningPart>>
+
+const filePartSourceBase = {
+  text: Schema.Struct({
+    value: Schema.String,
+    start: Schema.Finite,
+    end: Schema.Finite,
+  }).annotate({ identifier: "FilePartSourceText" }),
+}
+
+export const FileSource = Schema.Struct({
+  ...filePartSourceBase,
+  type: Schema.Literal("file"),
+  path: Schema.String,
+}).annotate({ identifier: "FileSource" })
+
+export const SymbolSource = Schema.Struct({
+  ...filePartSourceBase,
+  type: Schema.Literal("symbol"),
+  path: Schema.String,
+  range: LSP.Range,
+  name: Schema.String,
+  kind: NonNegativeInt,
+}).annotate({ identifier: "SymbolSource" })
+
+export const ResourceSource = Schema.Struct({
+  ...filePartSourceBase,
+  type: Schema.Literal("resource"),
+  clientName: Schema.String,
+  uri: Schema.String,
+}).annotate({ identifier: "ResourceSource" })
+
+export const FilePartSource = Schema.Union([FileSource, SymbolSource, ResourceSource]).annotate({
+  discriminator: "type",
+  identifier: "FilePartSource",
+})
+
+export const FilePart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("file"),
+  mime: Schema.String,
+  filename: Schema.optional(Schema.String),
+  url: Schema.String,
+  source: Schema.optional(FilePartSource),
+  // 261112 Red 工具结果附件信任标记：MCP/plugin 等外部来源写 trust:"untrusted"，
+  // processor 对其跳过 image.normalize（不做 CPU 解码）。只影响运行时投影，不进模型输入。
+  // 决策：docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+}).annotate({ identifier: "FilePart" })
+export type FilePart = Types.DeepMutable<Schema.Schema.Type<typeof FilePart>>
+
+export const AgentPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("agent"),
+  name: Schema.String,
+  source: Schema.optional(
+    Schema.Struct({
+      value: Schema.String,
+      start: NonNegativeInt,
+      end: NonNegativeInt,
+    }),
+  ),
+}).annotate({ identifier: "AgentPart" })
+export type AgentPart = Types.DeepMutable<Schema.Schema.Type<typeof AgentPart>>
+
+export const CompactionPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("compaction"),
+  auto: Schema.Boolean,
+  native: Schema.optional(Schema.Boolean),
+  overflow: Schema.optional(Schema.Boolean),
+  tail_start_id: Schema.optional(MessageID),
+  // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
+  tokens_before: Schema.optional(NonNegativeInt),
+  tokens_after: Schema.optional(NonNegativeInt),
+  // 261010 Red 本次压缩耗时（毫秒）：与 token 对比同批回填，分割线展示
+  duration_ms: Schema.optional(NonNegativeInt),
+}).annotate({ identifier: "CompactionPart" })
+export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
+export const SubtaskPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("subtask"),
+  prompt: Schema.String,
+  description: Schema.String,
+  agent: Schema.String,
+  model: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderID,
+      modelID: ModelID,
+    }),
+  ),
+  command: Schema.optional(Schema.String),
+}).annotate({ identifier: "SubtaskPart" })
+export type SubtaskPart = Types.DeepMutable<Schema.Schema.Type<typeof SubtaskPart>>
+
+export const RetryPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("retry"),
+  attempt: NonNegativeInt,
+  error: APIError.EffectSchema,
+  time: Schema.Struct({
+    created: NonNegativeInt,
+  }),
+}).annotate({ identifier: "RetryPart" })
+export type RetryPart = Omit<Types.DeepMutable<Schema.Schema.Type<typeof RetryPart>>, "error"> & {
+  error: APIError
+}
+
+export const StepStartPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("step-start"),
+  snapshot: Schema.optional(Schema.String),
+}).annotate({ identifier: "StepStartPart" })
+export type StepStartPart = Types.DeepMutable<Schema.Schema.Type<typeof StepStartPart>>
+
+export const StepFinishPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("step-finish"),
+  reason: Schema.String,
+  snapshot: Schema.optional(Schema.String),
+  cost: Schema.Finite,
+  // 261113 Red 估算用量标记：自动中止/流断补记的 step-finish 没有供应商实报，tokens 是按可见
+  // 输出字节估算的（约 4 字节/token），input 与缓存为 0。缺省 = 供应商实报。
+  estimated: Schema.optional(Schema.Boolean),
+  // 260930 Red 记账时刻的币种定格（与 cost 同时写入，语义同 260816 的取价定格）：
+  //  session 行按它把费用分进 cost_cny / cost_usd 桶。老消息无此字段，回填写 UNKNOWN→USD 并留日志。
+  currency: Schema.optional(Schema.Literals(["USD", "CNY"])),
+  tokens: Schema.Struct({
+    total: Schema.optional(Schema.Finite),
+    // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：
+    // total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant
+    // 消息含几次工具往返就累加几次请求，拿它当上下文会虚高成倍数。context 恒为最后一个
+    // step 的值、不累加。可选是为了让历史消息照常解码。
+    context: Schema.optional(Schema.Finite),
+    input: Schema.Finite,
+    output: Schema.Finite,
+    reasoning: Schema.Finite,
+    cache: Schema.Struct({
+      read: Schema.Finite,
+      write: Schema.Finite,
+      miss: Schema.optional(Schema.Finite),
+    }),
+  }),
+}).annotate({ identifier: "StepFinishPart" })
+export type StepFinishPart = Types.DeepMutable<Schema.Schema.Type<typeof StepFinishPart>>
+
+export const ToolStatePending = Schema.Struct({
+  status: Schema.Literal("pending"),
+  input: Schema.Record(Schema.String, Schema.Any),
+  raw: Schema.String,
+}).annotate({ identifier: "ToolStatePending" })
+export type ToolStatePending = Types.DeepMutable<Schema.Schema.Type<typeof ToolStatePending>>
+
+export const ToolStateRunning = Schema.Struct({
+  status: Schema.Literal("running"),
+  input: Schema.Record(Schema.String, Schema.Any),
+  title: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  time: Schema.Struct({
+    start: NonNegativeInt,
+  }),
+}).annotate({ identifier: "ToolStateRunning" })
+export type ToolStateRunning = Types.DeepMutable<Schema.Schema.Type<typeof ToolStateRunning>>
+
+export const ToolStateCompleted = Schema.Struct({
+  status: Schema.Literal("completed"),
+  input: Schema.Record(Schema.String, Schema.Any),
+  output: Schema.String,
+  title: Schema.String,
+  metadata: Schema.Record(Schema.String, Schema.Any),
+  time: Schema.Struct({
+    start: NonNegativeInt,
+    end: NonNegativeInt,
+    compacted: Schema.optional(NonNegativeInt),
+  }),
+  attachments: Schema.optional(Schema.Array(FilePart)),
+}).annotate({ identifier: "ToolStateCompleted" })
+export type ToolStateCompleted = Types.DeepMutable<Schema.Schema.Type<typeof ToolStateCompleted>>
+
+// 260814 Red head-only → head+tail 4:1（参考 DeepSeek Harness tool-result-pruner 的
+// 8192/4096/1024 形态）：长输出的尾部往往是结论/错误栈/退出码——正是摘要器最需要
+// 看到的部分，只留头会把「怎么失败的」整个裁掉。目前唯一传 maxChars 的是压缩摘要
+// 路径（compaction.ts TOOL_OUTPUT_MAX_CHARS=2000 → head 1600 + tail 400）；主请求
+// 路径不传 → 原文直通，行为不变。
+export function truncateToolOutput(text: string, maxChars?: number) {
+  if (!maxChars || text.length <= maxChars) return text
+  const head = Math.floor(maxChars * 0.8)
+  const tail = maxChars - head
+  const omitted = text.length - maxChars
+  return `${text.slice(0, head)}\n[... tool output middle omitted for compaction: ${omitted} chars ...]\n${text.slice(-tail)}`
+}
+
+export const ToolStateError = Schema.Struct({
+  status: Schema.Literal("error"),
+  input: Schema.Record(Schema.String, Schema.Any),
+  error: Schema.String,
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  time: Schema.Struct({
+    start: NonNegativeInt,
+    end: NonNegativeInt,
+  }),
+}).annotate({ identifier: "ToolStateError" })
+export type ToolStateError = Types.DeepMutable<Schema.Schema.Type<typeof ToolStateError>>
+
+export const ToolState = Schema.Union([
+  ToolStatePending,
+  ToolStateRunning,
+  ToolStateCompleted,
+  ToolStateError,
+]).annotate({
+  discriminator: "status",
+  identifier: "ToolState",
+})
+export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError
+
+export const ToolPart = Schema.Struct({
+  ...partBase,
+  type: Schema.Literal("tool"),
+  callID: Schema.String,
+  tool: Schema.String,
+  state: ToolState,
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+}).annotate({ identifier: "ToolPart" })
+export type ToolPart = Omit<Types.DeepMutable<Schema.Schema.Type<typeof ToolPart>>, "state"> & {
+  state: ToolState
+}
+
+const messageBase = {
+  id: MessageID,
+  sessionID: SessionID,
+}
+
+export const User = Schema.Struct({
+  ...messageBase,
+  role: Schema.Literal("user"),
+  time: Schema.Struct({
+    created: NonNegativeInt,
+  }),
+ // 261031 Red pending_steer = 忙碌时引导的待消费形态：已落库（用户可编辑/撤回），但尚未被
+ // 领取——组装与 reminder 收集都必须排除它，领取（promote→steer）后模型才可见。
+ delivery: Schema.optional(Schema.Literals(["queued", "pending_steer", "steer", "delivered"])),
+  format: Schema.optional(Format),
+  summary: Schema.optional(
+    Schema.Struct({
+      title: Schema.optional(Schema.String),
+      body: Schema.optional(Schema.String),
+      diffs: Schema.Array(Snapshot.FileDiff),
+    }),
+  ),
+  agent: Schema.String,
+  model: Schema.Struct({
+    providerID: ProviderID,
+    modelID: ModelID,
+    variant: Schema.optional(Schema.String),
+  }),
+  system: Schema.optional(Schema.String),
+  tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  // 261114 Red 消息树分支（Phase 1，chat-demo 调研）：分支字段进消息 data JSON，
+  //   不是 SQL 列——消息行本就是 JSON blob（与 delivery/revert 同构），加列等于
+  //   双份存储还要保持同步。可选 + 存量行缺省 = 零迁移；读取侧按「无显式树字段
+  //   = 线性历史」惰性规范化（message-tree.ts），老会话行为不变。
+  //   parentID = 线性序上的前一条消息（任何角色；assistant 侧同名字段已存在，
+  //   语义即触发的 user 消息，树父链天然成立，无需新字段）。
+  //   selectedChildID = 分支选择指针：当前选中的下一条消息，展示与请求上下文
+  //   共用这条可见路径。Phase 1 只读不写。
+  //   决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md
+  parentID: Schema.optional(MessageID),
+  selectedChildID: Schema.optional(MessageID),
+}).annotate({ identifier: "UserMessage" })
+export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
+
+export const Part = Schema.Union([
+  TextPart,
+  SubtaskPart,
+  ReasoningPart,
+  FilePart,
+  ToolPart,
+  StepStartPart,
+  StepFinishPart,
+  SnapshotPart,
+  PatchPart,
+  AgentPart,
+  RetryPart,
+  CompactionPart,
+]).annotate({ discriminator: "type", identifier: "Part" })
+export type Part =
+  | TextPart
+  | SubtaskPart
+  | ReasoningPart
+  | FilePart
+  | ToolPart
+  | StepStartPart
+  | StepFinishPart
+  | SnapshotPart
+  | PatchPart
+  | AgentPart
+  | RetryPart
+  | CompactionPart
+
+const AssistantErrorSchema = Schema.Union([
+  ...MessageError.Shared,
+  AbortedError.EffectSchema,
+  StructuredOutputError.EffectSchema,
+  ContextOverflowError.EffectSchema,
+  ContentFilterError.EffectSchema,
+  ToolFailureStoppedError.EffectSchema,
+  TextLoopStoppedError.EffectSchema,
+  SummaryTruncatedError.EffectSchema,
+  SummaryEmptyError.EffectSchema,
+  APIError.EffectSchema,
+]).annotate({ discriminator: "name" })
+type AssistantError = Schema.Schema.Type<typeof AssistantErrorSchema>
+
+// ── Prompt input schemas ─────────────────────────────────────────────────────
+//
+// Consumers of `SessionPrompt.PromptInput.parts` send part drafts without the
+// ambient IDs (`messageID`, `sessionID`) that live on stored parts, and may
+// omit `id` to let the server allocate one.  These Schema-Struct variants
+// carry that shape so prompt decoding can accept drafts without stored IDs.
+
+export const TextPartInput = Schema.Struct({
+  id: Schema.optional(PartID),
+  type: Schema.Literal("text"),
+  text: Schema.String,
+  synthetic: Schema.optional(Schema.Boolean),
+  ignored: Schema.optional(Schema.Boolean),
+  time: Schema.optional(
+    Schema.Struct({
+      start: NonNegativeInt,
+      end: Schema.optional(NonNegativeInt),
+    }),
+  ),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+}).annotate({ identifier: "TextPartInput" })
+export type TextPartInput = Types.DeepMutable<Schema.Schema.Type<typeof TextPartInput>>
+
+export const FilePartInput = Schema.Struct({
+  id: Schema.optional(PartID),
+  type: Schema.Literal("file"),
+  mime: Schema.String,
+  filename: Schema.optional(Schema.String),
+  url: Schema.String,
+  source: Schema.optional(FilePartSource),
+}).annotate({ identifier: "FilePartInput" })
+export type FilePartInput = Types.DeepMutable<Schema.Schema.Type<typeof FilePartInput>>
+
+export const AgentPartInput = Schema.Struct({
+  id: Schema.optional(PartID),
+  type: Schema.Literal("agent"),
+  name: Schema.String,
+  source: Schema.optional(
+    Schema.Struct({
+      value: Schema.String,
+      start: NonNegativeInt,
+      end: NonNegativeInt,
+    }),
+  ),
+}).annotate({ identifier: "AgentPartInput" })
+export type AgentPartInput = Types.DeepMutable<Schema.Schema.Type<typeof AgentPartInput>>
+
+export const SubtaskPartInput = Schema.Struct({
+  id: Schema.optional(PartID),
+  type: Schema.Literal("subtask"),
+  prompt: Schema.String,
+  description: Schema.String,
+  agent: Schema.String,
+  model: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderID,
+      modelID: ModelID,
+    }),
+  ),
+  command: Schema.optional(Schema.String),
+}).annotate({ identifier: "SubtaskPartInput" })
+export type SubtaskPartInput = Types.DeepMutable<Schema.Schema.Type<typeof SubtaskPartInput>>
+
+export const Assistant = Schema.Struct({
+  ...messageBase,
+  role: Schema.Literal("assistant"),
+  time: Schema.Struct({
+    created: NonNegativeInt,
+    // 260811 cc TTFT 埋点：第一个流式分片到达的时刻。此前只有 created/completed，
+    // 排队+预填+解码三段全糊在一起，"首次交互慢"到底慢在哪无从分辨。
+    // created→firstChunk = 等第一个字（排队/预填），firstChunk→completed = 吐字（解码）。
+    firstChunk: Schema.optional(NonNegativeInt),
+    completed: Schema.optional(NonNegativeInt),
+  }),
+  error: Schema.optional(AssistantErrorSchema),
+  parentID: MessageID,
+  modelID: ModelID,
+  providerID: ProviderID,
+  /**
+   * @deprecated
+   */
+  mode: Schema.String,
+  agent: Schema.String,
+  path: Schema.Struct({
+    cwd: Schema.String,
+    root: Schema.String,
+  }),
+  summary: Schema.optional(Schema.Boolean),
+  cost: Schema.Finite,
+  tokens: Schema.Struct({
+    total: Schema.optional(Schema.Finite),
+    // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：
+    // total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant
+    // 消息含几次工具往返就累加几次请求，拿它当上下文会虚高成倍数。context 恒为最后一个
+    // step 的值、不累加。可选是为了让历史消息照常解码。
+    context: Schema.optional(Schema.Finite),
+    input: Schema.Finite,
+    output: Schema.Finite,
+    reasoning: Schema.Finite,
+    cache: Schema.Struct({
+      read: Schema.Finite,
+      write: Schema.Finite,
+      miss: Schema.optional(Schema.Finite),
+    }),
+  }),
+  structured: Schema.optional(Schema.Any),
+  variant: Schema.optional(Schema.String),
+  finish: Schema.optional(Schema.String),
+  routedVia: Schema.optional(Schema.String),
+  // 260819 cc 引擎判定的压缩档位（overflow.ts 的 Level）。给 UI 用：侧边栏的上下文
+  // 进度条按它上色，颜色的含义因此是「引擎下一步会做什么」而不是某个拍脑袋的百分比。
+  // 由服务端算好发出来，不让客户端复刻 ceiling()/maxOutputTokens() 那张按模型家族
+  // 匹配的表——复刻等于两处维护，加一个模型漏一处、颜色就悄悄偏。
+  contextLevel: Schema.optional(Schema.Literals(["ok", "soft", "prune", "compact"])),
+  // 261114 Red 消息树分支（Phase 1）：分支选择指针，语义与 User.selectedChildID 相同
+  // （见 UserMessage 注释）。树父链不需要新字段——本消息的 parentID（触发的 user）
+  // 就是树父。Phase 1 只读不写。
+  // 决策：docs/notes/implemented/feature/2026-11-14-message-tree-branching.md
+  selectedChildID: Schema.optional(MessageID),
+}).annotate({ identifier: "AssistantMessage" })
+export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
+  error?: AssistantError
+}
+
+export const Info = Schema.Union([User, Assistant]).annotate({ discriminator: "role", identifier: "Message" })
+export type Info = User | Assistant
+
+const UpdatedEventSchema = Schema.Struct({
+  sessionID: SessionID,
+  info: Info,
+})
+
+const RemovedEventSchema = Schema.Struct({
+  sessionID: SessionID,
+  messageID: MessageID,
+})
+
+// 261114 Red 消息树分支 Phase 3：分支切换完成通知。走 Bus 事件而非 SyncEvent——
+// 同 PartDelta 先例（纯通知、无投影状态），SyncEvent 的 non-projecting 路径根本
+// 不广播。payload 只有 sessionID——切换是「一批行的可见性翻转 + 指针改写」，逐行
+// 增量补不可靠（岛行部件在客户端早已随 Removed 删掉），客户端收到后整会话重拉
+// 消息，重拉结果是唯一真相源。
+const BranchesSwitchedEventSchema = Schema.Struct({
+  sessionID: SessionID,
+})
+
+const PartUpdatedEventSchema = Schema.Struct({
+  sessionID: SessionID,
+  part: Part,
+  time: NonNegativeInt,
+})
+
+const PartRemovedEventSchema = Schema.Struct({
+  sessionID: SessionID,
+  messageID: MessageID,
+  partID: PartID,
+})
+
+export const Event = {
+  Updated: SyncEvent.define({
+    type: "message.updated",
+    version: 1,
+    aggregate: "sessionID",
+    schema: UpdatedEventSchema,
+  }),
+  Removed: SyncEvent.define({
+    type: "message.removed",
+    version: 1,
+    aggregate: "sessionID",
+    schema: RemovedEventSchema,
+  }),
+  PartUpdated: SyncEvent.define({
+    type: "message.part.updated",
+    version: 1,
+    aggregate: "sessionID",
+    schema: PartUpdatedEventSchema,
+  }),
+  PartDelta: BusEvent.define(
+    "message.part.delta",
+    Schema.Struct({
+      sessionID: SessionID,
+      messageID: MessageID,
+      partID: PartID,
+      field: Schema.String,
+      delta: Schema.String,
+    }),
+  ),
+  PartRemoved: SyncEvent.define({
+    type: "message.part.removed",
+    version: 1,
+    aggregate: "sessionID",
+    schema: PartRemovedEventSchema,
+  }),
+  BranchesSwitched: BusEvent.define("message.branches.switched", BranchesSwitchedEventSchema),
+}
+
+export const WithParts = Schema.Struct({
+  info: Info,
+  parts: Schema.Array(Part),
+})
+export type WithParts = {
+  info: Info
+  parts: Part[]
+}
+
+const Cursor = Schema.Struct({
+  id: MessageID,
+  time: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+})
+type Cursor = typeof Cursor.Type
+
+const decodeCursor = Schema.decodeUnknownSync(Cursor)
+
+export const cursor = {
+  encode(input: Cursor) {
+    return Buffer.from(JSON.stringify(input)).toString("base64url")
+  },
+  decode(input: string) {
+    return decodeCursor(JSON.parse(Buffer.from(input, "base64url").toString("utf8")))
+  },
+}
+
+const info = (row: typeof MessageTable.$inferSelect) =>
+  ({
+    ...row.data,
+    id: row.id,
+    sessionID: row.session_id,
+  }) as Info
+
+// 260928 Red Mark compact rows so legacy missing patch fields are never synthesized.
+const STORED_PATCH_MARKER = "_redcodePatchStoredOnce"
+
+export function toStoredPart(part: Part): Part {
+  if (part.type !== "tool" || part.tool !== "edit" || part.state.status === "pending") return part
+  const metadata = part.state.metadata
+  const filediff = metadata?.filediff
+  if (typeof metadata?.diff !== "string" || !filediff || typeof filediff !== "object" || Array.isArray(filediff))
+    return part
+  if (filediff.patch !== metadata.diff) return part
+  return {
+    ...part,
+    state: {
+      ...part.state,
+      metadata: { ...metadata, filediff: { ...filediff, patch: undefined, [STORED_PATCH_MARKER]: true } },
+    },
+  }
+}
+
+export function fromStoredPart(part: Part): Part {
+  if (part.type !== "tool" || part.tool !== "edit" || part.state.status === "pending") return part
+  const metadata = part.state.metadata
+  const filediff = metadata?.filediff
+  if (
+    typeof metadata?.diff !== "string" ||
+    !filediff ||
+    typeof filediff !== "object" ||
+    Array.isArray(filediff) ||
+    filediff[STORED_PATCH_MARKER] !== true ||
+    filediff.patch !== undefined
+  )
+    return part
+  const restoredFilediff = { ...filediff, patch: metadata.diff }
+  delete restoredFilediff[STORED_PATCH_MARKER]
+  return {
+    ...part,
+    state: {
+      ...part.state,
+      metadata: { ...metadata, filediff: restoredFilediff },
+    },
+  }
+}
+
+const part = (row: typeof PartTable.$inferSelect) =>
+  fromStoredPart({
+    ...row.data,
+    id: row.id,
+    sessionID: row.session_id,
+    messageID: row.message_id,
+  } as Part)
+
+const older = (row: Cursor) =>
+  or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
+
+const newer = (row: Cursor) =>
+  or(gt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), gt(MessageTable.id, row.id)))
+
+function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
+  const ids = rows.map((row) => row.id)
+  const partByMessage = new Map<string, Part[]>()
+  if (ids.length > 0) {
+    const partRows = Database.use((db) =>
+      db
+        .select()
+        .from(PartTable)
+        .where(inArray(PartTable.message_id, ids))
+        .orderBy(PartTable.message_id, PartTable.id)
+        .all(),
+    )
+    for (const row of partRows) {
+      const next = part(row)
+      const list = partByMessage.get(row.message_id)
+      if (list) list.push(next)
+      else partByMessage.set(row.message_id, [next])
+    }
+  }
+
+  return rows.map((row) => ({
+    info: info(row),
+    parts: partByMessage.get(row.id) ?? [],
+  }))
+}
+
+function providerMeta(metadata: Record<string, any> | undefined) {
+  if (!metadata) return undefined
+  const { providerExecuted: _, ...rest } = metadata
+  return Object.keys(rest).length > 0 ? rest : undefined
+}
+
+export interface UIMessagesWithTools {
+  messages: UIMessage[]
+  tools: Record<
+    string,
+    { toModelOutput(modelOutput: { toolCallId: string; input: unknown; output: unknown }): unknown }
+  >
+}
+
+// 261024 Red 驱逐标记预扫描：key = "<partID>"（用户附件）或 "<partID>#<attachmentIndex>"
+//   （工具附件）。只管 image/*——pdf 等非图片附件不占窗口也不驱逐。keepRecent 为空或负数
+//   时整体关闭（返回空集，回放逐字节与关闭前一致）。
+function markEvictedMedia(input: WithParts[], keepRecent: number | undefined): Set<string> {
+  if (keepRecent === undefined || keepRecent < 0) return new Set()
+  const evicted = new Set<string>()
+  let seen = 0
+  for (let i = input.length - 1; i >= 0; i--) {
+    const parts = input[i].parts
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const part = parts[j]
+      if (part.type === "file" && part.mime?.startsWith("image/")) {
+        seen++
+        if (seen > keepRecent) evicted.add(part.id)
+      }
+      if (part.type === "tool" && part.state.status === "completed") {
+        const attachments = part.state.attachments ?? []
+        for (let k = attachments.length - 1; k >= 0; k--) {
+          if (attachments[k].mime?.startsWith("image/")) {
+            seen++
+            if (seen > keepRecent) evicted.add(`${part.id}#${k}`)
+          }
+        }
+      }
+    }
+  }
+  return evicted
+}
+
+export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
+  input: WithParts[],
+  model: Provider.Model,
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
+) {
+  const result: UIMessage[] = []
+  const toolNames = new Set<string>()
+  let previousAssistant: Pick<Assistant, "providerID" | "modelID"> | undefined
+  // Track media from tool results that need to be injected as user messages
+  // for providers that don't support that media type in tool results.
+  //
+  // OpenAI-compatible APIs only support string content in tool results, so we need
+  // to extract media and inject as user messages. Some SDKs only support a subset
+  // of media in tool results; e.g. Bedrock supports images but not PDFs there.
+  //
+  // Only apply this workaround if the model actually supports that media input -
+  // otherwise unsupportedParts() will turn it into a user-visible error.
+  const supportsMediaInToolResult = (attachment: { mime: string }) => {
+    if (model.api.npm === "@ai-sdk/anthropic") return true
+    if (model.api.npm === "@ai-sdk/openai") return true
+    if (model.api.npm === "@ai-sdk/amazon-bedrock") return attachment.mime.startsWith("image/")
+    if (model.api.npm === "@ai-sdk/xai") return attachment.mime.startsWith("image/")
+    if (model.api.npm === "@ai-sdk/google-vertex/anthropic") return true
+    if (model.api.npm === "@ai-sdk/google") {
+      const id = model.api.id.toLowerCase()
+      return id.includes("gemini-3") && !id.includes("gemini-2")
+    }
+    return false
+  }
+
+  const toModelOutput = (opts: { toolCallId: string; input: unknown; output: unknown }) => {
+    const output = opts.output
+    if (typeof output === "string") {
+      return { type: "text", value: output }
+    }
+
+    if (typeof output === "object") {
+      const outputObject = output as {
+        text: string
+        attachments?: Array<{ mime: string; url: string }>
+      }
+      const attachments = (outputObject.attachments ?? []).filter((attachment) => {
+        return attachment.url.startsWith("data:") && attachment.url.includes(",")
+      })
+
+      return {
+        type: "content",
+        value: [
+          ...(outputObject.text ? [{ type: "text", text: outputObject.text }] : []),
+          ...attachments.map((attachment) => ({
+            // 260807 Red v7: 工具结果内容的 "media" 变体并入 file 族，内联 base64 用 "file-data"
+            // （data 字段是纯 base64；"file" 变体收 URL，会把 base64 当 URL 解析直接抛错）
+            type: "file-data",
+            mediaType: attachment.mime,
+            data: iife(() => {
+              const commaIndex = attachment.url.indexOf(",")
+              return commaIndex === -1 ? attachment.url : attachment.url.slice(commaIndex + 1)
+            }),
+          })),
+        ],
+      }
+    }
+
+    return { type: "json", value: output as never }
+  }
+
+  let processed = 0
+  // 261024 Red 历史图片驱逐（experimental.mediaEviction）：从尾部数保留最近 keepRecentMedia
+  //   张图，更早的在回放层换成占位符——多模态会话里旧截图每轮重读是 read 账单大头（实测
+  //   一会话 15 张用户图 28MB + read 读图附件单条 3-4MB）。驱逐结算于冷缓存序列化点
+  //   （会话启动/续接、模型切换、压缩边界——stitchModelMessages 的缓存前缀只认重建），
+  //   不在轮中主动打缓存：一张图重读走缓存价，为驱逐提前 bust 一次是全量 miss，得不偿失。
+  const evictedMedia = markEvictedMedia(input, options?.keepRecentMedia)
+  // 261114 Red 跨天日期变更带内注入（决策 B）：system 尾部每轮只报「今天」（prompt.ts
+  //   date-per-turn），跨零点/隔天续跑的会话里，模型对「前几轮发生在昨天」没有任何带内
+  //   信号——部件时间戳不进上下文。相邻两轮 user 消息的本地日期不同时，在后一轮前插
+  //   一条合成 user 通知。纯派生自 time.created：不落库、字节确定，边界只在跨天那轮
+  //   出现一次、之后逐字节稳定（缓存只在该轮失效一次）；未跨天零字节。格式与
+  //   system 尾部的 toDateString() 同源，与下方 model changed 通知同一先例。
+  //   决策与模型可见四问：docs/notes/proposed/feature/2026-11-14-continue-eligibility-and-date-change-notice.md
+  let previousUserDate: string | undefined
+  for (const msg of input) {
+    // 260707 Red toUIMessages 同步遍历全部历史消息（含 truncateToolOutput 等重活），
+    //   长会话下这个循环本身是一次性同步跑完、中间没有任何让出点——之前 260706 的
+    //   yieldNow 只加在循环外（调用前后/msgPin 里），拦不住这个循环内部本身的阻塞。
+    //   每处理 10 条消息让一次 Event Loop，避免长会话时心跳/健康检查被这里堵住。
+    processed++
+    if (processed % 10 === 0) yield* Effect.yieldNow
+    if (msg.parts.length === 0) continue
+
+    if (msg.info.role === "user") {
+      const userDate = new Date(msg.info.time.created).toDateString()
+      const userMessage: UIMessage = {
+        id: msg.info.id,
+        role: "user",
+        parts: [],
+      }
+      for (const part of msg.parts) {
+        // User message parts should never be empty
+        if (part.type === "text" && !part.ignored && part.text !== "")
+          userMessage.parts.push({
+            type: "text",
+            text: part.text,
+          })
+        // text/plain and directory files are converted into text parts, ignore them
+        if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
+          // 261024 Red 历史图片驱逐：超出保留窗口的用户附件换占位符，保留文件名供反查
+          if (evictedMedia.has(part.id)) {
+            userMessage.parts.push({
+              type: "text",
+              text: `[Historical image removed: ${part.filename ?? part.mime}]`,
+            })
+          } else if (options?.stripMedia && isMedia(part.mime)) {
+            userMessage.parts.push({
+              type: "text",
+              text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
+            })
+          } else {
+            userMessage.parts.push({
+              type: "file",
+              // 260808 Red：原来是 stripDataUrlPrefix(part.url)，剥掉 data: 前缀留下裸 base64——
+              // 在 v7 下必抛 ERR_INVALID_URL（见 toModelFileUrl 注释）。这条是用户手动附件的路径。
+              url: toModelFileUrl(part.url, part.mime),
+              mediaType: part.mime,
+              filename: part.filename,
+            })
+          }
+        }
+
+        if (part.type === "compaction") {
+          userMessage.parts.push({
+            type: "text",
+            text: "What did we do so far?",
+          })
+        }
+        if (part.type === "subtask") {
+          userMessage.parts.push({
+            type: "text",
+            text: "The following tool was executed by the user",
+          })
+        }
+      }
+      if (userMessage.parts.length > 0) {
+        // 跨天边界在前：先时间线、后身份，两个合成通知都只在实际出站的 user 轮前出现。
+        if (previousUserDate && previousUserDate !== userDate) {
+          result.push({
+            id: MessageID.ascending(),
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: `[date changed: the previous turn happened on ${previousUserDate}; it is now ${userDate}]`,
+              },
+            ],
+          })
+        }
+        const selectedModel = msg.info.model
+        // 260910 Red: preserve model identity at the historical switch boundary. Provider
+        // metadata is deliberately stripped across models below, so the target model needs
+        // this durable, model-visible fact to interpret the turns it is about to continue.
+        // Decision: docs/notes/implemented/feature/2026-09-10-model-switch-history-notice.md.
+        if (
+          previousAssistant &&
+          selectedModel &&
+          `${previousAssistant.providerID}/${previousAssistant.modelID}` !==
+            `${selectedModel.providerID}/${selectedModel.modelID}`
+        ) {
+          result.push({
+            id: MessageID.ascending(),
+            role: "user",
+            parts: [
+              {
+                type: "text",
+                text: `[model changed: assistant turns above this point were generated by ${previousAssistant.providerID}/${previousAssistant.modelID}; the session continues with ${selectedModel.providerID}/${selectedModel.modelID}]`,
+              },
+            ],
+          })
+        }
+        result.push(userMessage)
+      }
+      // 全空 user 轮（附件全被忽略等）不占模型上下文，但它确实发生过：
+      // 下一轮的跨天判定仍以它的本地日期为基准。
+      previousUserDate = userDate
+    }
+
+    if (msg.info.role === "assistant") {
+      const differentModel = `${model.providerID}/${model.id}` !== `${msg.info.providerID}/${msg.info.modelID}`
+      const media: Array<{ mime: string; url: string; filename?: string }> = []
+
+      // 261104 Red 流式中的 assistant 不出站：并行请求（记忆召回/摘要类）会在主轮流式
+      //   中途读库组装 body，把中间态条目带上线；条目收尾后下一请求前缀在该条目分叉、
+      //   尾部缓存作废（实测 ses_ffe5e5 三次中段回退共 ≈20k token，383→8363 字符改写）。
+      //   跳过后收尾消息以完整形态首次出现，投影保持纯追加。取证与决策：
+      //   docs/notes/proposed/bug-fix/2026-10-12-gpt-6.1-sol-cache-instability.md §2026-11-04
+      if (!msg.info.finish && !msg.info.error) continue
+
+      if (
+        msg.info.error &&
+        !(
+          AbortedError.isInstance(msg.info.error) &&
+          msg.parts.some((part) => part.type !== "step-start" && part.type !== "reasoning")
+        )
+      ) {
+        continue
+      }
+      const assistantMessage: UIMessage = {
+        id: msg.info.id,
+        role: "assistant",
+        parts: [],
+      }
+      // Anthropic adaptive thinking can persist assistant turns like:
+      // step-start, reasoning(signature), text(""), step-start,
+      // reasoning(signature). The empty text part is a structural separator,
+      // but it does not carry the signature metadata itself. Dropping it shifts
+      // signed thinking positions after step-start splitting/provider regrouping;
+      // keeping it as "" is filtered by the AI SDK and rejected by Anthropic.
+      // It is unclear whether this shape originates in our stream processing,
+      // a proxy, or a lower-level library, but preserving a non-empty separator
+      // here is the only safe replay point we have.
+      // Use a single space so the separator survives replay without changing
+      // the neighboring signed reasoning blocks.
+      const hasSignedReasoning = msg.parts.some((part) => {
+        if (part.type !== "reasoning") return false
+        return part.metadata?.anthropic?.signature != null
+      })
+      for (const part of msg.parts) {
+        if (part.type === "text") {
+          // 261010 Red compress 已退役；旧提醒只从模型出站副本剥离，保留原文与账本指纹。
+          if (part.synthetic && part.metadata?.native_context_nudge !== undefined) continue
+          // 261024 Red RC-A03 跨模型回放跳过空 text：无签名思考轮的 text("") 在推理剥离后
+          //   成为唯一的非 step-start part，占位符判定会误判「还有内容」；而它上 wire 后
+          //   又被 AI SDK 滤掉——assistant 轮消失、相邻 user 消息、anthropic 协议拒收。
+          //   补 " " 分隔符的动机（保住签名推理的位置）在跨模型剥离后不复存在，直接跳过，
+          //   让占位符路径自然接管。
+          if (differentModel && part.text === "") continue
+          const text = part.text === "" && hasSignedReasoning ? " " : part.text
+          assistantMessage.parts.push({
+            type: "text",
+            text,
+            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+          })
+        }
+        if (part.type === "step-start")
+          assistantMessage.parts.push({
+            type: "step-start",
+          })
+        if (part.type === "tool") {
+          toolNames.add(part.tool)
+          if (part.state.status === "completed") {
+            // 260923 Red 模型侧硬预算：工具结果在**落地那一刻**已经过 tool/truncate.ts
+            // 的 result() 闸门，这里是历史消息的第二道 —— 覆盖本次改动之前落库的结果，
+            // 以及绕过 truncate 的写入方。纯函数、不碰 fs，所以这里只能丢不能存。
+            // 261024 Red 历史图片驱逐：被标记的图片附件不随工具结果重放，输出文本补一行
+            //   说明——否则模型看到「Image read successfully」却没有图，会重读同一张旧图，
+            //   一次驱逐省下的 tokens 反手烧回去。
+            const rawAttachments = part.state.attachments ?? []
+            const keptAttachments = rawAttachments.filter((_, idx) => !evictedMedia.has(`${part.id}#${idx}`))
+            const evictedHere = keptAttachments.length !== rawAttachments.length
+            const fitted = ImageTokens.fitToolResult(
+              {
+                text:
+                  part.state.time.compacted
+                    ? "[Old tool result content cleared]"
+                    : truncateToolOutput(part.state.output, options?.toolOutputMaxChars) +
+                      (evictedHere && !options?.stripMedia ? "\n[historical image attachment removed]" : ""),
+                attachments:
+                  part.state.time.compacted || options?.stripMedia ? [] : keptAttachments,
+              },
+              model,
+              { notice: BUDGET_NOTICE },
+            )
+            const outputText = fitted.truncated ? `${fitted.text}${BUDGET_NOTICE}` : fitted.text
+            const attachments = fitted.attachments
+
+            // For providers that don't support media in tool results, extract media files
+            // (images, PDFs) to be sent as a separate user message
+            const mediaAttachments = attachments.filter((a) => isMedia(a.mime))
+            const extractedMedia = mediaAttachments.filter((a) => !supportsMediaInToolResult(a))
+            if (extractedMedia.length > 0) {
+              media.push(...extractedMedia)
+            }
+            const finalAttachments = attachments.filter((a) => !isMedia(a.mime) || supportsMediaInToolResult(a))
+
+            const output =
+              finalAttachments.length > 0
+                ? {
+                    text: outputText,
+                    attachments: finalAttachments,
+                  }
+                : outputText
+
+            assistantMessage.parts.push({
+              type: ("tool-" + part.tool) as `tool-${string}`,
+              state: "output-available",
+              toolCallId: part.callID,
+              input: part.state.input,
+              output,
+              ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+              ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
+            })
+          }
+          if (part.state.status === "error") {
+            const output = part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined
+            if (typeof output === "string") {
+              assistantMessage.parts.push({
+                type: ("tool-" + part.tool) as `tool-${string}`,
+                state: "output-available",
+                toolCallId: part.callID,
+                input: part.state.input,
+                output,
+                ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+                ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
+              })
+            } else {
+              assistantMessage.parts.push({
+                type: ("tool-" + part.tool) as `tool-${string}`,
+                state: "output-error",
+                toolCallId: part.callID,
+                input: part.state.input,
+                errorText: part.state.error,
+                ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+                ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
+              })
+            }
+          }
+          // Handle pending/running tool calls to prevent dangling tool_use blocks
+          // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
+          if (part.state.status === "pending" || part.state.status === "running")
+            assistantMessage.parts.push({
+              type: ("tool-" + part.tool) as `tool-${string}`,
+              state: "output-error",
+              toolCallId: part.callID,
+              input: part.state.input,
+              errorText: "[Tool execution was interrupted]",
+              ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
+              ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
+            })
+        }
+        if (part.type === "reasoning") {
+          // 261024 Red 换模型回放：推理段直接剥离，不再降级成 text 整段塞给新模型。
+          //   降级是上游继承行为而非刻意决策：推理重的会话一切模型就注入几十 K 思考
+          //   散文，新模型还会把过程文本当结论读。结论已在 text 部分完整保留；官方
+          //   harness（ZCode removeCrossModelReasoning）同判：跨模型推理整段丢弃。
+          if (differentModel) continue
+          assistantMessage.parts.push({
+            type: "reasoning",
+            text: part.text,
+            providerMetadata: part.metadata,
+          })
+        }
+      }
+      // 261024 Red 剥离可能把 assistant 剥到只剩 step-start（纯思考轮）：补占位符而不是
+      //   让消息消失——convertToModelMessages 会滤掉只剩 step-start 的消息，消失会造成
+      //   相邻 user 消息，anthropic 协议拒收交替违规。
+      if (differentModel && !assistantMessage.parts.some((part) => part.type !== "step-start")) {
+        assistantMessage.parts.push({ type: "text", text: THINKING_REMOVED_PLACEHOLDER })
+      }
+      if (assistantMessage.parts.length > 0) {
+        result.push(assistantMessage)
+        previousAssistant = msg.info
+        // Inject pending media as a user message for providers that don't support
+        // media (images, PDFs) in tool results
+        if (media.length > 0) {
+          result.push({
+            id: MessageID.ascending(),
+            role: "user",
+            parts: [
+              {
+                type: "text" as const,
+                text: SYNTHETIC_ATTACHMENT_PROMPT,
+              },
+              ...media.map((attachment) => ({
+                type: "file" as const,
+                // 260807 Red v7 适配（工具结果附件这条路径）；260808 抽成共用的
+                // toModelFileUrl —— 当时同样的规整只写在这里，用户手动附件那条漏了。
+                url: toModelFileUrl(attachment.url, attachment.mime),
+                mediaType: attachment.mime,
+                filename: attachment.filename,
+              })),
+            ],
+          })
+        }
+      }
+    }
+  }
+
+  return {
+    messages: result,
+    tools: Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }])),
+  }
+})
+
+// 261114 Red 续写资格判定（决策 A，chat-demo 调研）。输出被 max_tokens 硬切
+//   （finish="length"）或被用户主动停止（AbortedError）且尾段落在正文文本上时，
+//   该 assistant 消息可作为续写请求的末尾 prefill 原样回传。
+//   是消息已持久化状态的纯函数——LLM 层的 DeepSeek 自动续写（llm.ts
+//   withContinuation，限 DeepSeek 家族且不续工具轮）耗尽后仍会以 finish="length"
+//   落库，非 DeepSeek 模型则完全没有续写路径，这是判定存在的前提。
+//   与 chat-demo 的差异（决策依据，见对应 note）：它把资格写进流式期的 prefix
+//   标记，因为其规则依赖「服务端签名块不可重放 + 导入数据不可信」两个策略；
+//   RedCode 的 tool part 原生可重放、判据全部落库，读时纯派生与写时固化等价，
+//   而落库点家族（prompt.ts 收尾 5 处 + processor）远大于一个纯函数的维护面。
+//   三道门槛：收尾形态（length/中止）、尾段形态（跳过 step-finish 记账件后必须是
+//   非空正文，synthetic 通知/ignored 不算）、无悬空工具（pending/running 的 tool
+//   part 意味着截断点在工具声明上，prefill 回传会违反配对协议）。
+//   note：docs/notes/proposed/feature/2026-11-14-continue-eligibility-and-date-change-notice.md
+export function continuable(message: Assistant & { parts: Part[] }): boolean {
+  if (message.finish === "length") {
+    // 输出上限截断，唯一可续写的正常收尾形态
+  } else if (message.error && AbortedError.isInstance(message.error)) {
+    // 用户主动停止：已落库的正文允许续写（chat-demo 同规则）；其他 error
+    // （content-filter、TextLoopStopped 等）一律不可续
+  } else {
+    return false
+  }
+  let tailText = false
+  for (let i = message.parts.length - 1; i >= 0; i--) {
+    const part = message.parts[i]
+    if (part.type === "step-finish") continue
+    tailText = part.type === "text" && !part.synthetic && !part.ignored && !!part.text.trim()
+    break
+  }
+  if (!tailText) return false
+  return !message.parts.some(
+    (part) => part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"),
+  )
+}
+
+export const toModelMessagesEffect = Effect.fnUntraced(function* (
+  input: WithParts[],
+  model: Provider.Model,
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
+) {
+  const { messages, tools } = yield* toUIMessages(input, model, options)
+  // 260706 Red: yield here so event loop can serve heartbeat + health check before next sync work
+  yield* Effect.yieldNow
+  const result = yield* Effect.promise(() =>
+    convertToModelMessages(
+      messages.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
+      {
+        //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
+        tools,
+      },
+    ),
+  )
+  return result
+})
+
+export function toModelMessages(
+  input: WithParts[],
+  model: Provider.Model,
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number; keepRecentMedia?: number },
+): Promise<ModelMessage[]> {
+  return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))
+}
+
+// 261007 Red tool-result 配对净化：stabilizedMsgs 的单侧缓存拼接曾在真实会话里让同一批
+// tool-result 被复制一份发出——assistant 只声明一次 tool-call，后面却跟了两条 result
+// （ses_ffe5eeab…，wire 层 4 条 tool 消息 [t,t,t,t]），DeepSeek 直接 400：
+// "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"。
+// 转换链本身逐 part 忠实（不产生重复），所以净化放在发送数组上：每个 tool-call 只接受
+// 一次 result 应答，重复/孤儿一律丢弃。正确数据下恒等（内容零改动），KV 前缀不受影响。
+export function sanitizeToolResultPairing(messages: ModelMessage[]) {
+  const available = new Set<string>()
+  const consumed = new Set<string>()
+  const droppedIds: string[] = []
+  const droppedCallIds: string[] = []
+  const result: ModelMessage[] = []
+  for (const message of messages) {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      // 261021 Red 声明侧同样要去重：中断后迟到的同一 callID 事件会在库里建出第二条 tool part
+      //（processor.ensureToolCall 当时只查内存），出站就成了一条 assistant 带两个同 id 的
+      // tool-call，DeepSeek 直接 400 "Duplicate value for 'tool_call_id' … in message[N]"
+      //（ses_ffe5ea3f9fc6affeVuOAbr0ti96vsW 实证）。同一消息内只认第一次声明。
+      const declared = new Set<string>()
+      const kept = message.content.filter((part) => {
+        if (part.type !== "tool-call") return true
+        if (declared.has(part.toolCallId)) {
+          droppedCallIds.push(part.toolCallId)
+          return false
+        }
+        declared.add(part.toolCallId)
+        available.add(part.toolCallId)
+        consumed.delete(part.toolCallId)
+        return true
+      })
+      result.push(kept.length === message.content.length ? message : { ...message, content: kept })
+      continue
+    }
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      const kept = message.content.filter((part) => {
+        if (part.type !== "tool-result") return true
+        if (available.has(part.toolCallId) && !consumed.has(part.toolCallId)) {
+          consumed.add(part.toolCallId)
+          return true
+        }
+        droppedIds.push(part.toolCallId)
+        return false
+      })
+      if (kept.length === message.content.length) result.push(message)
+      else if (kept.length > 0) result.push({ ...message, content: kept })
+      continue
+    }
+    result.push(message)
+  }
+  return { messages: result, droppedIds, droppedCallIds }
+}
+
+// 261015 Red 把「固定前缀缓存」与「本次转换的后缀」拼成出站数组。
+// 此前这段内联在 prompt.ts 的 runLoopImpl 里（2500 行主循环），除了跑整条会话没有别的办法驱动，
+// 净化与拼接的**组合**因此一直没被测到 —— 而 261007 那次「净化刚丢掉、又被拼接拼回来」正出在这里
+// （审计 A01）。抽成纯函数后可直接喂反例。决策见
+// docs/notes/implemented/bug-fix/2026-10-15-tool-result-stitch-sanitize-order.md。
+//
+// 拼接口径：前缀钉死走缓存（前缀缓存优先），后缀必须取自**净化后**的数组。原实现后缀取自未净化的
+// 原始数组，于是净化在尾部丢掉的重复/孤儿 result 会被原样追加回去，出站数组重新违反配对协议。
+export function stitchModelMessages(
+  cached: ModelMessage[] | undefined,
+  raw: ModelMessage[],
+  sanitized: { messages: ModelMessage[]; droppedIds: string[] },
+): ModelMessage[] {
+  if (!cached || cached.length === 0) return sanitized.messages
+  // 261015 Red 缓存前缀有效性条件（审计 A01 要求 2）。prevLen 是缓存里**净化后**数组的长度，
+  // 拿它当边界的前提是「本轮净化的输出与输入逐条对应」—— 只有消息条数没变才成立：条数变了
+  // 说明有整条 tool message 被丢弃（一条 message 里的 result 全无效时整条不进结果），位置已经
+  // 移动，缓存下标不再对应当前数组。此时退回本次规范化结果，宁可这一轮重建前缀。
+  // 条数相同时位置必然对齐：同一代内 msgPin 钉死了旧消息的 parts，净化是纯函数，输出稳定。
+  if (raw.length !== sanitized.messages.length) return sanitized.messages
+  if (cached.length >= sanitized.messages.length) return sanitized.messages
+  // 后缀必须取自**净化后**的数组。原实现取自 raw，把净化成果在尾部撤销：整条重复/孤儿 result
+  // 被拼回来、或把已经在 message 内滤掉的 result 一起带回去 —— 出站数组重新违反配对协议。
+  return [...cached, ...sanitized.messages.slice(cached.length)]
+}
+
+// 260909 Red summarize/compact 只需要最后一条 user 消息的 agent。此前走
+// Session.messages 无 limit 全量翻页——compaction 恰恰发生在会话最长的时候，
+// 等于把几百 MB 级历史（含 base64 parts）整体拖进内存只为读一个字符串字段。
+// 单行 SQL 走 (session_id, time_created, id) 既有索引，语义与
+// latest() 的回合口径一致；人工补充留痕不改变模型/agent 选择。
+export const lastUserAgent = Effect.fn("MessageV2.lastUserAgent")(function* (sessionID: SessionID) {
+  const row = Database.use((db) =>
+    db
+      .select({ agent: sql<string | null>`json_extract(${MessageTable.data}, '$.agent')` })
+      .from(MessageTable)
+      .where(and(
+        eq(MessageTable.session_id, sessionID),
+        sql`json_extract(${MessageTable.data}, '$.role') = 'user'`,
+        sql`not exists (select 1 from ${PartTable} where ${PartTable.message_id} = ${MessageTable.id}
+          and json_extract(${PartTable.data}, '$.type') = 'text'
+          and json_type(${PartTable.data}, '$.metadata.task_steer_record') is not null)`,
+      ))
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(1)
+      .get(),
+  )
+  return row?.agent ?? undefined
+})
+
+export const page = Effect.fn("MessageV2.page")(function* (input: {
+  sessionID: SessionID
+  limit: number
+  before?: string
+  after?: string
+  direction?: "newer"
+  // 261017 Red 在读取分片之前按消息元数据过滤。原生压缩要跳过大量被覆盖的旧消息，
+  // 旧顺序是整页 hydrate 完再丢——长会话每轮都把已折叠的历史正文从库里读出来、
+  // 反序列化，再原地扔掉。过滤只依赖 message.data，不需要 part。
+  filter?: (info: Info) => boolean
+}) {
+  const before = input.before ? cursor.decode(input.before) : undefined
+  const after = input.after ? cursor.decode(input.after) : undefined
+  const where = and(
+    before
+      ? and(eq(MessageTable.session_id, input.sessionID), older(before))
+      : after
+        ? and(eq(MessageTable.session_id, input.sessionID), newer(after))
+        : eq(MessageTable.session_id, input.sessionID),
+    // 261114 Red 2d 分岛（revert.cleanup 不再删行）：detached 是 cleanup 打的内部
+    //   标记（裸 json_set，不进 Info schema），弃岛对所有标准读侧隐形——分页/
+    //   流/上下文组装/GUI 分页统一走这里。版本切换器（Phase 3）读岛时绕过本原语。
+    sql`IFNULL(json_extract(${MessageTable.data}, '$.detached'), 0) = 0`,
+  )
+  const rows = Database.use((db) =>
+    db
+      .select()
+      .from(MessageTable)
+      .where(where)
+      .orderBy(
+        input.direction === "newer" ? asc(MessageTable.time_created) : desc(MessageTable.time_created),
+        input.direction === "newer" ? asc(MessageTable.id) : desc(MessageTable.id),
+      )
+      .limit(input.limit + 1)
+      .all(),
+  )
+  if (rows.length === 0) {
+    const row = Database.use((db) =>
+      db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.id, input.sessionID)).get(),
+    )
+    if (!row) return yield* new NotFoundError({ message: `Session not found: ${input.sessionID}` })
+    return {
+      items: [] as WithParts[],
+      more: false,
+    }
+  }
+
+  const more = rows.length > input.limit
+  const slice = more ? rows.slice(0, input.limit) : rows
+  // 261017 Red 游标必须取**原始** slice 的末行：被过滤的行同样占翻页位置，
+  // 若按过滤后的末行编码，下一页会跳过这些消息。
+  const tail = slice.at(-1)
+  const selected = input.filter ? slice.filter((row) => input.filter!(info(row))) : slice
+  const items = hydrate(selected)
+  if (input.direction !== "newer") items.reverse()
+  return {
+    items,
+    more,
+    cursor: more && tail ? cursor.encode({ id: tail.id, time: tail.time_created }) : undefined,
+  }
+})
+
+// 261114 Red 消息树分支 Phase 3：含弃岛行的全量时序读（规范序 (time_created, id)）。
+// 版本切换必须看到岛——page() 的 detached WHERE 对标准读侧是正确的，对切换器
+// 是盲区（见 page() 内注释「版本切换器读岛时绕过本原语」）。detached / islandSnapshot
+// 是 revert/branch 写的内部簿记（裸 json_set，不进 Info schema），在这里作为行元信息
+// 显式带出，不混进 info——派生字段泄漏进 info 正是 Phase 1 否决读时规范化的原因。
+// 只供 branch.ts 的切换消费；版本列举单独投影树元数据，不加载 parts。不进标准读路径。
+export type BranchRow = WithParts & { detached: boolean; islandSnapshot?: string }
+export const allIncludingDetached = Effect.fn("MessageV2.allIncludingDetached")(function* (input: {
+  sessionID: SessionID
+}) {
+  const rows = Database.use((db) =>
+    db
+      .select()
+      .from(MessageTable)
+      .where(eq(MessageTable.session_id, input.sessionID))
+      .orderBy(MessageTable.time_created, MessageTable.id)
+      .all(),
+  )
+  const hydrated = hydrate(rows)
+  return hydrated.map((item, i) => {
+    const data = rows[i]!.data as { detached?: number; islandSnapshot?: string }
+    return {
+      ...item,
+      detached: Boolean(data.detached),
+      islandSnapshot: data.islandSnapshot,
+    }
+  })
+})
+
+export function* stream(sessionID: SessionID, filter?: (info: Info) => boolean) {
+  const size = 50
+  let before: string | undefined
+  while (true) {
+    const next = Effect.runSync(
+      page({ sessionID, limit: size, before, filter }).pipe(
+        Effect.catchIf(NotFoundError.isInstance, () =>
+          Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
+        ),
+      ),
+    )
+    if (next.items.length === 0) {
+      // 261017 Red 过滤可能把整页都筛掉。只要还有更早的消息就继续翻页，
+      // 不能把「这一页没剩可见项」当成流结束。
+      if (!next.more || !next.cursor) break
+      before = next.cursor
+      continue
+    }
+    for (let i = next.items.length - 1; i >= 0; i--) {
+      yield next.items[i]
+    }
+    if (!next.more || !next.cursor) break
+    before = next.cursor
+  }
+}
+
+export function parts(message_id: MessageID) {
+  const rows = Database.use((db) =>
+    db.select().from(PartTable).where(eq(PartTable.message_id, message_id)).orderBy(PartTable.id).all(),
+  )
+  return rows.map(part)
+}
+
+// 260806 Red 会话级最近工具分片（按时间正序返回）。空转检测原本只看当前助手消息内部的
+// 分片，但 step 类模型的重复是「每步各生成一条独立助手消息、每条里只有一个 tool 分片」，
+// 单条消息内永远凑不满阈值 → 检测器从未触发。这里跨消息取样，并跳过 step-start/reasoning
+// 等中间分片，只留 tool。
+// 260930 Red SQL 过滤与回归边界见 docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md
+export function recentToolParts(session_id: SessionID, limit: number, parentID?: MessageID) {
+  const rows = Database.use((db) =>
+    db
+      .select({ part: PartTable })
+      .from(PartTable)
+      .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+      .where(
+        and(
+          eq(PartTable.session_id, session_id),
+          sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
+          // 260930 Red 只取当前用户轮次；读 parentID 投影，不加载整份 message.data。
+          parentID === undefined ? undefined : sql`json_extract(${MessageTable.data}, '$.parentID') = ${parentID}`,
+        ),
+      )
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id), desc(PartTable.id))
+      .limit(limit)
+      .all(),
+  )
+  const out: ToolPart[] = []
+  for (const row of rows) {
+    const item = part(row.part)
+    if (item.type !== "tool") continue
+    out.push(item)
+  }
+  return out.reverse()
+}
+
+// 261021 Red 同一 assistant 消息内按 callID 回查 tool part。中断（abort）时 settleToolCall 会删掉
+// 内存里的 ctx.toolcalls 条目，迟到的同一 callID 事件随后走「新建」分支，落库出第二条同 callID 的
+// tool part ⇒ 出站 assistant.tool_calls 重复 ⇒ DeepSeek 400
+// "Duplicate value for 'tool_call_id' of … in message[N]"（ses_ffe5ea3f9fc6affeVuOAbr0ti96vsW 实证）。
+// 决策：docs/notes/implemented/bug-fix/2026-10-21-duplicate-tool-call-id.md
+export function findToolPartByCallID(messageID: MessageID, callID: string): ToolPart | undefined {
+  const row = Database.use((db) =>
+    db
+      .select({ part: PartTable })
+      .from(PartTable)
+      .where(
+        and(
+          eq(PartTable.message_id, messageID),
+          sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
+          sql`json_extract(${PartTable.data}, '$.callID') = ${callID}`,
+        ),
+      )
+      .orderBy(PartTable.id)
+      .limit(1)
+      .get(),
+  )
+  if (!row) return undefined
+  const item = part(row.part)
+  return item.type === "tool" ? item : undefined
+}
+
+export type SnapshotPartRow = {
+  messageID: MessageID
+  /** 该分片所属 assistant 消息的 parentID（即本轮的 user 消息）。 */
+  parentID: MessageID | undefined
+  type: "step-start" | "step-finish"
+  snapshot: string
+}
+
+// 260904 cc A1-2b：diff 端点只需要 step-start / step-finish 里的 snapshot 哈希，却一直是靠
+// Session.messages() 把整个会话的 message 行 + part 行全量读出来、逐行 JSON.parse 再扫出来的。
+// user 消息行里躺着 summary.diffs（本机最大单行 32.5MB），summarize 每个 step-finish 跑一次
+// ⇒ 每 step 都把历史所有轮次的 diffs 读回来解析一遍，O(步数 × 会话累计 diffs)。
+// 这里只查 part 表、只在 SQL 里 json_extract 两个字段；JOIN message 拿 time_created（列，不读 data）
+// 与 parentID。**parentID 的 json_extract 只会落在有 step 分片的消息上**——只有 assistant 消息有
+// step 分片，而 assistant 行没有 diffs blob；user 行的 data 一个字节都不碰。
+// 本机最大会话实测：60 行 1.2ms，对照读全部 message.data 85ms + JSON.parse 106ms。
+// 排序按 (message.time_created, message.id, part.id)，与 Session.messages() + hydrate 的顺序一致，
+// 也与本仓「先后用 compareTime，ID 只做 identity」的约定一致（ID 是时间编码且会回绕）。
+export const snapshotParts = Effect.fn("MessageV2.snapshotParts")(function* (sessionID: SessionID) {
+  const rows = Database.use((db) =>
+    db
+      .select({
+        messageID: PartTable.message_id,
+        parentID: sql<string | null>`json_extract(${MessageTable.data}, '$.parentID')`,
+        type: sql<string>`json_extract(${PartTable.data}, '$.type')`,
+        snapshot: sql<string | null>`json_extract(${PartTable.data}, '$.snapshot')`,
+      })
+      .from(PartTable)
+      .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+      .where(
+        and(
+          eq(PartTable.session_id, sessionID),
+          sql`json_extract(${PartTable.data}, '$.type') IN ('step-start', 'step-finish')`,
+          sql`json_extract(${PartTable.data}, '$.snapshot') IS NOT NULL`,
+        ),
+      )
+      .orderBy(asc(MessageTable.time_created), asc(MessageTable.id), asc(PartTable.id))
+      .all(),
+  )
+  const out: SnapshotPartRow[] = []
+  for (const row of rows) {
+    if (row.type !== "step-start" && row.type !== "step-finish") continue
+    if (!row.snapshot) continue
+    out.push({
+      messageID: row.messageID,
+      parentID: row.parentID ? MessageID.make(row.parentID) : undefined,
+      type: row.type,
+      snapshot: row.snapshot,
+    })
+  }
+  return out
+})
+
+export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: SessionID; messageID: MessageID }) {
+  const row = Database.use((db) =>
+    db
+      .select()
+      .from(MessageTable)
+      .where(and(eq(MessageTable.id, input.messageID), eq(MessageTable.session_id, input.sessionID)))
+      .get(),
+  )
+  if (!row) return yield* new NotFoundError({ message: `Message not found: ${input.messageID}` })
+  return {
+    info: info(row),
+    parts: parts(input.messageID),
+  }
+})
+
+// 261113 Red 判据见 ./summary-complete.ts —— 独立成模块供 TUI 复用（不拖模型/数据库依赖）。
+// 这里 re-export，保持 MessageV2.isCompleteSummary 的调用方不变。
+export { isCompleteSummary }
+
+// 261113 Red 摘要正文：trim 后非空才算有内容（空串/纯空白都不行）。
+export function summaryText(message: { parts: readonly Part[] }) {
+  const text = message.parts
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+  return text || undefined
+}
+
+// 261113 Red 可用的压缩摘要 = summary 标志 + 可信完成值 + 无 error + 正文非空。
+// 压缩提交入口（Native/Legacy）与历史投影共用这一判据：三处各判一遍，空摘要或截断
+// 摘要迟早会从某个缺口漏成新边界，被隐藏的原文就再也回不到模型输入里。
+export function isUsableCompactionSummary(message: WithParts): boolean {
+  if (message.info.role !== "assistant" || !message.info.summary) return false
+  return isCompleteSummary(message.info) && summaryText(message) !== undefined
+}
+
+export function filterCompacted(msgs: Iterable<WithParts>) {
+  // 260824 Red: 循环从新往回扫依赖 chrono 逆序输入，但 compaction.ts 的 estimate 回填
+  // 传入的是正序/展示序（[parent, summary, tail, 后续]），折叠因此从不生效 → 分割线
+  // before/after 恒为全量估算。按 compareTime 归一化为逆序后任意输入顺序都稳定。
+  return filterCompactedOrdered([...msgs].sort((a, b) => compareTime(b.info, a.info)))
+}
+
+/**
+ * 与 {@link filterCompacted} 同一套逻辑，但**要求入参已按 compareTime 逆序（新→旧）**，
+ * 因此可以边消费边停。
+ *
+ * 260903 cc 拆出来是为了让 `stream()` 那条路真的懒下来。原先入口一律
+ * `[...msgs].sort(...)`，把分页生成器整个物化，后面那个「扫到压缩边界就 break」一页
+ * DB 读都没省 —— 而 `stream()` 本来就是逆序产出（`page()` 内部 desc 取、逐页回溯），
+ * 排序对它是恒等变换，纯浪费。
+ *
+ * 实测（2,612 条消息的会话）：全量走 53 页 / 33.7MB / 213ms，按边界懒停 14 页 / 7.4MB / 44ms。
+ *
+ * ⚠️ 逆序是**前置条件不是建议**：顺序错了会让下面的 break 提前命中，静默少喂消息给模型。
+ * 数组入参一律走 {@link filterCompacted}，那里会先归一化。
+ *
+ * tree（默认 true）控制消息树可见路径过滤；false 供覆盖段被下推掏空的 native
+ * 路径使用（链有缺口，走链会截断），见函数内 finding 2 注释。
+ */
+export function filterCompactedOrdered(ordered: Iterable<WithParts>, tree = true) {
+  const result = [] as WithParts[]
+  const completed = new Set<string>()
+  let retain: MessageID | undefined
+  for (const msg of ordered) {
+    result.push(msg)
+    if (retain) {
+      if (msg.info.id === retain) break
+      continue
+    }
+    if (msg.info.role === "user" && completed.has(msg.info.id)) {
+      const part = msg.parts.find((item): item is CompactionPart => item.type === "compaction")
+      if (!part) continue
+      // 261010 Red 原生范围投影由检查点账本拥有，不借 legacy 的单一截断边界裁原文。
+      if (part.native) continue
+      if (!part.tail_start_id) break
+      retain = part.tail_start_id
+      if (msg.info.id === retain) break
+      continue
+    }
+    if (msg.info.role === "user" && completed.has(msg.info.id) && msg.parts.some((part) => part.type === "compaction"))
+      break
+    // 261113 Red 只有可用的摘要才算压缩完成：空正文、估算 step-finish（"unknown"）、
+    // 长度截断（"length"）或带 error 都会让半份摘要冒充成功边界。
+    if (msg.info.role === "assistant" && isUsableCompactionSummary(msg)) completed.add(msg.info.parentID)
+  }
+  result.reverse()
+  // 261114 Red 树过滤（review finding 2）：必须在**重排前**的时序收集集上走链。
+  //   重排把保留尾挪到摘要之后，而时序链上保留尾在摘要**之前**——在重排后的
+  //   数组上走链只能从压缩触发出发正向走，够不到保留尾（边界后没有 parentID
+  //   缺省的 user，root 探测落到 messages[0] = 触发消息），压缩明明保留的近期
+  //   上下文被整段丢弃。收集集是「tail_start 起的链连续后缀」，从首元素走链
+  //   恰好覆盖全集合。前提：集合无覆盖缺口——native 的下推过滤会掏空链中段
+  //   （anchor 断头，走链截断在首个缺口），由调用方传 tree=false 退出；跨覆盖
+  //   段续走等分支写入方（2d）落地时做。
+  const chain = tree ? visiblePath(result) : result
+  const compactionIndex = chain.findLastIndex(
+    (msg) =>
+      msg.info.role === "user" &&
+      msg.parts.some((item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined),
+  )
+  const compaction = chain[compactionIndex]
+  const part = compaction?.parts.find(
+    (item): item is CompactionPart => item.type === "compaction" && item.tail_start_id !== undefined,
+  )
+  const summaryIndex = compaction
+    ? chain.findIndex(
+        (msg, index) =>
+          index > compactionIndex &&
+          msg.info.role === "assistant" &&
+          // 261113 Red 重排只接受可用摘要：空正文、finish="unknown"/"length" 或带 error
+          // 都不参与尾部重排，否则失败摘要把原文顶出模型输入。
+          isUsableCompactionSummary(msg) &&
+          msg.info.parentID === compaction.info.id,
+      )
+    : -1
+  const tailIndex = part?.tail_start_id ? chain.findIndex((msg) => msg.info.id === part.tail_start_id) : -1
+  if (tailIndex >= 0 && tailIndex < compactionIndex && summaryIndex > compactionIndex) {
+    return [
+      ...chain.slice(compactionIndex, summaryIndex + 1),
+      ...chain.slice(tailIndex, compactionIndex),
+      ...chain.slice(summaryIndex + 1),
+    ]
+  }
+  return chain
+}
+
+export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: SessionID) {
+  // stream() 已是逆序（新→旧），直接走 Ordered 那条，扫到压缩边界就不再翻页。
+  return filterCompactedOrdered(stream(sessionID))
+})
+
+// 260814 Red 消息先后一律用 compareTime（time.created + ID tie-break），ID 只做 identity。
+// 背景：MessageID = 时间戳×4096 压进 6 字节（48 位），回绕周期 2^36 ms ≈ 795 天；
+// 2026-08-14 19:19:55.136 已第 26 次回绕，此后新 ID 字典序小于回绕前旧 ID，
+// 用 ID 字符串比较表达"先后"全部失真（曾致 runLoop 退出条件恒 false、219 步空转死循环）。
+// 同毫秒 tie-break 用 ID 字典序——同 ms 内 counter 递增、字典序正确
+// （仅 1ms 回绕窗口内可能并列错序，概率趋零）。
+export function compareTime(
+  a: { id: string; time: { created: number } },
+  b: { id: string; time: { created: number } },
+): number {
+  return a.time.created !== b.time.created ? a.time.created - b.time.created : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
+// filterCompacted reorders messages for model consumption
+// ([compaction-user, summary, ...retained tail..., continue-user]), so array
+// position is not chronological. Derive each binding by max creation time
+// (compareTime) so a pre-compaction overflowing tail assistant doesn't get
+// mistaken for the most recent turn. tasks are compaction/subtask parts
+// attached to user messages newer than the latest finished assistant —
+// i.e. unprocessed work.
+export function latest(msgs: WithParts[]) {
+  let user: User | undefined
+  let assistant: Assistant | undefined
+  let finished: Assistant | undefined
+  // 261013 Red 流超时/取消没有 finish，但已落终态的摘要不能再抢占新用户轮。
+  const failedCompactions = new Set<MessageID>()
+  for (const msg of msgs) {
+    const info = msg.info
+    if (isUserTurn(info, msg.parts) && (!user || compareTime(info, user) > 0)) user = info
+    if (info.role === "assistant" && (!assistant || compareTime(info, assistant) > 0)) assistant = info
+    if (info.role === "assistant" && info.finish && (!finished || compareTime(info, finished) > 0)) finished = info
+    if (info.role === "assistant" && info.summary && info.error && info.time.completed !== undefined)
+      failedCompactions.add(info.parentID)
+  }
+  const tasks = msgs.flatMap((m) =>
+    finished && compareTime(m.info, finished) <= 0
+      ? []
+      : m.parts.filter(
+          (p): p is CompactionPart | SubtaskPart =>
+            p.type === "subtask" || (p.type === "compaction" && !failedCompactions.has(m.info.id)),
+        ),
+  )
+  return { user, assistant, finished, tasks }
+}
+
+/** Extract a Node/Bun style error code (e.g. ECONNRESET) from the error or its cause chain. 260802 Red */
+function errorCode(e: unknown): string | undefined {
+  const err = e as { code?: unknown; cause?: unknown } | undefined
+  const code = err?.code
+  if (typeof code === "string") return code
+  const cause = err?.cause
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const causeCode = (cause as { code?: unknown }).code
+    if (typeof causeCode === "string") return causeCode
+  }
+  return undefined
+}
+
+export function fromError(
+  e: unknown,
+  ctx: { providerID: ProviderID; aborted?: boolean },
+): NonNullable<Assistant["error"]> {
+  switch (true) {
+    case e instanceof DOMException && e.name === "AbortError":
+      return new AbortedError(
+        { message: e.message },
+        {
+          cause: e,
+        },
+      ).toObject()
+    case OutputLengthError.isInstance(e):
+      return e
+    case LoadAPIKeyError.isInstance(e):
+      return new AuthError(
+        {
+          providerID: ctx.providerID,
+          message: e.message,
+        },
+        { cause: e },
+      ).toObject()
+    case errorCode(e) === "ECONNRESET":
+      return new APIError(
+        {
+          message: "连接被服务端重置（多为网络或代理中断），可直接重发这条消息。",
+          isRetryable: true,
+          metadata: {
+            code: errorCode(e) ?? "",
+            syscall: (e as SystemError).syscall ?? "",
+            message: (e as SystemError).message ?? "",
+          },
+        },
+        { cause: e },
+      ).toObject()
+    case e instanceof Error && (e as FetchDecompressionError).code === "ZlibError":
+      if (ctx.aborted) {
+        return new AbortedError({ message: e.message }, { cause: e }).toObject()
+      }
+      return new APIError(
+        {
+          message: "响应解压失败：传输数据已损坏，可直接重发这条消息。",
+          isRetryable: true,
+          metadata: {
+            code: (e as FetchDecompressionError).code,
+            message: e.message,
+          },
+        },
+        { cause: e },
+      ).toObject()
+    case APICallError.isInstance(e):
+      const parsed = ProviderError.parseAPICallError({
+        providerID: ctx.providerID,
+        error: e,
+      })
+      if (parsed.type === "context_overflow") {
+        return new ContextOverflowError(
+          {
+            message: parsed.message,
+            responseBody: parsed.responseBody,
+          },
+          { cause: e },
+        ).toObject()
+      }
+
+      return new APIError(
+        {
+          message: parsed.message,
+          statusCode: parsed.statusCode,
+          isRetryable: parsed.isRetryable,
+          responseHeaders: parsed.responseHeaders,
+          responseBody: parsed.responseBody,
+          metadata: parsed.metadata,
+        },
+        { cause: e },
+      ).toObject()
+    case e instanceof Error:
+      return new NamedError.Unknown({ message: errorMessage(e) }, { cause: e }).toObject()
+    default:
+      try {
+        const parsed = ProviderError.parseStreamError(e)
+        if (parsed) {
+          if (parsed.type === "context_overflow") {
+            return new ContextOverflowError(
+              {
+                message: parsed.message,
+                responseBody: parsed.responseBody,
+              },
+              { cause: e },
+            ).toObject()
+          }
+          return new APIError(
+            {
+              message: parsed.message,
+              isRetryable: parsed.isRetryable,
+              responseBody: parsed.responseBody,
+            },
+            {
+              cause: e,
+            },
+          ).toObject()
+        }
+        // 260529 Red 反序列化失败时兜底为 Unknown 错误，保留原始 cause
+      } catch {}
+      return new NamedError.Unknown({ message: JSON.stringify(e) }, { cause: e }).toObject()
+  }
+}
+
+export * as MessageV2 from "./message-v2"

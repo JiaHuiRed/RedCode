@@ -123,7 +123,7 @@ export function createMainWindow() {
     height: state.height,
     show: false,
     autoHideMenuBar: true,
-    title: "RedCode",
+    title: "RedSpace",
     icon: nativeImage.createFromPath(iconPath()),
     backgroundColor,
     ...(process.platform === "darwin"

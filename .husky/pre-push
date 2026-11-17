@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 # Check if bun version matches package.json
-# keep in sync with packages/opencode/script/build.ts bun version qualifier
+# keep in sync with packages/redspace/script/build.ts bun version qualifier
 bun -e '
 import { semver } from "bun";
 const pkg = await Bun.file("package.json").json();
@@ -35,7 +35,7 @@ bun run check:config-shadowing
 # coverage 模式报 missing——同型事故已五次（0.17.0 instructions，261115 UX-15 query /
 # UX-17 result，e2e mock 兜底 {} 崩页面还有三次）。coverage 只做路由↔场景对账、不执行
 # 场景，实测 ~6s、内存近零，与 openapi-drift 同档。
-(cd packages/opencode && bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip)
+(cd packages/redspace && bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip)
 # 261013 Red 全仓 typecheck 移出 pre-push：tsgo 崩溃回退 tsc 时是分钟级，每次 push 都付
 # 不划算；CI typecheck.yml 同一条全量兜底（防本地跳过钩子与并行会话合并）。留在 pre-push
 # 的是秒级扫描（超时不变量/工具描述预算/控制字节/openapi-drift/httpapi coverage 对账），

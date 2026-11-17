@@ -49,7 +49,7 @@ jobs:
           save-cache: "false"
 
       - name: Run smoke tests
-        working-directory: packages/opencode
+        working-directory: packages/redspace
         run: bun run test:smoke
         env:
           REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
@@ -58,7 +58,7 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/opencode/.artifacts/smoke/*.xml
+          report_paths: packages/redspace/.artifacts/smoke/*.xml
           check_name: "smoke results (windows)"
           detailed_summary: true
           include_time_in_summary: true
@@ -72,7 +72,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/opencode/.artifacts/smoke/*.xml
+          path: packages/redspace/.artifacts/smoke/*.xml
 
   gitleaks:
     name: secrets scan

@@ -80,19 +80,19 @@ export type BatchStats = { received: number; emitted: number; superseded: number
 export const processBatch = (
   pulled: { events: QueuedEvent[]; snapshots: Map<string, number> | undefined },
   emit: (event: QueuedEvent) => void,
-): BatchStats => {
-  const received = pulled.events.length
-  const kinds: Record<string, number> = {}
-  let emitted = 0
-  let superseded = 0
+  collectStats = true,
+): BatchStats | undefined => {
+  const stats: BatchStats | undefined = collectStats
+    ? { received: pulled.events.length, emitted: 0, superseded: 0, kinds: {} }
+    : undefined
   for (const event of pulled.events) {
-    kinds[event.payload.type] = (kinds[event.payload.type] ?? 0) + 1
+    if (stats) stats.kinds[event.payload.type] = (stats.kinds[event.payload.type] ?? 0) + 1
     if (isSupersededDelta(event, pulled.snapshots)) {
-      superseded++
+      if (stats) stats.superseded++
       continue
     }
     emit(event)
-    emitted++
+    if (stats) stats.emitted++
   }
-  return { received, emitted, superseded, kinds }
+  return stats
 }

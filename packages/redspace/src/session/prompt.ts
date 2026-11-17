@@ -1,0 +1,2999 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
+import path from "path"
+import os from "os"
+import { SessionID, MessageID, PartID } from "./schema"
+import { MessageV2 } from "./message-v2"
+import { ImageTokens } from "./image-tokens"
+import { overlayToolDefs, PromptCaches, recordRequest, settlePromptCaches, touchSession } from "./prompt-caches"
+import { PromptPin } from "./prompt-pin"
+import { ContextSnapshot } from "./context-snapshot"
+import { PrefixProbe } from "./prefix-probe"
+import * as Log from "@redcode-ai/core/util/log"
+import { SessionRevert } from "./revert"
+import * as Session from "./session"
+import { Agent } from "../agent/agent"
+import { Provider } from "@/provider/provider"
+import { ARCHIVE_MIMES } from "@/provider/transform"
+import { ModelID, ProviderID } from "../provider/schema"
+import { type Tool as AITool, tool, jsonSchema, type ModelMessage } from "ai"
+import type { JSONSchema7 } from "@ai-sdk/provider"
+import { SessionCompaction } from "./compaction"
+import { Bus } from "../bus"
+import { SystemPrompt } from "./system"
+import { Instruction } from "./instruction"
+import { get as getCanary, check as checkCanary } from "./canary"
+import { Plugin } from "../plugin"
+import MAX_STEPS from "../session/prompt/max-steps.md" with { type: "text" }
+import WORK_RULES from "./prompt/work-rules.md" with { type: "text" }
+import CONVERSATION from "./prompt/conversation.md" with { type: "text" }
+import { ToolRegistry } from "@/tool/registry"
+import { MCP } from "../mcp"
+import { LSP } from "@/lsp/lsp"
+import { ulid } from "ulid"
+import { ChildProcessSpawner } from "effect/process"
+import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import * as Stream from "effect/Stream"
+import { Command } from "../command"
+import { pathToFileURL, fileURLToPath } from "url"
+import { Config } from "@/config/config"
+import { ConfigMarkdown } from "@/config/markdown"
+import { SessionSummary } from "./summary"
+import { SessionVerification } from "./verification"
+import { NamedError } from "@redcode-ai/core/util/error"
+import { SessionProcessor } from "./processor"
+import * as PrefixShape from "./prefix-shape"
+import { Tool } from "@/tool/tool"
+import { Permission } from "@/permission"
+import { SessionStatus } from "./status"
+import { LLM } from "./llm"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Truncate } from "@/tool/truncate"
+import { Image } from "@/image/image"
+import { decodeDataUrl } from "@/util/data-url"
+import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
+import * as EffectLogger from "@redcode-ai/core/effect/logger"
+import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef, IsolationBoundaryRef } from "@/effect/instance-ref"
+import { InstanceStore } from "@/project/instance-store"
+import { Worktree } from "@/worktree"
+import { TaskTool, type TaskPromptOps } from "@/tool/task"
+import { SessionRunState } from "./run-state"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { SessionEvent } from "@redcode-ai/core/session-event"
+import { ModelV2 } from "@redcode-ai/core/model"
+import { ProviderV2 } from "@redcode-ai/core/provider"
+import { Reference } from "@/reference/reference"
+import * as DateTime from "effect/DateTime"
+import { eq } from "@/storage/db"
+import { Storage } from "@/storage/storage"
+import * as Database from "@/storage/db"
+import { SessionTable } from "./session.sql"
+import { referenceTextPart } from "./prompt/reference"
+import { makeShared } from "./prompt/shared"
+import { sessionSoul, sessionTitlePrefix } from "./soul"
+import * as Soul from "@/soul"
+import { Companion } from "@/companion/companion"
+import { companionAgent, isCompanionChat } from "./companion"
+import { makeShell } from "./prompt/shell"
+import { SessionReminders } from "./reminders"
+import { SessionTools } from "./tools"
+import { Goal } from "./goal"
+import { LLMEvent } from "@redcode-ai/llm"
+import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
+import * as XmlToolCall from "./xml-tool-call"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as NativeRuntime from "./native-context-runtime"
+import * as ContextCompaction from "./context-compaction"
+import { usable as usableContext } from "./overflow"
+import { estimateModelMessages } from "./image-tokens"
+import { Token } from "@/util/token"
+import { OutputLoss } from "./output-loss"
+
+// @ts-ignore
+globalThis.AI_SDK_LOG_WARNINGS = false
+
+// 260728 Red 一轮对话里最多为「工具调用写成了 XML 文本」纠正几次（见 session/xml-tool-call.ts）。
+// 实测这是 step-3.7-flash 的偶发抽风，一次纠正基本就回到原生通道；给 2 次是容错，
+// 再多就是陪模型烧 token 打转了。
+const MAX_SALVAGE_RECOVERIES = 2
+
+// 260819 cc「prune 够了就跳过 summarize」的额外门槛：释放量至少要占当前上下文这个比例。
+// 为什么需要它：skip 分支必然伴随 settlePromptCaches，msgPin/modelMsgs 一丢，DCP 攒下的
+// 全部改写（prune 标记、nudge 锚点、priority tag）同时生效，整条前缀从最早被改写处起重写
+// ——代价是把当前上下文全量从缓存价打回全价。原来只判「prune 后是否还超限」，于是释放 3%
+// 也照付 100% 重建，而且降幅太小下一轮又撞线 → 再 prune 再 settle，反复全额重建。
+// 实测 08-16~08-19：39 次短间隔同模型跳水吃掉 4528k 本该命中的 token，约占区间总成本 10%。
+// 取 0.15 的依据是数量级而非精算：重建一次相当于付掉 100% 上下文，释放 15% 才有几轮回本的
+// 余地。它是可调旋钮——调大更保守（更多走真压缩），调小更接近旧行为。
+const PRUNE_SKIP_MIN_RATIO = 0.15
+
+// 260811 cc audit Y2：agent 未配置 steps 时的单轮步数硬顶。300 步按每步 10-30s 算
+// 已是 1.5-2.5 小时的连续自主运行，正常任务远达不到；达到即视为失控打转，强制落地。
+const DEFAULT_MAX_STEPS = 300
+
+// 260811 cc audit R4: 缓存本体与"分代结算"抽到 prompt-caches.ts（compact 边界结算
+// 需要在会话循环多点调用，独立模块避免循环依赖）。语义不变：钉死已发送消息保前缀缓存。
+const _caches = PromptCaches
+const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
+const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
+
+const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
+
+IMPORTANT:
+- You MUST call this tool exactly once at the end of your response
+- The input must be valid JSON matching the required schema
+- Complete all necessary research and tool calls BEFORE calling this tool
+- This tool provides your final answer - no further actions are taken after calling it`
+
+const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+
+// 260717 Red external compaction plugins (e.g. DCP) run their compress tool mid-turn,
+// but the reduction only shows up on the *next* outbound request - the turn that just
+// called it still reports its pre-compression token usage. Skip one auto-compaction
+// check after one of these completes so native compaction doesn't double-fire on that
+// stale count; if the plugin's compression wasn't enough, the next real check catches it.
+const EXTERNAL_COMPRESS_TOOLS = new Set(["compress-range", "compress-message"])
+
+const log = Log.create({ service: "session.prompt" })
+const elog = EffectLogger.create({ service: "session.prompt" })
+
+export interface Interface {
+  readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
+  // 261031 Red 打断发送：取消当前 Runner 后立即以本消息开新轮（单请求服务端串行）。
+  readonly interruptPrompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
+  readonly loop: (input: LoopInput, onCancelled?: Effect.Effect<void>) => Effect.Effect<MessageV2.WithParts>
+  readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError>
+  readonly command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
+  readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@redcode/SessionPrompt") {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const status = yield* SessionStatus.Service
+    const sessions = yield* Session.Service
+    const companions = yield* Companion.Service
+    const agents = yield* Agent.Service
+    const provider = yield* Provider.Service
+    const processor = yield* SessionProcessor.Service
+    const compaction = yield* SessionCompaction.Service
+    const plugin = yield* Plugin.Service
+    const commands = yield* Command.Service
+    const config = yield* Config.Service
+    const permission = yield* Permission.Service
+    const verification = yield* SessionVerification.Service
+    const fsys = yield* AppFileSystem.Service
+    const mcp = yield* MCP.Service
+    const lsp = yield* LSP.Service
+    const registry = yield* ToolRegistry.Service
+    const truncate = yield* Truncate.Service
+    const goal = yield* Goal.Service
+    const image = yield* Image.Service
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const scope = yield* Scope.Scope
+    const instruction = yield* Instruction.Service
+    const availableSouls = yield* Effect.serviceOption(Soul.Service)
+    const souls = Option.isSome(availableSouls)
+      ? availableSouls.value
+      : yield* Effect.gen(function* () {
+          return yield* Soul.Service
+        }).pipe(Effect.provide(Soul.defaultLayer))
+    const state = yield* SessionRunState.Service
+    const revert = yield* SessionRevert.Service
+    const summary = yield* SessionSummary.Service
+    const sys = yield* SystemPrompt.Service
+    const llm = yield* LLM.Service
+    const references = yield* Reference.Service
+    const events = yield* EventV2Bridge.Service
+
+    const readBoundedImage = Effect.fnUntraced(function* (filepath: string, maxBytes: number) {
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const file = yield* fsys.open(filepath, { flag: "r" })
+          const buffer = new Uint8Array(maxBytes)
+          let offset = 0
+          while (offset < maxBytes) {
+            const chunk = yield* file.readAlloc(Math.min(maxBytes - offset, 64 * 1024))
+            if (Option.isNone(chunk) || chunk.value.byteLength === 0) break
+            buffer.set(chunk.value, offset)
+            offset += chunk.value.byteLength
+          }
+          return buffer.subarray(0, offset)
+        }),
+      ).pipe(
+        // 261018 Red resolvePart 的契约不暴露 typed error；读取失败在这里转 defect，
+        // 与上面 fsys.readFile 分支的 catch(Effect.die) 同口径。
+        Effect.catch(Effect.die),
+      )
+    })
+
+    /**
+     * 260904 cc MCP 服务器自报用途说明拼成的提示词块。
+     *
+     * MCP 协议 initialize 响应里有 `instructions` 字段，服务器用它说明「这套工具整体是干什么的、
+     * 什么时候该用」。本仓此前完全不读（mcp 模块零引用），模型只能从逐条工具描述里拼凑整体意图——
+     * 而那些描述还会被 tool.definition 钩子截断。实测 jcodemunch 提供 931 字符，一直丢在地上。
+     *
+     * 没有任何服务器提供时返回 undefined，一个字节都不加进前缀。
+     */
+    const mcpGuideText = Effect.fn("SessionPrompt.mcpGuide")(function* () {
+      const list = yield* mcp.instructions().pipe(Effect.catch(() => Effect.succeed([])))
+      return MCP.fmtGuides(list)
+    })
+    const flags = yield* RuntimeFlags.Service
+    const ops = Effect.fn("SessionPrompt.ops")(function* () {
+      return {
+        cancel: (sessionID: SessionID) => cancel(sessionID),
+        resolvePromptParts: (template: string) => resolvePromptParts(template),
+        prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
+        loop: (input: LoopInput) => loop(input),
+        runIsolated: <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
+          runIsolated(input, run),
+      } satisfies TaskPromptOps
+    })
+
+    const runIsolated = <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
+      Effect.gen(function* () {
+        const service = yield* Effect.serviceOption(Worktree.Service)
+        if (Option.isNone(service)) {
+          return yield* Effect.die(new Error("Worktree isolation is not available in this context"))
+        }
+        const wt = service.value
+        const info = yield* wt.makeWorktreeInfo({ name: input.name }).pipe(Effect.catch(Effect.die))
+        const ctx = yield* wt.createAndWait(info, input.startCommand).pipe(Effect.catch(Effect.die))
+        // 260701 Red 隔离 worktree 用完必须释放 InstanceStore 缓存，否则该 worktree 的 LSP 等子进程
+        // 会在 InstanceStore（capacity: Infinity）里永久累积——GUI sidecar 长驻进程尤其明显
+        const store = yield* Effect.serviceOption(InstanceStore.Service)
+        const disposeCtx = Option.isSome(store) ? store.value.dispose(ctx) : Effect.void
+        const result = yield* run.pipe(
+          Effect.provideService(InstanceRef, ctx),
+          // 260913 Red 隔离边界：子代理只能写这个 worktree，shell 里的 git 也钉在这里。
+          Effect.provideService(IsolationBoundaryRef, ctx.directory),
+          Effect.ensuring(disposeCtx),
+          Effect.onExit((exit) => {
+            if (Exit.isSuccess(exit)) return Effect.void
+            // 260918 Red 失败/取消没有可审计产出，InstanceStore 已在上面的 ensuring 释放子进程；
+            // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
+            return Effect.uninterruptible(
+              wt
+                .remove({ directory: info.directory })
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.sync(() =>
+                      log.error("failed isolated task worktree cleanup failed", { directory: info.directory, cause }),
+                    ),
+                  ),
+                ),
+            )
+          }),
+        )
+        yield* wt.scheduleRemove({ directory: info.directory })
+        return { worktree: info, result }
+      })
+
+    const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
+      yield* elog.info("cancel", { sessionID })
+      yield* state.cancel(sessionID)
+      yield* plugin.trigger("session.stop", { sessionID }, {}).pipe(Effect.catch(() => Effect.void))
+    })
+
+    // 260820 cc 「agent 不存在」这段在本文件出现四次（handleSubtask / createUserMessage /
+    // runLoop / command），六行逐字相同、只有 agent 名与 sessionID 的取法不同。四份拷贝的
+    // 代价不在行数，在于改一句提示语要记得改四遍——比如「hint 里要不要列 hidden agent」
+    // 这种细节，各自演化是迟早的事。
+    //
+    // 只把「造错误 + 发总线」抽出来，`throw` 留在调用点：调用点都在 `if (!agent) { … }` 里，
+    // 后面紧接着用那个 agent，把 throw 也搬进来会让 TS 失去收窄。用法是
+    // `throw yield* agentNotFound({ … })`。
+    const agentNotFound = Effect.fn("SessionPrompt.agentNotFound")(function* (input: {
+      sessionID: SessionID
+      // 260820 cc 收 `string | undefined` 是为了与原样等价，不是疏忽：createUserMessage 与
+      // command 那两处传的是可选的 input.agent，模板插值出来就是字面量 "undefined"
+      // （`Agent not found: "undefined"`）。这次只做去重，不顺手改文案——改了就不是等价变换。
+      name: string | undefined
+    }) {
+      const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+      const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+      const error = new NamedError.Unknown({ message: `Agent not found: "${input.name}".${hint}` })
+      yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+      return error
+    })
+
+    // 260820 cc 「给这条 assistant 追加一句可见说明」在 runLoop 里出现四次：思考提升为正文 /
+    // 空转耗尽 / 步数上限 / 工具调用被写成文本。四处共同的纪律是**不能静默退出**——那正是
+    // 「模型莫名其妙停下来」这个观感的来源。抽出来主要是给这条纪律一个名字，下次再多一种
+    // 收场方式时，写的人能看见前面四处都做了同一件事。
+    const appendNotice = Effect.fn("SessionPrompt.appendNotice")(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+      text: string
+      metadata?: Record<string, unknown>
+    }) {
+      const now = Date.now()
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: input.messageID,
+        sessionID: input.sessionID,
+        type: "text",
+        text: input.text,
+        time: { start: now, end: now },
+        ...(input.metadata ? { metadata: input.metadata } : {}),
+      })
+    })
+
+    // 261109 Karina RC-05 收尾验证：本轮有 patch part 才算「改了什么」；子会话不跑
+    // （否则每个子代理收尾都验证一遍，成本翻倍）。报告作为可见 text part 落库，
+    // 结构化结果挂在 metadata.verification 上供机器读取。
+    const reportVerification = Effect.fnUntraced(function* (input: {
+      sessionID: SessionID
+      user: MessageV2.User
+      messageID: MessageID
+      msgs: MessageV2.WithParts[]
+    }) {
+      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (session.parentID) return
+      const ctx = yield* InstanceState.context
+      const turnParts = input.msgs
+        .filter((msg) => msg.info.role === "assistant" && msg.info.parentID === input.user.id)
+        .flatMap((msg) => msg.parts)
+      // patch part 记的是绝对路径，工具入参也是绝对路径；报告与 protected_paths 都要
+      // 按 worktree 相对路径比较，所以在挂载点统一归一化并去重。
+      const relative = (file: string) => {
+        const abs = path.isAbsolute(file) ? file : path.resolve(ctx.worktree, file)
+        const rel = path.relative(ctx.worktree, abs).replaceAll("\\", "/")
+        return rel && rel !== ".." && !rel.startsWith("../") && !path.isAbsolute(rel) ? rel : undefined
+      }
+      // 改动来源两条：patch part（快照可用时最权威）与 edit/write 工具入参。
+      // 后者让功能在非 git 项目或 snapshot=false 时仍然生效——只靠 patch 的话，
+      // 关掉快照就等于静默关掉验证。bash 改文件不在 v1 覆盖范围内。
+      const patches = turnParts.filter((part): part is MessageV2.PatchPart => part.type === "patch")
+      const fromTools = turnParts
+        .filter(
+          (part): part is MessageV2.ToolPart =>
+            part.type === "tool" && (part.tool === "edit" || part.tool === "write"),
+        )
+        .flatMap((part) => {
+          if (part.state.status !== "completed") return []
+          const filePath = part.state.input?.filePath
+          if (typeof filePath !== "string") return []
+          const rel = relative(filePath)
+          return rel ? [rel] : []
+        })
+      const changed = [
+        ...new Set([...patches.flatMap((part) => part.files), ...fromTools].map(relative).filter((file): file is string => Boolean(file))),
+      ]
+      if (changed.length === 0) return
+      const agent = yield* agents.get(input.user.agent)
+      const report = yield* verification.report({
+        sessionID: input.sessionID,
+        worktree: ctx.worktree,
+        ruleset: Permission.merge(agent?.permission ?? [], session.permission ?? []),
+        changed,
+        hash: patches.at(-1)?.hash,
+      })
+      // 261109 Wonyoung 报告默认不作为可见正文（verification.notice），但日志必须
+      // 无条件留一份：事后要能重建「这轮到底验了什么、为什么没跑」。
+      log.info("verification", {
+        session: input.sessionID,
+        status: report.status,
+        changed_files: report.changed_files,
+        checks: report.checks.map((check) => `${check.name}:${check.status}`),
+        not_run_reason: report.not_run_reason,
+      })
+      const notice = yield* verification.notice(report)
+      if (notice) {
+        yield* appendNotice({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          text: notice,
+          metadata: { verification: report },
+        })
+      }
+    })
+
+    const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
+      const ctx = yield* InstanceState.context
+      const parts: Types.DeepMutable<PromptInput["parts"]> = [{ type: "text", text: template }]
+      const files = ConfigMarkdown.files(template)
+      const seen = new Set<string>()
+      const mentionSource = (match: RegExpMatchArray) => {
+        const start = match.index ?? 0
+        return { value: match[0], start, end: start + match[0].length }
+      }
+      yield* Effect.forEach(
+        files,
+        Effect.fnUntraced(function* (match) {
+          const name = match[1]
+          if (!name) return
+          if (seen.has(name)) return
+          seen.add(name)
+
+          const slash = name.indexOf("/")
+          const alias = slash === -1 ? name : name.slice(0, slash)
+          const reference = yield* references.get(alias)
+          if (reference) {
+            const source = mentionSource(match)
+            if (reference.kind === "invalid") {
+              parts.push(
+                referenceTextPart({ reference, source, target: slash === -1 ? undefined : name.slice(slash + 1) }),
+              )
+              return
+            }
+
+            yield* references.ensure(reference.path)
+            if (slash === -1) {
+              parts.push(referenceTextPart({ reference, source }))
+              return
+            }
+
+            const target = name.slice(slash + 1)
+            const targetPath = path.resolve(reference.path, target)
+            if (!AppFileSystem.contains(reference.path, targetPath)) {
+              parts.push(
+                referenceTextPart({
+                  reference,
+                  source,
+                  target,
+                  targetPath,
+                  problem: `Path escapes configured reference @${alias}: ${target}`,
+                }),
+              )
+              return
+            }
+
+            const info = yield* fsys.stat(targetPath).pipe(Effect.option)
+            if (Option.isNone(info)) {
+              parts.push(
+                referenceTextPart({
+                  reference,
+                  source,
+                  target,
+                  targetPath,
+                  problem: `Path does not exist inside configured reference @${alias}: ${target}`,
+                }),
+              )
+              return
+            }
+
+            parts.push({
+              type: "file",
+              url: pathToFileURL(targetPath).href,
+              filename: name,
+              mime: info.value.type === "Directory" ? "application/x-directory" : "text/plain",
+            })
+            return
+          }
+
+          const filepath = name.startsWith("~/")
+            ? path.join(os.homedir(), name.slice(2))
+            : path.resolve(ctx.worktree, name)
+
+          const info = yield* fsys.stat(filepath).pipe(Effect.option)
+          if (Option.isNone(info)) {
+            const found = yield* agents.get(name)
+            if (found) {
+              parts.push({ type: "agent", name: found.name })
+              return
+            }
+            parts.push({
+              type: "text",
+              synthetic: true,
+              text: "Path does not exist; the reference was not attached.",
+            })
+            return
+          }
+          const stat = info.value
+          parts.push({
+            type: "file",
+            url: pathToFileURL(filepath).href,
+            filename: name,
+            mime: stat.type === "Directory" ? "application/x-directory" : "text/plain",
+          })
+        }),
+        { concurrency: "unbounded", discard: true },
+      )
+      return parts
+    })
+
+    const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+      session: Session.Info
+      history: MessageV2.WithParts[]
+      providerID: ProviderID
+      modelID: ModelID
+    }) {
+      if (input.session.parentID) return
+      if (!Session.isDefaultTitle(input.session.title)) return
+
+      const real = (m: MessageV2.WithParts) =>
+        m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
+      const idx = input.history.findIndex(real)
+      if (idx === -1) return
+      if (input.history.filter(real).length !== 1) return
+
+      const context = input.history.slice(0, idx + 1)
+      const firstUser = context[idx]
+      if (!firstUser || firstUser.info.role !== "user") return
+      const firstInfo = firstUser.info
+
+      const subtasks = firstUser.parts.filter((p): p is MessageV2.SubtaskPart => p.type === "subtask")
+      const onlySubtasks = subtasks.length > 0 && firstUser.parts.every((p) => p.type === "subtask")
+
+      const ag = yield* agents.get("title")
+      if (!ag) return
+      // 260801 Red 标题直接用当前会话主模型生成（哥哥拍板，额度管够，不再走 small_model 本地小模型）
+      const mainModel = yield* provider.getModel(input.providerID, input.modelID)
+      const generate = (model: Provider.Model) =>
+        Effect.gen(function* () {
+          const msgs = onlySubtasks
+            ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+            : yield* MessageV2.toModelMessagesEffect(context, model)
+          return yield* llm
+            .stream({
+              agent: ag,
+              user: firstInfo,
+              system: [],
+              tools: {},
+              model,
+              sessionID: input.session.id,
+              retries: 2,
+              messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+            })
+            .pipe(
+              Stream.filter(LLMEvent.is.textDelta),
+              Stream.map((e) => e.text),
+              Stream.mkString,
+            )
+        })
+      const text = yield* generate(mainModel)
+      const cleaned = text
+        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.length > 0)
+      if (!cleaned) {
+        yield* elog.warn("title response empty", {
+          sessionID: input.session.id,
+          providerID: input.providerID,
+          modelID: input.modelID,
+          textLength: text.length,
+          hasThinkBlock: text.includes("<think>"),
+        })
+        return
+      }
+      // 261007 Red 标题前缀跟随 Session pin 的 Soul metadata，不从 client 推断身份。
+      const withPrefix = `[${yield* sessionTitlePrefix(input.session.id, input.session.soul, souls)}] ${cleaned}`
+      const t = withPrefix.length > 100 ? withPrefix.substring(0, 97) + "..." : withPrefix
+      yield* sessions.setTitle({ sessionID: input.session.id, title: t })
+    })
+
+    const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
+      task: MessageV2.SubtaskPart
+      model: Provider.Model
+      lastUser: MessageV2.User
+      sessionID: SessionID
+      session: Session.Info
+      msgs: MessageV2.WithParts[]
+    }) {
+      const { task, model, lastUser, sessionID, session, msgs } = input
+      const ctx = yield* InstanceState.context
+      const promptOps = yield* ops()
+      const { task: taskTool } = yield* registry.named()
+      const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
+      // 261114 Red 接线口（同主循环）：parentID 由 appendMessage 解析
+      const assistantMessage: MessageV2.Assistant = yield* sessions.appendMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: lastUser.id,
+        sessionID,
+        mode: task.agent,
+        agent: task.agent,
+        variant: lastUser.model.variant,
+        path: { cwd: ctx.directory, root: ctx.worktree },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+        modelID: taskModel.id,
+        providerID: taskModel.providerID,
+        time: { created: Date.now() },
+      })
+      let part: MessageV2.ToolPart = yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: assistantMessage.id,
+        sessionID: assistantMessage.sessionID,
+        type: "tool",
+        callID: ulid(),
+        tool: TaskTool.id,
+        state: {
+          status: "running",
+          input: {
+            prompt: task.prompt,
+            description: task.description,
+            subagent_type: task.agent,
+            command: task.command,
+          },
+          time: { start: Date.now() },
+        },
+      })
+      let taskArgs = {
+        prompt: task.prompt,
+        description: task.description,
+        subagent_type: task.agent,
+        command: task.command,
+      }
+      // 260811 cc audit Y5：返回值此前被丢弃，插件对 args 的整体改写无效（同 tools.ts）
+      taskArgs = (yield* plugin.trigger(
+        "tool.execute.before",
+        { tool: TaskTool.id, sessionID, callID: part.id },
+        { args: taskArgs },
+      )).args
+
+      const taskAgent = yield* agents.get(task.agent)
+      if (!taskAgent) {
+        throw yield* agentNotFound({ sessionID, name: task.agent })
+      }
+
+      let error: Error | undefined
+      const taskAbort = new AbortController()
+      const result = yield* taskTool
+        .execute(taskArgs, {
+          agent: task.agent,
+          messageID: assistantMessage.id,
+          sessionID,
+          abort: taskAbort.signal,
+          callID: part.callID,
+          extra: { bypassAgentCheck: true, promptOps },
+          messages: msgs,
+          metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
+            Effect.gen(function* () {
+              part = yield* sessions.updatePart({
+                ...part,
+                type: "tool",
+                state: { ...part.state, ...val },
+              } satisfies MessageV2.ToolPart)
+            }),
+          ask: (req: any) =>
+            permission
+              .ask({
+                ...req,
+                sessionID,
+                ruleset: Permission.merge(taskAgent.permission, session.permission ?? []),
+              })
+              .pipe(Effect.orDie),
+        })
+        .pipe(
+          Effect.catchCause((cause) => {
+            const defect = Cause.squash(cause)
+            error = defect instanceof Error ? defect : new Error(String(defect))
+            log.error("subtask execution failed", { error, agent: task.agent, description: task.description })
+            return Effect.void
+          }),
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              taskAbort.abort()
+              assistantMessage.finish = "tool-calls"
+              assistantMessage.time.completed = Date.now()
+              yield* sessions.updateMessage(assistantMessage)
+              if (part.state.status === "running") {
+                yield* sessions.updatePart({
+                  ...part,
+                  state: {
+                    status: "error",
+                    error: "Cancelled",
+                    time: { start: part.state.time.start, end: Date.now() },
+                    metadata: part.state.metadata,
+                    input: part.state.input,
+                  },
+                } satisfies MessageV2.ToolPart)
+              }
+            }),
+          ),
+        )
+
+      const attachments = result?.attachments?.map((attachment) => ({
+        ...attachment,
+        id: PartID.ascending(),
+        sessionID,
+        messageID: assistantMessage.id,
+      }))
+
+      yield* plugin.trigger(
+        "tool.execute.after",
+        { tool: TaskTool.id, sessionID, callID: part.id, args: taskArgs },
+        result,
+      )
+
+      assistantMessage.finish = "tool-calls"
+      assistantMessage.time.completed = Date.now()
+      yield* sessions.updateMessage(assistantMessage)
+
+      if (result && part.state.status === "running") {
+        yield* sessions.updatePart({
+          ...part,
+          state: {
+            status: "completed",
+            input: part.state.input,
+            title: result.title,
+            metadata: result.metadata,
+            output: result.output,
+            attachments,
+            time: { ...part.state.time, end: Date.now() },
+          },
+        } satisfies MessageV2.ToolPart)
+      }
+
+      if (!result) {
+        yield* sessions.updatePart({
+          ...part,
+          state: {
+            status: "error",
+            error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
+            time: {
+              start: part.state.status === "running" ? part.state.time.start : Date.now(),
+              end: Date.now(),
+            },
+            metadata: part.state.status === "pending" ? undefined : part.state.metadata,
+            input: part.state.input,
+          },
+        } satisfies MessageV2.ToolPart)
+      }
+
+      if (!task.command) return
+
+      const summaryUserMsg: MessageV2.User = {
+        id: MessageID.ascending(),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: lastUser.agent,
+        model: lastUser.model,
+      }
+      yield* sessions.appendMessage(summaryUserMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: summaryUserMsg.id,
+        sessionID,
+        type: "text",
+        text: "Summarize the task tool output above and continue with your task.",
+        synthetic: true,
+      } satisfies MessageV2.TextPart)
+    })
+
+    // 260630 Red P1-b: getModel + currentModel moved to prompt/shared.ts
+    const { getModel, currentModel } = makeShared({ provider, bus, sessions })
+
+    // 260630 Red P1-b: shellImpl moved to prompt/shell.ts
+    const { shellImpl } = makeShell({
+      sessions,
+      revert,
+      agents,
+      bus,
+      config,
+      plugin,
+      spawner,
+      currentModel,
+    })
+
+    const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
+      const agentName = input.agent
+      const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+      if (!ag) {
+        throw yield* agentNotFound({ sessionID: input.sessionID, name: agentName })
+      }
+
+      const current = Database.use((db) =>
+        db
+          .select({ agent: SessionTable.agent, model: SessionTable.model })
+          .from(SessionTable)
+          .where(eq(SessionTable.id, input.sessionID))
+          .get(),
+      )
+      const model = input.model ?? ag.model ?? (yield* currentModel(input.sessionID))
+      const same = ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
+      const full =
+        !input.variant && ag.variant && same
+          ? yield* provider
+              .getModel(model.providerID, model.modelID)
+              .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
+          : undefined
+      // 261012 Red 合成消息（后台任务通知等 noReply 注入）不传 model/variant，原逻辑只认
+      // input.variant 与 ag.variant，用户在会话里手动选的 variant（存 session 表 model 列）
+      // 被静默丢弃 → 下轮请求 reasoning effort 从 high 回落 medium，GPT 前缀缓存随参数
+      // 变化整体作废（实测 146k 输入全 miss，request-evidence parameters sha high→medium 吻合）。
+      // 补第三优先级：显式传参 > agent 配置 > 会话当前选择；仅当模型与会话当前一致时才继承，
+      // 避免把 variant 挂到别的模型上。
+      const sessionVariant =
+        current?.model &&
+        current.model.providerID === model.providerID &&
+        current.model.id === model.modelID &&
+        current.model.variant &&
+        current.model.variant !== "default"
+          ? current.model.variant
+          : undefined
+      const variant =
+        input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined) ?? sessionVariant
+
+      // 261031 Red 忙碌时引导落 pending_steer（待消费形态：用户仍可编辑/撤回），由 loop
+      // 组装前 promotePendingSteer 领取转 steer；idle 时引导就是普通开轮消息，不落待消费。
+      // busy 判定以服务端 Runner 为准（单一所有者），不信客户端的会话状态快照。
+      const pendingSteer = input.delivery === "steer" && (yield* state.isBusy(input.sessionID))
+      const info: MessageV2.User = {
+        id: input.messageID ?? MessageID.ascending(),
+        role: "user",
+        sessionID: input.sessionID,
+        time: { created: Date.now() },
+        delivery: input.delivery === "queue" ? "queued" : pendingSteer ? "pending_steer" : input.delivery,
+        tools: input.tools,
+        agent: ag.name,
+        model: {
+          providerID: model.providerID,
+          modelID: model.modelID,
+          variant,
+        },
+        system: input.system,
+        format: input.format,
+      }
+
+      if (current?.agent !== info.agent) {
+        yield* events.publish(SessionEvent.AgentSwitched, {
+          sessionID: input.sessionID,
+          timestamp: DateTime.makeUnsafe(info.time.created),
+          agent: info.agent,
+        })
+      }
+      if (
+        current?.model?.providerID !== info.model.providerID ||
+        current.model.id !== info.model.modelID ||
+        (current.model.variant === "default" ? undefined : current.model.variant) !== info.model.variant
+      ) {
+        yield* events.publish(SessionEvent.ModelSwitched, {
+          sessionID: input.sessionID,
+          timestamp: DateTime.makeUnsafe(info.time.created),
+          model: {
+            id: ModelV2.ID.make(info.model.modelID),
+            providerID: ProviderV2.ID.make(info.model.providerID),
+            variant: ModelV2.VariantID.make(info.model.variant ?? "default"),
+          },
+        })
+      }
+
+      yield* Effect.addFinalizer(() => instruction.clear(info.id))
+
+      type Draft<T> = T extends MessageV2.Part ? Omit<T, "id"> & { id?: string } : never
+      const assign = (part: Draft<MessageV2.Part>): MessageV2.Part => ({
+        ...part,
+        id: part.id ? PartID.make(part.id) : PartID.ascending(),
+      })
+
+      // 260820 cc resolvePart 里「合成一条文本 part」的五行样板出现 13 次，除 text 外逐字相同。
+      // 收成一个函数不只是省行数：合成 part 的三个固定字段（synthetic 标记、归属消息、会话）
+      // 从此只有一处，加字段或改归属不必再逐处对齐。
+      const syntheticText = (text: string): Draft<MessageV2.Part> => ({
+        messageID: info.id,
+        sessionID: input.sessionID,
+        type: "text",
+        synthetic: true,
+        text,
+      })
+
+      const referenceContextFromFilePart = Effect.fnUntraced(function* (
+        part: Extract<PromptInput["parts"][number], { type: "file" }>,
+        filepath: string,
+      ) {
+        const name = part.filename?.replace(/#\d+(?:-\d*)?$/, "")
+        if (!name) return
+        const slash = name.indexOf("/")
+        if (slash === -1) return
+
+        const reference = yield* references.get(name.slice(0, slash))
+        if (!reference || reference.kind === "invalid") return
+        if (!AppFileSystem.contains(reference.path, filepath)) return
+
+        const target = path.relative(reference.path, filepath).split(path.sep).join("/")
+        if (!target || target.startsWith("../") || target === "..") return
+
+        return referenceTextPart({
+          reference,
+          source: part.source?.text ?? { value: `@${name}`, start: 0, end: name.length + 1 },
+          target,
+          targetPath: filepath,
+        })
+      })
+
+      const resolvePart: (part: PromptInput["parts"][number]) => Effect.Effect<Draft<MessageV2.Part>[]> = Effect.fn(
+        "SessionPrompt.resolveUserPart",
+      )(function* (part) {
+        if (part.type === "file") {
+          if (part.source?.type === "resource") {
+            const { clientName, uri } = part.source
+            log.info("mcp resource", { clientName, uri, mime: part.mime })
+            const pieces: Draft<MessageV2.Part>[] = [syntheticText(`Reading MCP resource: ${part.filename} (${uri})`)]
+            const exit = yield* mcp.readResource(clientName, uri).pipe(Effect.exit)
+            if (Exit.isSuccess(exit)) {
+              const content = exit.value
+              if (!content) throw new Error(`Resource not found: ${clientName}/${uri}`)
+              const items = Array.isArray(content.contents) ? content.contents : [content.contents]
+              for (const c of items) {
+                if ("text" in c && c.text) {
+                  pieces.push(syntheticText(c.text))
+                } else if ("blob" in c && c.blob) {
+                  const mime = "mimeType" in c ? c.mimeType : part.mime
+                  pieces.push(syntheticText(`[Binary content: ${mime}]`))
+                }
+              }
+              pieces.push({ ...part, messageID: info.id, sessionID: input.sessionID })
+            } else {
+              const error = Cause.squash(exit.cause)
+              log.error("failed to read MCP resource", { error, clientName, uri })
+              const message = error instanceof Error ? error.message : String(error)
+              pieces.push(syntheticText(`Failed to read MCP resource ${part.filename}: ${message}`))
+            }
+            return pieces
+          }
+          const url = new URL(part.url)
+          switch (url.protocol) {
+            case "data:":
+              if (part.mime === "text/plain") {
+                return [
+                  syntheticText(
+                    `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
+                  ),
+                  syntheticText(decodeDataUrl(part.url)),
+                  { ...part, messageID: info.id, sessionID: input.sessionID },
+                ]
+              }
+              break
+            case "file:": {
+              log.info("file", { mime: part.mime })
+              const filepath = fileURLToPath(part.url)
+              // 261018 Red 压缩包只落盘不内联：不读盘、不转 base64，保留 file:// 交给
+              // provider/transform 换成稳定的路径占位文本。走下面的通用二进制分支会先被
+              // 3.75 MiB 读盘闸门拒绝，或把整包 base64 化——两条都与落盘设计相反。
+              if (ARCHIVE_MIMES.has(part.mime)) return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
+              const referenceContext = yield* referenceContextFromFilePart(part, filepath)
+              const mime = (yield* fsys.isDir(filepath)) ? "application/x-directory" : part.mime
+
+              const { read } = yield* registry.named()
+              const execRead = (args: Parameters<typeof read.execute>[0], extra?: Tool.Context["extra"]) => {
+                const controller = new AbortController()
+                return read
+                  .execute(args, {
+                    sessionID: input.sessionID,
+                    abort: controller.signal,
+                    agent: input.agent!,
+                    messageID: info.id,
+                    extra: { bypassCwdCheck: true, ...extra },
+                    messages: [],
+                    metadata: () => Effect.void,
+                    ask: () => Effect.void,
+                  })
+                  .pipe(Effect.onInterrupt(() => Effect.sync(() => controller.abort())))
+              }
+
+              if (mime === "text/plain") {
+                let offset: number | undefined
+                let limit: number | undefined
+                const range = { start: url.searchParams.get("start"), end: url.searchParams.get("end") }
+                if (range.start != null) {
+                  const filePathURI = part.url.split("?")[0]
+                  let start = parseInt(range.start)
+                  let end = range.end ? parseInt(range.end) : undefined
+                  if (start === end) {
+                    const symbols = yield* lsp.documentSymbol(filePathURI).pipe(Effect.catch(() => Effect.succeed([])))
+                    for (const symbol of symbols) {
+                      let r: LSP.Range | undefined
+                      if ("range" in symbol) r = symbol.range
+                      else if ("location" in symbol) r = symbol.location.range
+                      if (r?.start?.line && r?.start?.line === start) {
+                        start = r.start.line
+                        end = r?.end?.line ?? start
+                        break
+                      }
+                    }
+                  }
+                  offset = Math.max(start, 1)
+                  if (end) limit = end - (offset - 1)
+                }
+                const args = { filePath: filepath, offset, limit }
+                const pieces: Draft<MessageV2.Part>[] = [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Called the Read tool with the following input: ${JSON.stringify(args)}`),
+                ]
+                const exit = yield* provider.getModel(info.model.providerID, info.model.modelID).pipe(
+                  Effect.flatMap((mdl) => execRead(args, { model: mdl })),
+                  Effect.exit,
+                )
+                if (Exit.isSuccess(exit)) {
+                  const result = exit.value
+                  pieces.push(syntheticText(result.output))
+                  if (result.attachments?.length) {
+                    pieces.push(
+                      ...result.attachments.map((a) => ({
+                        ...a,
+                        synthetic: true,
+                        filename: a.filename ?? part.filename,
+                        messageID: info.id,
+                        sessionID: input.sessionID,
+                      })),
+                    )
+                  } else {
+                    pieces.push({ ...part, mime, messageID: info.id, sessionID: input.sessionID })
+                  }
+                } else {
+                  const error = Cause.squash(exit.cause)
+                  log.error("failed to read file", { error })
+                  const message = error instanceof Error ? error.message : String(error)
+                  yield* bus.publish(Session.Event.Error, {
+                    sessionID: input.sessionID,
+                    error: new NamedError.Unknown({ message }).toObject(),
+                  })
+                  pieces.push(
+                    syntheticText(`Read tool failed to read ${filepath} with the following error: ${message}`),
+                  )
+                }
+                return pieces
+              }
+
+              if (mime === "application/x-directory") {
+                const args = { filePath: filepath }
+                const exit = yield* execRead(args).pipe(Effect.exit)
+                if (Exit.isFailure(exit)) {
+                  const error = Cause.squash(exit.cause)
+                  log.error("failed to read directory", { error })
+                  const message = error instanceof Error ? error.message : String(error)
+                  yield* bus.publish(Session.Event.Error, {
+                    sessionID: input.sessionID,
+                    error: new NamedError.Unknown({ message }).toObject(),
+                  })
+                  return [
+                    ...(referenceContext
+                      ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                      : []),
+                    syntheticText(`Read tool failed to read ${filepath} with the following error: ${message}`),
+                  ]
+                }
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Called the Read tool with the following input: ${JSON.stringify(args)}`),
+                  syntheticText(exit.value.output),
+                  { ...part, mime, messageID: info.id, sessionID: input.sessionID },
+                ]
+              }
+
+              // 260812 Red 图片/二进制不合成 "Called the Read tool" 回显文本：
+              // 该文本让同一张图在模型上下文里出现两个路径（.attachments 原路径 +
+              // unsupportedParts 的内容哈希 temp 路径），不支持图片的模型分不清是同一张，
+              // 会把两个路径都写进子代理 prompt 导致读图翻倍（实测 ses_00c1cb26affe）。
+              // 文本文件（text/plain）分支保留回显，那里有实际语义。
+              // 261015 Red 读盘前的字节闸门（审计 A02）。这个分支是先把整个文件读进来再 base64
+              // （≈1.37× 常驻），此前没有任何尺寸检查；配合下方的 unbounded 并发，N 个附件就是
+              // N 份完整副本。超限一个字节都不读，只回一句可读说明 —— 文件仍在磁盘上。
+              const stat = mime.startsWith("image/")
+                ? undefined
+                : yield* fsys.stat(filepath).pipe(Effect.orElseSucceed(() => undefined))
+              if (stat && ImageTokens.attachmentInlineBytesExceeded(stat.size) && !mime.startsWith("image/")) {
+                log.warn("attachment over inline byte budget", { mime, bytes: stat.size })
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(
+                    `Attachment not inlined: ${part.filename} is ${stat.size} bytes, over the inline budget of ` +
+                      `${ImageTokens.MAX_ATTACHMENT_BASE64_BYTES} base64 bytes. The file is still on disk.`,
+                  ),
+                ]
+              }
+              const imageSourceSize = mime.startsWith("image/") ? imageSourceSizes.get(part) : undefined
+              if (mime.startsWith("image/") && imageSourceSize === undefined) {
+                log.warn("image attachment rejected before read", { mime, reason: "source size preflight failed" })
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Image attachment not inlined: ${part.filename} source size could not be checked.`),
+                ]
+              }
+              const bytes =
+                imageSourceSize === undefined
+                  ? yield* fsys.readFile(filepath).pipe(Effect.catch(Effect.die))
+                  : yield* readBoundedImage(filepath, Math.min(imageSourceSize, ImageTokens.MAX_IMAGE_SOURCE_BYTES) + 1)
+              if (imageSourceSize !== undefined && bytes.byteLength > imageSourceSize) {
+                log.warn("image attachment changed after preflight", {
+                  mime,
+                  preflight_bytes: imageSourceSize,
+                  bytes_read: bytes.byteLength,
+                })
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Image attachment not inlined: ${part.filename} changed size during reading.`),
+                ]
+              }
+              return [
+                ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
+                {
+                  id: part.id,
+                  messageID: info.id,
+                  sessionID: input.sessionID,
+                  type: "file",
+                  url: `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`,
+                  mime,
+                  filename: part.filename!,
+                  source: part.source,
+                },
+              ]
+            }
+          }
+        }
+
+        if (part.type === "agent") {
+          const perm = Permission.evaluate("task", part.name, ag.permission)
+          const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
+          return [
+            { ...part, messageID: info.id, sessionID: input.sessionID },
+            syntheticText(
+              " Use the above message and context to generate a prompt and call the task tool with subagent: " +
+                part.name +
+                hint,
+            ),
+          ]
+        }
+
+        return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
+      })
+
+      // 261015 Red 附件数量预算（审计 A02）。`input.parts` 此前是普通 Schema.Array、无数量上界，
+      // 而每个 file part 都可能走进上面那条「整文件读入 + base64」的分支，且并发是 unbounded。
+      // 这里按既有的 MAX_ATTACHMENTS 把超量附件挡在解析之外，并为**每一个**超量附件在原位置补一句
+      // 说明：不静默丢弃、不改变保留项的顺序，也不新增第二套限额常量（与工具侧共用同一条线）。
+      // 并发上限一并由此兜住 —— 最贵的那条路径只出现在 file part 上，数量封顶则并发封顶。
+      const attachmentBudget = ImageTokens.splitByAttachmentBudget(input.parts, (part) => part.type === "file")
+      const overBudget = new Set<PromptInput["parts"][number]>(attachmentBudget.overflow)
+      if (overBudget.size > 0)
+        log.warn("attachment count over budget", {
+          sessionID: input.sessionID,
+          overBudget: overBudget.size,
+          max: ImageTokens.MAX_ATTACHMENTS,
+        })
+      const imageSources = yield* Effect.forEach(
+        input.parts,
+        (part) => {
+          if (part.type !== "file" || !part.mime.startsWith("image/") || !part.url.startsWith("file:"))
+            return Effect.succeed(undefined)
+          const filepath = fileURLToPath(part.url)
+          return fsys.stat(filepath).pipe(
+            Effect.exit,
+            Effect.map((stat) => ({
+              part,
+              bytes: Exit.isSuccess(stat) ? Number(stat.value.size) : undefined,
+            })),
+          )
+        },
+        { concurrency: 1 },
+      )
+      const knownImageSources = imageSources.flatMap((item) =>
+        item && item.bytes !== undefined ? [{ part: item.part, bytes: item.bytes }] : [],
+      )
+      const imageSourceSizes = new Map(knownImageSources.map((item) => [item.part, item.bytes]))
+      const sourcePlan = ImageTokens.splitByImageSourceBudget(knownImageSources)
+      const failedPreflight = new Set(
+        imageSources.flatMap((item) => (item?.bytes === undefined && item ? [item.part] : [])),
+      )
+      const oversizedNonPng = new Set(
+        knownImageSources
+          .filter(
+            (item) =>
+              item.bytes > Math.floor((ImageTokens.MAX_ATTACHMENT_BASE64_BYTES * 3) / 4) &&
+              item.part.mime !== "image/png",
+          )
+          .map((item) => item.part),
+      )
+      const rejectedImages = new Set<Extract<PromptInput["parts"][number], { type: "file" }>>([
+        ...sourcePlan.overflow,
+        ...oversizedNonPng,
+        ...failedPreflight,
+      ])
+      for (const part of rejectedImages) {
+        const source = imageSources.find((item) => item?.part === part)
+        log.warn("image attachment rejected before read", {
+          mime: part.type === "file" ? part.mime : undefined,
+          bytes: source?.bytes,
+          per_image_limit: ImageTokens.MAX_IMAGE_SOURCE_BYTES,
+          message_limit: ImageTokens.MAX_IMAGE_SOURCE_TOTAL_BYTES,
+          reason: failedPreflight.has(part)
+            ? "source size preflight failed"
+            : sourcePlan.overflow.has(part)
+              ? "source budget exceeded"
+              : "large source format is not preflighted",
+        })
+      }
+      const resolvedParts = yield* Effect.forEach(
+        input.parts,
+        (part) =>
+          overBudget.has(part)
+            ? Effect.succeed([
+                syntheticText(
+                  `Attachment not inlined: ${
+                    part.type === "file" ? (part.filename ?? "unnamed file") : "file"
+                  } — a single message may inline at most ${ImageTokens.MAX_ATTACHMENTS} files. It is still on disk.`,
+                ),
+              ])
+            : part.type === "file" && rejectedImages.has(part)
+              ? Effect.succeed([
+                  syntheticText(
+                    failedPreflight.has(part)
+                      ? `Image attachment not inlined: ${
+                          part.type === "file" ? (part.filename ?? "unnamed image") : "image"
+                        } — its source size could not be checked, so it was not read.`
+                      : `Image attachment not inlined: ${
+                          part.type === "file" ? (part.filename ?? "unnamed image") : "image"
+                        } — large image sources must be PNG and at most ${
+                          ImageTokens.MAX_IMAGE_SOURCE_BYTES / (1024 * 1024)
+                        } MiB each and ${ImageTokens.MAX_IMAGE_SOURCE_TOTAL_BYTES / (1024 * 1024)} MiB per message. The file is still on disk.`,
+                  ),
+                ])
+              : resolvePart(part),
+        // 261015 Red 并发压到 8（家规：instruction.ts 读本地文件用 8、拉远端用 4）。
+        // 数量封顶后最坏峰值 ≈ 并发 × 单件常驻；单件常驻**实测** 2.33× 文件字节（原始 buffer 与
+        // base64 字符串同时在场，见 .redcode/temp/a02-probe.mjs 的 RSS 口径），字节闸门封在
+        // 3.75 MiB ⇒ 8 × 2.33 × 3.75MiB ≈ 70MiB，而 unbounded 时是 32 × 同值 ≈ 280MiB。
+        // **没有测墙钟耗时，因此不声称提速** —— 这里换的是峰值上界。
+        // Effect.forEach 保序不变，取消与上面那些逐 part 失败分支都不动。
+        { concurrency: 8 },
+      ).pipe(Effect.map((x) => x.flat().map(assign)))
+
+      yield* plugin.trigger(
+        "chat.message",
+        {
+          sessionID: input.sessionID,
+          agent: input.agent,
+          model: input.model,
+          messageID: input.messageID,
+          variant: input.variant,
+        },
+        { message: info, parts: resolvedParts },
+      )
+
+      // 261018 Red 手动附件只在这处 normalize 一次；缩放报告和规范化 part 一并持久化，
+      // 让模型与会话重开后的图片视图都对应同一份数据。
+      const parts = yield* Effect.forEach(resolvedParts, (part) => {
+        if (part.type !== "file" || !part.mime.startsWith("image/")) return Effect.succeed([part])
+        const payload = part.url.slice(part.url.indexOf(";base64,") + ";base64,".length)
+        const sourceBytes = Buffer.from(payload, "base64").byteLength
+        const requiresResize = ImageTokens.attachmentInlineBytesExceeded(sourceBytes)
+        return image.normalize(part).pipe(
+          Effect.map((result) => {
+            const output = result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length)
+            const outputBytes = Buffer.byteLength(output, "utf8")
+            if (outputBytes > ImageTokens.MAX_ATTACHMENT_BASE64_BYTES) {
+              log.warn("normalized image exceeds attachment budget", {
+                mime: result.part.mime,
+                source_bytes: sourceBytes,
+                output_base64_bytes: outputBytes,
+                max_base64_bytes: ImageTokens.MAX_ATTACHMENT_BASE64_BYTES,
+              })
+              return [
+                assign(
+                  syntheticText("Image attachment not inlined: its normalized image exceeds the transport budget."),
+                ),
+              ]
+            }
+            return result.resize
+              ? [assign(syntheticText(Image.formatResizeNotice(result.resize))), result.part]
+              : [result.part]
+          }),
+          Effect.catchIf(
+            (error) =>
+              error instanceof Image.ResizerUnavailableError ||
+              (requiresResize && (error instanceof Image.SizeError || error instanceof Image.DecodeError)),
+            (error) =>
+              Effect.sync(() => {
+                if (!requiresResize) return [part]
+                log.warn("large image attachment could not be normalized", {
+                  mime: part.mime,
+                  source_bytes: sourceBytes,
+                  error: error._tag,
+                })
+                return [assign(syntheticText("Image attachment not inlined: it could not be safely normalized."))]
+              }),
+          ),
+          Effect.map((items) => items),
+        )
+      }).pipe(Effect.map((items) => items.flat()))
+
+      const parsed = decodeMessageInfo(info, { errors: "all" })
+      if (Exit.isFailure(parsed)) {
+        log.error("invalid user message before save", {
+          sessionID: input.sessionID,
+          messageID: info.id,
+          agent: info.agent,
+          model: info.model,
+          cause: Cause.pretty(parsed.cause),
+        })
+      }
+      parts.forEach((part, index) => {
+        const p = decodeMessagePart(part, { errors: "all" })
+        if (Exit.isSuccess(p)) return
+        log.error("invalid user part before save", {
+          sessionID: input.sessionID,
+          messageID: info.id,
+          partID: part.id,
+          partType: part.type,
+          index,
+          cause: Cause.pretty(p.cause),
+          part,
+        })
+      })
+
+      // 261114 Red 消息树分支：新建消息统一走 appendMessage 接线
+      yield* sessions.appendMessage(info)
+      for (const part of parts) yield* sessions.updatePart(part)
+      // 260820 cc 这里原本有一段 66 行的 reduce，把 parts 归并成 text/files/agents/references/
+      // synthetic 五个数组，专供 688c31cf 摘掉的那两处 events.publish(SessionEvent.Prompted /
+      // Synthetic)。那次是脚本化摘除、护栏只认「块内必须是 events.publish(SessionEvent」，
+      // 于是精准删掉了 if 块，喂数据的 66 行连同一个空掉的 `for (const text of
+      // nextPrompt.synthetic) {}` 一起留了下来。tsc 抓不到：nextPrompt 确实「被读了」，
+      // 死在下一层。要恢复事件发布的话去 git 里取 688c31cf 的父版本，别照着重写。
+      return { info, parts }
+    }, Effect.scoped)
+
+    const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
+      "SessionPrompt.prompt",
+    )(function* (input: PromptInput) {
+      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      yield* revert.cleanup(session)
+      const message = yield* createUserMessage(input)
+      yield* sessions.touch(input.sessionID)
+
+      // 261108 Red 审计 RC-NEW-01：tools 开关不再写回 session.permission。
+      // 旧实现把 enabled=false 转成持久 deny，之后 enabled=true 因为「已有同名规则」被跳过，
+      // findLast 仍命中旧 deny —— 工具开关成了只能关不能开的单向开关。
+      // 开关是「本次请求」的临时收紧，由 loop 每步用 Permission.applySwitches 现算；
+      // 继承规则本身保持不可放宽（见 applySwitches：deny/ask 永不被 enabled=true 提升）。
+
+      if (input.noReply === true) return message
+
+      yield* plugin
+        .trigger(
+          "user.prompt.submit",
+          {
+            sessionID: input.sessionID,
+            text: message.parts.find((p) => p.type === "text")?.text ?? "",
+          },
+          {},
+        )
+        .pipe(Effect.catch(() => Effect.void))
+
+      let cancelled = false
+      const onCancelled = Effect.sync(() => {
+        cancelled = true
+      })
+      const result = yield* loop({ sessionID: input.sessionID }, onCancelled)
+      if (!input.delivery || cancelled || (result.info.role === "assistant" && result.info.error)) return result
+      // 260927 Red Runner 在旧工作收尾期间会丢弃并发 loop；如果本消息仍未被当前轮读取，
+      // 由提交方在旧 Runner 退出后重试，避免 queue/steer 落在最后一步的竞态中被遗留。
+      const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID: message.info.id }).pipe(
+        Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+      )
+      // 261031 Red pending_steer 是 steer 的待领取形态：仍算未送达，旧轮收尾后由提交方
+      // 重跑 loop 领取消费，否则恰逢最后一步完成时引导会永久滞留（审计 AUD-01）。
+      if (!current || current.info.role !== "user") return result
+      if (!retryableDelivery(input.delivery, current.info.delivery)) return result
+      return yield* loop({ sessionID: input.sessionID }, onCancelled)
+    })
+
+    const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
+      const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
+      if (Option.isSome(match)) return match.value
+      const msgs = yield* sessions.messages({ sessionID, limit: 1 }).pipe(Effect.orDie)
+      if (msgs.length > 0) return msgs[0]
+      throw new Error("Impossible")
+    })
+
+    const runLoop = (sessionID: SessionID) => {
+      const ownership: { messageID?: MessageID } = {}
+      return runLoopImpl(sessionID, ownership).pipe(
+        Effect.ensuring(
+          Effect.suspend(() => {
+            if (!ownership.messageID) return Effect.void
+            const messageID = ownership.messageID
+            ownership.messageID = undefined
+            return sessions.releaseQueuedMessage({ sessionID, messageID })
+          }),
+        ),
+      )
+    }
+
+    const runLoopImpl = Effect.fn("SessionPrompt.run")(function* (
+      sessionID: SessionID,
+      ownership: { messageID?: MessageID },
+    ) {
+      const ctx = yield* InstanceState.context
+      const slog = elog.with({ sessionID })
+      let structured: unknown
+      let step = 0
+      // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
+      let usageTokens = 0
+      // 260710 Red 跨 step 文本重复检测（loop recovery）
+      const loopTracker = new LoopRecoveryTracker()
+      let loopRecoveryPrompt: string | undefined
+      // 260728 Red step-3.7-flash 偶发通道退化的两条兜底（见 xml-tool-call.ts）：
+      // forceContinue —— 打捞到文本态工具调用后，强制多跑一轮让模型用原生通道重发；
+      // reasoningOnlyRetried —— 整轮只有思考没有正文时纠正一次，只纠正一次防死循环。
+      // 两者都必须封顶：模型可能一轮接一轮地重犯，无上限就是死循环。
+      let forceContinue = false
+      let reasoningOnlyRetried = false
+      // 261106 Red 上游把 tool call 吞掉时（见 output-loss.ts）只续跑一次：同一上游可能连续
+      // 五轮都丢，无上限就是替供应商烧额度；续跑一次仍丢就落可见说明并正常退出。
+      let outputLossRetried = false
+      // 260808 Red：整轮**什么都没产出**（连思考都没有）时纠正一次，同样只纠正一次防死循环
+      let emptyTurnRetried = false
+      let salvageRecoveries = 0
+      // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
+      let softContextNoticed = false
+      // 261010 Red native 自动压缩每次运行只自动尝试一次：commit 失败（如预算配错、
+      // 窗口太小）是结构性失败，重试只会反复创建失败的压缩任务；成功后重置允许再压。
+      let nativeAutoAttempted = false
+      // 260729 Red 本轮起点的用户消息 + 已提醒过的消息 id。用来区分「开启本轮的那条」
+      // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
+      // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
+      // 边界比较必须走 time.created。
+      let turnStartUserID: MessageV2.User | undefined
+      let claimedUserID: MessageID | undefined
+      let ownedQueuedMessageID: MessageID | undefined
+      const remindedUserIDs = new Set<MessageID>()
+      // 261006 Red queued claims start a fresh turn; rebuild the cached prefix because their messages insert mid-history.
+      // See docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md.
+      const resetQueuedTurn = (messageID: MessageID) => {
+        claimedUserID = messageID
+        ownedQueuedMessageID = messageID
+        ownership.messageID = messageID
+        _caches.modelMsgs.delete(sessionID)
+        step = 0
+        loopTracker.reset()
+        loopRecoveryPrompt = undefined
+        forceContinue = false
+        reasoningOnlyRetried = false
+        emptyTurnRetried = false
+        salvageRecoveries = 0
+        outputLossRetried = false
+        turnStartUserID = undefined
+        remindedUserIDs.clear()
+      }
+      // 261006 Red usageTokens stays cumulative and softContextNoticed stays session-wide across queued turns.
+      // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
+      // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
+      // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
+      // 260814 Red 繁忙时新消息送达策略：steer(默认)=下个 step 以 reminder 注入进行中的轮次；
+      // queue=对本轮隐藏，轮末由「lastUser 比 lastAssistant 新则不 break」的既有续跑
+      // 边界自然开新轮消费。详见 docs/notes/ 的 busy-enter note。
+      const busyEnter = (yield* config.get()).busy_enter ?? "steer"
+
+      while (true) {
+        yield* status.set(sessionID, { type: "busy" })
+        yield* slog.info("loop", { step })
+
+        const nativeConfig = yield* config.get()
+        // 261031 Red 引导领取：每步组装前把全部 pending_steer 转 steer。领取前它们被下方
+        // queued 同款过滤排除在模型视野之外；转后 reminder 收集（delivery==="steer"、晚于
+        // 轮起点、去重）与组装自然包含。与编辑/撤回在 queueLock 上串行。
+        yield* sessions.promotePendingSteer(sessionID)
+        const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
+        const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
+        // 261105 Red 同一 step 读一次活跃块快照，history/project 共用：此前两者各
+        // list 一次，revision 还会为拿 id 把整份摘要解码一遍。
+        const nativeBlocks = nativeSpec.enabled ? ContextCompaction.list(sessionID) : undefined
+        const oldPin = _caches.msgPin.get(sessionID)
+        if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
+          settlePromptCaches(sessionID, "native-compaction")
+        // 261114 Red 消息树分支：树过滤在 filterCompactedOrdered 内部、重排**前**
+        //   的时序收集集上做（review finding 2：在重排后的数组上走链只能从压缩
+        //   触发出发，够不到时序在前驱位置的保留尾，压缩保留的近期上下文被整段
+        //   丢弃）。native 路径同样在内部，有覆盖缺口（活跃块下推）时传
+        //   tree=false 退出——缺口会让走链截断，跨覆盖段续走留给分支写入方（2d）。
+        let msgs = nativeSpec.enabled
+          ? NativeRuntime.history(sessionID, nativeSpec, nativeBlocks)
+          : yield* MessageV2.filterCompactedEffect(sessionID)
+        // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
+        const lastNativeSummary = msgs.findLast(
+          (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>
+            message.info.role === "assistant" && message.info.summary === true,
+        )
+        const nativeFailed = lastNativeSummary !== undefined && lastNativeSummary.info.error !== undefined
+        // 261007 Red 未送达队列可能早于压缩边界；领取后补回当前 turn，不能让摘要裁掉它。
+        const retainedQueuedMessage =
+          claimedUserID && !msgs.some((message) => message.info.id === claimedUserID)
+            ? yield* MessageV2.get({ sessionID, messageID: claimedUserID }).pipe(Effect.orDie)
+            : undefined
+        if (retainedQueuedMessage) msgs.push(retainedQueuedMessage)
+
+        const {
+          user: latestUser,
+          assistant: lastAssistant,
+          finished: lastFinished,
+          tasks,
+        } = MessageV2.latest(
+          msgs.filter(
+            (m) =>
+              m.info.role !== "user" ||
+              m.info.id === ownedQueuedMessageID ||
+              (m.info.delivery !== "queued" && m.info.delivery !== "pending_steer"),
+          ),
+        )
+        const lastUser = retainedQueuedMessage?.info.role === "user" ? retainedQueuedMessage.info : latestUser
+
+        // 261007 Red 中断或请求失败会留下未完成的 assistant；下一次显式 loop 优先领取仍 queued 的 turn，
+        // 不重放旧用户消息。失败当次不会自动续跑，见 docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md。
+        if (lastAssistant?.error && !ownedQueuedMessageID) {
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            resetQueuedTurn(next.id)
+            continue
+          }
+        }
+
+        if (!lastUser) {
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            resetQueuedTurn(next.id)
+            continue
+          }
+          throw new Error("No user message found in stream. This should never happen.")
+        }
+
+        const lastAssistantMsg = msgs.findLast(
+          (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
+        )
+        // Some providers return "stop" even when the assistant message contains tool calls.
+        // Keep the loop running so tool results can be sent back to the model.
+        // Skip provider-executed tool parts �� those were fully handled within the
+        // provider's stream (e.g. DWS Agent Platform) and don't need a re-loop.
+        const hasToolCalls =
+          lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
+
+        if (
+          lastAssistant?.finish &&
+          !["tool-calls"].includes(lastAssistant.finish) &&
+          !hasToolCalls &&
+          MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
+          // 261007 Red promote 保留原消息时间；仍为 steer 表示尚无回执，不能用旧回复判定完成。
+          lastUser.delivery !== "steer" &&
+          // 260927 Red 排队消息的 created 早于上一轮 assistant，领取后要等它自己的回复。
+          (claimedUserID !== lastUser.id || lastAssistant.parentID === lastUser.id) &&
+          // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
+          !forceContinue
+        ) {
+          // 260728 Red B：整轮只产出了思考，既无正文也无工具调用 —— 用户看到的是一片空白，
+          // 看起来跟被打断/卡死一模一样。实测 step-3.7-flash 约 0.6% 的轮次会这样
+          // （deepseek-v4-flash 0.15%、gpt-5.6-luna 0%）。
+          const reasoning = (lastAssistantMsg?.parts ?? []).filter(
+            (part): part is MessageV2.ReasoningPart => part.type === "reasoning" && part.text.trim().length > 0,
+          )
+          const hasVisibleText = (lastAssistantMsg?.parts ?? []).some(
+            (part) => part.type === "text" && part.text.trim().length > 0,
+          )
+          // 261106 Red 上游丢 tool call 的判据见 output-loss.ts：只认「正文以冒号结尾 +
+          // 零工具 + finish=stop」这一形态（token 差额各 provider 口径不一，不能当门槛）。
+          // 空正文不在这里判——交给下面的 reasoningOnly / producedNothing 兜底。
+          const visibleText = (lastAssistantMsg?.parts ?? [])
+            .filter((part): part is MessageV2.TextPart => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+          const outputLoss = lastAssistant.summary
+            ? undefined
+            : OutputLoss.detect({
+                outputTokens: lastAssistant.tokens.output,
+                text: visibleText,
+                finish: lastAssistant.finish,
+                parts: lastAssistantMsg?.parts ?? [],
+              })
+          const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
+          // 260808 Red：上面那条只兜「有思考、没正文」。还有更空的一种——**连思考都没有**，
+          // 分片只剩 step-start → text(长度 0) → step-finish，finish 却是 "stop"、无报错，
+          // 于是循环当成正常收尾直接 break，用户看到的是"跑着跑着莫名其妙停了"
+          // （实测 ses_020e2ecaaffe…，deepseek-v4-flash，18 个输出 token、3.9s）。
+          // 走到这里时已确定本轮没有工具调用（见外层条件），所以"什么都没有"必属异常。
+          const producedNothing = !lastAssistant.summary && reasoning.length === 0 && !hasVisibleText
+
+          if (reasoningOnly && !reasoningOnlyRetried) {
+            // 先给模型一次机会把话说到正文通道里，比直接把思考链当答案端出去干净
+            reasoningOnlyRetried = true
+            loopRecoveryPrompt = XmlToolCall.REASONING_ONLY_PROMPT
+            yield* slog.warn("reasoning.only", { step, model: lastUser.model.modelID })
+          } else if (producedNothing && !emptyTurnRetried) {
+            // 空转没有思考可提升，只能让模型重来一次；同样封顶一次，防死循环
+            emptyTurnRetried = true
+            loopRecoveryPrompt = XmlToolCall.EMPTY_TURN_PROMPT
+            yield* slog.warn("empty.turn", { step, model: lastUser.model.modelID })
+          } else if (outputLoss && !outputLossRetried) {
+            // 261106 Red 冒号收尾可能是工具调用丢失，也可能是正常结束；只续跑一次。
+            outputLossRetried = true
+            loopRecoveryPrompt = OutputLoss.RECOVERY_PROMPT
+            yield* slog.warn("output.loss.recover", {
+              step,
+              model: lastUser.model.modelID,
+              missingTokens: outputLoss.missingTokens,
+            })
+          } else {
+            if (reasoningOnly) {
+              // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
+              // 至少让用户看得到东西，而不是对着空白猜是不是卡死了
+              yield* slog.warn("reasoning.only.promoted", { step, model: lastUser.model.modelID })
+              yield* appendNotice({
+                sessionID,
+                messageID: lastAssistant.id,
+                text: reasoning.map((part) => part.text).join("\n\n"),
+              })
+            } else if (producedNothing && !outputLoss) {
+              // 260808 Red：纠正过一次还是彻底空转。这里没有思考可提升，但**不能就这么静默退出** ——
+              // 那正是"莫名其妙停下来"的观感来源。写一句可见说明，让用户知道是模型空回复、
+              // 可以直接重发，而不是去猜自己是不是被打断了。
+              yield* slog.warn("empty.turn.exhausted", { step, model: lastUser.model.modelID })
+              yield* appendNotice({
+                sessionID,
+                messageID: lastAssistant.id,
+                text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
+              })
+            }
+            // 261106 Red 上游丢输出的可见说明：不能静默退出，否则用户只看到「说到一半停了」。
+            // 与空转文案互斥——output 有量说明模型确实产出了东西，不该说「没有返回内容」。
+            if (outputLoss) {
+              yield* slog.warn("output.loss.dropped", {
+                step,
+                model: lastUser.model.modelID,
+                missingTokens: outputLoss.missingTokens,
+                retried: outputLossRetried,
+              })
+              yield* appendNotice({
+                sessionID,
+                messageID: lastAssistant.id,
+                text: OutputLoss.notice(),
+              })
+            }
+            const next = yield* sessions.claimQueuedMessage(sessionID)
+            if (next) {
+              resetQueuedTurn(next.id)
+              continue
+            }
+            // 261109 Karina RC-05 只在真正结束一轮时出交付报告；排队消息续跑走上面的
+            // continue，不算收尾。验证失败不阻断收尾——坏脚本不能把正常回合变成错误。
+            yield* reportVerification({
+              sessionID,
+              user: lastUser,
+              messageID: lastAssistant.id,
+              msgs,
+            }).pipe(Effect.catchCause((cause) => Effect.sync(() => log.error("verification report failed", { cause }))))
+            yield* slog.info("exiting loop")
+            break
+          }
+        }
+        forceContinue = false
+
+        step++
+        // 260910 Red Codex step settings（决策见 docs/notes/implemented/feature/2026-09-10-codex-step-settings.md）：
+        // 每个 step 固定同一组 session/agent/model/user，避免 turn 中途的权限或模型切换让
+        // prompt、工具和执行策略各读到不同版本。
+        // 261107 Red 入队时合法、晋升时已失效（config 删了 agent）的消息，此前
+        // agent=undefined 一路深入下游才炸成 defect，UI 只看到一个莫名的失败。这里当场
+        // 响：与 createUserMessage / 命令入口同一份 agentNotFound（发布 Session.Event.Error，
+        // 带可用 agent 清单），消息保持 queued 等用户修正后显式重跑——与「preparation
+        // failure releases a queued reservation」锁定的恢复舞步一致。
+        const agentInfo = yield* agents.get(lastUser.agent)
+        if (!agentInfo) {
+          throw yield* agentNotFound({ sessionID, name: lastUser.agent })
+        }
+        const sessionInfo = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        // 261108 Red 审计 RC-NEW-01：tools 开关只在本次用户轮生效，不落库。每步现算，
+        // 下一轮没有开关就回到继承规则；enabled=true 不会提升任何继承的 deny/ask。
+        const switches = lastUser.tools ?? {}
+        const stepSettings = {
+          user: lastUser,
+          session:
+            Object.keys(switches).length > 0
+              ? {
+                  ...sessionInfo,
+                  permission: Permission.applySwitches(
+                    sessionInfo.permission ?? [],
+                    switches,
+                    agentInfo.permission ?? [],
+                  ),
+                }
+              : sessionInfo,
+          model: yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID),
+          agent: agentInfo,
+        }
+        const model = stepSettings.model
+        if (step === 1)
+          yield* title({
+            session: stepSettings.session,
+            modelID: stepSettings.user.model.modelID,
+            providerID: stepSettings.user.model.providerID,
+            history: msgs,
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : elog.error("failed to generate title", {
+                    sessionID: stepSettings.session.id,
+                    providerID: stepSettings.user.model.providerID,
+                    modelID: stepSettings.user.model.modelID,
+                    error: Cause.squash(cause),
+                  }),
+            ),
+            Effect.forkIn(scope),
+          )
+
+        const task = tasks.pop()
+
+        if (task?.type === "subtask") {
+          yield* handleSubtask({
+            task,
+            model: stepSettings.model,
+            lastUser: stepSettings.user,
+            sessionID,
+            session: stepSettings.session,
+            msgs,
+          })
+          continue
+        }
+
+        if (task?.type === "compaction") {
+          const result = yield* compaction.process({
+            messages: msgs,
+            parentID: stepSettings.user.id,
+            sessionID,
+            auto: task.auto,
+            overflow: task.overflow,
+          })
+          // 260811 cc audit R4 分代结算：摘要已落库、前缀缓存反正要重建——此刻丢弃
+          // msgPin/modelMsgs，让累积的 prune 标记与 DCP 改写随下一轮一并生效，
+          // 快照双份内存同步释放。
+          if (!nativeSpec.enabled) settlePromptCaches(sessionID, "compaction")
+          if (result === "stop") break
+          continue
+        }
+
+        const lastFinishedMsg = lastFinished && msgs.findLast((msg) => msg.info.id === lastFinished.id)
+        const justRanExternalCompress =
+          lastFinishedMsg?.parts.some(
+            (part) =>
+              part.type === "tool" && part.state.status === "completed" && EXTERNAL_COMPRESS_TOOLS.has(part.tool),
+          ) ?? false
+
+        if (
+          lastFinished &&
+          !nativeSpec.enabled &&
+          lastFinished.summary !== true &&
+          !justRanExternalCompress &&
+          (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model: stepSettings.model }))
+        ) {
+          yield* compaction.create({
+            sessionID,
+            agent: stepSettings.user.agent,
+            model: stepSettings.user.model,
+            auto: true,
+          })
+          continue
+        }
+
+        if (!stepSettings.agent) {
+          throw yield* agentNotFound({ sessionID, name: stepSettings.user.agent })
+        }
+        const agent = companionAgent(stepSettings.agent, stepSettings.session)
+        const personalChat = isCompanionChat(stepSettings.session)
+        const chatMode = stepSettings.session.mode === "chat"
+        // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
+        // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
+        // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
+        // step === maxSteps 时先按老路注入 MAX_STEPS 让模型收尾，仍不收就强制落地。
+        const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
+        const isLastStep = step >= maxSteps
+        if (step > maxSteps) {
+          yield* slog.warn("max.steps", { step, maxSteps, agent: agent.name })
+          if (lastAssistant) {
+            yield* appendNotice({
+              sessionID,
+              messageID: lastAssistant.id,
+              text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
+            })
+          }
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            resetQueuedTurn(next.id)
+            continue
+          }
+          break
+        }
+        if (nativeSpec.enabled) msgs = NativeRuntime.project(sessionID, msgs, nativeSpec, nativeBlocks)
+        msgs = yield* SessionReminders.apply({ messages: msgs, agent, session: stepSettings.session }).pipe(
+          Effect.provideService(RuntimeFlags.Service, flags),
+          Effect.provideService(AppFileSystem.Service, fsys),
+          Effect.provideService(Session.Service, sessions),
+        )
+
+        const msg: MessageV2.Assistant = {
+          id: MessageID.ascending(),
+          parentID: stepSettings.user.id,
+          role: "assistant",
+          mode: agent.name,
+          agent: agent.name,
+          variant: stepSettings.user.model.variant,
+          path: { cwd: ctx.directory, root: ctx.worktree },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+          modelID: stepSettings.model.id,
+          providerID: stepSettings.model.providerID,
+          time: { created: Date.now() },
+          sessionID,
+        }
+        // 261114 Red 接线口：assistant 落库走 appendMessage（parentID 保持调用方
+        // 语义「触发的 user」，接线只接 selectedChildID 链）
+        yield* sessions.appendMessage(msg)
+
+        const finalizeInterruptedAssistant = Effect.gen(function* () {
+          if (msg.time.completed) return
+          msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+            providerID: msg.providerID,
+            aborted: true,
+          })
+          msg.time.completed = Date.now()
+          yield* sessions.updateMessage(msg)
+        })
+
+        const handle = yield* processor
+          .create({
+            assistantMessage: msg,
+            sessionID,
+            model: stepSettings.model,
+          })
+          .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
+
+        const outcome: "break" | "continue" = yield* Effect.gen(function* () {
+          const lastUserMsg = msgs.findLast((m) => isUserTurn(m.info, m.parts))
+          const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+          const promptOps = yield* ops()
+
+          const tools = yield* SessionTools.resolve({
+            agent,
+            session: stepSettings.session,
+            model: stepSettings.model,
+            processor: handle,
+            bypassAgentCheck,
+            messages: msgs,
+            promptOps,
+            goal,
+          }).pipe(
+            Effect.provideService(Plugin.Service, plugin),
+            Effect.provideService(Permission.Service, permission),
+            Effect.provideService(ToolRegistry.Service, registry),
+            Effect.provideService(MCP.Service, mcp),
+            Effect.provideService(Truncate.Service, truncate),
+          )
+
+          if (stepSettings.user.format?.type === "json_schema") {
+            tools["StructuredOutput"] = createStructuredOutputTool({
+              schema: stepSettings.user.format.schema,
+              onSuccess(output) {
+                structured = output
+              },
+            })
+          }
+
+          // 260623 Red sort tool keys for deterministic serialization → stable DeepSeek prefix cache
+          const sortedTools: typeof tools = {}
+          for (const k of Object.keys(tools).sort()) sortedTools[k] = tools[k]
+
+          // 260706 Red cache tool definitions for prefix stability.
+          // registry.tools() calls describeSkill()/describeTask() every step, which read from disk
+          // (Glob.scan for skill path patterns) and agent state. If a build agent creates files
+          // matching skill patterns, the Skill tool description changes → tool schema JSON mutates →
+          // entire prefix cache breaks from the tool definitions onward (thousands of tokens).
+          // Fix: pin descriptions + schemas from the first step, overlay on subsequent steps.
+          // 261017 Red StructuredOutput 除外——它的 schema 跟随本轮 format（见 overlayToolDefs）。
+          const cachedTools = _caches.tools.get(sessionID)
+          if (cachedTools) overlayToolDefs(sortedTools, cachedTools.defs)
+          else {
+            // 261029 Red 重启续接：进程内钉住随旧进程丢失时，从磁盘 pin 恢复上一进程首轮的
+            // 工具定义并当作钉住初值，本轮立即 overlay 生效——否则 MCP 服务器升级后重建会
+            // 拿到新版 schema，续接首请求全价重建。无 pin（新会话）保持原样建立。
+            const pin = PromptPin.load(sessionID)
+            const defs = pin
+              ? new Map(
+                  Object.entries(pin.tools).map(([k, t]) => [
+                    k,
+                    // 261029 Red pin 落盘的是纯 JSON Schema 数据（Schema 对象直接序列化会丢
+                    // Symbol 标记，prepareTools 的 asSchema 分派会把残缺对象当函数调用崩掉），
+                    // 必须重建成 SDK Schema 对象再 overlay
+                    { description: t.description, inputSchema: jsonSchema(t.inputSchema as JSONSchema7) },
+                  ]),
+                )
+              : new Map(
+                  Object.entries(sortedTools).map(([k, t]) => [
+                    k,
+                    { description: (t as any).description, inputSchema: (t as any).inputSchema },
+                  ]),
+                )
+            _caches.tools.set(sessionID, { sessionID, defs })
+            if (pin) overlayToolDefs(sortedTools, defs)
+          }
+
+          if (step === 1)
+            yield* summary
+              .summarize({ sessionID, messageID: stepSettings.user.id })
+              .pipe(Effect.ignore, Effect.forkIn(scope))
+
+          // 260623 Red collect user reminder text for step>1 injection (old approach mutated
+          // p.text before msgPin, which silently restored the un-wrapped cached version).
+          // 260729 Red 修两处，症状是模型思考链里反复出现「刚才用户让我做 xx，我继续干」
+          // 而用户其实一个字都没发：
+          //
+          // 1) 边界用错。原来的条件是 `m.info.id > lastFinished.id`，但 lastFinished 来自
+          //    MessageV2.latest()，而**当前这条 assistant 消息整轮都不算 finished**，所以它
+          //    一直钉在上一轮。于是"开启本轮的那条用户消息"永远满足这个条件，被当成"中途新
+          //    到的消息"每一步重新提醒一次 —— 20 步的回合模型会被告知 19 次「用户发话了，
+          //    请处理」。本意只是想捕捉回合**中途**新到的消息，边界应该是本轮起点那条，
+          //    而不是上一轮的结束点。
+          // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
+          //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
+          if (turnStartUserID === undefined) turnStartUserID = stepSettings.user
+          // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
+          // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
+          // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
+          else if (
+            busyEnter === "queue" &&
+            lastAssistant?.finish &&
+            MessageV2.compareTime(stepSettings.user, lastAssistant) > 0
+          ) {
+            turnStartUserID = stepSettings.user
+          }
+          let userReminderText: string | undefined
+          if (busyEnter === "steer" && step > 1) {
+            const parts: string[] = []
+            for (const m of msgs) {
+              if (
+                !isUserTurn(m.info, m.parts) ||
+                m.info.delivery === "queued" ||
+                // 261031 Red 未领取的引导不进 reminder；promote 转 steer 后下一轮收集。
+                m.info.delivery === "pending_steer" ||
+                MessageV2.compareTime(m.info, turnStartUserID) <= 0
+              )
+                continue
+              if (busyEnter !== "steer" && m.info.delivery !== "steer") continue
+              if (remindedUserIDs.has(m.info.id)) continue
+              const text = m.parts
+                .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
+                .map((p) => (p.type === "text" ? p.text : ""))
+                .filter((t) => t.trim())
+              if (text.length === 0) continue
+              parts.push(...text)
+              remindedUserIDs.add(m.info.id)
+            }
+            if (parts.length > 0) {
+              userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
+            }
+          }
+
+          // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
+          // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
+          //
+          // 1) **每一步都以 role:"user" 注入**（下面 messages 数组里，无 step 门槛）。对模型来说
+          //    对话永远停在"用户刚说完话"，于是它每一步都重新推导用户意图而不是继续干活 ——
+          //    9 分钟无人发话的窗口里跑了 154 次工具调用，其中只有 62 个不同：同一个
+          //    redcode.jsonc 读了 16 次、改了 8 次，同样 4 个 md 各读 4 次。
+          // 2) 称呼约束原文是「与正文保持一致…从第一句思考开始就这么称呼」——
+          //    等于明确要求模型把思考写成正文。一个本就分不清通道的模型照做了：
+          //    93 轮里只有 5 轮有正文，却有 46 段思考在直接对用户说话。
+          // 3) 开关挂错了地方。语言约束看 config.reasoning_language，称呼约束却只看
+          //    config.username —— 而 username 是 TUI 标签的显示设置。用户撤掉
+          //    reasoning_language 之后注入照常，根本关不掉。
+          //
+          // reasoning-language.ts 与 instruction-echo.ts 的 STRIP 都保留：历史会话里已经
+          // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
+          // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
+
+          yield* plugin.trigger("experimental.chat.messages.transform", { sessionID }, { messages: msgs })
+
+          // 260618 Red pin post-DCP message content for prefix cache stability.
+          // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
+          // By restoring already-sent messages from cache, the prefix stays identical across turns.
+          {
+            // 260819 cc audit：登记本会话活跃时刻并顺手回收冷会话。四个缓存此前只增不减
+            // （settle 只管 msgPin/modelMsgs，system/tools 无删除点），长驻的 GUI sidecar /
+            // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
+            touchSession(sessionID)
+            if (!_caches.msgPin.has(sessionID)) {
+              _caches.msgPin.set(sessionID, { sessionID, messages: new Map(), nativeRevision })
+            }
+            const pinnedMessages = _caches.msgPin.get(sessionID)!
+            let pinned = 0,
+              cached = 0
+            for (const msg of msgs) {
+              // 260927 Red 待发文本仍可编辑；未领取前不能把它的旧 parts 钉进模型前缀。
+              if (msg.info.role === "user" && msg.info.delivery === "queued") continue
+              const mid = msg.info.id
+              const parts = pinnedMessages.messages.get(mid)
+              if (parts) {
+                msg.parts = parts as typeof msg.parts
+                pinned++
+              } else {
+                pinnedMessages.messages.set(mid, structuredClone(msg.parts))
+                cached++
+              }
+              // 260706 Red: periodic yield so event loop can serve heartbeat + health check
+              if ((pinned + cached) % 10 === 0) {
+                yield* Effect.yieldNow
+              }
+            }
+          }
+
+          // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
+          // instruction.system() re-reads all instruction files from disk every turn — if any file
+          // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
+          // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
+          // 260804 Red modelKey: serialize caches per model. Without it, switching models mid-session
+          // reuses the previous model's serialized messages (toUIMessages strips providerMetadata /
+          // demotes reasoning for messages generated by a different model), producing a mixed-prefix
+          // the target provider has never cached → full rebuild → prolonged low cache-hit rate.
+          // Key uses the same stable string as toUIMessages' differentModel check (`providerID/model.id`).
+          const modelKey = `${model.providerID}/${model.id}`
+          const cachedSystem = _caches.system.get(sessionID)?.get(modelKey)
+          // 261029 Red 冷组装（重启续接 / 进程内缓存被回收后首轮）时读一次磁盘 pin，
+          // 供本轮 tools 与 mcpGuide 恢复上一进程钉住的内容；cachedSystem 命中时短路。
+          // 命名避开下方 msgPin 循环的计数器 pinned。
+          const coldPin = cachedSystem ? undefined : PromptPin.load(sessionID)
+          // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
+          // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
+          // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
+          const turnStart = turnStartUserID
+          const visibleMsgs = msgs.filter((m) => {
+            if (!isUserTurn(m.info, m.parts)) return true
+            if (m.info.delivery === "queued") return m.info.id === ownedQueuedMessageID
+            // 261031 Red 引导未领取（pending_steer）对模型隐藏，防止 promote 后、投影读取前
+            // 落库的窗口竞态把未领取内容漏进模型历史；领取转 steer 后按 steer 放行。
+            if (m.info.delivery === "pending_steer") return false
+            return (
+              m.info.delivery === "steer" ||
+              m.info.delivery === "delivered" ||
+              busyEnter !== "queue" ||
+              turnStart === undefined ||
+              MessageV2.compareTime(m.info, turnStart) <= 0
+            )
+          })
+          const soulID = _caches.souls.has(sessionID)
+            ? undefined
+            : (yield* sessions.get(sessionID).pipe(Effect.orDie)).soul
+          // 261024 Red 历史图片驱逐（experimental.mediaEviction，默认开、窗口 5 张）：
+          //   结算于冷缓存序列化点（会话启动/续接、模型切换、压缩边界），轮中不主动打
+          //   缓存——取舍见 message-v2.ts markEvictedMedia 注释。
+          const mediaEviction = (yield* config.get()).experimental?.mediaEviction
+          const mediaOptions =
+            mediaEviction?.enabled === false ? undefined : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
+          const [skills, env, instructions, mcpGuide, modelMsgs, soul, companion] = yield* Effect.all([
+            cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
+            cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
+            cachedSystem
+              ? Effect.succeed(cachedSystem.instructions)
+              : instruction.system({ memory: !chatMode }).pipe(Effect.orDie),
+            // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
+            // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
+            // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
+            // 261029 Red 重启续接时进程内缓存丢了，mcpGuide 优先用磁盘 pin 里的那份（与本轮
+            // tools 的恢复同源），保证跨进程同值；无 pin 才现算。
+            cachedSystem
+              ? Effect.succeed(cachedSystem.mcpGuide)
+              : coldPin
+                ? Effect.succeed(coldPin.mcpGuide)
+                : mcpGuideText(),
+            MessageV2.toModelMessagesEffect(visibleMsgs, model, mediaOptions),
+            sessionSoul(sessionID, soulID, souls),
+            cachedSystem
+              ? Effect.succeed(cachedSystem.companion)
+              : personalChat
+                ? companions.bootstrap(stepSettings.session.companionID!).pipe(
+                    Effect.map((value) => value.text),
+                    Effect.orDie,
+                  )
+                : Effect.succeed(undefined),
+          ])
+          if (!cachedSystem) {
+            const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide, companion }
+            const sessionSystem = _caches.system.get(sessionID)
+            if (sessionSystem) sessionSystem.set(modelKey, systemCache)
+            else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
+            // 261029 Red 冷组装定型后把工具定义与 MCP guide 落盘（prompt-pin），重启续接时
+            // 恢复同一份内容——否则 MCP 服务器升级后续接重建会拿到新版定义，供应商逐字节
+            // 比对失败，续接首请求全价重建（261029 实测 321k token 全冷，见 prompt-pin.ts）。
+            PromptPin.save({ sessionID, tools: _caches.tools.get(sessionID)!.defs, mcpGuide })
+          }
+          // 261007 Red tool-result 配对净化：steer 场景下单侧缓存拼接曾让同一批 tool-result
+          // 复制发出（根因分析见 message-v2.ts 的 sanitizeToolResultPairing 注释）。净化放在
+          // 缓存拼接之前，保证缓存里存的与实际发送一致，后续 slice 以净化后下标对齐。
+          const sanitized = MessageV2.sanitizeToolResultPairing(modelMsgs)
+          if (sanitized.droppedIds.length > 0)
+            log.warn("tool-result pairing sanitized", {
+              sessionID,
+              dropped: sanitized.droppedIds.length,
+              ids: sanitized.droppedIds.slice(0, 5),
+            })
+          // 260621 Red cache final model messages for prefix stability.
+          // 261015 Red 拼接抽到 MessageV2.stitchModelMessages：它在主循环里没有测试碰得到，
+          // 而 261007「净化被拼接撤销」的 bug 正出在这一段（审计 A01）。
+          const sessionModelMsgs = _caches.modelMsgs.get(sessionID)
+          const stabilizedMsgs = MessageV2.stitchModelMessages(
+            sessionModelMsgs?.get(modelKey)?.messages,
+            modelMsgs,
+            sanitized,
+          )
+          const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
+          if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
+          else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
+          // Keep the legacy Soul-near-instructions placement. It now follows config instruction sources
+          // (formerly Soul preceded them); it remains before MCP/skills and is independently session-cached.
+          const system = [
+            ...env,
+            ...instructions,
+            ...(soul.prompt ? [soul.prompt] : []),
+            // 261117 Red 主会话共享相处契约，身份仍只取绑定 Soul；工具循环不重复追加。
+            // docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md
+            // injection-registry: conversation-contract
+            ...(!stepSettings.session.parentID ? [CONVERSATION] : []),
+            ...(companion ? [companion] : []),
+            ...(mcpGuide ? [mcpGuide] : []),
+            ...(skills ? [skills] : []),
+          ]
+          // 260718 Red today's date lives here, not in the cached <env> block above - this
+          // section runs fresh every turn (unlike env/instructions/skills, which are cached per
+          // session), so only this small tail invalidates the provider's prefix cache once a day
+          // instead of everything from <env> onward.
+          // injection-registry: date-per-turn
+          system.push(`Today's date: ${new Date().toDateString()}`)
+          // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
+          // User caught another agent telling him "go rest" after hours of no progress — that phrasing
+          // is a form of "put it aside" and is explicitly banned at the model level.
+          // 260924 Red Correction/execution ownership stays with AGENTS.md and default.md; see
+          // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
+          // 261007 Red 本段与相邻锚块（flash/step）是时效性补丁：新增或改动须登记
+          // docs/prompt-patches.yml（固定前缀审计 §18-19），到期复核存废。
+          // 261112 Red 按提示词修订提案 §9.1 收敛：#1 防编造（owner: AGENTS 红线 + default.md
+          // 事实准确职责）与 #2 两次失败转向（owner: 全局 AGENTS 连续失败规则 + diagnose skill）
+          // 移出运行时；#3 保留意图改写为「尊重用户对任务的控制权」。261112 三家族 × 7 用例
+          // A/B（prompt-eval --runtime，基线/候选各一轮）实证后统一收敛，结果见台账。
+          // injection-registry: work-rules
+          system.push(WORK_RULES)
+          // 260929 Red 收窄到 step-3.x：铁律本是 step-3.7-flash 实测坑（无视 compress nudge
+          // 不调用 compress）；step-5-preview 指令遵循已跟上，1M 窗口 + DCP 新线
+          // （min 140k / max 220k）下不需要 MUST 级压迫，absoluteNudge 16k 收益档兜底。
+          if (
+            (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) &&
+            !model.id.toLowerCase().includes("step-5")
+          ) {
+            // injection-registry: anchor-compress-step
+            system.push(
+              `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
+  1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
+  2. Compress already-closed conversation ranges (finished tasks, resolved questions) using the compress tool.
+  3. Do not ignore compression reminders — failing to compress when context is near the limit wastes tokens and degrades response quality.`,
+            )
+          }
+          // 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
+          // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
+          // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
+          //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
+          // 260825 cc ① 改为复杂度分派（dsh-routing-suite P30 + 其 v19 改动）：
+          //    原文「Think deeply first」是**无条件**施加的，而上游实战反馈是「硬收敛锚催停了
+          //    复杂任务的探索」，其 v19 因此改为简单任务快速收敛（1 步零浪费）、复杂任务才给
+          //    深度引导。**决策闭环那半句原样保留**——P30 单独量化过它：复杂任务上深度 +12%
+          //    且收敛更快（8.0 vs 8.3 步），是"深度有产出、不空转"，属于被实测认可的部分，
+          //    动它才是退步。另：P27 修正了早先一个误判——Pro 档的「67% 完成率」是 8 步上限
+          //    造成的假象，16 步下天然 100%，「Pro 的慢是深度思考的代价不是缺陷」；本块按
+          //    model.id 含 flash 分档、Pro 不受影响，别顺手给 Pro 也加收敛压力。
+          //    还有一条上游评估后否掉的：预算锚（"最多 N 次工具调用"）实测能到 100%，但
+          //    "值是任务相关的"，不适合进 persona——我们同样不做。
+          // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
+          // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
+          // 260822 cc 去重：③ 原有后半句 "Read the specific file, then act" 与 WORK RULES #1
+          // "READ CODE FIRST" 同义，而 deepseek.md 的 Doing tasks 还有第三处同义表述。同一条
+          // 规范三层各说一遍，恰恰是 P21 实测里 read-continuity 只有 13-21% 的那条——重复没换来
+          // 遵守。③ 独有的价值是禁 echo/whoami 类环境探测与穷举扫描，那半句保留。
+          // 只对 deepseek 系 flash 生效；step-3.7-flash 虽同名含 flash 但行为带相反
+          // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
+          // 260821 cc 见 system.ts 的实验开关说明
+          const noAnchors = SystemPrompt.experimentNoReasoningAnchors()
+          // 260827 cc 判据移到 system.ts 的 wantsFlashAnchor（有测试钉住），并从
+          // 「含 flash 且不含 step」收窄到「含 deepseek 且含 flash」——对齐这条锚的证据来源。
+          if (!noAnchors && SystemPrompt.wantsFlashAnchor(model.id)) {
+            // injection-registry: anchor-discipline-flash
+            system.push(
+              `▸ REASONING DISCIPLINE (flash 系列):
+  1. Match reasoning depth to the task. A simple, well-specified task converges in one pass — do not manufacture deliberation for it. A complex or ambiguous one earns real depth before you commit. Either way each reasoning block ends with a decision or an information need — no open-ended rumination.
+  2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
+  3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans.`,
+            )
+          }
+          // 260818 Red step 收敛锚（实测画像与 deepseek flash 相反）：step-3.7-flash
+          // 思考 3553 字/正文仅 144 字（CHANGELOG 0.8.2 实证）、纯思考轮次 0.6% 是
+          // deepseek 的 4 倍、同一工具调用重发 3-8 次空转（0.8.9 空转检测的起因）。
+          // 它不缺深度，缺的是「想完必须产出」——与 flash 的 Think deeply 方向相反，
+          // 给了就是纯 deep 陷阱（思考烧穿预算 0% 行动）。三锚分别治：
+          // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
+          // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
+          // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
+          if (!noAnchors && SystemPrompt.wantsStepAnchor(model.id, model.providerID)) {
+            // injection-registry: anchor-discipline-step
+            system.push(
+              `▸ REASONING DISCIPLINE (step 系列):
+  1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.
+  2. Do not resend the same tool call with the same input. If a call was already made, read its output and move forward — repeating identical work is the single worst failure mode.
+  3. The visible reply is the deliverable. Keep a steady rhythm of action → verify → report; consistency beats one brilliant turn followed by stalls.`,
+            )
+          }
+          // 260801 Red Windsurf-inspired memory clause: write now, not later.
+          // 260921 Red GPT 审计 P0-1：原三条（immediately/liberally/append-not-write）与
+          // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
+          // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
+          // injection-registry: memory-clause
+          if (!chatMode)
+            system.push(
+              `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
+            )
+          // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
+          // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
+          // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
+          // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
+          // 261112 Red 按提示词修订提案 §9.2：机械「连续 3 轮同条件」计数改为判断式——阻塞
+          // 以「已确立且需要用户输入/权限/外部变化」为准，不以轮数代替判断，也不把一次
+          // 临时失败当成永久阻塞。推进语义不变（authorized progress 内继续干、干完独立活）。
+          const activeGoal = yield* goal.get(sessionID)
+          if (activeGoal?.status === "active") {
+            // injection-registry: active-goal
+            system.push(
+              `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
+ <goal>${activeGoal.text}</goal>
+ Keep working toward the active goal while authorized progress is possible. Report a blocker when it is established and requires user input, access, or an external change. Finish independent work that remains possible; resume when the blocking condition changes.`,
+            )
+          }
+          // 260629 Red inject per-session canary marker for prompt-injection detection.
+          // If it ever appears in model output, terminate the session.
+          // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
+          // sat right next to "Today's date: X" and read like ordinary referenceable context, so
+          // when RedMind wrote a session summary to its own memory log it cited the marker as a
+          // plausible session id and got killed for it — no actual leak, just a model reasonably
+          // treating info-shaped text as info. Making the "never repeat this" instruction explicit
+          // should cut false positives while making a genuine leak (repeated *despite* the explicit
+          // instruction) a stronger signal, not a weaker one.
+          // 260802 Red inject current model's image capability so the model has a hard
+          // authoritative fact instead of relying on skill hints. When true, the model must
+          // not route user-attached images anywhere else — it can see them directly.
+          // 260807 哥哥拍板：本地 vision MCP 整体退役，识图统一走多模态子代理。本地
+          // minicpm 精度有上限、还要占显存和 Ollama 宿主内存；派子代理看一次图只要几分钱，
+          // 成本不构成理由。这条是权威事实，模型不该再去找任何 vision_* 工具。
+          // Stable per model: text only changes when the model changes (which busts prefix anyway).
+          // injection-registry: vision-capability
+          system.push(
+            `▸ VISION CAPABILITY (authoritative): current model image input support = ${
+              model.capabilities.input.image ? "true" : "false"
+            }. If true, you can see user-attached images directly — just look at them. If false, dispatch a multimodal subagent (task tool, \`explore\` agent) with the image's absolute path and have it read the file and describe what you need; there is no vision MCP tool — never look for one.`,
+          )
+          const canaryToken = getCanary(sessionID)
+          // injection-registry: canary-marker
+          system.push(
+            `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
+          )
+          // 261013 Red DCP 说明按工具表条件注入：DCP 插件停用（本机现状）时这些标签与
+          // 压缩提醒永远不会出现，说明就是每轮 ~87tok 的死文本。判据用工具表里的 DCP
+          // 外置压缩/检索工具（与 native-context.ts 的退役名单同口径），不读配置——
+          // 工具表才是插件是否实际生效的真信号，配置声明可能加载失败或被遮蔽。
+          const dcpToolNames = new Set(["compress", "compress-range", "compress-message", "dcp_read", "dcp_search"])
+          if (Object.keys(sortedTools).some((name) => dcpToolNames.has(name))) {
+            // injection-registry: dcp-metadata-tags
+            system.push(
+              `DCP metadata tags (` +
+                `<dcp-message-id>…</dcp-message-id>, ` +
+                `<dcp-system-reminder>…</dcp-system-reminder>) ` +
+                `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
+                `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
+            )
+          }
+          const format = stepSettings.user.format ?? { type: "text" as const }
+          // injection-registry: structured-output
+          if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+          // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
+          {
+            const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
+            const diag = PrefixShape.diagnose(shape, sessionID, modelKey, sortedTools as Record<string, unknown>)
+            if (diag.changed) {
+              // 260729 Red 带上工具 schema 的 token 成本：前缀被打掉时最该知道的就是
+              // "谁在吃预算"。topCosts 只在 tools 真的变了时才算。
+              log.warn("prefix cache changed", {
+                reasons: diag.reasons,
+                step,
+                toolCount: diag.toolCount,
+                toolSchemaTokens: diag.toolSchemaTokens,
+                ...(diag.topCosts ? { topCosts: diag.topCosts.map((c) => `${c.name}=${c.tokens}`).join(" ") } : {}),
+                // 260915 Red 只记录首个分叉段的安全标签，定位 system miss 又不泄露 canary/指令原文。
+                ...(diag.systemDifference
+                  ? {
+                      systemDifference: `${diag.systemDifference.index + 1}: ${diag.systemDifference.previous ?? "∅"} → ${diag.systemDifference.current ?? "∅"}`,
+                    }
+                  : {}),
+              })
+            }
+          }
+          // 260804 Red 前缀断裂探针，260819 cc 抽到 session/prefix-probe.ts —— 它原来是
+          // 「诊断完成后整块删除」的临时块，在这个 runLoop 里活了半个月还在长功能，且带着
+          // 无界 Map、同步写盘、无轮转、无开关。抽出去转正，行为不变，开关见 Flag。
+          PrefixProbe.record({
+            sessionID,
+            modelKey,
+            system,
+            messages: stabilizedMsgs,
+            reminderLength: userReminderText?.length ?? 0,
+          })
+          // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
+          // so it doesn't mutate cached messages yet still reaches the model on step>1.
+          // 260820 cc 提出来成变量：上下文快照要记的是**真正发出去的那一份**，包含下面
+          // 这三条临时注入。留在参数位上就只能记 stabilizedMsgs，差的正是每轮变动的部分。
+          const requestTail: ModelMessage[] = [
+            ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
+            // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
+            ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
+            // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
+            // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
+            // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
+            ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+          ]
+          const outgoing: ModelMessage[] = [...stabilizedMsgs, ...requestTail]
+          // 260820 cc 上下文构成快照，供 /session/:id/context-inspect 查看。与上面两个探针
+          // 的区别：它们比对「跟上一轮比变了什么」，这个回答「现在窗口里装的是什么」。
+          ContextSnapshot.record({
+            sessionID,
+            providerID: model.providerID,
+            modelID: model.id,
+            system,
+            tools: sortedTools as Record<string, unknown>,
+            messages: outgoing,
+          })
+          // 261010 Red 上次自动压缩失败（最后一条 summary assistant 带 error）时不再自动触发：
+          // 失败通常是结构性原因（预算配错、窗口太小），重试只会反复堆失败任务；交还用户处置。
+          if (nativeSpec.enabled && !nativeAutoAttempted && !nativeFailed && nativeConfig.compaction?.auto !== false) {
+            const budget = NativeCompaction.resolve(
+              nativeConfig.compaction?.native,
+              usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }),
+            )
+            // 261106 Red 实报锚点覆盖该 assistant 记录为止的输入（含记录内晚到补写的 parts），
+            // 其后的消息才另行估算——中断/无 usage 记录的 reasoning 由此进入预检，不再漏出。
+            // 记录内部不重新投影，保留 261013 的排除语义，避免对已实报区间重复计数。
+            // 决策见 docs/notes/implemented/bug-fix/2026-11-06-preflight-usage-boundary.md。
+            const lastReal = yield* sessions
+              .findMessage(
+                sessionID,
+                // 261013 Red 跳过本轮零用量占位，先取最新实报，再校验模型，不能跨换模借旧数值。
+                (m) => m.info.role === "assistant" && !m.info.summary && (m.info.tokens.context ?? 0) > 0,
+              )
+              .pipe(Effect.orDie)
+            // 261012 Red 收窄写在谓词外（Info union 在谓词内不做 discriminant 收窄）；
+            // 没有同模型实报时才退回粗估，不能被当前占位消息遮蔽。
+            const lastAssistant = Option.isSome(lastReal) ? lastReal.value : undefined
+            const lastCommit = ContextCompaction.lastCommittedAt(sessionID)
+            const lastRealTokens =
+              lastAssistant?.info.role === "assistant" &&
+              !lastAssistant.info.summary &&
+              lastAssistant.info.providerID === model.providerID &&
+              lastAssistant.info.modelID === model.id &&
+              lastAssistant.info.time.created >= lastCommit
+                ? (lastAssistant.info.tokens.context ?? 0)
+                : 0
+            const usageMessageIndex =
+              lastRealTokens > 0 && lastAssistant?.info.role === "assistant"
+                ? visibleMsgs.findIndex((m) => m.info.id === lastAssistant.info.id)
+                : -1
+            const unreported =
+              usageMessageIndex >= 0
+                ? yield* MessageV2.toModelMessagesEffect(visibleMsgs.slice(usageMessageIndex + 1), model, mediaOptions)
+                : undefined
+            const plannedTokens =
+              lastRealTokens > 0 && unreported
+                ? lastRealTokens + estimateModelMessages([...unreported, ...requestTail], model)
+                : estimateModelMessages(outgoing, model) +
+                  Token.estimate(system.join("\n")) +
+                  Token.estimate(JSON.stringify(sortedTools))
+            if (plannedTokens >= budget.triggerTokens) {
+              // 261010 Red 在请求发出前处理新增输入/换小窗口，不等 provider 报溢出。
+              nativeAutoAttempted = true
+              handle.message.finish = "context-preflight"
+              handle.message.time.completed = Date.now()
+              yield* sessions.updateMessage(handle.message)
+              yield* compaction.create({
+                sessionID,
+                agent: stepSettings.user.agent,
+                model: stepSettings.user.model,
+                auto: true,
+              })
+              return "continue" as const
+            }
+          }
+          const result = yield* handle.process(
+            {
+              user: stepSettings.user,
+              agent,
+              permission: stepSettings.session.permission,
+              sessionID,
+              parentSessionID: stepSettings.session.parentID,
+              system,
+              messages: outgoing,
+              tools: sortedTools,
+              model: stepSettings.model,
+              toolChoice: format.type === "json_schema" ? "required" : undefined,
+            },
+            Effect.gen(function* () {
+              // 261104 Red 真实模型响应确认发送后，原子记录同代快照；preflight/准备失败不覆盖。
+              // 只存压缩消费的字段，不深拷贝活对象（见 prompt-caches.ts recordRequest 注释）。
+              recordRequest({
+                sessionID,
+                modelKey: `${stepSettings.model.providerID}/${stepSettings.model.id}`,
+                variant: stepSettings.user.model.variant,
+                agent,
+                permission: stepSettings.session.permission,
+                parentSessionID: stepSettings.session.parentID,
+                userSystem: stepSettings.user.system,
+                userTools: stepSettings.user.tools,
+                system,
+                tools: sortedTools,
+              })
+              if (ownedQueuedMessageID) {
+                const messageID = ownedQueuedMessageID
+                yield* sessions.acknowledgeQueuedMessage({ sessionID, messageID }).pipe(Effect.orDie)
+                if (ownedQueuedMessageID === messageID) ownedQueuedMessageID = undefined
+                if (ownership.messageID === messageID) ownership.messageID = undefined
+              }
+              for (const msg of visibleMsgs) {
+                if (msg.info.role !== "user" || msg.info.delivery !== "steer") continue
+                // 261114 Red 翻转前必须重读：msgs 是组装时的快照，期间接线
+                // （wireToChainTail 的 json_set）可能已写入树指针——用陈旧副本
+                // 整包重写会把指针抹掉，链从这条消息断开（steer 测试实测）。
+                const fresh = yield* MessageV2.get({ sessionID, messageID: msg.info.id }).pipe(Effect.orDie)
+                if (fresh.info.role !== "user") continue
+                yield* sessions.updateMessage({ ...fresh.info, delivery: "delivered" })
+              }
+            }),
+          )
+          if (handle.stoppedByPermission) yield* state.markStopped(sessionID)
+          // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
+          loopRecoveryPrompt = undefined
+          // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
+          usageTokens += handle.message.tokens?.total ?? 0
+
+          if (handle.stoppedByToolFailure) {
+            yield* state.markStopped(sessionID)
+            yield* appendNotice({
+              sessionID,
+              messageID: handle.message.id,
+              text: "[RedCode] 工具调用连续失败或中断，已停止本轮自动续跑以避免继续消耗额度。会话记录和后台任务保留。",
+            })
+            // 261104 Red 停止原因必须成为消息状态：只写正文时 finish 仍停在 "tool-calls"，
+            // finished 判定把它当正常完成，task_status/子代理回执因此报 completed
+            // （实测 explore 子代理重复工具失败后，父代理收到 state: completed）。
+            // 标记 error 后 task 结果、TUI 与通知都能看到失败；loop 已 break，不会据此重试。
+            handle.message.error = new MessageV2.ToolFailureStoppedError({
+              message: "工具调用连续失败或中断，已停止本轮自动续跑",
+            }).toObject()
+            yield* sessions.updateMessage(handle.message)
+            yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+            return "break" as const
+          }
+
+          // 261113 Red 流内 n-gram 重复命中（正文或 reasoning 通道）：可见说明已由 processor 写进
+          // 对应 part（单次检测就停，不是「多次恢复尝试」）。这里负责终止链路的其余部分——
+          // 标记收尾、落 error、发事件；与工具熔断同因：只在 process 里返回 "stop" 时 finish
+          // 未设置，子代理回执报 completed。已有 error 时保留真实失败原因，不覆盖。
+          if (handle.stoppedByRepeatLoop && !handle.message.error) {
+            yield* state.markStopped(sessionID)
+            handle.message.error = new MessageV2.TextLoopStoppedError({
+              message: "模型输出陷入重复循环，已停止本轮生成",
+            }).toObject()
+            yield* sessions.updateMessage(handle.message)
+            yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+            return "break" as const
+          }
+
+          if (structured !== undefined) {
+            handle.message.structured = structured
+            handle.message.finish = handle.message.finish ?? "stop"
+            yield* sessions.updateMessage(handle.message)
+            return "break" as const
+          }
+
+          const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
+          if (finished && !handle.message.error) {
+            // 内容过滤中止（如 Anthropic stop_reason: refusal）可能一个字都没输出，
+            // 不当错误处理的话会话直接静默转 idle，用户什么都看不到
+            if (handle.message.finish === "content-filter") {
+              handle.message.error = new MessageV2.ContentFilterError({
+                message: "响应被供应商的内容过滤器拦截",
+              }).toObject()
+              yield* sessions.updateMessage(handle.message)
+              yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+              return "break" as const
+            }
+            if (format.type === "json_schema") {
+              handle.message.error = new MessageV2.StructuredOutputError({
+                message: "模型没有按要求返回结构化输出",
+                retries: 0,
+              }).toObject()
+              yield* sessions.updateMessage(handle.message)
+              return "break" as const
+            }
+          }
+
+          if (result === "stop") return "break" as const
+
+          // 260710 Red 跨 step loop recovery：检查本轮文本输出是否与前几轮高度相似
+          {
+            const textParts = MessageV2.parts(handle.message.id).filter(
+              (p): p is MessageV2.TextPart => p.type === "text",
+            )
+            const fullText = textParts.map((p) => p.text).join("\n")
+            if (fullText.length > 0) {
+              const level = loopTracker.record(fullText)
+              if (level) {
+                yield* slog.warn("text.loop.recovery", { level, textLen: fullText.length })
+                yield* bus.publish(Session.Event.LoopDetected, { sessionID, type: level, textLen: fullText.length })
+                if (level === "stop") {
+                  return "break" as const
+                }
+                // nudge / replan: 在下一轮注入恢复提示
+                loopRecoveryPrompt = RECOVERY_PROMPTS[level]
+              }
+            }
+          }
+
+          // 260728 Red A：本轮把工具调用写成了 XML 文本（processor 已从可见正文里摘掉）。
+          // 那次调用根本没执行，就这么退出等于整轮白跑 —— 把解析结果回灌给模型，
+          // 强制续跑一轮让它用原生 tool-call 通道重发。
+          // 不在这里直接执行打捞出的调用：默认 ai-sdk 运行时里工具由 streamText 内部执行，
+          // 凭空合成 tool-call 事件会造出永不 settle 的 running part，还绕过 permission.ask。
+          if (handle.salvagedToolCalls.length > 0) {
+            const tools = handle.salvagedToolCalls.map((call) => call.name)
+            if (salvageRecoveries < MAX_SALVAGE_RECOVERIES) {
+              salvageRecoveries++
+              yield* slog.warn("toolcall.text_form.recover", {
+                step,
+                tools,
+                attempt: salvageRecoveries,
+                model: stepSettings.user.model.modelID,
+              })
+              loopRecoveryPrompt = XmlToolCall.recoveryPrompt(handle.salvagedToolCalls)
+              forceContinue = true
+            } else {
+              // 纠正过 MAX_SALVAGE_RECOVERIES 次还在重犯，再续跑就是烧 token 陪它打转。
+              // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
+              // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
+              yield* slog.error("toolcall.text_form.exhausted", {
+                step,
+                tools,
+                model: stepSettings.user.model.modelID,
+              })
+              yield* appendNotice({
+                sessionID,
+                messageID: handle.message.id,
+                text: `[RedCode] 模型连续 ${MAX_SALVAGE_RECOVERIES + 1} 次把工具调用写成了文本而不是真正发起调用（${tools.join("、")}），这些调用都没有执行。已停止自动重试，请重发一次或换个模型。`,
+              })
+            }
+          }
+
+          // 260729 Red 分级阈值：在真正触发压缩之前先上廉价手段（见 overflow.ts）。
+          // soft 档刻意什么都不做，只记一条 —— 在这里做任何重写都是白白炸掉 prefix cache。
+          // 260819 cc 档位改为**无条件**计算并落库：侧边栏的上下文进度条按它上色，
+          // 颜色含义是「引擎下一步会做什么」。原来只在 result !== "compact" 时算，
+          // 那样恰恰在最该变红的那一轮拿不到值。下面 soft/prune 两档的动作维持原有门槛不变。
+          if (!handle.message.summary) {
+            const tier = yield* compaction
+              .level({ tokens: handle.message.tokens, model: stepSettings.model })
+              .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
+            if (handle.message.contextLevel !== tier) {
+              handle.message.contextLevel = tier
+              yield* sessions.updateMessage(handle.message)
+            }
+            if (result !== "compact" && tier === "soft" && !softContextNoticed) {
+              softContextNoticed = true
+              yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
+            }
+            if (!nativeSpec.enabled && result !== "compact" && tier === "prune") {
+              const freed = yield* compaction
+                .prune({ sessionID })
+                .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
+              if (freed.tokens > 0) {
+                // 260811 cc audit R4: 此档只记账不结算——标记已入库，但 msgPin 仍钉着
+                // 首次快照，模型端 prompt 不变（缓存优先）。真正生效在 compact 边界
+                // 的 settlePromptCaches，日志措辞别再谎报"已释放"。
+                yield* slog.info("context.prune.marked", {
+                  step,
+                  markedTokens: freed.tokens,
+                  markedParts: freed.parts,
+                  note: "记账托管，结算于 compact 边界；期间前缀维持钉死",
+                })
+              }
+            }
+          }
+
+          const nativeChanged = nativeSpec.enabled && NativeRuntime.revision(sessionID) !== nativeRevision
+          if (nativeChanged) nativeAutoAttempted = false
+          if (result === "compact" && nativeSpec.enabled && !nativeChanged && !nativeAutoAttempted && !nativeFailed) {
+            nativeAutoAttempted = true
+            yield* compaction.create({
+              sessionID,
+              agent: stepSettings.user.agent,
+              model: stepSettings.user.model,
+              auto: true,
+              overflow: !handle.message.finish,
+            })
+          }
+          if (result === "compact" && !nativeSpec.enabled) {
+            // 260729 Red prune 先于 summarize（取自 DeepSeek-Reasonix 的 compact.go）：
+            // 摘要压缩是一次付费的模型调用，而且会重写前缀、把 prefix cache 整个打掉。
+            // 裁剪陈旧工具输出只是本地改写，代价接近零。所以先 prune，如果光这一步就把
+            // 用量压回阈值以下，这一轮的 summarize 直接跳过 —— 省一次调用，也少一次缓存重置。
+            // 溢出（!finish，模型是被上下文顶断的）时不做这个判断：那种情况必须真压。
+            const overflow = !handle.message.finish
+            const freed = yield* compaction
+              .prune({ sessionID })
+              .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
+            let skip = false
+            let freedRatio = 0
+            if (!overflow && freed.tokens > 0) {
+              const tokens = handle.message.tokens
+              const before = tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
+              const after = Math.max(0, before - freed.tokens)
+              freedRatio = before > 0 ? freed.tokens / before : 0
+              const fits = !(yield* compaction.isOverflow({
+                tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
+                model: stepSettings.model,
+              }))
+              // 260819 cc 除了"prune 后不再超限"，还要求释放量够本——理由见 PRUNE_SKIP_MIN_RATIO。
+              // 不达标时不是"什么都不做"（那样 freed 是虚报、上下文没真降、下一轮照样撞线），
+              // 而是落到 else 走真 summarize：同样重建一次前缀，但一次性压到位，不留反复。
+              skip = fits && freedRatio >= PRUNE_SKIP_MIN_RATIO
+            }
+            if (skip) {
+              yield* slog.info("compaction.skipped_after_prune", {
+                freedTokens: freed.tokens,
+                prunedParts: freed.parts,
+                freedRatio: freedRatio.toFixed(3),
+                minRatio: PRUNE_SKIP_MIN_RATIO,
+              })
+              // 260811 cc audit R4: 跳过 summarize 的判断依据是 prune 的释放量，那释放
+              // 必须真发生——此前 msgPin 会把标记钉回去，freed 是虚报（"跳过压缩→实际
+              // 没降→下轮再超限"）。既然已到 compact 边界，缓存重建成本本来就要付：
+              // 立即结算，让 prune 落地、跳过判断从此诚实。
+              settlePromptCaches(sessionID, "prune-sufficient")
+            } else {
+              yield* compaction.create({
+                sessionID,
+                agent: stepSettings.user.agent,
+                model: stepSettings.user.model,
+                auto: true,
+                overflow,
+              })
+            }
+          }
+          return "continue" as const
+        }).pipe(
+          Effect.ensuring(instruction.clear(handle.message.id)),
+          Effect.onInterrupt(() => finalizeInterruptedAssistant),
+        )
+        if (outcome === "break") break
+        continue
+      }
+
+      if (!(yield* config.get()).compaction?.native?.enabled)
+        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+      // 260801 Red Goal token 记账：无 active goal 时 UPDATE no-op，零成本
+      yield* goal.addUsage({ sessionID, tokens: usageTokens }).pipe(Effect.ignore)
+      return yield* lastAssistant(sessionID)
+    })
+
+    const loop: (input: LoopInput, onCancelled?: Effect.Effect<void>) => Effect.Effect<MessageV2.WithParts> = Effect.fn(
+      "SessionPrompt.loop",
+    )(function* (input: LoopInput, onCancelled?: Effect.Effect<void>) {
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID),
+        runLoop(input.sessionID),
+        onCancelled,
+      )
+    })
+
+    const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
+      "SessionPrompt.shell",
+    )(function* (input: ShellInput) {
+      const ready = yield* Latch.make()
+      return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
+    })
+
+    const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
+      const cmd = yield* commands.get(input.command)
+      if (!cmd) {
+        const available = (yield* commands.list()).map((c) => c.name)
+        const hint = available.length ? ` Available commands: ${available.join(", ")}` : ""
+        const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+        throw error
+      }
+      const agentName = cmd.agent ?? input.agent
+
+      // 261105 Red shell 块先改写再替换参数：解析期不再执行 shell（原实现绕过权限层且 UI
+      // 不可见），块转交模型的 Bash 工具调用，由权限层决定放行/询问/拒绝。改写在前，用户
+      // 参数里夹带的 `!` 块永远不会被当成命令；块内的 $ARGUMENTS/$N 在改写后的 fenced 文本
+      // 上替换，命令文件零改动。
+      const handoffed = ConfigMarkdown.handoffShellBlocks(yield* Effect.promise(async () => cmd.template), {
+        name: cmd.name,
+      })
+
+      const raw = input.arguments.match(argsRegex) ?? []
+      const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
+
+      const placeholders = handoffed.match(placeholderRegex) ?? []
+      let last = 0
+      for (const item of placeholders) {
+        const value = Number(item.slice(1))
+        if (value > last) last = value
+      }
+
+      const withArgs = handoffed.replaceAll(placeholderRegex, (_, index) => {
+        const position = Number(index)
+        const argIndex = position - 1
+        if (argIndex >= args.length) return ""
+        if (position === last) return args.slice(argIndex).join(" ")
+        return args[argIndex]
+      })
+      const usesArgumentsPlaceholder = handoffed.includes("$ARGUMENTS")
+      let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+
+      if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+        template = template + "\n\n" + input.arguments
+      }
+      template = template.trim()
+
+      const taskModel = yield* Effect.gen(function* () {
+        if (cmd.model) return Provider.parseModel(cmd.model)
+        if (cmd.agent) {
+          const cmdAgent = yield* agents.get(cmd.agent)
+          if (cmdAgent?.model) return cmdAgent.model
+        }
+        if (input.model) return Provider.parseModel(input.model)
+        return yield* currentModel(input.sessionID)
+      })
+
+      yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+
+      const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+      if (!agent) {
+        throw yield* agentNotFound({ sessionID: input.sessionID, name: agentName })
+      }
+
+      const templateParts = yield* resolvePromptParts(template)
+      const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+      const parts = isSubtask
+        ? [
+            {
+              type: "subtask" as const,
+              agent: agent.name,
+              description: cmd.description ?? "",
+              command: input.command,
+              model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+              prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
+            },
+          ]
+        : [...templateParts, ...(input.parts ?? [])]
+
+      const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
+      const userModel = isSubtask
+        ? input.model
+          ? Provider.parseModel(input.model)
+          : yield* currentModel(input.sessionID)
+        : taskModel
+
+      yield* plugin.trigger(
+        "command.execute.before",
+        { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
+        { parts },
+      )
+
+      const result = yield* prompt({
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        model: userModel,
+        agent: userAgent,
+        parts,
+        variant: input.variant,
+      })
+      yield* bus.publish(Command.Event.Executed, {
+        name: input.command,
+        sessionID: input.sessionID,
+        arguments: input.arguments,
+        messageID: result.info.id,
+      })
+      return result
+    })
+
+    // 261031 Red 打断发送：单请求内「取消当前 Runner → 提交新消息 → 启动新一轮」，客户端
+    // 不再自己串 abort + prompt 两个 HTTP 请求（时序竞争）。不碰 Git 快照、不回滚工作区
+    // 文件；旧工具的中断由 cancelTree 异步收尾，UI 以 status 事件显示「正在中断」直到新
+    // busy 到来，不提前宣称新任务已开始。新 delivery 强制普通（Runner 已取消，开新轮）；
+    // 此前未领取的 pending_steer 由新轮首步 promote 一并领取，引导内容不丢。
+    const interruptPrompt = (input: PromptInput) =>
+      Effect.flatMap(state.cancel(input.sessionID), () =>
+        prompt({ ...input, delivery: undefined }).pipe(Effect.catch(Effect.die)),
+      )
+
+    return Service.of({
+      cancel,
+      prompt,
+      interruptPrompt,
+      loop,
+      shell,
+      command,
+      resolvePromptParts,
+    })
+  }),
+)
+
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(SessionRunState.defaultLayer),
+    Layer.provide(SessionStatus.defaultLayer),
+    Layer.provide(SessionCompaction.defaultLayer),
+    Layer.provide(SessionProcessor.defaultLayer),
+    Layer.provide(Command.defaultLayer),
+    Layer.provide(Permission.defaultLayer),
+    Layer.provide(MCP.defaultLayer),
+    Layer.provide(LSP.defaultLayer),
+    Layer.provide(ToolRegistry.defaultLayer),
+    Layer.provide(Truncate.defaultLayer),
+    Layer.provide(Provider.defaultLayer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(Layer.mergeAll(Instruction.defaultLayer, Soul.defaultLayer, Companion.defaultLayer)),
+    Layer.provide(AppFileSystem.defaultLayer),
+    Layer.provide(Plugin.defaultLayer),
+    Layer.provide(Session.defaultLayer),
+    Layer.provide(SessionRevert.defaultLayer),
+    Layer.provide(Layer.mergeAll(SessionSummary.defaultLayer, SessionVerification.defaultLayer)),
+    Layer.provide(Image.defaultLayer),
+    Layer.provide(
+      Layer.mergeAll(
+        EventV2Bridge.defaultLayer,
+        Agent.defaultLayer,
+        SystemPrompt.defaultLayer,
+        LLM.defaultLayer,
+        Reference.defaultLayer,
+        Bus.layer,
+        CrossSpawnSpawner.defaultLayer,
+        RuntimeFlags.defaultLayer,
+        Goal.defaultLayer,
+        Storage.defaultLayer, // 260921 Red task 工具的 explorePacket 写 canonical record 依赖 Storage；此前 prompt 运行环境不可见导致 explore 子代理全灭
+      ),
+    ),
+  ),
+)
+const ModelRef = Schema.Struct({
+  providerID: ProviderID,
+  modelID: ModelID,
+})
+
+// 260927 Red 单条 delivery 覆盖 busy_enter 默认策略;服务端状态和并发边界见 docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md。
+export const PromptInput = Schema.Struct({
+  sessionID: SessionID,
+  messageID: Schema.optional(MessageID),
+  model: Schema.optional(ModelRef),
+  agent: Schema.optional(Schema.String),
+  noReply: Schema.optional(Schema.Boolean),
+  delivery: Schema.optional(Schema.Literals(["queue", "steer"])),
+  tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
+    description:
+      "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
+  }),
+  format: Schema.optional(MessageV2.Format),
+  system: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
+  parts: Schema.Array(
+    Schema.Union([
+      MessageV2.TextPartInput,
+      MessageV2.FilePartInput,
+      MessageV2.AgentPartInput,
+      MessageV2.SubtaskPartInput,
+    ]).annotate({ discriminator: "type" }),
+  ),
+})
+export type PromptInput = Schema.Schema.Type<typeof PromptInput>
+
+export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
+  sessionID: SessionID,
+}) {}
+
+export const ShellInput = Schema.Struct({
+  sessionID: SessionID,
+  messageID: Schema.optional(MessageID),
+  agent: Schema.String,
+  model: Schema.optional(ModelRef),
+  command: Schema.String,
+})
+export type ShellInput = Schema.Schema.Type<typeof ShellInput>
+
+export const CommandInput = Schema.Struct({
+  messageID: Schema.optional(MessageID),
+  sessionID: SessionID,
+  agent: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  arguments: Schema.String,
+  command: Schema.String,
+  variant: Schema.optional(Schema.String),
+  // Inlined (no identifier annotation) to keep the original SDK output �� the
+  // PromptInput call site below references FilePartInput by ref via the
+  // Schema export in message-v2.ts.
+  parts: Schema.optional(
+    Schema.Array(
+      Schema.Union([
+        Schema.Struct({
+          id: Schema.optional(PartID),
+          type: Schema.Literal("file"),
+          mime: Schema.String,
+          filename: Schema.optional(Schema.String),
+          url: Schema.String,
+          source: Schema.optional(MessageV2.FilePartSource),
+        }),
+      ]).annotate({ discriminator: "type" }),
+    ),
+  ),
+})
+export type CommandInput = Schema.Schema.Type<typeof CommandInput>
+
+/** @internal Exported for testing */
+export function createStructuredOutputTool(input: {
+  schema: Record<string, any>
+  onSuccess: (output: unknown) => void
+}): AITool {
+  // Remove $schema property if present (not needed for tool input)
+  const { $schema: _, ...toolSchema } = input.schema
+
+  return tool({
+    description: STRUCTURED_OUTPUT_DESCRIPTION,
+    inputSchema: jsonSchema(toolSchema as JSONSchema7),
+    async execute(args) {
+      // AI SDK validates args against inputSchema before calling execute()
+      input.onSuccess(args)
+      return {
+        output: "Structured output captured successfully.",
+        title: "Structured Output",
+        metadata: { valid: true },
+      }
+    },
+    toModelOutput({ output }) {
+      return {
+        type: "text",
+        value: output.output,
+      }
+    },
+  })
+}
+// Match [Image N] as single token, quoted strings, or non-space sequences
+const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
+const placeholderRegex = /\$(\d+)/g
+const quoteTrimRegex = /^["']|["']$/g
+
+// 261031 Red 提交方重跑判据：消息仍处在本轮未读取的待消费形态时，旧 Runner 退出后
+// 必须重跑 loop 领取。pending_steer 是 steer 的待领取形态，必须与 steer 同等重试
+// （审计 AUD-01：只认 steer 会让恰逢最后一步的引导滞留到下一次显式执行）。
+export function retryableDelivery(input: "queue" | "steer", current: MessageV2.User["delivery"]) {
+  return input === "queue" ? current === "queued" : current === "pending_steer" || current === "steer"
+}
+
+export * as SessionPrompt from "./prompt"

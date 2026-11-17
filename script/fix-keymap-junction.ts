@@ -117,7 +117,7 @@ const TARGET_INSTANCE: string = detected
 console.log(`[fix-keymap] target: ${TARGET_INSTANCE.replace(ROOT, "<root>")}`)
 // 需要统一指向的位置：opencode（运行时）与 plugin（SDK 类型链）
 const LINKS = [
-  join(ROOT, "packages/opencode/node_modules/@opentui/keymap"),
+  join(ROOT, "packages/redspace/node_modules/@opentui/keymap"),
   join(ROOT, "packages/plugin/node_modules/@opentui/keymap"),
 ]
 

@@ -1,0 +1,1343 @@
+import { isUserTurn } from "@redcode-ai/core/util/message-turn"
+import { BusEvent } from "@/bus/bus-event"
+import { Bus } from "@/bus"
+import * as Session from "./session"
+import { SessionID, MessageID, PartID } from "./schema"
+import { Provider } from "@/provider/provider"
+import { MessageV2 } from "./message-v2"
+import { Token } from "@/util/token"
+import { estimateModelMessages } from "./image-tokens"
+import * as Log from "@redcode-ai/core/util/log"
+import { SessionProcessor } from "./processor"
+import { requestSnapshot } from "./prompt-caches"
+import { Agent } from "@/agent/agent"
+import { Plugin } from "@/plugin"
+import { Config } from "@/config/config"
+import { NotFoundError } from "@/storage/storage"
+import { ModelID, ProviderID } from "@/provider/schema"
+import { Cause, Effect, Exit, Layer, Context, Option, Schema } from "effect"
+import { InstanceState } from "@/effect/instance-state"
+import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
+import { serviceUse } from "@/effect/service-use"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as ContextCompaction from "./context-compaction"
+import * as NativeContext from "./native-context"
+import * as NativeRuntime from "./native-context-runtime"
+import { NamedError } from "@redcode-ai/core/util/error"
+import { SystemPrompt } from "./system"
+
+const log = Log.create({ service: "session.compaction" })
+
+export const Event = {
+  Compacted: BusEvent.define(
+    "session.compacted",
+    Schema.Struct({
+      sessionID: SessionID,
+    }),
+  ),
+}
+
+export const PRUNE_MINIMUM = 20_000
+export const PRUNE_PROTECT = 40_000
+const TOOL_OUTPUT_MAX_CHARS = 2_000
+const PRUNE_PROTECTED_TOOLS = ["skill"]
+// 261112 Red 快速回填熔断（ZCode v3.15.1 RC04 吸收，决策见
+// docs/notes/proposed/feature/2026-11-12-compact-rapid-refill-breaker.md）：
+// 连续两次在不足 3 个完整 tool turn 内重新达到阈值，第 3 次压缩前熔断——每次真压缩
+// 都是一次付费调用 + 前缀重建，压缩后几轮又填满等于白烧。
+export const RAPID_REFILL_TURNS = 3
+export const RAPID_REFILL_LIMIT = 3
+
+type RapidRefillState = { lastMessageID: MessageID; streak: number }
+
+// 进程内，重启清零；与 ZCode 的 runtime tracker 同语义，不持久化。
+const rapidRefill = new Map<SessionID, RapidRefillState>()
+
+export function countCompletedToolTurnsAfter(
+  messages: readonly MessageV2.WithParts[],
+  afterID: MessageID,
+) {
+  const boundary = messages.find((message) => message.info.id === afterID)
+  // 边界已不在可见历史里：说明中间经历过裁剪/压缩，视为正常间隔，不参与熔断。
+  if (!boundary) return Number.MAX_SAFE_INTEGER
+  // 261113 Red 可见历史不是时序：legacy 压缩把保留的 tail 排到压缩边界之后
+  // （message-v2 filterCompactedOrdered 的重排）。按下标数「边界之后」会把 tail 的
+  // 旧轮次算成压缩后的新工作——默认 2 个 tail 加 1 个新轮就够 3，streak 被提前重置，
+  // 熔断永不触发。改按 compareTime 判先后，与 MessageV2.latest 同口径。
+  let turns = 0
+  for (const message of messages) {
+    if (message.info.role !== "assistant") continue
+    if (message.info.summary) continue
+    if (MessageV2.compareTime(message.info, boundary.info) <= 0) continue
+    if (message.parts.some((part) => part.type === "tool" && part.state.status === "completed")) turns++
+  }
+  return turns
+}
+
+export function rapidRefillDecision(
+  state: RapidRefillState | undefined,
+  messages: readonly MessageV2.WithParts[],
+): { streak: number; turns: number; blocked: boolean } {
+  if (!state) return { streak: 1, turns: -1, blocked: false }
+  const turns = countCompletedToolTurnsAfter(messages, state.lastMessageID)
+  const streak = turns < RAPID_REFILL_TURNS ? state.streak + 1 : 1
+  return { streak, turns, blocked: streak >= RAPID_REFILL_LIMIT }
+}
+
+// 261113 Red streak 只在压缩成功后写入：入口只读决策，失败/中断/熔断都不推进状态，
+// 否则连续失败会被当成连续快速回填（设计文档：每次 auto 压缩成功才记录）。
+function noteRapidRefillSuccess(sessionID: SessionID, parentID: MessageID, streak: number) {
+  rapidRefill.set(sessionID, { lastMessageID: parentID, streak })
+}
+const DEFAULT_TAIL_TURNS = 2
+const MIN_PRESERVE_RECENT_TOKENS = 2_000
+// 260817 Red 压缩全灭代价优化：8000 太小——长会话最近 2 轮通常几万 token，装不进 budget
+// 就触发 tail fallback（select 里 keep=undefined → head=全部历史），压缩代理轮请求体
+// 爆炸（~177K 全价）且最近细节也被压掉。调到 50K 后最近轮次保留原样，head 只剩老历史
+// （budget 仍受 usable*0.25 上限约束，模型可用上下文小的时候自动收缩）。
+// 260818 Red 远端 a6c2af1 曾调 30K（哥哥在家基于未回退 466bb79 的再调优），合并时保留 50K——实测值。
+const MAX_PRESERVE_RECENT_TOKENS = 50_000
+// 261117 Red 同时延续任务与相处，原生/传统压缩共用；不把摘要当人格记忆写回。
+// docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md
+const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
+## Goal
+- [current task or conversational topic; do not invent a task for casual conversation]
+
+## Constraints & Preferences
+- [session-specific constraints that add to or override the standing instructions, or "(none)"; write "only touch the parser", not "ask before pushing"]
+
+## Conversation Continuity
+- [relevant shared experiences, user-stated feelings or preferences, unfinished personal topics and explicit promises, or "(none)"; retain who said or experienced what and any later correction]
+
+## Progress
+### Done
+- [one line per outcome: what shipped, plus its commit hash when available. No diffs, line counts, or per-file detail — git has those.]
+
+### In Progress
+- [current work or "(none)"]
+
+### Blocked
+- [blockers or "(none)"]
+
+## Key Decisions
+- [decision and why, or "(none)"]
+
+## Next Steps
+- [ordered, concrete next actions or "(none)"]
+
+## Critical Context
+- [important technical facts, errors, open questions, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</template>
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve meaningful conversational continuity even when it adds no engineering information. Do not copy the Soul biography or manufacture feelings, relationship changes or shared history. Distinguish direct statements from interpretations, imagined scenes and dreams from events, and promises from completed or scheduled actions. Preserve requests not to save personal information; this checkpoint is session context, not permission to write a personal archive.
+- Preserve exact file paths, commands, error strings, and identifiers when known.
+- Do not mention the summary process or that context was compacted.
+- If the conversation already contains a prior checkpoint summary, merge it instead of copying it forward: keep facts that are still true, drop stale ones, and fold newer information into one consolidated summary.
+- Completed work is a handoff, not a changelog: record outcomes and commit hashes only. Do not restate diffs, line counts, or per-file edits.
+- Relevant Files lists only files a successor must open to continue.
+- Standing instructions (system prompt, AGENTS.md, .redcode/MEMORY.md, soul) accompany every request. Never restate them in any section and never list them under Relevant Files; record only what this session adds, tightens, or overrides.`
+type Turn = {
+  start: number
+  end: number
+  id: MessageID
+}
+// 260808 Red 文件清单（Pi 借鉴第 3 项）：压缩摘要附真实 read/modified 文件路径，
+// 机械提取而非让模型凭记忆写 Relevant Files；跨压缩增量累积（标签解析回滚）。
+const READ_TOOLS = new Set(["read"])
+const WRITE_TOOLS = new Set(["edit", "write", "apply_patch"])
+
+// 261104 Red 只过滤能确认每轮注入的文件：`.redcode/MEMORY.md`。AGENTS.md 只有项目根/全局根那份
+//   进固定前缀，包级 `packages/foo/AGENTS.md` 是 read 时附带、可能与当前任务直接相关；
+//   `MEMORY-archive.md` 同样不是每轮注入。宁可留一条根级路径，也不吞掉真正有用的线索。
+const ALWAYS_ON_CONTEXT = /(^|[\\/])\.redcode[\\/]MEMORY\.md$/i
+
+export function isAlwaysOnContext(filePath: string) {
+  return ALWAYS_ON_CONTEXT.test(filePath)
+}
+
+export function filePathsFrom(part: MessageV2.ToolPart): string[] {
+  const input = part.state.input as Record<string, unknown>
+  if (typeof input?.filePath === "string") return alwaysOnFiltered([input.filePath])
+  if (part.tool === "apply_patch" && Array.isArray(input?.hunks)) {
+    return alwaysOnFiltered(
+      input.hunks.flatMap((hunk) =>
+        typeof (hunk as Record<string, unknown>)?.filePath === "string"
+          ? [(hunk as Record<string, unknown>).filePath as string]
+          : [],
+      ),
+    )
+  }
+  return []
+}
+
+function alwaysOnFiltered(paths: string[]) {
+  return paths.filter((filePath) => !isAlwaysOnContext(filePath))
+}
+
+export function collectFiles(messages: MessageV2.WithParts[]) {
+  const read: string[] = []
+  const modified: string[] = []
+  for (const msg of messages) {
+    for (const part of msg.parts) {
+      if (part.type !== "tool" || part.state.status !== "completed") continue
+      const paths = filePathsFrom(part)
+      if (!paths.length) continue
+      const target = READ_TOOLS.has(part.tool) ? read : WRITE_TOOLS.has(part.tool) ? modified : undefined
+      if (target) target.push(...paths)
+    }
+  }
+  return { read: dedupe(read), modified: dedupe(modified) }
+}
+
+export function dedupe(paths: string[]) {
+  return [...new Set(paths)]
+}
+
+export function parseFileTags(text: string) {
+  const extract = (tag: string) =>
+    dedupe(
+      (text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1] ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+    )
+  return { read: extract("read-files"), modified: extract("modified-files") }
+}
+
+export function appendFileTags(summary: string, files: { read: string[]; modified: string[] }) {
+  const tags = [
+    files.read.length ? `<read-files>\n${files.read.join("\n")}\n</read-files>` : "",
+    files.modified.length ? `<modified-files>\n${files.modified.join("\n")}\n</modified-files>` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+  return tags ? `${summary}\n\n${tags}` : summary
+}
+
+type Tail = {
+  start: number
+  id: MessageID
+}
+
+type CompletedCompaction = {
+  userIndex: number
+  assistantIndex: number
+  summary: string | undefined
+}
+
+// 261026 Red 最多四层有界因果链；保留 SQLite code/errno，不记录 Drizzle SQL 或摘要参数。
+function commitFailure(error: unknown) {
+  const details: string[] = []
+  const seen = new Set<unknown>()
+  let cause = error
+  while (cause && typeof cause === "object" && !seen.has(cause) && details.length < 4) {
+    seen.add(cause)
+    const name = "name" in cause && typeof cause.name === "string" ? cause.name.slice(0, 64) : "Error"
+    const code = "code" in cause && typeof cause.code === "string" ? cause.code.slice(0, 64) : undefined
+    const errno = "errno" in cause && typeof cause.errno === "number" ? cause.errno : undefined
+    const message = cause instanceof Error && !("query" in cause)
+      ? cause.message.split("\n", 1)[0]?.slice(0, 256)
+      : undefined
+    details.push([name, code, errno, message].filter((value) => value !== undefined).join(": "))
+    cause = "cause" in cause ? cause.cause : undefined
+  }
+  return new NamedError.Unknown({
+    message: `Native compaction was not committed: ${details.join(" <- ") || "Unknown storage error"}`,
+  }, { cause: error })
+}
+
+// 261113 Red 压缩摘要的重复停止失败终态：文案与 prompt.ts 的普通对话路径同族，按压缩语境表述。
+function repeatLoopFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.TextLoopStoppedError({ message: "摘要生成陷入重复循环，已中止本次压缩" }).toObject()
+}
+
+// 261113 Red 摘要被输出长度上限截断（finish="length"）：与重复停止同族，必须落失败
+// 终态。半份摘要一旦写进压缩边界，被压缩的原文就从后续模型输入里消失了。
+function truncatedSummaryFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.SummaryTruncatedError({ message: "摘要输出达到长度上限被截断，已中止本次压缩" }).toObject()
+}
+
+// 261113 Red 供应商正常收尾但摘要正文为空：空摘要同样是半份结果，不能成为新边界。
+function emptySummaryFailure(): MessageV2.Assistant["error"] {
+  return new MessageV2.SummaryEmptyError({ message: "摘要生成结果为空，已中止本次压缩" }).toObject()
+}
+
+function completedCompactions(messages: MessageV2.WithParts[]) {
+  const users = new Map<MessageID, number>()
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (!isUserTurn(msg.info, msg.parts)) continue
+    if (!msg.parts.some((part) => part.type === "compaction")) continue
+    users.set(msg.info.id, i)
+  }
+
+  return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
+    if (msg.info.role !== "assistant") return []
+    // 261113 Red 只有可用的摘要才算压缩成功：完成值不可信（"unknown"/"length"）、带
+    // error 或正文为空都不能成为成功边界，否则半份摘要顶替正常摘要、原文从后续模型
+    // 输入里消失。判据与压缩提交入口、filterCompactedOrdered 共用。
+    if (!MessageV2.isUsableCompactionSummary(msg)) return []
+    const userIndex = users.get(msg.info.parentID)
+    if (userIndex === undefined) return []
+    return [{ userIndex, assistantIndex, summary: MessageV2.summaryText(msg) }]
+  })
+}
+
+function buildPrompt(input: { previousSummary?: string; context: string[] }) {
+  const anchor = input.previousSummary
+    ? [
+        "Update the anchored summary below using the conversation history above.",
+        "Preserve still-true details, remove stale details, and merge in the new facts.",
+        "<previous-summary>",
+        input.previousSummary,
+        "</previous-summary>",
+      ].join("\n")
+    : "Create a new anchored summary from the conversation history above."
+  return [anchor, SUMMARY_TEMPLATE, ...input.context].join("\n\n")
+}
+
+function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model }) {
+  return (
+    input.cfg.compaction?.preserve_recent_tokens ??
+    Math.min(MAX_PRESERVE_RECENT_TOKENS, Math.max(MIN_PRESERVE_RECENT_TOKENS, Math.floor(usable(input) * 0.25)))
+  )
+}
+
+function turns(messages: MessageV2.WithParts[]) {
+  const result: Turn[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (!isUserTurn(msg.info, msg.parts)) continue
+    if (msg.parts.some((part) => part.type === "compaction")) continue
+    result.push({
+      start: i,
+      end: messages.length,
+      id: msg.info.id,
+    })
+  }
+  for (let i = 0; i < result.length - 1; i++) {
+    result[i].end = result[i + 1].start
+  }
+  return result
+}
+
+function splitTurn(input: {
+  messages: MessageV2.WithParts[]
+  turn: Turn
+  model: Provider.Model
+  budget: number
+  estimate: (input: { messages: MessageV2.WithParts[]; model: Provider.Model }) => Effect.Effect<number>
+}) {
+  return Effect.gen(function* () {
+    if (input.budget <= 0) return undefined
+    if (input.turn.end - input.turn.start <= 1) return undefined
+    for (let start = input.turn.start + 1; start < input.turn.end; start++) {
+      const size = yield* input.estimate({
+        messages: input.messages.slice(start, input.turn.end),
+        model: input.model,
+      })
+      if (size > input.budget) continue
+      return {
+        start,
+        id: input.messages[start]!.info.id,
+      } satisfies Tail
+    }
+    return undefined
+  })
+}
+
+export interface Interface {
+  /** 当前用量落在哪一档：ok / soft（只提示）/ prune（廉价裁剪）/ compact（真压缩） */
+  readonly level: (input: { tokens: MessageV2.Assistant["tokens"]; model: Provider.Model }) => Effect.Effect<Level>
+  readonly isOverflow: (input: {
+    tokens: MessageV2.Assistant["tokens"]
+    model: Provider.Model
+  }) => Effect.Effect<boolean>
+  /** 返回本次实际释放的估算 token 数与被裁剪的 tool part 数；未启用或不足阈值时为 0 */
+  readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<{ tokens: number; parts: number }>
+  readonly process: (input: {
+    parentID: MessageID
+    messages: MessageV2.WithParts[]
+    sessionID: SessionID
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<"continue" | "stop">
+  readonly create: (input: {
+    sessionID: SessionID
+    agent: string
+    model: MessageV2.User["model"]
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@redcode/SessionCompaction") {}
+
+export const use = serviceUse(Service)
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const config = yield* Config.Service
+    const session = yield* Session.Service
+    const agents = yield* Agent.Service
+    const plugin = yield* Plugin.Service
+    const processors = yield* SessionProcessor.Service
+    const provider = yield* Provider.Service
+    const flags = yield* RuntimeFlags.Service
+
+    const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
+      tokens: MessageV2.Assistant["tokens"]
+      model: Provider.Model
+    }) {
+      return overflow({
+        cfg: yield* config.get(),
+        tokens: input.tokens,
+        model: input.model,
+        outputTokenMax: flags.outputTokenMax,
+      })
+    })
+
+    // 260729 Red 分级阈值查询（见 overflow.ts）：调用方据此在真正压缩之前先上廉价手段
+    const level = Effect.fn("SessionCompaction.level")(function* (input: {
+      tokens: MessageV2.Assistant["tokens"]
+      model: Provider.Model
+    }) {
+      return overflowLevel({
+        cfg: yield* config.get(),
+        tokens: input.tokens,
+        model: input.model,
+        outputTokenMax: flags.outputTokenMax,
+      })
+    })
+
+    const estimate = Effect.fn("SessionCompaction.estimate")(function* (input: {
+      messages: MessageV2.WithParts[]
+      model: Provider.Model
+    }) {
+      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+      // 260828 cc：原来是 Token.estimate(JSON.stringify(msgs))，而图片在这里是内联
+      // data URL —— chars/4 把一张 400KB 的 JPEG 算成约 13 万 token（实际最多 384）。
+      // select() 用这个数倒着累加各轮决定保留范围，于是一张图就让它所在轮及更早的
+      // 全部被判出局。改为文本照旧 chars/4、图片按路由投影计价。见 image-tokens.ts。
+      return estimateModelMessages(msgs, input.model)
+    })
+
+    const select = Effect.fn("SessionCompaction.select")(function* (input: {
+      messages: MessageV2.WithParts[]
+      cfg: Config.Info
+      model: Provider.Model
+    }) {
+      const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
+      if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
+      const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model })
+      const all = turns(input.messages)
+      if (!all.length) return { head: input.messages, tail_start_id: undefined }
+      const recent = all.slice(-limit)
+      const sizes = yield* Effect.forEach(
+        recent,
+        (turn) =>
+          estimate({
+            messages: input.messages.slice(turn.start, turn.end),
+            model: input.model,
+          }),
+        { concurrency: 1 },
+      )
+
+      let total = 0
+      let keep: Tail | undefined
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const turn = recent[i]!
+        const size = sizes[i]
+        if (total + size <= budget) {
+          total += size
+          keep = { start: turn.start, id: turn.id }
+          continue
+        }
+        const remaining = budget - total
+        const split = yield* splitTurn({
+          messages: input.messages,
+          turn,
+          model: input.model,
+          budget: remaining,
+          estimate,
+        })
+        if (split) keep = split
+        else if (!keep) log.info("tail fallback", { budget, size, total })
+        break
+      }
+
+      if (!keep || keep.start === 0) return { head: input.messages, tail_start_id: undefined }
+      return {
+        head: input.messages.slice(0, keep.start),
+        tail_start_id: keep.id,
+      }
+    })
+
+    // goes backwards through parts until there are PRUNE_PROTECT tokens worth of tool
+    // calls, then erases output of older tool calls to free context space
+    const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
+      const cfg = yield* config.get()
+      if (!cfg.compaction?.prune) return { tokens: 0, parts: 0 }
+      log.info("pruning")
+
+      const msgs = yield* session
+        .messages({ sessionID: input.sessionID })
+        .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
+      if (!msgs) return { tokens: 0, parts: 0 }
+
+      let total = 0
+      let pruned = 0
+      const toPrune: MessageV2.ToolPart[] = []
+      let turns = 0
+
+      loop: for (let msgIndex = msgs.length - 1; msgIndex >= 0; msgIndex--) {
+        const msg = msgs[msgIndex]
+        if (isUserTurn(msg.info, msg.parts)) turns++
+        if (turns < 2) continue
+        if (msg.info.role === "assistant" && msg.info.summary) break loop
+        for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
+          const part = msg.parts[partIndex]
+          if (part.type !== "tool") continue
+          if (part.state.status !== "completed") continue
+          if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
+          if (part.state.time.compacted) break loop
+          const estimate = Token.estimate(part.state.output)
+          total += estimate
+          if (total <= PRUNE_PROTECT) continue
+          pruned += estimate
+          toPrune.push(part)
+        }
+      }
+
+      log.info("found", { pruned, total })
+      if (pruned <= PRUNE_MINIMUM) return { tokens: 0, parts: 0 }
+      for (const part of toPrune) {
+        if (part.state.status === "completed") {
+          part.state.time.compacted = Date.now()
+          yield* session.updatePart(part)
+        }
+      }
+      log.info("pruned", { count: toPrune.length })
+      // 260729 Red 报告实际释放量 —— 调用方据此判断"光 prune 就够了"，从而跳过这轮付费的
+      // summarize 调用（见 prompt.ts 的 compact 分支）。原先返回 void，省下来多少无从得知。
+      return { tokens: pruned, parts: toPrune.length }
+    })
+
+    const processNative = Effect.fn("SessionCompaction.processNative")(function* (input: {
+      parentID: MessageID
+      messages: MessageV2.WithParts[]
+      sessionID: SessionID
+      auto: boolean
+      // 261113 Red 由入口决策传入，成功时记录；手动压缩为 undefined。
+      rapidRefillStreak?: number
+    }) {
+      const startedAt = Date.now()
+      // 261013 Red Log-only stage evidence; no model-visible or budget changes.
+      // Decision: docs/notes/implemented/feature/2026-10-10-native-compaction.md
+      const monotonicStart = performance.now()
+      const stages: Record<string, number> = {}
+      let checkpoint = monotonicStart
+      let phase = "setup"
+      let selected = 0
+      let requestStartedAt: number | undefined
+      let modelTiming: SessionProcessor.CompactionTiming | undefined
+      let summaryMessageID: MessageID | undefined
+      let summaryBytes: number | undefined
+      let usage: MessageV2.Assistant["tokens"] | undefined
+      const mark = (next: string) => {
+        const now = performance.now()
+        stages[phase] = Math.round(now - checkpoint)
+        checkpoint = now
+        phase = next
+      }
+      const parent = input.messages.find((message) => message.info.id === input.parentID)
+      if (!parent || parent.info.role !== "user") throw new Error("Native compaction parent is missing")
+      const userMessage = parent.info
+      return yield* Effect.gen(function* () {
+        const cfg = yield* config.get()
+        const compactionAgent = yield* agents.get("compaction")
+        if (!compactionAgent) throw new Error("Built-in compaction agent is missing")
+        // 261012 Red Summaries must use the model and variant that produced the triggering turn.
+        const mainModel = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(
+          Effect.orDie,
+        )
+        const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: mainModel }))
+        mark("projection")
+        const view = NativeRuntime.project(input.sessionID, input.messages, spec)
+        mark("selection")
+        const model = {
+          ...mainModel,
+          limit: {
+            ...mainModel.limit,
+            output:
+              mainModel.limit.output > 0
+                ? Math.min(mainModel.limit.output, spec.summaryMaxTokens)
+                : spec.summaryMaxTokens,
+          },
+        }
+        const ctx = yield* InstanceState.context
+        const msg: MessageV2.Assistant = {
+          id: MessageID.ascending(), role: "assistant", parentID: input.parentID,
+          sessionID: input.sessionID, mode: "compaction", agent: "compaction", summary: true,
+          path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: model.id, providerID: model.providerID, variant: userMessage.model.variant,
+          time: { created: Date.now() },
+        }
+        summaryMessageID = msg.id
+        // 261114 Red 消息树分支：native 摘要同样走接线口（首轮审计只抓到
+        // updateMessage({...}) 内联形态，变量形态的创建点漏了两处——重查补齐）
+        yield* session.appendMessage(msg)
+        const active = ContextCompaction.list(input.sessionID)
+        // 261010 Red 选段锚点用 provider 实报的完整请求（触发口径），不是历史粗估——
+        // 现场 250k 实报被 171k 粗估顶替后，回收需求只剩 27k，7 条消息就提前收工。
+        // 实报缺失（首个请求/未回执）退回粗估，行为同旧。
+        const lastAssistant = view.findLast((message) => message.info.role === "assistant" && !message.info.summary)
+        const currentTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
+          ? lastAssistant.info.tokens.context ?? 0
+          : 0
+        // 261022 Red 窗口化选段（拟修 B）：默认从最后活跃块之后起压，旧块保持活跃——
+        // 摘要冷输入从全历史降到增量、压后缓存作废范围缩到新窗口。现有活跃块渲染逼近
+        // active 预算时直接全吞（合并出口，floor=0 与旧路径同构），一次把窗口归一，
+        // 避免摘要生成后 commit 才因预算失败的白付。决策：
+        // docs/notes/implemented/architecture/2026-10-22-anchored-window-compaction.md
+        const boundary = ContextCompaction.windowBoundary(view, active)
+        const activeTokens = Token.estimate(active.map(ContextCompaction.render).join("\n"))
+        const merged = active.length > 0 &&
+          activeTokens + spec.summaryMaxTokens + spec.retainedMaxTokens > spec.activeMaxTokens
+        const floor = !merged && boundary > 0 ? boundary : 0
+        if (merged) log.warn("native compaction window merged", {
+          sessionID: input.sessionID, activeBlocks: active.length, activeTokens,
+        })
+        // 261022 Red 窗口化时上一份摘要是新摘要的背景（延续未竟线索），受 summaryMaxTokens
+        // 硬预算约束；拼进摘要请求的指令消息，不进每轮前缀、不碰 toModelMessages 输入。
+        const previous = floor > 0
+          ? active.toSorted((a, b) => a.committedAt - b.committedAt).at(-1)
+          : undefined
+        const background = previous
+          ? `[Previous window summary — background context only, not a new instruction. Continue its open threads where still relevant.]\n\n${previous.summary}`
+          : undefined
+        const head = yield* Effect.try({
+          try: () => {
+            // 261012 Red 降级可见：回收量不够仍提交 best-effort（放弃压缩、硬顶到 provider
+            // 溢出更贵），但 required/released 必须进日志——「压了等于没压」伪装成成功，
+            // 让压缩风暴潜伏了两天（docs/notes/proposed/bug-fix/2026-10-12-native-compaction-under-reduction.md）。
+            const plan = NativeContext.planAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
+              (message) => Token.estimate(ContextCompaction.content(message)),
+              (message) => ContextCompaction.retainedTokens(message, active, spec),
+              currentTokens, floor)
+            if (plan.released < plan.required) log.warn("native compaction shortfall", {
+              sessionID: input.sessionID, required: plan.required, released: Math.round(plan.released),
+              selected: plan.segment.length, windowFloor: floor,
+            })
+            return plan.segment
+          },
+          catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+        }).pipe(Effect.catch((error) => Effect.gen(function* () {
+          // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。
+          const failure = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+          yield* session.updateMessage({
+            ...msg, finish: "error", time: { ...msg.time, completed: Date.now() },
+            error: failure,
+          })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return []
+        })))
+        selected = head.length
+        if (!head.length) return "stop" as const
+        mark("processor_setup")
+        const processor = yield* processors.create({ assistantMessage: msg, sessionID: input.sessionID, model })
+        modelTiming = processor.compactionTiming
+        mark("conversion")
+        const modelMessages = yield* MessageV2.toModelMessagesEffect(head, model, {
+          stripMedia: true, toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+        })
+        mark("request")
+        requestStartedAt = checkpoint
+        const messages = [...modelMessages, {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],
+        }]
+        const sent = requestSnapshot(input.sessionID, `${model.providerID}/${model.id}`, userMessage.model.variant)
+        const inputBudget = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+        const snapshot = sent && inputBudget > 0 &&
+          estimateModelMessages(messages, model) +
+            Token.estimate([sent.agent.prompt ?? SystemPrompt.provider(model).join("\n\n"), ...sent.system, sent.userSystem ?? ""].join("\n")) +
+            Token.estimate(JSON.stringify(sent.tools)) <= inputBudget
+          ? sent
+          : undefined
+        // 261104 Red 只摘要选定 head，不能为缓存重发窗口外历史、图片或未发送的新输入。
+        // 工具只保留 wire 定义，不携带 execute/输入生命周期回调；processor 的摘要 guard 仍保留。
+        // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
+        const result = yield* processor.process({
+          user: snapshot
+            ? {
+                ...userMessage,
+                ...(snapshot.userSystem ? { system: snapshot.userSystem } : {}),
+                ...(snapshot.userTools ? { tools: snapshot.userTools } : {}),
+              }
+            : userMessage,
+          agent: snapshot?.agent ?? compactionAgent, sessionID: input.sessionID,
+          permission: snapshot?.permission,
+          parentSessionID: snapshot?.parentSessionID,
+          tools: Object.fromEntries(Object.entries(snapshot?.tools ?? {}).map(([name, tool]) => [name,
+            tool.type === "provider"
+              ? ({ type: tool.type, id: tool.id, args: tool.args, inputSchema: tool.inputSchema, providerOptions: tool.providerOptions } as unknown as typeof tool)
+              : { description: tool.description, inputSchema: tool.inputSchema, strict: tool.strict, providerOptions: tool.providerOptions },
+          ])),
+          toolChoice: "none",
+          system: snapshot ? [...snapshot.system] : [],
+          messages, model,
+        })
+        if (processor.stoppedByRepeatLoop && !processor.message.error) {
+          // 261113 Red 重复停止的摘要不是可用摘要：prompt.ts 的错误收尾只覆盖普通对话入口，
+          // 压缩直接调 processor.process()。不在这里落失败终态，估算 step-finish 会把消息停在
+          // finish="unknown" 无 error——历史投影会把它当成功边界，截断摘要顶替正常摘要。
+          const failure = repeatLoopFailure()
+          processor.message.error = failure
+          processor.message.finish = "error"
+          yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return "stop" as const
+        }
+        if (result !== "continue" || processor.message.error) return "stop" as const
+        mark("commit")
+        const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
+        // 261113 Red 统一判据：空正文 / 截断（"length"）/ 估算收尾（"unknown"）/ 带
+        // error 的摘要都不能 commit——半份摘要成为新边界，被压缩的原文就从后续模型
+        // 输入里消失了。
+        if (!MessageV2.isUsableCompactionSummary(output)) {
+          const failure =
+            output.info.role === "assistant" && output.info.finish === "length"
+              ? truncatedSummaryFailure()
+              : emptySummaryFailure()
+          processor.message.error = failure
+          processor.message.finish = "error"
+          yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return "stop" as const
+        }
+        const summary = MessageV2.summaryText(output) ?? ""
+        summaryBytes = Buffer.byteLength(summary, "utf8")
+        if (output.info.role === "assistant") usage = output.info.tokens
+        const blocks = yield* Effect.try({
+          try: () => ContextCompaction.commit({
+            sessionID: input.sessionID, messages: view, limits: spec, mode: "auto",
+            requestID: `auto:${input.parentID}`,
+            ranges: [{ startId: head[0]!.info.id, endId: head.at(-1)!.info.id, summary }],
+          }),
+          catch: commitFailure,
+        }).pipe(Effect.catch((error) => Effect.gen(function* () {
+          log.error("native compaction commit failed", {
+            sessionID: input.sessionID, parentID: input.parentID, summaryMessageID,
+            error: error.message,
+          })
+          processor.message.error = error.toObject()
+          yield* session.updateMessage(processor.message)
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
+          return []
+        })))
+        if (!blocks.length) return "stop" as const
+        mark("metrics")
+        const newIDs = new Set(blocks.map((block) => block.id))
+        const marker = parent.parts.find((part) => part.type === "compaction")
+        if (marker && marker.type === "compaction") yield* session.updatePart({
+          // 261010 Red tokens_before 必须与 legacy 路径同口径：本次压缩前**已折叠**的可见
+          // 历史。此前传 view（刚投影完、尚未含本次摘要），与 tokens_after 差一次折叠，
+          // 实测 exe 上真实 100k→30k 显示成 50k→40k。list 按 committed_at 升序，新块在
+          // 末位，排除它才是"压缩前"。
+          ...marker, native: true, duration_ms: Date.now() - startedAt,
+          tokens_before: yield* estimate({
+            messages: ContextCompaction.project(
+              NativeContext.removeArtifacts(input.messages),
+              ContextCompaction.list(input.sessionID).filter((block) => !newIDs.has(block.id)),
+            ),
+            model: mainModel,
+          }),
+          tokens_after: yield* estimate({
+            messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
+            model: mainModel,
+          }),
+        })
+        mark("finalize")
+        if (input.auto || hasUnfinishedTurn(input.messages, input.parentID)) {
+          // 261114 Red 消息树分支：新建消息走接线口（下同）
+          const followup = yield* session.appendMessage({
+            ...userMessage, id: MessageID.ascending(), time: { created: Date.now() },
+          })
+          yield* session.updatePart({
+            id: PartID.ascending(), messageID: followup.id, sessionID: input.sessionID,
+            type: "text", synthetic: true, metadata: { compaction_continue: true },
+            text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
+          })
+        }
+        if (input.rapidRefillStreak !== undefined)
+          noteRapidRefillSuccess(input.sessionID, input.parentID, input.rapidRefillStreak)
+        yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+        yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
+        return "continue" as const
+      }).pipe(Effect.onExit((exit) => Effect.sync(() => {
+        mark(phase)
+        const cause = Exit.isSuccess(exit) ? undefined : exit.cause
+        const error = cause ? Option.getOrUndefined(Cause.findErrorOption(cause)) : undefined
+        // 261013 Red 失败摘要阶段日志只记录类型 tag，不展开无界错误正文或堆栈。
+        const errorTag =
+          error && typeof error === "object" && "_tag" in error && typeof error._tag === "string"
+            ? error._tag
+            : error instanceof Error
+              ? error.name
+              : cause && Cause.hasInterrupts(cause)
+                ? "Interrupted"
+                : cause && Cause.hasDies(cause)
+                  ? "Defect"
+                  : cause
+                    ? "UnknownFailure"
+                    : undefined
+        const sinceRequest = (at: number | undefined) =>
+          at !== undefined && requestStartedAt !== undefined ? Math.max(0, Math.round(at - requestStartedAt)) : null
+        log.warn("native compaction stages", {
+          sessionID: input.sessionID, parentID: input.parentID, summaryMessageID,
+          status: Exit.isSuccess(exit) ? exit.value : "failed-or-cancelled",
+          ...(errorTag ? { error: errorTag } : {}),
+          queue_ms: Math.max(0, startedAt - userMessage.time.created),
+          total_ms: Math.round(performance.now() - monotonicStart), stages_ms: stages,
+          model_ms: {
+            first_event: sinceRequest(modelTiming?.firstEventAt),
+            first_content: sinceRequest(modelTiming?.firstContentAt),
+            stream_complete: sinceRequest(modelTiming?.streamCompletedAt),
+            usage: modelTiming ? Math.round(modelTiming.usageMs) : null,
+            cleanup: modelTiming ? Math.round(modelTiming.cleanupMs) : null,
+            event_handling: modelTiming ? Math.round(modelTiming.eventHandlingMs) : null,
+          },
+          attempts: modelTiming?.attempts ?? 0, selected, summary_bytes: summaryBytes,
+          output_tokens: usage?.output, reasoning_tokens: usage?.reasoning,
+        })
+      })))
+    })
+
+    const processCompactionInner = Effect.fn("SessionCompaction.process")(function* (input: {
+      parentID: MessageID
+      messages: MessageV2.WithParts[]
+      sessionID: SessionID
+      auto: boolean
+      overflow?: boolean
+    }) {
+      const parent = input.messages.findLast((m) => m.info.id === input.parentID)
+      if (!parent || parent.info.role !== "user") {
+        throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
+      }
+      // 261113 Red 手动压缩不参与追踪：既不读也不写熔断状态（设计文档）。
+      // 入口只算决策；streak 在压缩成功后由 noteRapidRefillSuccess 写入，
+      // 失败/中断/熔断都不推进状态。
+      const rapidRefillCheck = input.auto
+        ? rapidRefillDecision(rapidRefill.get(input.sessionID), input.messages)
+        : undefined
+      if (rapidRefillCheck && rapidRefillCheck.blocked) {
+        // 261112 Red 熔断只拒绝本轮压缩：不写 compaction boundary、不改写历史；
+        // 显式失败优于无限付费压缩。
+        const failure = new MessageV2.ContextOverflowError({
+          message:
+            "上下文在压缩后快速回填，已停止自动压缩（compact_rapid_refill_breaker）。请清理上下文或更换模型。",
+        }).toObject()
+        log.warn("auto compaction circuit breaker", {
+          sessionID: input.sessionID,
+          parentID: input.parentID,
+          streak: rapidRefillCheck.streak,
+          turns: rapidRefillCheck.turns,
+        })
+        // 261113 Red 必须把 pending compaction task 标成「失败」，不能只发事件就返回：
+        // MessageV2.latest 只把 assistant.summary && error && time.completed 的 failed
+        // summary 视为失败压缩（message-v2.ts 的 failedCompactions），否则该 task 会在之后
+        // 每个用户轮被 tasks.pop() 重新命中、再次熔断，用户消息永远到不了模型（换模型也无效）。
+        // 这不是压缩成功：不写 boundary/tail、不折叠历史；filterCompacted 与
+        // completedCompactions 都要求可用摘要（完成值可信、无 error、正文非空），
+        // 失败标记不会被当成压缩结果。
+        const now = Date.now()
+        const context = yield* InstanceState.context
+        yield* session.appendMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: input.parentID,
+          sessionID: input.sessionID,
+          mode: "compaction",
+          agent: "compaction",
+          variant: parent.info.model.variant,
+          summary: true,
+          path: { cwd: context.directory, root: context.worktree },
+          cost: 0,
+          tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+          modelID: parent.info.model.modelID,
+          providerID: parent.info.model.providerID,
+          time: { created: now, completed: now },
+          finish: "error",
+          error: failure,
+        })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return "stop" as const
+      }
+      // 260824 cc 置起「正在压缩」。这是 session.time.compacting 全仓唯一的写入点 ——
+      // 此前该字段只有搬运与消费（TUI 侧边栏、GUI 看板徽标），两端因此永远不亮。
+      // 只在真正的全量摘要压缩上置起：prune 档是纯本地裁剪、不调模型、瞬时完成，
+      // 给它挂个"压缩中"只会闪一下，没有信息量。
+     yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
+     const startedAt = Date.now()
+      if ((yield* config.get()).compaction?.native?.enabled)
+        return yield* processNative({ ...input, rapidRefillStreak: rapidRefillCheck?.streak })
+      const userMessage = parent.info
+      const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
+
+      // 260818 Red 修口径：此前用 sumTokens 累计所有 assistant 消息的 token 消耗（每轮
+      // input 都等于当时的完整上下文），长会话几百轮后远超真实上下文；且压缩后旧消息仍在
+      // 库中（filterCompacted 只折叠不删除），after = before + 压缩代理轮的消耗 → UI 分割线
+      // 显示"Compaction 42137k → 42374k"越压越多（260818 实测）。改为 estimate() 估算
+      // "模型实际可见上下文"（与 select 的 head/tail 预算同一口径）：before 在下方 history
+      // 确定后计算，after 在压缩完成后计算。
+
+      let messages = input.messages
+      let replay:
+        | {
+            info: MessageV2.User
+            parts: MessageV2.Part[]
+          }
+        | undefined
+      if (input.overflow) {
+        const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+        for (let i = idx - 1; i >= 0; i--) {
+          const msg = input.messages[i]
+          if (isUserTurn(msg.info, msg.parts) && !msg.parts.some((p) => p.type === "compaction")) {
+            replay = { info: msg.info, parts: msg.parts }
+            messages = input.messages.slice(0, i)
+            break
+          }
+        }
+        const hasContent =
+          replay && messages.some((m) => isUserTurn(m.info, m.parts) && !m.parts.some((p) => p.type === "compaction"))
+        if (!hasContent) {
+          replay = undefined
+          messages = input.messages
+        }
+      }
+
+      const agent = yield* agents.get("compaction")
+      // 260828 cc Agent.get 的签名 08-28 收窄成 `Info | undefined`（原来标 Info 是类型谎言）。
+      // compaction 是内建机件、恒存在，查不到说明不变量被破坏了，明着抛比让它在下面变成
+      // `undefined.model` 的 TypeError 强。
+      if (!agent) throw new Error("built-in compaction agent is missing")
+      // 261012 Red Keep legacy and native compaction on the model selected for the triggering user turn.
+      const model = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(
+        Effect.orDie,
+      )
+      const cfg = yield* config.get()
+      const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      // 260824 Red: tokensBefore 用 filterCompacted 折叠后的真实可见消息估算。注意 input.messages
+      // 是展示序（[parent, summary, tail, 后续]），filterCompacted 已改为内部按 compareTime 归一化
+      // 成逆序，折叠才真正生效——此前正序输入让折叠恒不生效，分割线显示全量 534k → 535k。
+      const tokensBefore = yield* estimate({ messages: MessageV2.filterCompacted(history), model })
+      const prior = completedCompactions(history)
+      const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
+      const previousSummary = prior.at(-1)?.summary
+      const selected = yield* select({
+        messages: history.filter((_, index) => !hidden.has(index)),
+        cfg,
+        model,
+      })
+      // Allow plugins to inject context or replace compaction prompt.
+      const compacting = yield* plugin.trigger(
+        "experimental.session.compacting",
+        { sessionID: input.sessionID },
+        { context: [], prompt: undefined },
+      )
+      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      // 260817 Red 压缩全灭代价优化（同日回退）：摘掉 head 的 reasoning part 让摘要请求
+      // 变小（177K→90K），但恢复轮请求体保留 reasoning——两者前缀在第一条 reasoning
+      // 处断裂，恢复轮无法命中摘要轮写入的缓存，变成 2 次全灭（90K+177K），总账比
+      // "1 次全灭"（177K，恢复轮命中 head 后只剩 tail 写入）更贵。head 必须与恢复轮
+      // 逐字节一致；50K tail 预算（MAX_PRESERVE_RECENT_TOKENS）保留。
+      const msgs = structuredClone(selected.head)
+      yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+      const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
+        stripMedia: true,
+        toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+      })
+      const ctx = yield* InstanceState.context
+      const msg: MessageV2.Assistant = {
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: input.parentID,
+        sessionID: input.sessionID,
+        mode: "compaction",
+        agent: "compaction",
+        variant: userMessage.model.variant,
+        summary: true,
+        path: {
+          cwd: ctx.directory,
+          root: ctx.worktree,
+        },
+        cost: 0,
+        tokens: {
+          output: 0,
+          input: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0, miss: 0 },
+        },
+        modelID: model.id,
+        providerID: model.providerID,
+        time: {
+          created: Date.now(),
+        },
+      }
+      // 261114 Red legacy 摘要创建走接线口（同 596 的教训：变量形态创建点）
+      yield* session.appendMessage(msg)
+      const processor = yield* processors.create({
+        assistantMessage: msg,
+        sessionID: input.sessionID,
+        model,
+      })
+      const result = yield* processor.process({
+        user: userMessage,
+        agent,
+        sessionID: input.sessionID,
+        tools: {},
+        system: [],
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: [{ type: "text", text: nextPrompt }],
+          },
+        ],
+        model,
+      })
+
+      if (result === "compact") {
+        processor.message.error = new MessageV2.ContextOverflowError({
+          message: replay
+            ? "Conversation history too large to compact - exceeds model context limit"
+            : "Session too large to compact - context exceeds model limit even after stripping media",
+        }).toObject()
+        processor.message.finish = "error"
+        yield* session.updateMessage(processor.message)
+        return "stop"
+      }
+
+      if (processor.stoppedByRepeatLoop && !processor.message.error) {
+        // 261113 Red 与原生路径同一收口：重复停止必须先落失败终态并立即返回，不能让下面
+        // 的 tail_start_id 更新把截断摘要钉成成功边界（filterCompacted 会据此隐藏原文）。
+        const failure = repeatLoopFailure()
+        processor.message.error = failure
+        processor.message.finish = "error"
+        yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return "stop"
+      }
+
+      // 261113 Red 统一判据（与 native、历史投影共用）：空正文 / 截断 / 估算收尾 / 带
+      // error 的摘要都不能成为新边界，必须在更新 tail_start_id 之前拒绝。
+      // 260920 Red 压缩期不做全表扫描：原先两处 `session.messages()` 不带 limit 载入整个
+      // 会话，只为按主键找同一条消息，而压缩恰好发生在会话最长的时刻（note：
+      // docs/notes/archived/architecture/2026-09-18-full-repo-audit.md §4.4）。主键点查，
+      // NotFound 时退回内存里的 msg，与旧 `find(...) ?? { info: msg, parts: [] }` 等价。
+      const summaryMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
+        Effect.orElseSucceed((): MessageV2.WithParts => ({ info: msg, parts: [] })),
+      )
+      if (!MessageV2.isUsableCompactionSummary(summaryMessage)) {
+        const failure =
+          summaryMessage.info.role === "assistant" && summaryMessage.info.finish === "length"
+            ? truncatedSummaryFailure()
+            : emptySummaryFailure()
+        processor.message.error = failure
+        processor.message.finish = "error"
+        yield* session.updateMessage({ ...processor.message, time: { ...processor.message.time, completed: Date.now() } })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return "stop"
+      }
+
+      if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
+        yield* session.updatePart({
+          ...compactionPart,
+          tail_start_id: selected.tail_start_id,
+        })
+      }
+
+      if (result === "continue" && (input.auto || hasUnfinishedTurn(input.messages, input.parentID))) {
+        if (replay) {
+          const original = replay.info
+          const replayMsg = yield* session.appendMessage({
+            id: MessageID.ascending(),
+            role: "user",
+            sessionID: input.sessionID,
+            time: { created: Date.now() },
+            agent: original.agent,
+            model: original.model,
+            format: original.format,
+            tools: original.tools,
+            system: original.system,
+          })
+          for (const part of replay.parts) {
+            if (part.type === "compaction") continue
+            const replayPart =
+              part.type === "file" && MessageV2.isMedia(part.mime)
+                ? { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
+                : part
+            yield* session.updatePart({
+              ...replayPart,
+              id: PartID.ascending(),
+              messageID: replayMsg.id,
+              sessionID: input.sessionID,
+            })
+          }
+        }
+
+        if (!replay) {
+          const info = yield* provider.getProvider(userMessage.model.providerID)
+          if (
+            (yield* plugin.trigger(
+              "experimental.compaction.autocontinue",
+              {
+                sessionID: input.sessionID,
+                agent: userMessage.agent,
+                model: yield* provider
+                  .getModel(userMessage.model.providerID, userMessage.model.modelID)
+                  .pipe(Effect.orDie),
+                provider: {
+                  source: info.source,
+                  info,
+                  options: info.options,
+                },
+                message: userMessage,
+                overflow: input.overflow === true,
+              },
+              { enabled: true },
+            )).enabled
+          ) {
+            const continueMsg = yield* session.appendMessage({
+              id: MessageID.ascending(),
+              role: "user",
+              sessionID: input.sessionID,
+              time: { created: Date.now() },
+              agent: userMessage.agent,
+              model: userMessage.model,
+            })
+            // 260730 Karina 这条续跑消息以 role:"user" 落库，模型分不出它不是用户说的。
+            // 线上实测（ses_04e354872ffe…，07-30 08:44:45 那条）：注入后连着四步思考写的是
+            //   「用户说"继续"」→「用户要求继续做下一步」→「用户要求"继续"，说明他认可前面的
+            //   改动方向」→「用户说"先commit再测"」
+            // 最后那句用户一个字都没发过 —— 它先把这条当成用户发言，再顺着编出后续指令。
+            //
+            // role 保持 user 不动：对话必须以 user 轮结尾才能续跑，中途插 system 消息各家
+            // provider 支持度不一。改的是**文案**，三件事：
+            //   1. 开头就声明这不是用户发言（[System notice] 前缀与 xml-tool-call /
+            //      text-loop-detection 的注入保持一致，instruction-echo 也照这个前缀剥离复述）
+            //   2. 带上本轮的原始请求做锚点 —— 压缩会把"用户到底要什么"摘没，只留一句含糊的
+            //      "continue"，模型就会从摘要里最显眼的旧状态接着跑
+            //   3. 明确"已完成的工作在摘要里，别重头再来"，并且默认倾向汇报而不是继续
+            const anchor = (() => {
+              for (let i = input.messages.length - 1; i >= 0; i--) {
+                const m = input.messages[i]
+                if (!isUserTurn(m.info, m.parts)) continue
+                const own = m.parts
+                  .filter((p) => p.type === "text" && !p.synthetic && !p.ignored)
+                  .map((p) => (p.type === "text" ? p.text : ""))
+                  .join("\n")
+                  .trim()
+                if (own) return own.length > 600 ? own.slice(0, 600) + "…" : own
+              }
+              return undefined
+            })()
+            const text = [
+              "[System notice] This message was NOT sent by the user — the user has said nothing since your last turn. The conversation was automatically compacted because it grew too long; this is the follow-up prompt.",
+              input.overflow
+                ? "The previous request exceeded the provider's size limit due to large media attachments. Media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files."
+                : "",
+              anchor ? "The user's actual request for this turn was:\n" + anchor : "",
+              "The summary above already records what you completed so far. Do not restart from the beginning, and do not treat this notice as a new instruction. If the work is already done, report the result to the user and stop. Continue only if concrete steps remain.",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+            yield* session.updatePart({
+              id: PartID.ascending(),
+              messageID: continueMsg.id,
+              sessionID: input.sessionID,
+              type: "text",
+              // Internal marker for auto-compaction followups so provider plugins
+              // can distinguish them from manual post-compaction user prompts.
+              // This is not a stable plugin contract and may change or disappear.
+              metadata: { compaction_continue: true },
+              synthetic: true,
+              text,
+              time: {
+                start: Date.now(),
+                end: Date.now(),
+              },
+            })
+          }
+        }
+      }
+
+      if (processor.message.error) return "stop"
+      if (result === "continue") {
+        const summary = MessageV2.summaryText(summaryMessage)
+        // 260808 Red 文件清单追加（Pi 借鉴第 3 项）：机械提取被压缩消息里真实 read/write
+        // 过的文件，与上次摘要标签合并后 append 到摘要文本 —— 压缩后模型不用重新探索
+        // 已读文件，也不依赖模型在 Relevant Files 里凭记忆写路径。
+        const priorFiles = parseFileTags(previousSummary ?? "")
+        const fresh = collectFiles(selected.head)
+        // 261104 Red 旧摘要里的标签也可能带着固定前缀文件（legacy），合并时统一过滤
+        const files = {
+          read: dedupe([...priorFiles.read, ...fresh.read]).filter((filePath) => !isAlwaysOnContext(filePath)),
+          modified: dedupe([...priorFiles.modified, ...fresh.modified]).filter(
+            (filePath) => !isAlwaysOnContext(filePath),
+          ),
+        }
+        if (files.read.length || files.modified.length) {
+          const tagged = appendFileTags(summary ?? "", files)
+          const parts = summaryMessage.parts
+          const textPart = parts.findLast((part) => part.type === "text" && !!part.text.trim())
+          if (textPart && textPart.type === "text") {
+            yield* session.updatePart({
+              ...textPart,
+              text: tagged,
+            })
+          }
+        }
+        // 260813 Red 回填 compaction 前后 token，供 UI 分割线展示对比。
+        // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
+        if (compactionPart) {
+          // 261108 Red 审计 RC-P2-07：filterCompactedEffect 从最新一页往回扫，命中本次
+          // 压缩边界就停；此前先 session.messages() 全量载入再过滤，1 万条会话要读 200 页。
+          // 261114 Red 树过滤在 filterCompactedOrdered 内部（重排前的时序收集集，
+          // review finding 2），与 prompt 同视图。
+          const after = yield* MessageV2.filterCompactedEffect(input.sessionID)
+          const tokensAfter = yield* estimate({ messages: after, model })
+          if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
+            yield* session.updatePart({
+              ...compactionPart,
+              tail_start_id: selected.tail_start_id ?? compactionPart.tail_start_id,
+             tokens_after: tokensAfter,
+             duration_ms: Date.now() - startedAt,
+            })
+          }
+        }
+        if (rapidRefillCheck !== undefined)
+          noteRapidRefillSuccess(input.sessionID, input.parentID, rapidRefillCheck.streak)
+        yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+        yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
+      }
+      return result
+    })
+
+    // 260824 cc 清除走 ensuring 而不是写在函数末尾：压缩失败、模型报错、用户中断时若不清，
+    // 看板与 TUI 会永远停在"压缩中"——一个永不消失的状态比没有状态更糟。
+    // setCompacting 自身失败不该淹掉压缩本身的错误，故 ignore。
+    const processCompaction = ((input: Parameters<Interface["process"]>[0]) =>
+      Effect.ensuring(
+        processCompactionInner(input),
+        session.setCompacting({ sessionID: input.sessionID, time: null }).pipe(Effect.ignore),
+      )) as Interface["process"]
+
+    const create = Effect.fn("SessionCompaction.create")(function* (input: {
+      sessionID: SessionID
+      agent: string
+      model: MessageV2.User["model"]
+      auto: boolean
+      overflow?: boolean
+    }) {
+      // 261104 Red 压缩父消息的 model.variant 曾在链路上游丢失（取证与代价见
+      // docs/notes/proposed/bug-fix/2026-10-12-gpt-6.1-sol-cache-instability.md §2026-11-04）：
+      // 父→SUM→followup→续跑 assistant 全链继承这条 model，variant 缺失会让压缩重建与
+      // 续跑整体落到错误 reasoning 参数的缓存池（实测 25 分钟错档 + 用户下条真实消息
+      // 翻回时 207k 全价重读）。此处以会话当前选择兜底；守卫同 prompt.ts 的
+      // sessionVariant——仅当与请求模型同源且非 "default" 才继承。
+      // 会话行缺失时不兜底、不改 create 的错误签名，行为与修复前一致。
+      const current = yield* session.get(input.sessionID).pipe(Effect.option)
+      const variant =
+        input.model.variant ??
+        (Option.isSome(current) &&
+        current.value.model &&
+        current.value.model.providerID === input.model.providerID &&
+        current.value.model.id === input.model.modelID &&
+        current.value.model.variant &&
+        current.value.model.variant !== "default"
+          ? current.value.model.variant
+          : undefined)
+      const msg = yield* session.appendMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        model: variant ? { ...input.model, variant } : input.model,
+        sessionID: input.sessionID,
+        agent: input.agent,
+        time: { created: Date.now() },
+      })
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: msg.id,
+        sessionID: msg.sessionID,
+        type: "compaction",
+        auto: input.auto,
+        overflow: input.overflow,
+        ...((yield* config.get()).compaction?.native?.enabled ? { native: true } : {}),
+      })
+    })
+
+    return Service.of({
+      isOverflow,
+      level,
+      prune,
+      process: processCompaction,
+      create,
+    })
+  }),
+)
+
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(Provider.defaultLayer),
+    Layer.provide(Session.defaultLayer),
+    Layer.provide(SessionProcessor.defaultLayer),
+    Layer.provide(Agent.defaultLayer),
+    Layer.provide(Plugin.defaultLayer),
+    Layer.provide(Bus.layer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+  ),
+)
+
+// 261014 Red 手动压缩不是结束当前任务；已完成/报错的轮次仍保持空闲。
+// 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
+function hasUnfinishedTurn(messages: MessageV2.WithParts[], parentID: MessageID) {
+  const visible = messages.filter((message) =>
+    message.info.id !== parentID &&
+    !message.parts.some((part) => part.type === "compaction") &&
+    !(message.info.role === "assistant" && message.info.summary) &&
+    !(message.info.role === "user" && message.info.delivery === "queued"),
+  )
+  const { user, assistant } = MessageV2.latest(visible)
+  if (!user) return false
+  // 261014 Red 只续跑「被压缩打断的在途轮次」：assistant 比 user 新且没跑完。
+  // user 更新于 assistant（问题还没被回答）不算——那是空闲会话的排队提问，
+  // 手动压缩不该替用户凭空开轮。
+  if (!assistant || MessageV2.compareTime(assistant, user) <= 0) return false
+  if (assistant.error) return false
+  if (!assistant.finish || ["tool-calls", "unknown"].includes(assistant.finish)) return true
+  // 261014 Red stop 分支只认「待回传」的本地工具：pending/running 才说明工具结果还没回来，
+  // completed/error 是已回传、模型主动收尾。把已回传的也算未完成会让手动压缩后凭空续跑一轮
+  // （原判据只查有没有本地工具记录，过宽；与 CHANGELOG/note 的「待回传工具」措辞不符）。
+  // 出处：docs/notes/implemented/bug-fix/2026-10-14-seven-commit-review.md
+  return assistant.finish === "stop" && visible.find((message) => message.info.id === assistant.id)
+    ?.parts.some((part) =>
+      part.type === "tool" &&
+      !part.metadata?.providerExecuted &&
+      (part.state.status === "pending" || part.state.status === "running")) === true
+}
+
+export * as SessionCompaction from "./compaction"

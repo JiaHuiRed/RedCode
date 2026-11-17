@@ -196,9 +196,9 @@ function resolveOptions(defaults: ReturnType<typeof parseBudgetConfig>["startup"
     entry.startsWith("/") ||
     /^[a-z]:/i.test(entry) ||
     entry.replaceAll("\\", "/").split("/").includes("..") ||
-    !entry.startsWith("packages/opencode/")
+    !entry.startsWith("packages/redspace/")
   )
-    throw new Error("entry must be a repository-relative path inside packages/opencode")
+    throw new Error("entry must be a repository-relative path inside packages/redspace")
   if (!healthPath.startsWith("/") || healthPath.startsWith("//") || healthPath.includes("?") || healthPath.includes("#"))
     throw new Error("healthPath must be an absolute path without query or fragment")
   return {
@@ -300,11 +300,11 @@ async function runSample(
   defaults: ReturnType<typeof parseBudgetConfig>["startup"],
   signal: AbortSignal,
 ) {
-  const packageRoot = path.join(root, "packages", "opencode")
+  const packageRoot = path.join(root, "packages", "redspace")
   const entryPath = path.resolve(root, options.entry)
   const relativeEntry = path.relative(packageRoot, entryPath)
   if (relativeEntry.startsWith(`..${path.sep}`) || relativeEntry === ".." || path.isAbsolute(relativeEntry))
-    throw new Error(`entry is outside packages/opencode: ${options.entry}`)
+    throw new Error(`entry is outside packages/redspace: ${options.entry}`)
   if (!/\.tsx?$/i.test(entryPath) || !readFileSync(entryPath, "utf8"))
     throw new Error(`entry must be a readable TypeScript source: ${options.entry}`)
   const parent = await stat(scratchParent)

@@ -1,8 +1,45 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import MarkdownIt from "markdown-it"
-import { createMarkdownStream, stream } from "./markdown-stream"
+import { blockChecksum, createMarkdownStream, stream } from "./markdown-stream"
+import { checksum } from "@redcode-ai/core/util/encode"
 
 const md = new MarkdownIt()
+
+describe("markdown block checksums", () => {
+  test("reads immutable block text once, including empty blocks", () => {
+    for (const raw of ["", "定型段落\n\n".repeat(1000)]) {
+      let reads = 0
+      const block = {
+        get raw() {
+          reads++
+          return raw
+        },
+        src: raw,
+        mode: "live" as const,
+      }
+      expect(blockChecksum(block)).toBe(checksum(raw))
+      expect(blockChecksum(block)).toBe(checksum(raw))
+      expect(reads).toBe(1)
+    }
+  })
+
+  test("keeps hashes correct across append, replacement, key and final-mode changes", () => {
+    const parse = createMarkdownStream()
+    const head = "stable paragraph ".repeat(400) + "\n\n"
+    const first = parse(head + "tail", true, "a")
+    const next = parse(head + "tail grows", true, "a")
+    expect(next[0]).toBe(first[0])
+    for (const blocks of [
+      first,
+      next,
+      parse("replacement", true, "a"),
+      parse(head, true, "b"),
+      parse(head, false, "b"),
+    ]) {
+      for (const block of blocks) expect(blockChecksum(block)).toBe(checksum(block.raw))
+    }
+  })
+})
 
 describe("markdown stream", () => {
   test("heals incomplete emphasis while streaming", () => {

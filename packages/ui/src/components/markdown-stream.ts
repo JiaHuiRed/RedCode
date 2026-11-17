@@ -1,10 +1,19 @@
 import MarkdownIt from "markdown-it"
 import remend from "remend"
+import { checksum } from "@redcode-ai/core/util/encode"
 
 export type Block = {
-  raw: string
-  src: string
-  mode: "full" | "live"
+  readonly raw: string
+  readonly src: string
+  readonly mode: "full" | "live"
+}
+
+const checksums = new WeakMap<Block, string | undefined>()
+
+export function blockChecksum(block: Block) {
+  // Stable prefix blocks retain their identity across stream updates; hash their text only once.
+  if (!checksums.has(block)) checksums.set(block, checksum(block.raw))
+  return checksums.get(block)
 }
 
 const md = new MarkdownIt()

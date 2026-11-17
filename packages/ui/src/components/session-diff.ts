@@ -70,8 +70,9 @@ function fileDiffFromPatch(file: string, patch: string) {
     return hit
   }
 
-  const contents = completePatchContents(patch)
-  const input = contents ? undefined : patchInput(file, patch)
+  const parsed = parseStoredPatch(patch)
+  const contents = parsed ? completePatchContents(patch, parsed) : undefined
+  const input = contents || !parsed ? undefined : patchInput(file, patch, parsed)
   const value = contents
     ? fileDiffFromContent(file, contents.before, contents.after)
     : ((input ? parsePatchFiles(input)[0]?.files[0] : undefined) ?? emptyFileDiff(file))
@@ -80,68 +81,66 @@ function fileDiffFromPatch(file: string, patch: string) {
   return value
 }
 
-function completePatchContents(patch: string) {
+function parseStoredPatch(patch: string) {
   try {
-    const parsed = parsePatch(patch)[0]
-    if (!parsed || (!parsed.index && !parsed.oldFileName && !parsed.newFileName)) return
-    // Snapshot and VCS producers request full context. Tool patches use jsdiff's shorter default context.
-    if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) return
-    // Full patches collapse into one leading hunk. Separated hunks omit ranges and must stay partial.
-    if (parsed.hunks.length !== 1) return
-
-    const hunk = parsed.hunks[0]
-    if (!hunk || hunk.oldStart > 1 || hunk.newStart > 1) return
-
-    const before: Array<{ text: string; newline: boolean }> = []
-    const after: Array<{ text: string; newline: boolean }> = []
-    let previous: "-" | "+" | " " | undefined
-
-    for (const line of hunk.lines) {
-      if (line.startsWith("\\")) {
-        if (previous === "-" || previous === " ") {
-          const value = before.at(-1)
-          if (value) value.newline = false
-        }
-        if (previous === "+" || previous === " ") {
-          const value = after.at(-1)
-          if (value) value.newline = false
-        }
-        continue
-      }
-      if (line.startsWith("-")) {
-        before.push({ text: line.slice(1), newline: true })
-        previous = "-"
-        continue
-      }
-      if (line.startsWith("+")) {
-        after.push({ text: line.slice(1), newline: true })
-        previous = "+"
-        continue
-      }
-      if (!line.startsWith(" ")) return
-      before.push({ text: line.slice(1), newline: true })
-      after.push({ text: line.slice(1), newline: true })
-      previous = " "
-    }
-
-    const text = (lines: Array<{ text: string; newline: boolean }>) =>
-      lines.map((line) => line.text + (line.newline ? "\n" : "")).join("")
-    return { before: text(before), after: text(after) }
+    return parsePatch(patch)[0]
   } catch {
+    // Persisted patches can be malformed; render the existing empty-diff fallback.
     return
   }
 }
 
-function patchInput(file: string, patch: string) {
-  try {
-    const parsed = parsePatch(patch)[0]
-    if (!parsed) return
-    if (parsed.index || parsed.oldFileName || parsed.newFileName) return patch
-    if (!parsed.hunks.length) return
-    return `Index: ${file}\n===================================================================\n--- ${file}\t\n+++ ${file}\t\n${patch}`
-  } catch {
-    return
+function completePatchContents(patch: string, parsed: ReturnType<typeof parsePatch>[number]) {
+  if (!parsed.index && !parsed.oldFileName && !parsed.newFileName) return
+  // Snapshot and VCS producers request full context. Tool patches use jsdiff's shorter default context.
+  if (!patch.startsWith("diff --git ") && !/^--- [^\n]*\t\r?\n\+\+\+ [^\n]*\t(?:\r?\n|$)/m.test(patch)) return
+  // Full patches collapse into one leading hunk. Separated hunks omit ranges and must stay partial.
+  if (parsed.hunks.length !== 1) return
+
+  const hunk = parsed.hunks[0]
+  if (!hunk || hunk.oldStart > 1 || hunk.newStart > 1) return
+
+  const before: Array<{ text: string; newline: boolean }> = []
+  const after: Array<{ text: string; newline: boolean }> = []
+  let previous: "-" | "+" | " " | undefined
+
+  for (const line of hunk.lines) {
+    if (line.startsWith("\\")) {
+      if (previous === "-" || previous === " ") {
+        const value = before.at(-1)
+        if (value) value.newline = false
+      }
+      if (previous === "+" || previous === " ") {
+        const value = after.at(-1)
+        if (value) value.newline = false
+      }
+      continue
+    }
+    if (line.startsWith("-")) {
+      before.push({ text: line.slice(1), newline: true })
+      previous = "-"
+      continue
+    }
+    if (line.startsWith("+")) {
+      after.push({ text: line.slice(1), newline: true })
+      previous = "+"
+      continue
+    }
+    if (!line.startsWith(" ")) return
+    before.push({ text: line.slice(1), newline: true })
+    after.push({ text: line.slice(1), newline: true })
+    previous = " "
   }
+
+  const text = (lines: Array<{ text: string; newline: boolean }>) =>
+    lines.map((line) => line.text + (line.newline ? "\n" : "")).join("")
+  return { before: text(before), after: text(after) }
+}
+
+function patchInput(file: string, patch: string, parsed: ReturnType<typeof parsePatch>[number]) {
+  if (parsed.index || parsed.oldFileName || parsed.newFileName) return patch
+  if (!parsed.hunks.length) return
+  return `Index: ${file}\n===================================================================\n--- ${file}\t\n+++ ${file}\t\n${patch}`
 }
 
 function fileDiffFromContent(file: string, before: string, after: string) {

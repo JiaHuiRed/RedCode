@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // 260811 cc：typecheck 兜底包装。catalog 钉的 typescript 7.0.2（tsgo，Go 版）在本仓
-// 会 OOM 崩溃——packages/opencode 上是稳定复现，可用内存 5.8GB 时照崩，且不带任何本地
+// 会 OOM 崩溃——packages/redspace 上是稳定复现，可用内存 5.8GB 时照崩，且不带任何本地
 // 改动的基线同样崩，与改了什么无关。崩溃表现是 Go runtime panic 而非类型错误，于是
 // pre-push 的全仓 typecheck 门禁被它一格拖红，正常改动也推不上去。
 //

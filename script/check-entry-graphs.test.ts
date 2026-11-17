@@ -164,7 +164,7 @@ test("fails on unresolved local imports instead of dropping the edge", async () 
 })
 
 test("normalizes Windows separators and case for graph identity", () => {
-  expect(normalizePath("C:\\Repo\\packages\\opencode\\src\\index.ts", "win32")).toBe(
-    "c:/repo/packages/opencode/src/index.ts",
+  expect(normalizePath("C:\\Repo\\packages\\redspace\\src\\index.ts", "win32")).toBe(
+    "c:/repo/packages/redspace/src/index.ts",
   )
 })

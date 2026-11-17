@@ -1,6 +1,6 @@
 # Security
 
-RedCode is a single-maintainer personal fork of [opencode](https://github.com/anomalyco/opencode),
+RedSpace is an independently maintained Chat + Code AI project, historically evolved from RedCode and [OpenCode](https://github.com/anomalyco/opencode),
 developed and tested only on Windows 10/11. What follows describes how the tool actually behaves —
 it is not a support commitment.
 
@@ -8,13 +8,13 @@ it is not a support commitment.
 
 ### Overview
 
-RedCode is an AI-powered coding assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
+RedSpace is a Chat + Code AI assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
 
 ### No Sandbox
 
 RedCode does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
 
-If you need true isolation, run RedCode inside a Docker container or VM - see [containerization.md](packages/opencode/docs/containerization.md) for concrete recipes and their trade-offs (in short: both protect your host, neither protects API keys you pass into the sandbox from a compromised session).
+If you need true isolation, run RedCode inside a Docker container or VM - see [containerization.md](packages/redspace/docs/containerization.md) for concrete recipes and their trade-offs (in short: both protect your host, neither protects API keys you pass into the sandbox from a compromised session).
 
 ### Trust Model
 

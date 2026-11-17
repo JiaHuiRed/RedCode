@@ -21,6 +21,29 @@ const status = (sessionID: string) =>
   ({ type: "session.status", properties: { sessionID } }) as unknown as Event
 
 describe("processBatch（B0.1 真值计数）", () => {
+  test("disabled diagnostics preserve snapshot filtering and event order across flushes", () => {
+    const batch = createEventBatch()
+    for (const enabled of [false, true, false]) {
+      batch.push("d", delta("p1", "old"))
+      batch.push("d", updated("p1", "snapshot"))
+      batch.push("d", delta("p1", "new"))
+      batch.push("other", delta("p1", "independent"))
+      const pulled = batch.pull()!
+      const moved: string[] = []
+      const stats = processBatch(pulled, (event) => moved.push(`${event.directory}:${event.payload.type}`), enabled)
+      batch.done()
+      expect(moved).toEqual(["d:message.part.updated", "d:message.part.delta", "other:message.part.delta"])
+      if (enabled)
+        expect(stats).toEqual({
+          received: 4,
+          emitted: 3,
+          superseded: 1,
+          kinds: { "message.part.delta": 3, "message.part.updated": 1 },
+        })
+      else expect(stats).toBeUndefined()
+    }
+  })
+
   test("纯 delta 批：received/emitted 真值；done() 清空数组不污染统计", () => {
     const batch = createEventBatch()
     batch.push("d", delta("p1", "B"))
@@ -43,7 +66,7 @@ describe("processBatch（B0.1 真值计数）", () => {
     batch.push("d", delta("p1", "C"))
     const pulled = batch.pull()!
     const moved: string[] = []
-    const stats = processBatch(pulled, (event) => moved.push(event.payload.type))
+    const stats = processBatch(pulled, (event) => moved.push(event.payload.type))!
     batch.done()
     expect(stats.received).toBe(3)
     expect(stats.superseded).toBe(1)
@@ -57,7 +80,7 @@ describe("processBatch（B0.1 真值计数）", () => {
     batch.push("d", status("s1"))
     const pulled = batch.pull()!
     const moved: string[] = []
-    const stats = processBatch(pulled, (event) => moved.push(event.payload.type))
+    const stats = processBatch(pulled, (event) => moved.push(event.payload.type))!
     batch.done()
     expect(stats).toEqual({ received: 1, emitted: 1, superseded: 0, kinds: { "session.status": 1 } })
     expect(moved).toEqual(["session.status"])

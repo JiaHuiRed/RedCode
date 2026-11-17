@@ -1,5 +1,5 @@
 // 260603 Red 版本一致性自检：编译前自动扫描
-// 260814 Red 版本线合并改造：TUI/GUI 不再分线，全仓单一版本号（以 packages/opencode 为准）
+// 260814 Red 版本线合并改造：TUI/GUI 不再分线，全仓单一版本号（以 packages/redspace 为准）
 // 检查范围：全部 @redcode-ai/* 包 + sdk 同号、README 双语徽章、CHANGELOG 条目、GUI 标题栏徽章
 import { readFileSync } from "fs"
 import { join, dirname } from "path"
@@ -26,7 +26,7 @@ function extractPkgVersion(file: string): string {
 }
 
 // 版本号权威来源：TUI 包（合并线从 TUI 的 0.8.16 起递增）
-const version = extractPkgVersion("packages/opencode/package.json")
+const version = extractPkgVersion("packages/redspace/package.json")
 
 // 全仓需同号的 package.json（storybook/script 无 version 字段，不列）
 const VERSIONED_PACKAGES = [

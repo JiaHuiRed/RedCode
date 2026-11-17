@@ -150,7 +150,7 @@ for (const [i, box] of badges.entries()) {
   const ico = buildIco(frames)
 
   if (z.name === "tui") {
-    // TUI 的 exe 图标由 packages/opencode/script/build.ts 直接按路径引用
+    // TUI 的 exe 图标由 packages/redspace/script/build.ts 直接按路径引用
     fs.writeFileSync("赤.ico", ico)
     console.log(`tui → 赤.ico  ${frames.length} 帧  ${(ico.length / 1024).toFixed(0)}KB`)
   } else {

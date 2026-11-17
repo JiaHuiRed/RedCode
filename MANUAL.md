@@ -1,6 +1,6 @@
-# RedCode 用户手册
+# RedSpace 用户手册
 
-> 从克隆到精通，一步步配置和使用 RedCode 的全部功能。
+> RedSpace 由 RedCode 演进而来：Chat 接续伙伴与长期记忆，Code 专注开发；两种模式共享执行核心与 TUI / GUI。下文的 redcode CLI 与 ~/.redcode 路径仍用于兼容旧安装。
 
 ---
 
@@ -44,12 +44,12 @@ cd packages/desktop && bun run dev
 ### 编译打包
 
 > 嫌敲命令麻烦？直接双击两个一键 bat 即可：
-> TUI → `packages/opencode/build.bat`；桌面 GUI → `packages/desktop/build-and-package.bat`。
+> TUI → `packages/redspace/build.bat`；桌面 GUI → `packages/desktop/build-and-package.bat`。
 
 ```bash
 # TUI 单文件 exe（可在无 Bun 环境的机器运行）
 # 产物本来就是 Windows 单目标，无需额外开关
-cd packages/opencode && bun run build
+cd packages/redspace && bun run build
 
 # 桌面 GUI
 cd packages/desktop && bun run build && bun run package
@@ -97,7 +97,7 @@ RedCode 支持多种模型。首次启动后，你需要至少配置一个 provi
 - **没有 `type` 字段**。决定用哪个协议适配器的是 `npm`。
 - **`apiKey` / `baseURL` 必须嵌在 `options` 里**，不能放在 provider 顶层。多余的键会被静默丢弃，结果是一个没有凭据的 provider，且不产生任何报错。
 
-provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api`、`env`、`id`、`whitelist`、`blacklist`（定义见 `packages/opencode/src/config/provider.ts`）。
+provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api`、`env`、`id`、`whitelist`、`blacklist`（定义见 `packages/redspace/src/config/provider.ts`）。
 
 常用的 `npm` 适配器：
 
@@ -365,7 +365,7 @@ description: 擅长简洁分析与清晰解释
 
 ### 6.5 RedSpace Chat 个人档案
 
-Chat 接续一个已经存在的伙伴。档案保存身份、关系、长期记忆和日记；Code 继续按原有默认 Soul 和工作区运行。产品模式只有 Chat / Code，Plan / RedMind / Auto 仍是独立的执行权限选择。
+Chat 接续一个已经存在的伙伴。档案保存身份、关系、长期记忆、日记和可识别的旧对话文本；Code 继续按原有默认 Soul 和工作区运行。产品模式只有 Chat / Code，Plan / RedMind / Auto 仍是独立的执行权限选择。
 
 #### TUI：导入与进入
 
@@ -391,14 +391,14 @@ TUI 与 GUI 连接同一个后端、使用同一个本机数据目录时，读�
 
 默认位置是 `~/.redcode/companions/<id>/`：`source/` 保留本次选择导入的原文，`workspace/` 是可继续写入的个人档案，`profile.json` 记录绑定与来源。身份正文单独注册到 Soul Registry；长期记忆不塞进 Soul 文件。已有会话仍保留自己的 Soul 内容版本。
 
-- 默认上下文有界加载 USER / IDENTITY、MEMORY 与最近两篇日记；需要更早经历时使用 `companion_memory search/read`，分页结果给出来源及续读位置。
+- 默认上下文有界加载 USER / IDENTITY、MEMORY 与最近两篇日记；需要更早个人资料时用 `companion_memory search/read`，日记未记录的旧聊天可在 `session_query` 可用时按同一伙伴范围检索。分页结果给出来源及续读位置。
 - 新的共同经历、偏好与承诺通过 `companion_memory remember` 选择性追加到对应时区的当日日记，成功后才确认记住。它遵守读取/编辑权限与用户不希望保存的意图；不会无条件把每轮原文复制进个人日记。普通会话仍按原有 Session 机制保存。
-- 同一档案重复导入返回已有绑定，不覆盖之后新增的记忆。同 ID 的不同档案返回冲突，需改用新 ID 或先人工整理；第一阶段不自动合并两个有分歧的档案。
+- 以同一来源重新导入会补入缺失的派生聊天历史，不覆盖现有 Soul 或之后新增的日记。同 ID 的不同档案返回冲突，需改用新 ID 或先人工整理；不自动合并两个有分歧的档案。
 - 导入说明会列出异常编码等问题。源文件保留；不能可靠解码的内容不会被伪装成有效记忆。
-- 旧 AGENTS、技能和机制文件仅保留为来源或可读资料；旧渠道 token、设备密钥、网关认证、绝对路径和运行任务不被激活。旧 JSONL 会话、轨迹、梦境重建、心跳和 cron 调度未接入此阶段。导入成功不等于完整旧运行时迁移完成。
+- 旧 AGENTS、技能和机制文件仅保留为来源或可读资料；旧渠道 token、设备密钥、网关认证、绝对路径和运行任务不被激活。0.19.1 会从同一 OpenClaw 身份的 JSONL 中提取可识别的用户/伙伴文本，保存为带来源信息的派生资料供按需检索；原始 JSONL 不会还原为可继续的完整旧会话，工具载荷也不导入。轨迹、梦境、心跳和 cron 调度仍未接入。导入成功不等于完整旧运行时迁移完成。
 - Chat 不因全局 Code 自动分享配置而被自动公开；显式分享仍沿用现有功能。个人档案与来源文件不应加入项目代码仓库。
 
-当前 CLI 名称、`.redcode` 路径与包名用于兼容既有安装；0.19.0 的这一阶段先接通两种模式及档案接续。
+当前 CLI 名称、`.redcode` 路径与包名用于兼容既有安装；0.19.0 接通两种模式及档案接续，0.19.1 增加可识别旧对话的导入与按需召回。
 
 ---
 
@@ -655,10 +655,10 @@ seed/                          ~/.redcode/
 └── redcode.home.jsonc ← 配置模板 └── data/           ← 会话 DB / 日志 / 快照
 
 （seed/ 是播种源，不是项目配置目录；技能首启播种见第 1 节，其余共享资源由 script/sync-home.bat 同步。
-　人格与 MEMORY 模板已内嵌进二进制，见 packages/opencode/src/project/template/）
+　人格与 MEMORY 模板已内嵌进二进制，见 packages/redspace/src/project/template/）
 ```
 
-内置子代理（explore/execute）定义在 `packages/opencode/src/agent/definition/`，构建时内联，不复制到用户目录；自行编写的 `~/.redcode/agent/*.md` 仍可使用。
+内置子代理（explore/execute）定义在 `packages/redspace/src/agent/definition/`，构建时内联，不复制到用户目录；自行编写的 `~/.redcode/agent/*.md` 仍可使用。
 
 - 仓库**仅包含模板和共享配置**，没有任何你的个人数据
 - `~/.redcode/` **不在仓库中**，不会被推送

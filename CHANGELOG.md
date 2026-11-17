@@ -10,9 +10,23 @@
 
 ### [Unreleased]
 
+- **Chat 工程记忆边界**：伙伴目录不再自动生成工程 MEMORY / 进度模板，Chat 子任务也排除核心工程记忆。插件可声明仅向 Code 注入提示，工具和普通技能继续共享；私有工程记忆插件与全局规则需同步更新。Chat 做事时仍写伙伴日记、按需查聊天原文。验证与模型可见四问见 `docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md`。
+
+### [0.19.1] - 2026-11-17
+
 - **RedSpace 首轮 Windows 验收修复**：伙伴档案在导入和读取时统一解析真实工作区，修复目录别名、junction 和 Windows 短路径导致 Chat 创建被误拒绝；档案落位与记忆索引提交复用已有的 Windows 有界 rename 重试。GUI 冷恢复会话时先等待绑定，不再把未加载的 Chat 当成 Code 新建；归档值 `0` 与 TUI 一样视为已归档。Chat 首页标题改用已定义的字号，避免不存在的工具类使主标题退回正文大小。
-- **本地维护与构建**：主要 push / PR 类型检查入口迁到 `master`；新增 `REDCODE_BUILD_DIR` 可将 TUI 构建输出到指定目录，自定义目录不做整目录清理，避免覆盖正在使用的 exe。没有变更 GitHub 默认分支或执行远端发布。
+- **本地维护与构建**：主要 push / PR 类型检查入口迁到 `master`；新增 `REDCODE_BUILD_DIR` 可将 TUI 构建输出到指定目录，自定义目录不做整目录清理，避免覆盖正在使用的 exe。
 - **接续链路复测**：真实档案目录离线导入保留 252 个来源文件并逐文件校验原字节；Chromium、真实隔离后端和编译版 TUI 验证双伙伴身份隔离、选择性记忆、新建、恢复与 Code 兼容。模型使用本地合成 provider，不代表真人格体验验收；完整旧运行配置与历史会话重建没有因档案导入而自动启用。详情见 `docs/notes/implemented/architecture/2026-11-17-redspace-companion-chat.md`。
+- **RedSpace 共享引擎与产品名**：引擎目录由 `packages/opencode` 迁到 `packages/redspace`（1364 个文件、765 个源文件），保留 `redcode` 可执行文件、`@redcode-ai/*` 包名、`~/.redcode` 数据目录与 `redcode://` 深链，新增 `redspace` 作为命令别名。搬迁遗漏的 11 处旧路径引用一并修正（web 构建脚本、desktop 类型声明、测试数据与注释）。GUI 用户可见名称改为 RedSpace——窗口标题、托盘、安装向导、开始菜单快捷方式、退出确认与启动失败提示，按 dev / beta / prod 三档分别为 RedSpace Dev / RedSpace Beta / RedSpace；`appId` 与深链 scheme 保持不变，已有安装的数据目录与外部链接继续有效。
+- **Soul 对话连续性**：Chat 与 Code 主会话在绑定 Soul 后共用相处契约；任务续跑与原生/传统压缩检查点保留相关经历、明确表达的感受与未完话题，同时区分伙伴身份。Code 不带入伙伴个人历史，子任务不额外注入相处段。验证：33 项定向测试、provider fixture 与包级类型检查通过；合成 provider 不代表真实模型的长期人格体验验收。详见 `docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md`。
+- **伙伴聊天历史召回与导入**：Chat 可按同一伙伴范围检索已保存的主会话原话；也可从同一 OpenClaw 身份的 JSONL 提取可识别的 user/assistant 文本，作为带角色、时间和来源的派生资料按需搜索、分页回读。排除其他伙伴、Code、子任务、工具载荷及自动任务，不把旧记录塞进启动提示词；重复导入补充缺失历史而不覆盖 Soul 或新日记。完整旧会话、工具轨迹、心跳、梦境和定时任务恢复仍未实现。验证：历史导入与查询定向测试、SessionPrompt provider fixture、隔离目录 CLI 导入和新进程回读通过。详见 `docs/notes/implemented/feature/2026-11-17-companion-session-recall.md` 与 `docs/notes/implemented/feature/2026-11-17-companion-transcript-import.md`。
+- **返回工具定位与性能维护**：虚拟列表较慢时延长目标片段等待并周期性补滚，避免「返回工具」过早放弃；优化消息版本导航、Markdown 校验、diff 解析、GUI 诊断和记忆搜索的重复工作，不宣称未经测量的提速幅度。验证：返回工具回归测试通过；性能提交的 155 项定向测试与相关类型检查通过。
+- **CI 稳定性**：修正迁移后的 pre-push 路由覆盖脚本路径；Windows 两核 runner 的 e2e worker 从 5 降为 2，定向三轮均通过。native-preflight smoke 夹具同步扩充后的根会话上下文，确保先发送首请求、再测试后续预检。
+- **模型可见变更（四问）**：
+  1. 内容：主会话新增固定 `# Conversation` 段，压缩摘要新增 `Conversation Continuity`；个人历史检索与原文核对说明放入实际可用的记忆/会话工具。旧历史仅按需读，不进入启动快照。
+  2. Token：按仓库字符数除以 4 粗估，Conversation 源段约 630 tokens；相对旧提示词，Code 主会话净增约 216 tokens、Chat 约 587 tokens。随后检索/导入工具描述再增约 45 tokens（Code）与 237 tokens（Chat）；不是供应商 tokenizer 实测。
+  3. KV cache：从最早变化的提示词段或工具声明处一次性重建；之后段落与工具表保持稳定，不自动追加历史或触发额外请求，按需检索仍走正常工具调用。
+  4. 硬上限：固定提示词为 2,526 bytes；历史只经有界工具按需返回，记忆检索每页扫描 8 MiB、结果 8 KiB、原文读取 16 KiB；`session_query` 每次最多扫描 1,000 个片段，结果默认 8 KiB、硬顶 16 KiB；沿用工具描述总预算。详细取舍见以上两篇架构/功能记录。
 
 ### [0.19.0] - 2026-11-17
 

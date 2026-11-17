@@ -1,0 +1,438 @@
+import type {
+  Hooks,
+  PluginInput,
+  Plugin as PluginInstance,
+  PluginModule,
+  WorkspaceAdapter as PluginWorkspaceAdapter,
+} from "@redcode-ai/plugin"
+import { Config } from "@/config/config"
+import { Bus } from "../bus"
+import * as Log from "@redcode-ai/core/util/log"
+import { createOpencodeClient } from "@redcode-ai/sdk"
+import { ServerAuth } from "@/server/auth"
+import { CodexAuthPlugin } from "./codex"
+import { Session } from "@/session/session"
+import { SessionTable } from "@/session/session.sql"
+import { SessionID } from "@/session/schema"
+import * as Database from "@/storage/db"
+import { eq } from "drizzle-orm"
+import { NamedError } from "@redcode-ai/core/util/error"
+import { CopilotAuthPlugin } from "./github-copilot/copilot"
+import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
+import { PoeAuthPlugin } from "opencode-poe-auth"
+import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
+import { AzureAuthPlugin } from "./azure"
+import { DigitalOceanAuthPlugin } from "./digitalocean"
+import { XaiAuthPlugin } from "./xai"
+import { SafeShellPlugin } from "./safe-shell"
+import { Effect, Exit, Layer, Context, Stream } from "effect"
+import { EffectBridge } from "@/effect/bridge"
+import { InstanceState } from "@/effect/instance-state"
+import { errorMessage } from "@/util/error"
+import { PluginLoader } from "./loader"
+import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
+import { registerAdapter } from "@/control-plane/adapters"
+import type { WorkspaceAdapter } from "@/control-plane/types"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+
+const log = Log.create({ service: "plugin" })
+
+type State = {
+  hooks: Hooks[]
+}
+
+// Hook names that follow the (input, output) => Promise<void> trigger pattern
+type TriggerName = {
+  [K in keyof Hooks]-?: NonNullable<Hooks[K]> extends (input: any, output: any) => Promise<void> ? K : never
+}[keyof Hooks]
+
+export interface Interface {
+  readonly trigger: <
+    Name extends TriggerName,
+    Input = Parameters<Required<Hooks>[Name]>[0],
+    Output = Parameters<Required<Hooks>[Name]>[1],
+  >(
+    name: Name,
+    input: Input,
+    output: Output,
+  ) => Effect.Effect<Output>
+  readonly list: () => Effect.Effect<Hooks[]>
+  readonly init: () => Effect.Effect<void>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@redcode/Plugin") {}
+
+// Built-in plugins that are directly imported (not installed from npm)
+const INTERNAL_PLUGINS: PluginInstance[] = [
+  SafeShellPlugin,
+  CodexAuthPlugin,
+  CopilotAuthPlugin,
+  GitlabAuthPlugin as unknown as PluginInstance,
+  PoeAuthPlugin as unknown as PluginInstance,
+  CloudflareWorkersAuthPlugin,
+  CloudflareAIGatewayAuthPlugin,
+  AzureAuthPlugin,
+  DigitalOceanAuthPlugin,
+  XaiAuthPlugin,
+]
+
+// 260810 cc audit R5: hook 失败/超时日志要能报出是哪个插件——Hooks 对象本身无名，
+// 注册时在这里旁挂归属（内置插件用函数名，外置用 spec），零侵入 State 形状。
+const hookOwner = new WeakMap<Hooks, string>()
+
+/**
+ * 依赖安装等待是否已经超时过一次。见下方 waitForDependencies 那段的说明。
+ *
+ * 260901 cc 刻意是进程级而不是按目录：这个等待每个目录各走一次，开三个项目就付三次。
+ * 一旦第一次等超时，说明这台机器上依赖装不快（离线 / 代理 / 依赖没装全），后面几个目录
+ * 再等只是把首屏一次次拖住，等不出结果。整个进程降级一次，重启后重来。
+ */
+let depWaitTimedOut = false
+
+function isServerPlugin(value: unknown): value is PluginInstance {
+  return typeof value === "function"
+}
+
+function getServerPlugin(value: unknown) {
+  if (isServerPlugin(value)) return value
+  if (!value || typeof value !== "object" || !("server" in value)) return
+  if (!isServerPlugin(value.server)) return
+  return value.server
+}
+
+function getLegacyPlugins(mod: Record<string, unknown>) {
+  const seen = new Set<unknown>()
+  const result: PluginInstance[] = []
+
+  for (const entry of Object.values(mod)) {
+    if (seen.has(entry)) continue
+    seen.add(entry)
+    const plugin = getServerPlugin(entry)
+    if (!plugin) throw new TypeError("Plugin export is not a function")
+    result.push(plugin)
+  }
+
+  return result
+}
+
+async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: Hooks[]) {
+  const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
+  if (plugin) {
+    await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
+    const result = await (plugin as PluginModule).server(input, load.options)
+    if (result) {
+      // 260612 Red guard: plugin.server() may return undefined
+      hookOwner.set(result, load.spec)
+      hooks.push(result)
+    }
+    return
+  }
+
+  for (const server of getLegacyPlugins(load.mod)) {
+    const result = await server(input, load.options)
+    if (result) {
+      // 260612 Red guard: legacy plugin factory may return undefined
+      hookOwner.set(result, load.spec)
+      hooks.push(result)
+    }
+  }
+}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const config = yield* Config.Service
+    const flags = yield* RuntimeFlags.Service
+
+    const state = yield* InstanceState.make<State>(
+      Effect.fn("Plugin.state")(function* (ctx) {
+        const hooks: Hooks[] = []
+        const bridge = yield* EffectBridge.make()
+
+        function publishPluginError(message: string) {
+          bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
+        }
+
+        const { Server } = yield* Effect.promise(() => import("../server/server"))
+
+        const client = createOpencodeClient({
+          baseUrl: "http://localhost:4096",
+          directory: ctx.directory,
+          headers: ServerAuth.headers(),
+          fetch: async (...args) => Server.Default().app.fetch(...args),
+        })
+        const cfg = yield* config.get()
+        const input: PluginInput = {
+          client,
+          project: ctx.project,
+          worktree: ctx.worktree,
+          directory: ctx.directory,
+          experimental_workspace: {
+            register(type: string, adapter: PluginWorkspaceAdapter) {
+              registerAdapter(ctx.project.id, type, adapter as WorkspaceAdapter)
+            },
+          },
+          get serverUrl(): URL {
+            return Server.url ?? new URL("http://localhost:4096")
+          },
+          // @ts-expect-error
+          $: typeof Bun === "undefined" ? undefined : Bun.$,
+        }
+
+        for (const plugin of flags.disableDefaultPlugins ? [] : INTERNAL_PLUGINS) {
+          log.info("loading internal plugin", { name: plugin.name })
+          const init = yield* Effect.tryPromise({
+            try: () => plugin(input),
+            catch: (err) => {
+              log.error("failed to load internal plugin", { name: plugin.name, error: err })
+            },
+          }).pipe(Effect.option)
+          if (init._tag === "Some") {
+            hookOwner.set(init.value, plugin.name)
+            hooks.push(init.value)
+          }
+        }
+
+        const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
+        if (flags.pure && cfg.plugin_origins?.length) {
+          log.info("skipping external plugins in pure mode", { count: cfg.plugin_origins.length })
+        }
+        // 260608 Red 依赖装在 npm registry，离线/代理失效会把这步拖到 ~37s 冻死首页（每个请求都过 bootstrap）。
+        // 超时即放行，后台 fiber 继续装、本次插件降级加载，首页不再被网络拖死。
+        //
+        // 260901 cc 15 秒 → 2 秒，并且**超时之后整个进程内不再等**。
+        //
+        //   打包版实测：首个项目的 session.list 花了 20721ms，猫猫加载页就是在等它
+        //   （renderer.log 的 `[timing] session.list`）。20.7s ≈ 这里的 15s + 其余实例
+        //   bootstrap 约 5.7s。触发条件是 ~/.redcode/package.json 里声明的依赖没装全 ——
+        //   Arborist reify 要去核对整棵树、走 registry，而 registry 在这台机器上要过代理。
+        //
+        //   为什么 2 秒够：依赖**已经装好**时 reify 是空转，2 秒绰绰有余；没装好时给多久
+        //   都没用（这一轮的插件注定降级加载），多等的每一秒都是白等在首屏上。
+        //   同一个判断此前用在 MCP 上（c7c86a4a 的 STARTUP_GRACE = 1500ms），一个道理。
+        //
+        //   waited 那个模块级开关是必须的：这段按**目录**走，开三个项目就是三次。
+        //   config 侧的 depInstallFailureAt 冷却只在 fiber 真的失败时才置位（reify 自己的
+        //   超时是 20s），比这里的等待还晚，救不了第二、第三个目录。
+        if (plugins.length && !depWaitTimedOut) {
+          const outcome = yield* config.waitForDependencies().pipe(Effect.timeout("2 seconds"), Effect.exit)
+          if (Exit.isFailure(outcome)) {
+            depWaitTimedOut = true
+            log.warn("dependency install still running, loading plugins degraded for this process")
+          }
+        }
+
+        const loaded = yield* Effect.promise(() =>
+          PluginLoader.loadExternal({
+            items: plugins,
+            kind: "server",
+            report: {
+              start(candidate) {
+                log.info("loading plugin", { path: candidate.plan.spec })
+              },
+              missing(candidate, _retry, message) {
+                // 260831 cc: 此前只写日志——插件解析到了却没有 server 入口时界面完全无提示。
+                // RedCode-dcp 就因为导出条件不匹配「从未被宿主加载」而长期无人察觉（31f7361）。
+                log.warn("plugin has no server entrypoint", { path: candidate.plan.spec, message })
+                publishPluginError(`Plugin ${candidate.plan.spec} was not loaded: ${message}`)
+              },
+              error(candidate, _retry, stage, error, resolved) {
+                const spec = candidate.plan.spec
+                const cause = error instanceof Error ? (error.cause ?? error) : error
+                const message = stage === "load" ? errorMessage(error) : errorMessage(cause)
+
+                if (stage === "install") {
+                  const parsed = parsePluginSpecifier(spec)
+                  log.error("failed to install plugin", { pkg: parsed.pkg, version: parsed.version, error: message })
+                  publishPluginError(`Failed to install plugin ${parsed.pkg}@${parsed.version}: ${message}`)
+                  return
+                }
+
+                if (stage === "compatibility") {
+                  log.warn("plugin incompatible", { path: spec, error: message })
+                  publishPluginError(`Plugin ${spec} skipped: ${message}`)
+                  return
+                }
+
+                if (stage === "entry") {
+                  log.error("failed to resolve plugin server entry", { path: spec, error: message })
+                  publishPluginError(`Failed to load plugin ${spec}: ${message}`)
+                  return
+                }
+
+                log.error("failed to load plugin", { path: spec, target: resolved?.entry, error: message })
+                publishPluginError(`Failed to load plugin ${spec}: ${message}`)
+              },
+            },
+          }),
+        ).pipe(
+          Effect.timeout("30 seconds"),
+          // 260831 cc: 超时/失败此前直接吞成空数组——所有外置插件一起静默消失，日志里也不留痕。
+          Effect.catch((error) => {
+            const message = errorMessage(error) || "timed out after 30s"
+            log.error("external plugin loading aborted", { count: plugins.length, error: message })
+            publishPluginError(`Plugin loading aborted, ${plugins.length} external plugin(s) skipped: ${message}`)
+            return Effect.succeed([] as PluginLoader.Loaded[])
+          }),
+        )
+        for (const load of loaded) {
+          if (!load) continue
+
+          // Keep plugin execution sequential so hook registration and execution
+          // order remains deterministic across plugin runs.
+          yield* Effect.tryPromise({
+            try: () => applyPlugin(load, input, hooks),
+            catch: (err) => {
+              const message = errorMessage(err)
+              log.error("failed to load plugin", { path: load.spec, error: message })
+              return message
+            },
+          }).pipe(
+            Effect.catch((message) => {
+              // 260831 cc: 补上原 TODO 空着的事件——插件工厂抛错此前只有日志，界面无感。
+              publishPluginError(`Failed to load plugin ${load.spec}: ${message}`)
+              return Effect.void
+            }),
+          )
+        }
+
+        // Notify plugins of current config
+        // 260828 cc 插件的 config hook 是**创建 agent 的合法通道之一**（往 cfg.agent 塞新 key）。
+        // 收口第 6 步之后 jsonc 只能覆写、不能创建，创建权靠 cfg.agent_origins 这张名单授予 ——
+        // 所以钩子跑完要把它新加的 key 补进名单，否则插件注册的 agent 会被静默丢掉。
+        const agentKeysBefore = new Set(Object.keys(cfg.agent ?? {}))
+        for (const hook of hooks) {
+          yield* Effect.tryPromise({
+            try: () => Promise.resolve((hook as any).config?.(cfg)),
+            catch: (err) => {
+              log.error("plugin config hook failed", { error: err })
+            },
+          }).pipe(Effect.ignore)
+        }
+        const addedByPlugins = Object.keys(cfg.agent ?? {}).filter((name) => !agentKeysBefore.has(name))
+        if (addedByPlugins.length > 0)
+          cfg.agent_origins = [...new Set([...(cfg.agent_origins ?? []), ...addedByPlugins])]
+
+        // Subscribe to bus events, fiber interrupted when scope closes
+        yield* (yield* bus.subscribeAll()).pipe(
+          Stream.runForEach((input) =>
+            Effect.sync(() => {
+              for (const hook of hooks) {
+                const fn = hook["event"]
+                if (!fn) continue
+                // 260810 cc audit 绿#16: 此前 void 掉的 promise 无 catch，任一插件 event
+                // handler 拒绝就变成定位不到来源的 unhandledRejection；同步 throw 还会
+                // 打死整条订阅 fiber。吞掉记日志，带插件归属。
+                try {
+                  void Promise.resolve(fn({ event: input as any })).catch((err) =>
+                    log.error("plugin event hook failed", {
+                      plugin: hookOwner.get(hook) ?? "unknown",
+                      error: errorMessage(err) || String(err),
+                    }),
+                  )
+                } catch (err) {
+                  log.error("plugin event hook failed", {
+                    plugin: hookOwner.get(hook) ?? "unknown",
+                    error: errorMessage(err) || String(err),
+                  })
+                }
+              }
+            }),
+          ),
+          Effect.forkScoped,
+        )
+
+        return { hooks }
+      }),
+    )
+
+    const trigger = Effect.fn("Plugin.trigger")(function* <
+      Name extends TriggerName,
+      Input = Parameters<Required<Hooks>[Name]>[0],
+      Output = Parameters<Required<Hooks>[Name]>[1],
+    >(name: Name, input: Input, output: Output) {
+      if (!name) return output
+      const s = yield* InstanceState.get(state)
+      // Memory injectors can target Code while MCP, skills and other plugin capabilities stay shared.
+      // Resolve persisted binding here so system/compaction and message hooks agree.
+      // docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md
+      const prompt = name === "experimental.chat.messages.transform" || name === "experimental.chat.system.transform"
+      const sessionID =
+        prompt &&
+        input !== null &&
+        typeof input === "object" &&
+        "sessionID" in input &&
+        typeof input.sessionID === "string"
+          ? SessionID.make(input.sessionID)
+          : undefined
+      const session = sessionID
+        ? Database.use((db) =>
+            db
+              .select({
+                mode: SessionTable.mode,
+                companionID: SessionTable.companion_id,
+                parentID: SessionTable.parent_id,
+              })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get(),
+          )
+        : undefined
+      const context =
+        prompt && input !== null && typeof input === "object"
+          ? {
+              ...input,
+              mode: session?.mode ?? "code",
+              companionID: session?.companionID ?? undefined,
+              parentID: session?.parentID ?? undefined,
+            }
+          : input
+      for (const hook of s.hooks) {
+        if (prompt && hook.promptModes && !hook.promptModes.includes(session?.mode ?? "code")) continue
+        const fn = hook[name] as any
+        if (!fn) continue
+        // 260810 cc audit R5: 此前是裸 Effect.promise——插件 hook 抛异常=defect 整轮报废，
+        // await 卡住=agent 永久挂起（tool.use.pre 挂在每次工具调用前）。对齐同文件加载
+        // 路径的防御口径：超时放行 + 异常吞掉记日志（fail-open；safe-shell 等否决语义走
+        // output 字段改写，不靠 throw，不受影响）。超时只是不再等它，底层 promise 会继续
+        // 跑完，不截断插件的副作用。
+        yield* Effect.tryPromise({
+          try: () => Promise.resolve(fn(context, output)),
+          catch: (err) => err,
+        }).pipe(
+          Effect.timeout("30 seconds"),
+          Effect.catch((err) =>
+            Effect.sync(() =>
+              log.error("plugin hook failed", {
+                hook: name,
+                plugin: hookOwner.get(hook) ?? "unknown",
+                error: errorMessage(err) || String(err),
+              }),
+            ),
+          ),
+        )
+      }
+      return output
+    })
+
+    const list = Effect.fn("Plugin.list")(function* () {
+      const s = yield* InstanceState.get(state)
+      return s.hooks
+    })
+
+    const init = Effect.fn("Plugin.init")(function* () {
+      yield* InstanceState.get(state)
+    })
+
+    return Service.of({ trigger, list, init })
+  }),
+)
+
+export const defaultLayer = layer.pipe(
+  Layer.provide(Bus.layer),
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(RuntimeFlags.defaultLayer),
+)
+
+export * as Plugin from "."
