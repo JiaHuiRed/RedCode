@@ -8,13 +8,20 @@
 
 ---
 
-### [Unreleased]
+### [0.19.2] - 2026-11-18
 
 - **RedSpace 品牌标识**：GUI 星门标识、REDSPACE 终端字标及 Web / 桌面图标统一；保留朱印、Soul 与启动看板娘。[设计记录](docs/notes/implemented/feature/2026-11-17-redspace-identity.md)。
 
 - **Code 正文口吻与工程规则分工**：精简主会话相处契约，熟悉称呼可自然进入解释、建议和分歧；收窄 default / DeepSeek 的正文限制，移除 GPT 重复的强制纠错开场。工程 MEMORY 使用独立来源标签，不再与 AGENTS 一起无条件覆盖默认行为。私有 AGENTS 同步精简，旧 ECC 工程摘要替换钩子移除。三份私有 Soul × 四条常用路线的请求装配及前缀稳定性通过；真实长任务人格效果待使用验收。详见 `docs/notes/implemented/architecture/2026-11-17-code-prompt-voice-ownership.md`。
 
 - **Chat 工程记忆边界**：伙伴目录不再自动生成工程 MEMORY / 进度模板，Chat 子任务也排除核心工程记忆。插件可声明仅向 Code 注入提示，工具和普通技能继续共享；私有工程记忆插件与全局规则需同步更新。Chat 做事时仍写伙伴日记、按需查聊天原文。验证与模型可见四问见 `docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md`。
+
+- **0.19.1 综合审计 P1 修复与收编**：审计报告入库（`docs/reviews/0.19.1-comprehensive-audit.md`）。F-01 修复 Chat 未解析伙伴 id 时的身份静默回退、F-03 日志不再回灌用户正文；F-04 导入按来源身份复用已有档案，TUI 自定义 id 导入后 GUI 再导同一来源不再生成第二份身份。目录迁移后的 seed 路径、Code 守卫与 SDK 构建脚本旧路径（否则 SDK 构建 ENOENT、CI 在跑测试前整体中止）同步修正。详见 `docs/notes/implemented/feature/2026-11-17-companion-transcript-import.md` 与各修复提交。
+
+- **历史导入覆盖率报告（审计 F-05）**：`companion import` 生成独立来源清单，按普通 JSONL（扫描 / 提取 / 内部任务排除 / 无文本 / 解析失败）、Trajectory、Deleted、去重与最终可检索文件分类计数；CLI 默认打印人类可读清单，`--json` 与 HTTP API 返回结构化 `Coverage`，`profile.json` 存一份供回溯。trajectory 与 deleted 只计数不导入、继续留在来源目录；纯计数不含个人文本。真实秋秋档案验证 301 普通 JSONL / 730 trajectory / 16 deleted、16 份可检索历史、312 段交流、116 个真人发言。决策见 `docs/notes/implemented/feature/2026-11-17-history-import-coverage.md`。
+
+- **冷恢复不再重放插件改写（审计 F-07）**：`msgPin` 此前只在内存钉住已发送消息，冷恢复后历史重新走 `messages.transform`；插件注入非幂等（按会话 seen 去重、检索随库变化），同一条消息两次 pin 内容不同（实测长度 1776 与 80）→ 历史中段改写、整段前缀全价重建。`PromptPin` 升 v3，把已钉消息的 parts 快照一并落盘，冷恢复优先复用（nativeRevision 不匹配则不复用）；compaction settle 时只清快照、保留 tools/MCP guide；单会话快照 512KB 上限防止膨胀。代价是冷恢复后注入的记忆块冻结到下次压缩。验证：端到端回归先复现红（置空 seed 后退化为 `first question`）再转绿，prompt 套件 116 pass / 12 skip / 0 fail。决策见 `docs/notes/implemented/feature/2026-11-17-prompt-pin-messages.md`。
+  - **模型可见四问**：① 正常运行不变，冷恢复后历史消息复用上次钉住的 parts、不再重新 transform 出新检索结果，未改注入段/工具 description/输出格式；② 固定前缀不变，冷恢复省掉整段前缀重建（实测案例 321k token 全价）；③ KV cache 核心收益，修复前从改写点起全部失效、修复后冷恢复首请求可命中上次前缀；④ 单会话快照 512KB 硬上限，磁盘文件数沿用 `DISK_MAX=500` / `PRUNE_EVERY=200`。F-05 的 `Coverage` 为 CLI/HTTP 返回值，不进模型上下文，四问均为不变。
 
 ### [0.19.1] - 2026-11-17
 
