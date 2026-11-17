@@ -59,7 +59,24 @@ E3 = 待现场验收：真实 Windows、Electron、用户本机配置、真实�
 
 ## 基线记录
 
-（尚未采集。A 组命令跑完后把原始数字填在这里，注明机器与日期；B 组等 exe 更新后补。）
+### A 组 · 生产路径预算 `bench:budget`（2026-11-18，本机 Windows / Bun 1.3.14）
+
+命令：`cd packages/redspace && bun run bench:budget`（隔离临时 DB，不读用户库/网络）。自检 3/3 通过；连跑两次结果稳定。
+
+| METRIC | run 1 | run 2 | 预算 | 结论 |
+|---|---|---|---|---|
+| `filter_compacted_small_median_ms`（128 条） | 5.16 | 5.21 | — | 基线 |
+| `filter_compacted_large_median_ms`（2612 条） | 59.41 | 63.21 | ≤50 | **超限** |
+| `filter_compacted_scaling_ratio` | 11.51 | 12.13 | ≤6 | **超限** |
+| `filter_compacted_large_memory_growth_bytes` | — | 15244 | ≤16777216 | 通过（≈15KB） |
+
+原始逐轮（run 2）：small 5.65 / 5.71 / 4.87 / 5.21 / 5.21 ms；large 63.68 / 63.21 / 63.81 / 60.63 / 59.34 ms。命令退出码 1（预算违规），**不是**测量失败。
+
+**定位：待调查信号，不是已定论的回归。** 两次都超、且放大比 ~12× 远超 6×，说明 128→2612 条的耗时增长超出线性预算；但这是 `bench:budget` 首次在本机采集，没有历史基线可比，也无法排除本机负载/文件缓存波动。下一步应在稳定环境多轮复测，再决定是否要查 `filterCompactedEffect` 的算法复杂度；在拿到重复数据前不据此改代码，也不把 A 组"通过"写死。
+
+### B 组（E3 真机）
+
+尚未采集——等 exe 更新后按上方「B. 需更新 exe 后真机跑」步骤补。
 
 ## 相关文件
 
