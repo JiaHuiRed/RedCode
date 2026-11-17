@@ -104,6 +104,10 @@ export function recordRequest(input: RequestSnapshot) {
 //              一并生效），内存里的整套快照双份同时释放
 // system/tools 两个缓存与消息历史无关，不参与结算。
 export function settlePromptCaches(sessionID: string, reason: string) {
+  // 261117 Red F-07：消息快照必须同步作废。压缩改写在内存结算后于下一轮生效，
+  // 磁盘快照若留着，冷恢复会把它钉回去——压缩白做且可能撑爆上下文预算。
+  // tools/mcpGuide 与消息历史无关，不参与结算（见 prompt-pin.ts）。
+  PromptPin.dropMessages(sessionID)
   let dropped = 0
   const msgPin = PromptCaches.msgPin.get(sessionID)
   if (msgPin) {

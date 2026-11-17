@@ -18,7 +18,18 @@ import { Global } from "@redcode-ai/core/global"
 // 261029 Red v2：v1 落盘的 inputSchema 是 AI SDK Schema 对象序列化后的残缺对象
 // （丢 Symbol 标记只剩 { jsonSchema: ... }），消费端重建会发出双层嵌套 schema。
 // v2 起落盘纯 JSON Schema 数据（见 extractSchema），旧格式靠版本号整体弃用回退现算。
-const VERSION = 2
+//
+// 261117 Red v3（0.19.1 审计 F-07）：v2 只钉工具定义，消息侧仍只在内存。冷恢复时
+// msgPin 为空 → 历史消息重新走 messages.transform，而插件（memory-recall）按会话 seen
+// 去重、非幂等 → 同一条消息两次 pin 长度不同（实测 1776 vs 80）→ 历史中段改写、
+// 整段 prefix 全价重建。v3 把已钉住的消息 parts 一并落盘，冷恢复优先复用。
+// 决策：docs/notes/implemented/feature/2026-11-17-prompt-pin-messages.md
+const VERSION = 3
+
+// 单会话消息快照硬上限。msgPin 钉的是完整 parts（含 tool 结果），DB 实测单会话
+// part 总量最高 289MB；原样落盘 × DISK_MAX(500) 会吃掉 GB 级磁盘。超限只保留最近的
+// 消息——它们正是被插件追加重写、最需要跨进程稳定的那批。
+const MESSAGE_BYTES_MAX = 512 * 1024
 
 export interface Pin {
   version: number
@@ -26,6 +37,10 @@ export interface Pin {
   savedAt: number
   tools: Record<string, { description: string; inputSchema: unknown }>
   mcpGuide?: string
+  /** 已钉住消息的 parts 快照，按消息 ID 索引。冷恢复灌回 msgPin，避免重新 transform。 */
+  messages?: Record<string, unknown[]>
+  /** 快照对应的 native compaction 版本；不匹配时整份消息快照作废。 */
+  nativeRevision?: string
 }
 
 // 261029 Red 路径可覆盖（测试隔离）：每次取值而非模块加载时定，照 prefix-probe 的模式
@@ -68,6 +83,12 @@ export function load(sessionID: string): Pin | undefined {
       )
     )
       return undefined
+    // 261117 Red 消息快照是可选增量：结构不对就单独丢掉，不影响工具 pin 的复用
+    if (parsed.messages !== undefined) {
+      if (typeof parsed.messages !== "object" || parsed.messages === null || Array.isArray(parsed.messages))
+        delete parsed.messages
+      else if (!Object.values(parsed.messages).every((parts) => Array.isArray(parts))) delete parsed.messages
+    }
     return parsed
   } catch {
     // 损坏的 pin 直接弃用：下次冷组装会用新内容覆盖它
@@ -87,11 +108,29 @@ function extractSchema(value: unknown): unknown {
   return value
 }
 
+// 261117 Red 消息快照按体积裁剪：从最近的消息往前累计，超过上限就停。
+// 至少保留一条（单条超限也比完全不复用强，冷恢复该条仍稳定）。
+function packMessages(messages: Map<string, unknown[]>): Record<string, unknown[]> | undefined {
+  const entries = [...messages]
+  if (!entries.length) return undefined
+  const kept: [string, unknown[]][] = []
+  let bytes = 0
+  for (let index = entries.length - 1; index >= 0; index--) {
+    bytes += Buffer.byteLength(JSON.stringify(entries[index][1]))
+    if (bytes > MESSAGE_BYTES_MAX && kept.length) break
+    kept.push(entries[index])
+  }
+  return Object.fromEntries(kept.reverse())
+}
+
 export function save(input: {
   sessionID: string
   tools: Map<string, { description: string; inputSchema: unknown }>
   mcpGuide: string | undefined
+  messages?: Map<string, unknown[]>
+  nativeRevision?: string
 }): void {
+  const messages = input.messages ? packMessages(input.messages) : undefined
   const pin: Pin = {
     version: VERSION,
     sessionID: input.sessionID,
@@ -100,6 +139,8 @@ export function save(input: {
       [...input.tools].map(([k, t]) => [k, { description: t.description, inputSchema: extractSchema(t.inputSchema) }]),
     ),
     ...(input.mcpGuide !== undefined ? { mcpGuide: input.mcpGuide } : {}),
+    ...(messages !== undefined ? { messages } : {}),
+    ...(input.nativeRevision !== undefined ? { nativeRevision: input.nativeRevision } : {}),
   }
   writes++
   // 261029 Red prune 判定在入队时定格：队列任务运行时再读全局会拿到终值，
@@ -119,6 +160,24 @@ export function drop(sessionID: string): void {
   writeChain = writeChain
     .then(() => fsp.rm(file(sessionID), { force: true }))
     .catch(() => {}) // 回收路径上的清理，失败不追溯
+}
+
+/**
+ * 261117 Red compaction 结算：只丢消息快照，工具定义与 MCP guide 继续复用。
+ * 压缩改写必须在下一轮生效——消息快照若留在磁盘，冷恢复会把它钉回去，
+ * 压缩白做且可能撑爆上下文预算。settle 语义见 prompt-caches.ts。
+ */
+export function dropMessages(sessionID: string): void {
+  writeChain = writeChain
+    .then(async () => {
+      const pin = load(sessionID)
+      if (!pin?.messages) return
+      delete pin.messages
+      delete pin.nativeRevision
+      pin.savedAt = Date.now()
+      await fsp.writeFile(file(sessionID), JSON.stringify(pin), "utf-8")
+    })
+    .catch(() => {}) // 清失败最坏是冷恢复钉回旧快照，与部署前行为一致
 }
 
 // 261029 Red 孤儿修剪：用户删除会话不经过 dropSession，pin 会残留。照 context-snapshot

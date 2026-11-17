@@ -119,7 +119,9 @@ describe("prompt-pin", () => {
     await fs.mkdir(pinDir, { recursive: true })
     const write = (name: string, content: unknown) =>
       fs.writeFile(path.join(pinDir, name), JSON.stringify(content), "utf-8")
-    const base = { version: 2, savedAt: 0 }
+    // 261117 Red 版本号跟随 VERSION（当前 3）：这里要测的是结构校验，不是版本弃用，
+    // 写死旧版本会让用例被版本号提前拦下、结构校验变成假绿。
+    const base = { version: 3, savedAt: 0 }
     await write("ses_null.json", { ...base, sessionID: "ses_null", tools: null })
     await write("ses_arr.json", { ...base, sessionID: "ses_arr", tools: [] })
     await write("ses_nodsc.json", {
@@ -143,5 +145,105 @@ describe("prompt-pin", () => {
       "utf-8",
     )
     expect(PromptPin.load("ses_v1")).toBeUndefined()
+  })
+
+  // 261117 Red F-07：消息 parts 快照跨进程往返。冷恢复要靠它避免重新 transform。
+  test("消息快照往返：parts 逐字节一致，nativeRevision 一并保留", async () => {
+    const parts = new Map<string, unknown[]>([
+      ["msg_a", [{ type: "text", text: "hello", id: "prt_1" }]],
+      ["msg_b", [{ type: "text", text: "with recall block", id: "prt_2" }]],
+    ])
+    PromptPin.save({ sessionID: "ses_m", tools: defs(), mcpGuide: undefined, messages: parts, nativeRevision: "rev-7" })
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_m")
+    expect(pin!.nativeRevision).toBe("rev-7")
+    expect(pin!.messages).toEqual(Object.fromEntries(parts))
+    // 逐字节比对是前缀稳定的硬要求：恢复后的 parts 必须与落盘时完全相同
+    expect(JSON.stringify(pin!.messages)).toBe(JSON.stringify(Object.fromEntries(parts)))
+  })
+
+  test("没有消息快照时字段不出现（旧调用方行为不变）", async () => {
+    PromptPin.save({ sessionID: "ses_m", tools: defs(), mcpGuide: undefined })
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_m")
+    expect(pin!.messages).toBeUndefined()
+    expect(pin!.nativeRevision).toBeUndefined()
+  })
+
+  // 261117 Red F-07：compaction 结算只丢消息快照，tools 与 mcpGuide 继续复用
+  test("dropMessages 只清消息快照，保留 tools 与 mcpGuide", async () => {
+    PromptPin.save({
+      sessionID: "ses_m",
+      tools: defs(),
+      mcpGuide: "guide",
+      messages: new Map([["msg_a", [{ type: "text", text: "x" }]]]),
+      nativeRevision: "rev-1",
+    })
+    await PromptPin.flush()
+    PromptPin.dropMessages("ses_m")
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_m")
+    expect(pin).toBeDefined()
+    expect(pin!.messages).toBeUndefined()
+    expect(pin!.nativeRevision).toBeUndefined()
+    expect(pin!.mcpGuide).toBe("guide")
+    expect(JSON.stringify(pin!.tools)).toBe(JSON.stringify(Object.fromEntries(defs())))
+  })
+
+  test("dropMessages 对不存在的会话静默无操作", async () => {
+    PromptPin.dropMessages("ses_never")
+    await PromptPin.flush()
+    expect(PromptPin.load("ses_never")).toBeUndefined()
+  })
+
+  // 261117 Red F-07 体积红线：msgPin 钉的是完整 parts（含 tool 结果），DB 实测单会话
+  // part 总量最高 289MB。超 512KB 只保留最近的消息——它们才是被插件追加重写的那批。
+  test("消息快照超上限只保留最近的，至少保留一条", async () => {
+    const chunk = "x".repeat(200 * 1024)
+    const parts = new Map<string, unknown[]>([
+      ["msg_old", [{ type: "text", text: chunk }]],
+      ["msg_mid", [{ type: "text", text: chunk }]],
+      ["msg_new", [{ type: "text", text: chunk }]],
+    ])
+    PromptPin.save({ sessionID: "ses_big", tools: defs(), mcpGuide: undefined, messages: parts })
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_big")
+    const kept = Object.keys(pin!.messages!)
+    // 200KB × 3 = 600KB > 512KB：保留最近两条，丢掉最老的
+    expect(kept).toEqual(["msg_mid", "msg_new"])
+  })
+
+  test("单条消息本身超上限时仍保留一条，不会清空", async () => {
+    const huge = "x".repeat(600 * 1024)
+    PromptPin.save({
+      sessionID: "ses_huge",
+      tools: defs(),
+      mcpGuide: undefined,
+      messages: new Map([["msg_only", [{ type: "text", text: huge }]]]),
+    })
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_huge")
+    expect(Object.keys(pin!.messages!)).toEqual(["msg_only"])
+  })
+
+  // 261117 Red F-07：消息快照结构损坏时单独丢弃，不能连累工具 pin 的复用
+  test("消息快照结构损坏只丢消息，tools 仍可复用", async () => {
+    await fs.mkdir(pinDir, { recursive: true })
+    const write = (name: string, content: unknown) =>
+      fs.writeFile(path.join(pinDir, name), JSON.stringify(content), "utf-8")
+    const base = {
+      version: 3,
+      savedAt: 0,
+      tools: Object.fromEntries(defs()),
+    }
+    await write("ses_mnull.json", { ...base, sessionID: "ses_mnull", messages: null })
+    await write("ses_marr.json", { ...base, sessionID: "ses_marr", messages: [] })
+    await write("ses_mbad.json", { ...base, sessionID: "ses_mbad", messages: { msg_a: "not-an-array" } })
+    for (const id of ["ses_mnull", "ses_marr", "ses_mbad"]) {
+      const pin = PromptPin.load(id)
+      expect(pin).toBeDefined()
+      expect(pin!.messages).toBeUndefined()
+      expect(pin!.tools["bash"]!.description).toBe("run shell")
+    }
   })
 })

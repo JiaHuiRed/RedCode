@@ -6,6 +6,8 @@ import * as Stream from "effect/Stream"
 import * as TestConsole from "effect/testing/TestConsole"
 import * as TestClock from "effect/testing/TestClock"
 import path from "path"
+import os from "node:os"
+import fs from "node:fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -71,6 +73,7 @@ import { TuiEvent } from "@/cli/cmd/tui/event"
 import { TaskStatusTool } from "@/tool/task_status"
 import { InstanceRef } from "@/effect/instance-ref"
 import { dropSession, PromptCaches } from "@/session/prompt-caches"
+import { PromptPin } from "@/session/prompt-pin"
 
 void Log.init({ print: false })
 
@@ -240,6 +243,7 @@ function makePrompt(input?: {
   image?: Layer.Layer<Image.Service>
   filesystem?: Layer.Layer<AppFileSystem.Service>
   run?: Layer.Layer<SessionRunState.Service, never, BackgroundJob.Service>
+  plugin?: Layer.Layer<Plugin.Service>
 }) {
   const filesystem = input?.filesystem ?? AppFileSystem.defaultLayer
   const deps = Layer.mergeAll(
@@ -252,7 +256,7 @@ function makePrompt(input?: {
     AgentSvc.defaultLayer,
     Command.defaultLayer,
     Permission.defaultLayer,
-    Plugin.defaultLayer,
+    input?.plugin ?? Plugin.defaultLayer,
     Config.defaultLayer,
     ProviderSvc.defaultLayer,
     lsp,
@@ -323,6 +327,7 @@ function makeHttp(input?: {
   image?: Layer.Layer<Image.Service>
   filesystem?: Layer.Layer<AppFileSystem.Service>
   run?: Layer.Layer<SessionRunState.Service, never, BackgroundJob.Service>
+  plugin?: Layer.Layer<Plugin.Service>
 }) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
@@ -1127,6 +1132,110 @@ it.instance("claims explicit queued messages one turn at a time in FIFO order", 
       .pipe(Effect.flip)
     expect(error).toBeInstanceOf(Session.QueuedMessageConflict)
   }),
+)
+
+// 0.19.1 审计 F-07 回归：插件 transform 非幂等（真实 memory-recall 按会话 seen 去重、
+// 检索结果随库变化）。冷恢复后若历史重新 transform，同一条消息会被追加上不同内容 →
+// 历史中段改写、整段 prefix 全价重建。这里让「第二个进程」注入不同内容，验证历史
+// 被钉回首次发送时的字节。
+const recallSeen = new Set<string>()
+let recallBlock = "[RECALL:1]"
+const nonIdempotentPlugin = Layer.mock(Plugin.Service)({
+  trigger: <Name extends string, Input, Output>(name: Name, _input: Input, output: Output) => {
+    if (name !== "experimental.chat.messages.transform") return Effect.succeed(output)
+    return Effect.sync(() => {
+      type TransformMessage = { parts?: Array<{ type?: string; text?: string }> }
+      const messages = (output as { messages?: TransformMessage[] }).messages
+      const last = messages?.[messages.length - 1]
+      if (!last) return output
+      const textParts = (last.parts ?? []).filter((part) => part.type === "text" && typeof part.text === "string")
+      if (!textParts.length) return output
+      const text = textParts.map((part) => part.text).join("")
+      if (recallSeen.has(text)) return output
+      recallSeen.add(text)
+      textParts[textParts.length - 1].text += recallBlock
+      return output
+    })
+  },
+  list: () => Effect.succeed([]),
+  init: () => Effect.void,
+})
+const itColdResume = testEffect(makeHttp({ plugin: nonIdempotentPlugin }))
+
+// 取 body 里从 needle 起的一段，用于比对同一条历史消息在不同请求中的字节。
+const sliceAt = (body: string, needle: string) => {
+  const at = body.indexOf(needle)
+  return at < 0 ? "" : body.slice(at, at + needle.length + recallBlock.length)
+}
+
+itColdResume.instance("cold resume restores pinned message bytes instead of replaying transform", () =>
+  Effect.gen(function* () {
+    const pinDir = yield* Effect.promise(async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "redcode-pin-f07-"))
+      process.env["REDCODE_PROMPT_PIN_DIR"] = dir
+      return dir
+    })
+    recallSeen.clear()
+    recallBlock = "[RECALL:1]"
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "F07 cold resume" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "first question" }],
+    })
+    yield* llm.text("reply one")
+    yield* prompt.loop({ sessionID: chat.id })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "second question" }],
+    })
+    yield* llm.text("reply two")
+    yield* prompt.loop({ sessionID: chat.id })
+    yield* Effect.promise(() => PromptPin.flush())
+
+    // 模拟新进程：进程内缓存与插件会话状态都丢失，磁盘 pin 保留。
+    // msgPin 与 modelMsgs 两个缓存都要清——只清前者会让本轮直接复用缓存的模型消息，
+    // 掩盖历史重钉的真实行为（假绿）。
+    PromptCaches.msgPin.delete(chat.id)
+    PromptCaches.modelMsgs.delete(chat.id)
+    recallSeen.clear()
+    recallBlock = "[RECALL:2]"
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "third question" }],
+    })
+    yield* llm.text("reply three")
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const hits = yield* llm.hits
+    const bodies = hits.map((hit) => JSON.stringify(hit.body))
+    expect(bodies.length).toBeGreaterThanOrEqual(3)
+    const before = sliceAt(bodies[1], "first question")
+    const after = sliceAt(bodies[bodies.length - 1], "first question")
+    expect(before).toContain("[RECALL:1]")
+    // 核心断言：冷恢复后历史里那条消息的字节与首次发送时完全一致，
+    // 而不是被重新 transform 成 [RECALL:2]（修复前会走到这一步）
+    expect(after).toBe(before)
+  }).pipe(
+    Effect.ensuring(
+      Effect.promise(async () => {
+        const dir = process.env["REDCODE_PROMPT_PIN_DIR"]
+        delete process.env["REDCODE_PROMPT_PIN_DIR"]
+        if (dir) await fs.rm(dir, { recursive: true, force: true })
+      }),
+    ),
+  ),
 )
 
 it.instance("reserved queued messages stay editable only after release", () =>

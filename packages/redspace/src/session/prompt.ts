@@ -2018,13 +2018,27 @@ export const layer = Layer.effect(
           // 260618 Red pin post-DCP message content for prefix cache stability.
           // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
           // By restoring already-sent messages from cache, the prefix stays identical across turns.
+          let newlyPinned = 0
           {
             // 260819 cc audit：登记本会话活跃时刻并顺手回收冷会话。四个缓存此前只增不减
             // （settle 只管 msgPin/modelMsgs，system/tools 无删除点），长驻的 GUI sidecar /
             // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
             touchSession(sessionID)
+            // 261117 Red F-07：冷恢复（重启续接 / 进程缓存被回收）时优先复用磁盘消息快照。
+            // 没有它，历史会在 transform 之后再钉一遍；而插件注入非幂等（会话 seen 去重），
+            // 同一条消息两次 pin 长度不同 → 历史中段改写、整段 prefix 全价重建。
+            // 只在内存缓存缺失时读盘，热路径零额外 IO。
             if (!_caches.msgPin.has(sessionID)) {
-              _caches.msgPin.set(sessionID, { sessionID, messages: new Map(), nativeRevision })
+              const diskPin = PromptPin.load(sessionID)
+              const seeded =
+                diskPin?.messages && (diskPin.nativeRevision ?? undefined) === (nativeRevision ?? undefined)
+                  ? diskPin.messages
+                  : undefined
+              _caches.msgPin.set(sessionID, {
+                sessionID,
+                messages: new Map(seeded ? Object.entries(seeded) : []),
+                nativeRevision,
+              })
             }
             const pinnedMessages = _caches.msgPin.get(sessionID)!
             let pinned = 0,
@@ -2052,6 +2066,7 @@ export const layer = Layer.effect(
                 yield* Effect.yieldNow
               }
             }
+            newlyPinned = cached
           }
 
           // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
@@ -2132,6 +2147,19 @@ export const layer = Layer.effect(
             // 恢复同一份内容——否则 MCP 服务器升级后续接重建会拿到新版定义，供应商逐字节
             // 比对失败，续接首请求全价重建（261029 实测 321k token 全冷，见 prompt-pin.ts）。
             PromptPin.save({ sessionID, tools: _caches.tools.get(sessionID)!.defs, mcpGuide })
+          }
+          // 261117 Red F-07：本轮有新钉住的消息就把快照落盘。写在 mcpGuide 可用的位置，
+          // 避免用 undefined 覆盖文件里已有的 MCP guide。tools 缓存缺失时跳过（下轮冷组装补写）。
+          if (newlyPinned > 0) {
+            const tools = _caches.tools.get(sessionID)?.defs
+            if (tools)
+              PromptPin.save({
+                sessionID,
+                tools,
+                mcpGuide,
+                messages: _caches.msgPin.get(sessionID)?.messages,
+                nativeRevision,
+              })
           }
           // 261007 Red tool-result 配对净化：steer 场景下单侧缓存拼接曾让同一批 tool-result
           // 复制发出（根因分析见 message-v2.ts 的 sanitizeToolResultPairing 注释）。净化放在
