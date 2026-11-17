@@ -7,6 +7,8 @@ export interface Args {
   continue?: boolean
   sessionID?: string
   fork?: boolean
+  companionID?: string
+  companionName?: string
 }
 
 // 261113 Red 导出 context 供测试喂假值（同 kv.tsx 260911、helper.tsx 260828 的理由）。

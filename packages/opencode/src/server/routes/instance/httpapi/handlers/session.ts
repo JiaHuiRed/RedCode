@@ -333,6 +333,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
       return yield* shareSvc.create(ctx.payload).pipe(
         Effect.catchTag("InvalidSoul", (error) => new InvalidRequestError({ message: error.message, field: "soul" })),
+        Effect.catchTag(
+          "InvalidCompanion",
+          (error) => new InvalidRequestError({ message: error.message, field: "companionID" }),
+        ),
         Effect.catchTag("NotFoundError", (error) => notFound(error.message)),
       )
     })
@@ -392,8 +396,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
-      return yield* SessionError.mapStorageNotFound(
-        session.fork({ sessionID: ctx.params.sessionID, messageID: ctx.payload?.messageID }),
+      return yield* session.fork({ sessionID: ctx.params.sessionID, messageID: ctx.payload?.messageID }).pipe(
+        Effect.catchTag("NotFoundError", (error) => notFound(error.message)),
+        Effect.catchTag(
+          "InvalidCompanion",
+          (error) => new InvalidRequestError({ message: error.message, field: "companionID" }),
+        ),
       )
     })
 

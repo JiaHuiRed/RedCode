@@ -46,6 +46,7 @@ import { Effect, Layer, Option, Context, Schema, Semaphore, Types } from "effect
 import { NonNegativeInt, optionalOmitUndefined } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Soul } from "@/soul"
+import { Companion } from "@/companion/companion"
 import { MAX_SOUL_BYTES, type Info as SoulInfo } from "@/soul/schema"
 import { saveSoulVersion } from "./soul"
 
@@ -91,6 +92,8 @@ export function fromRow(row: SessionRow): Info {
     client: row.client ?? undefined,
     soul: row.soul ?? undefined,
     soulBodyHash: row.soul_body_hash ?? undefined,
+    mode: row.mode,
+    companionID: row.companion_id ?? undefined,
     model: row.model
       ? {
           id: ModelID.make(row.model.id),
@@ -138,6 +141,8 @@ export function toRow(info: Info) {
     client: info.client,
     soul: info.soul,
     soul_body_hash: info.soulBodyHash,
+    mode: info.mode ?? "code",
+    companion_id: info.companionID,
     model: info.model,
     version: info.version,
     share_url: info.share?.url,
@@ -232,6 +237,9 @@ const Model = Schema.Struct({
   variant: optionalOmitUndefined(Schema.String),
 })
 
+export const Mode = Schema.Literals(["code", "chat"])
+export type Mode = Schema.Schema.Type<typeof Mode>
+
 export const Info = Schema.Struct({
   id: SessionID,
   slug: Schema.String,
@@ -253,6 +261,9 @@ export const Info = Schema.Struct({
   client: optionalOmitUndefined(Schema.String),
   soul: optionalOmitUndefined(Schema.String),
   soulBodyHash: optionalOmitUndefined(Schema.String),
+  // 261117 Red Older sync events have no product mode; their persisted default is Code.
+  mode: optionalOmitUndefined(Mode),
+  companionID: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
   version: Schema.String,
   time: Time,
@@ -283,6 +294,8 @@ export const CreateInput = Schema.optional(
     permission: Schema.optional(Permission.Ruleset),
     workspaceID: Schema.optional(WorkspaceID),
     soul: Schema.optional(Schema.String),
+    mode: Schema.optional(Mode),
+    companionID: Schema.optional(Schema.String),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -534,6 +547,11 @@ export class InvalidSoul extends Schema.TaggedError<InvalidSoul>()("InvalidSoul"
   message: Schema.String,
 }) {}
 
+export class InvalidCompanion extends Schema.TaggedError<InvalidCompanion>()("InvalidCompanion", {
+  companionID: Schema.optional(Schema.String),
+  message: Schema.String,
+}) {}
+
 export type NotFound = NotFoundError
 
 export class QueuedMessageConflict extends Schema.TaggedError<QueuedMessageConflict>()("QueuedMessageConflict", {
@@ -550,8 +568,13 @@ export interface Interface {
     permission?: Permission.Ruleset
     workspaceID?: WorkspaceID
     soul?: string
-  }) => Effect.Effect<Info, InvalidSoul | NotFound>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+    mode?: Mode
+    companionID?: string
+  }) => Effect.Effect<Info, InvalidSoul | InvalidCompanion | NotFound>
+  readonly fork: (input: {
+    sessionID: SessionID
+    messageID?: MessageID
+  }) => Effect.Effect<Info, InvalidCompanion | NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -666,6 +689,8 @@ export const layer: Layer.Layer<
       permission?: Permission.Ruleset
       soul?: string
       soulBodyHash?: string
+      mode?: Mode
+      companionID?: string
     }) {
       const ctx = yield* InstanceState.context
       const result: Info = {
@@ -682,6 +707,8 @@ export const layer: Layer.Layer<
         client: flags.client,
         soul: input.soul,
         soulBodyHash: input.soulBodyHash,
+        mode: input.mode ?? "code",
+        companionID: input.companionID,
         model: input.model,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
@@ -1042,10 +1069,31 @@ export const layer: Layer.Layer<
       permission?: Permission.Ruleset
       workspaceID?: WorkspaceID
       soul?: string
+      mode?: Mode
+      companionID?: string
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
       const parent = input?.parentID ? yield* get(input.parentID) : undefined
+      const mode = parent?.mode ?? input?.mode ?? "code"
+      const companionID = parent?.companionID ?? input?.companionID
+      if (parent && input?.mode !== undefined && input.mode !== (parent.mode ?? "code"))
+        return yield* new InvalidCompanion({
+          companionID,
+          message: "A child session inherits its parent's product mode",
+        })
+      if (parent && input?.companionID !== undefined && input.companionID !== parent.companionID)
+        return yield* new InvalidCompanion({ companionID, message: "A child session inherits its parent's companion" })
+      if (mode === "code" && companionID !== undefined)
+        return yield* new InvalidCompanion({ companionID, message: "A companion can only be bound to a Chat session" })
+      if (mode === "chat" && !companionID)
+        return yield* new InvalidCompanion({ message: "A Chat session requires an imported companion" })
+      const companion = mode === "chat" && !parent ? yield* resolveCompanion(companionID!) : undefined
+      if (companion && path.relative(companion.directory, ctx.directory) !== "")
+        return yield* new InvalidCompanion({ companionID, message: "Open Chat in the companion's personal workspace" })
+      const boundSoul = companion?.soulID ?? (mode === "chat" ? parent?.soul : undefined)
+      if (mode === "chat" && input?.soul !== undefined && input.soul !== boundSoul)
+        return yield* new InvalidCompanion({ companionID, message: "A Chat session keeps its companion's Soul" })
       const available = yield* Effect.serviceOption(Soul.Service)
       const soulSvc = Option.isSome(available)
         ? available.value
@@ -1055,8 +1103,13 @@ export const layer: Layer.Layer<
       let soul = parent?.soul
       let soulInfo: SoulInfo | undefined
       if (!parent) {
-        const requested = input?.soul ?? (yield* soulSvc.defaultForClient(flags.client))
+        const requested = boundSoul ?? input?.soul ?? (yield* soulSvc.defaultForClient(flags.client))
         soulInfo = requested ? yield* soulSvc.get(requested) : undefined
+        if (!soulInfo && companion)
+          return yield* new InvalidCompanion({
+            companionID,
+            message: `The companion's Soul is unavailable: ${companion.soulID}`,
+          })
         if (!soulInfo && input?.soul !== undefined)
           return yield* new InvalidSoul({ soul: input.soul, message: `Unknown or invalid soul: ${input.soul}` })
         if (!soulInfo) {
@@ -1079,12 +1132,24 @@ export const layer: Layer.Layer<
         workspaceID: input?.workspaceID ?? workspace,
         soul,
         soulBodyHash,
+        mode,
+        companionID,
       })
     })
 
     const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
+      if (original.mode === "chat") {
+        if (!original.companionID)
+          return yield* new InvalidCompanion({ message: "The Chat session has no companion binding" })
+        const companion = yield* resolveCompanion(original.companionID)
+        if (path.relative(companion.directory, ctx.directory) !== "" || companion.soulID !== original.soul)
+          return yield* new InvalidCompanion({
+            companionID: original.companionID,
+            message: "Fork Chat in its companion's personal workspace with the same Soul",
+          })
+      }
       const title = getForkedTitle(original.title)
       const session = yield* createNext({
         directory: ctx.directory,
@@ -1093,6 +1158,8 @@ export const layer: Layer.Layer<
         title,
         soul: original.soul,
         soulBodyHash: original.soulBodyHash,
+        mode: original.mode,
+        companionID: original.companionID,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       // 260814 Red 截断边界改 compareTime（ID 48 位编码 795 天回绕后字典序失真）。
@@ -1490,6 +1557,17 @@ export const defaultLayer = layer.pipe(
   Layer.provide(RuntimeFlags.defaultLayer),
   Layer.provide(Soul.defaultLayer),
 )
+
+const resolveCompanion = Effect.fn("Session.resolveCompanion")(function* (id: string) {
+  const available = yield* Effect.serviceOption(Companion.Service)
+  const profile = yield* (
+    Option.isSome(available)
+      ? available.value.get(id)
+      : Companion.Service.use((service) => service.get(id)).pipe(Effect.provide(Companion.defaultLayer))
+  ).pipe(Effect.mapError((error) => new InvalidCompanion({ companionID: id, message: error.message })))
+  if (!profile) return yield* new InvalidCompanion({ companionID: id, message: `Unknown companion: ${id}` })
+  return profile
+})
 
 const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function* (
   background: BackgroundJob.Interface,

@@ -26,6 +26,8 @@ import { displayName, getProjectAvatarSource, projectForSession } from "@/utils/
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { StatusIndicator } from "./status-indicator"
 import { SDKProvider } from "@/context/sdk"
+import { useProductMode, useProductSession } from "@/context/product-mode"
+import { newConversationHref } from "@/utils/product-mode"
 
 const v2TitlebarHeight = 44
 const minTitlebarZoom = 0.25
@@ -169,10 +171,15 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
 
   const globalSync = useServerSync()
   const navigate = useNavigate()
-  const homeMatch = useMatch(() => "/")
+  const mode = useProductMode()
+  const productSession = useProductSession()
 
   const newSessionHref = () => {
-    if (params.dir) return `/${params.dir}/session`
+    if (mode() === "chat") {
+      const companionID = productSession()?.companionID ?? new URLSearchParams(location.search).get("companion")
+      return newConversationHref("chat", undefined, companionID ?? undefined)
+    }
+    if (params.dir) return newConversationHref("code", params.dir)
     const project = layout.projects.list()[0]
     if (!project) return "/"
     return `/${base64Encode(project.worktree)}/session`
@@ -224,7 +231,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
           if (!closingActive) return
           const nextTab = remaining[index] ?? remaining[remaining.length - 1]
           if (nextTab) navigate(nextTab.href)
-          else navigate("/")
+          else navigate(mode() === "chat" ? newSessionHref() : "/")
         })
       },
     }
@@ -378,15 +385,28 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       <Show when={windows() || linux()}>
         <WindowsAppMenu command={command} platform={platform} variant="v2" />
       </Show>
-      <IconButtonV2
-        variant="ghost-muted"
-        size="large"
-        as="a"
-        href="/"
-        class="!w-9"
-        icon={<IconV2 name="grid-plus" />}
-        state={!!homeMatch() ? "pressed" : undefined}
-      />
+      <nav
+        data-component="product-mode-switch"
+        aria-label={language.t("mode.navigation")}
+        class="flex shrink-0 items-center rounded-lg bg-v2-background-bg-deep p-0.5"
+      >
+        <a
+          href="/chat"
+          data-mode="chat"
+          aria-current={mode() === "chat" ? "page" : undefined}
+          class="rounded-md px-3 py-1 text-12-medium text-text-weaker hover:text-text-strong aria-[current=page]:bg-v2-background-bg-layer-02 aria-[current=page]:text-text-strong focus-visible:outline-2 focus-visible:outline-border-focus"
+        >
+          Chat
+        </a>
+        <a
+          href="/"
+          data-mode="code"
+          aria-current={mode() === "code" ? "page" : undefined}
+          class="rounded-md px-3 py-1 text-12-medium text-text-weaker hover:text-text-strong aria-[current=page]:bg-v2-background-bg-layer-02 aria-[current=page]:text-text-strong focus-visible:outline-2 focus-visible:outline-border-focus"
+        >
+          Code
+        </a>
+      </nav>
       {/* 261114 Red UX-09：标签带可横向滚动，活动标签自动滚入视野；溢出时「全部已开」
           下拉列出全部打开的会话（含状态与目录）。 */}
       <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">

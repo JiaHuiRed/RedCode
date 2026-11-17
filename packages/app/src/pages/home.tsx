@@ -10,6 +10,7 @@ import { ButtonV2 } from "@redcode-ai/ui/v2/components/button-v2.jsx"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@redcode-ai/ui/v2/components/icon-button-v2.jsx"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { isCodeSession } from "@/utils/product-mode"
 import { getAvatarColors, useLayout, type LocalProject } from "@/context/layout"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@redcode-ai/core/util/encode"
@@ -174,6 +175,7 @@ function HomeDesign() {
           projectName: displayName(project),
         }
       })
+      .filter((record) => isCodeSession(record.session))
       .filter((record) => {
         const value = search().toLowerCase()
         if (!value) return true
@@ -188,7 +190,8 @@ function HomeDesign() {
     projectDirectories().flatMap((directory) => {
       const store = sync.child(directory, { bootstrap: false })[0]
       return (store.session ?? []).filter(
-        (session) => pathKey(session.directory) === pathKey(directory) && !session.time?.archived,
+        (session) =>
+          isCodeSession(session) && pathKey(session.directory) === pathKey(directory) && !session.time?.archived,
       )
     }),
   )

@@ -6,7 +6,7 @@
 
 基于 [OpenCode](https://github.com/anomalyco/opencode) 深度开发，面向中文使用习惯与个性化工作流持续优化。
 
-[![版本](https://badgen.net/badge/版本/0.18.6/blue)](CHANGELOG.md)
+[![版本](https://badgen.net/badge/版本/0.19.0/blue)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
@@ -57,6 +57,17 @@ bun run dev:desktop
 密钥和机器专属路径放在本机的 `~/.redcode/redcode.local.jsonc`，不要提交到仓库。
 
 更多安装、模型接入、权限与 Soul 配置说明见 [MANUAL.md](MANUAL.md)。
+
+## RedSpace：Chat 与 Code
+
+0.19.0 开始在同一个应用中提供两个模式，TUI 与 GUI 共用后端和个人档案：
+
+- **Code**：继续使用现有开发工作区、Soul、工程记忆和权限模式。
+- **Chat**：导入已有 OpenClaw / RedClaw 个人档案，接续同一个伙伴的人格、长期记忆和日记，也可以使用工具完成工作。
+
+TUI 可用 `redcode companion import <目录或ZIP> --id companion` 导入，再用 `redcode --companion companion` 进入；运行中使用 `/chat` 与 `/code`。源码运行时把 `redcode` 换成 `bun dev`。GUI 使用顶栏 Chat 入口导入并开始聊天。
+
+这批实现接通档案继承与选择性记忆续写；历史 JSONL 对话重建、心跳、梦境和旧定时任务仍待后续接入。旧源码目录、CLI 命令与本地配置路径保持兼容。操作与迁移边界见[手册](MANUAL.md#65-redspace-chat-个人档案)。
 
 ## 📖 文档
 

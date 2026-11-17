@@ -7,7 +7,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ShareNext } from "./share-next"
 
 export interface Interface {
-  readonly create: (input?: Session.CreateInput) => Effect.Effect<Session.Info, Session.InvalidSoul | Session.NotFound>
+  readonly create: (
+    input?: Session.CreateInput,
+  ) => Effect.Effect<Session.Info, Session.InvalidSoul | Session.InvalidCompanion | Session.NotFound>
   readonly share: (sessionID: SessionID) => Effect.Effect<{ url: string }, unknown>
   readonly unshare: (sessionID: SessionID) => Effect.Effect<void, unknown>
 }
@@ -39,7 +41,7 @@ export const layer = Layer.effect(
 
     const create = Effect.fn("SessionShare.create")(function* (input?: Session.CreateInput) {
       const result = yield* session.create(input)
-      if (result.parentID) return result
+      if (result.parentID || result.mode === "chat") return result
       const conf = yield* cfg.get()
       if (!(flags.autoShare || conf.share === "auto")) return result
       yield* share(result.id).pipe(Effect.ignore, Effect.forkIn(scope))

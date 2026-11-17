@@ -53,4 +53,29 @@ describe("tui validate session", () => {
     })
     expect(calls).toBe(0)
   })
+
+  test("accepts a resumed Chat session only for the requested companion", async () => {
+    const directory = path.join(process.cwd(), "companion")
+    await validateSession({
+      url: "http://redcode.internal",
+      sessionID: "ses_chat",
+      directory,
+      companionID: "mira",
+      fetch: fakeFetch({ id: "ses_chat", directory, mode: "chat", companionID: "mira" }),
+    })
+    for (const session of [
+      { id: "ses_chat", directory, mode: "code" },
+      { id: "ses_chat", directory, mode: "chat", companionID: "other" },
+    ]) {
+      await expect(
+        validateSession({
+          url: "http://redcode.internal",
+          sessionID: "ses_chat",
+          directory,
+          companionID: "mira",
+          fetch: fakeFetch(session),
+        }),
+      ).rejects.toThrow('not a Chat session for companion "mira"')
+    }
+  })
 })

@@ -54,7 +54,7 @@ const navigation = createSimpleContext({
         route:
           props.args.continue && (!props.local || props.directory)
             ? { type: "session", sessionID: "dummy" }
-            : { type: "home" },
+            : { type: "home", companionID: props.args.companionID, companionName: props.args.companionName },
       },
     })
     const [switching, setSwitching] = createSignal(false)
@@ -230,7 +230,7 @@ const navigation = createSimpleContext({
         await forgetProjectVisit(directory)
         await refreshRecent()
       },
-      async switchTo(input: string, sessionID?: string) {
+      async switchTo(input: string, sessionID?: string, mode?: "code") {
         if (!props.local) throw new Error("远程连接暂不支持添加本地工作区")
         const attempt = ++generation
         setSwitching(true)
@@ -277,11 +277,16 @@ const navigation = createSimpleContext({
           }
           if (!source.directory && props.args.continue) view.route = { type: "session", sessionID: "dummy" }
           if (sessionID) view.route = { type: "session", sessionID }
+          if (mode === "code" && view.route.type === "home") view.route = { type: "home" }
           if (view.route.type === "session" && view.route.sessionID !== "dummy") {
             const session = await client.session.get({ sessionID: view.route.sessionID })
             // 261110 Red 服务端 session.get 按 ID 查库、不按目录过滤：历史里残留别的项目的
             // SessionID 时，只验存在会直接打开它。归属不符落回目标工作区首页。
-            if (!session.data?.directory || !sameDirectory(session.data.directory, directory))
+            if (
+              !session.data?.directory ||
+              !sameDirectory(session.data.directory, directory) ||
+              (mode === "code" && session.data.mode === "chat")
+            )
               view.route = { type: "home" }
           }
           if (attempt !== generation || !live) return false

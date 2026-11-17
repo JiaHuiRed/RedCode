@@ -231,6 +231,19 @@ export function Prompt(props: PromptProps) {
   const tuiConfig = useTuiConfig()
   const dialog = useDialog()
   const toast = useToast()
+  const companionID = createMemo(() =>
+    props.sessionID
+      ? sync.session.get(props.sessionID)?.companionID
+      : route.data.type === "home"
+        ? route.data.companionID
+        : undefined,
+  )
+  const explainChatIdentity = () =>
+    toast.show({
+      variant: "info",
+      message: "Chat 保持当前伙伴的身份。用 /code 返回开发空间后选择 Soul。",
+      duration: 4000,
+    })
   const status = createMemo(() => sync.data.session_status?.[props.sessionID ?? ""] ?? { type: "idle" })
   // 261116 Red C01：忙碌时的默认投递取真正生效的 busy_enter（与服务端同一配置）；
   // 单条临时覆盖只在本次发送生效，发完复位。出厂默认仍是 steer。
@@ -793,6 +806,7 @@ export function Prompt(props: PromptProps) {
         category: "Prompt",
         slashName: "soul",
         run: async () => {
+          if (companionID()) return explainChatIdentity()
           if (!(await local.soul.refresh())) return
           dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id)} />)
         },
@@ -1289,6 +1303,10 @@ export function Prompt(props: PromptProps) {
     if (soulCommand) {
       input.clear()
       setPrompt({ input: "", parts: [] })
+      if (companionID()) {
+        explainChatIdentity()
+        return true
+      }
       if (!(await local.soul.refresh())) return true
       if (soulCommand.selector) {
         dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id)} />)
@@ -1434,11 +1452,11 @@ export function Prompt(props: PromptProps) {
 
     let sessionID = props.sessionID
     if (isNewSession) {
-      if (!local.soul.saved() && !(await local.soul.refresh())) return false
+      if (!companionID() && !local.soul.saved() && !(await local.soul.refresh())) return false
       const res = await sdk.client.session.create({
         workspace: newSessionWorkspaceID,
         agent: submission.payload.agentName,
-        soul: local.soul.creationId(),
+        ...(companionID() ? { mode: "chat" as const, companionID: companionID() } : { soul: local.soul.creationId() }),
         model: {
           providerID: submission.payload.model.providerID,
           id: submission.payload.model.modelID,
@@ -1452,7 +1470,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
-      if (res.data.soul) kv.set("tui.lastSoul", res.data.soul)
+      if (res.data.soul && res.data.mode !== "chat") kv.set("tui.lastSoul", res.data.soul)
     }
     if (!sessionID) return false
 

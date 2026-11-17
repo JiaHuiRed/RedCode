@@ -20,6 +20,7 @@ export async function validateSession(input: {
   directory?: string
   fetch?: typeof fetch
   headers?: RequestInit["headers"]
+  companionID?: string
 }) {
   if (!input.sessionID) return
 
@@ -39,6 +40,8 @@ export async function validateSession(input: {
     .session.get({ sessionID }, { throwOnError: true })
     .then((result) => result.data)
 
+  if (input.companionID && (session?.mode !== "chat" || session.companionID !== input.companionID))
+    throw new Error(`Session ${sessionID} is not a Chat session for companion "${input.companionID}"`)
   if (!input.directory || !session?.directory) return
   if (sameDirectory(session.directory, input.directory)) return
   throw new Error(

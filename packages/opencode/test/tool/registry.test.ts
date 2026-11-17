@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "url"
 import { ConfigProvider, Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { Config } from "@/config/config"
+import { Companion } from "@/companion/companion"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -85,6 +86,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
+      Layer.provide(Companion.defaultLayer),
       Layer.provide(
         Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundCancel.defaultLayer),
       ),

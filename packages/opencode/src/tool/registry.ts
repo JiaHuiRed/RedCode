@@ -1,7 +1,7 @@
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
-import { PartTable } from "@/session/session.sql"
+import { PartTable, SessionTable } from "@/session/session.sql"
 import * as Database from "@/storage/db"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -74,6 +74,8 @@ import { RunCodeTool } from "./run-code"
 import { RunCodeSdk } from "./run-code-sdk"
 import { ToolJsonSchema } from "./json-schema"
 import { SessionQueryTool } from "./session-query"
+import { CompanionMemoryTool } from "./companion-memory"
+import { Companion } from "@/companion/companion"
 import { and, eq, sql } from "drizzle-orm"
 
 const log = Log.create({ service: "tool.registry" })
@@ -90,6 +92,18 @@ const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "
 
 // 261026 Red 插件声明式 view 的序列化上限（字节）。超过就整块丢弃，客户端退回 output 文本。
 const PluginViewLimit = 8 * 1024
+
+function hasCompanionMemory(sessionID: SessionID | undefined) {
+  if (!sessionID) return false
+  const session = Database.use((db) =>
+    db
+      .select({ mode: SessionTable.mode, companionID: SessionTable.companion_id, parentID: SessionTable.parent_id })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, sessionID))
+      .get(),
+  )
+  return session?.mode === "chat" && !!session.companionID && !session.parentID
+}
 
 function boundedPluginMetadata(metadata: Record<string, unknown>, id: string) {
   const view = metadata.view
@@ -175,6 +189,7 @@ export const layer = Layer.effect(
     const contextSearch = yield* ContextSearchTool
     const contextRestore = yield* ContextRestoreTool
     const sessionQuery = yield* SessionQueryTool
+    const companionMemory = yield* CompanionMemoryTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -348,6 +363,7 @@ export const layer = Layer.effect(
           context_search: Tool.init(contextSearch),
           context_restore: Tool.init(contextRestore),
           session_query: Tool.init(sessionQuery),
+          companion_memory: Tool.init(companionMemory),
         })
 
         // 260606 Red search helper extracted — avoid closure-capturing all()
@@ -376,7 +392,9 @@ export const layer = Layer.effect(
           execute: (params: { query: string; enable?: string }, ctx) =>
             Effect.gen(function* () {
               const s = yield* InstanceState.get(state)
-              const all = [...s.builtin, ...s.custom] as Tool.Def[]
+              const all = ([...s.builtin, ...s.custom] as Tool.Def[]).filter(
+                (tool) => tool.id !== CompanionMemoryTool.id || hasCompanionMemory(ctx.sessionID),
+              )
               // 261026 Red gated 工具激活出口：只收 GATED_TOOLS 成员；权限/配置过滤仍发生在
               // tools()，激活集合放行不了被 deny 的工具。输出有界（单行确认，不回显 schema）。
               if (params.enable !== undefined) {
@@ -453,6 +471,7 @@ export const layer = Layer.effect(
             ...(flags.experimentalRunCode ? [tool.run_code] : []),
             ...(nativeEnabled ? [tool.context_read, tool.context_search, tool.context_restore] : []),
             tool.session_query,
+            tool.companion_memory,
           ],
           task: tool.task,
           read: tool.read,
@@ -549,7 +568,8 @@ export const layer = Layer.effect(
       // Permission.disabled（生效规则=findLast 末条优先，仅 pattern:"*" 的 deny 下架；
       // write/edit/apply_patch 合并走 "edit" 键）剔除；带 pattern 例外的
       // （如 bash 全禁但放行 "git *"）保留给执行期 ctx.ask 逐次把关。
-      const candidates = yield* all()
+      const companionMemoryAvailable = hasCompanionMemory(input.sessionID)
+      const candidates = (yield* all()).filter((tool) => tool.id !== CompanionMemoryTool.id || companionMemoryAvailable)
       const deniedTools = Permission.disabled(
         candidates.map((tool) => tool.id),
         input.agent.permission ?? [],
@@ -678,7 +698,7 @@ export const defaultLayer = Layer.suspend(() =>
       // 260708 Red wire Snippet.Service required by SnippetTool (merged to stay under pipe's 20-arg overload limit)
       Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer, Snippet.defaultLayer)),
     )
-    .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
+    .pipe(Layer.provide(Layer.mergeAll(RuntimeFlags.defaultLayer, Companion.defaultLayer))),
 )
 
 function isZodType(value: unknown): value is z.ZodType {

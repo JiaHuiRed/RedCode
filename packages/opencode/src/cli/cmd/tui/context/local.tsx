@@ -18,6 +18,7 @@ import { Locale } from "@/util/locale"
 import { useKV } from "./kv"
 import { resolveNewSessionSoul } from "../soul"
 import { useProjectNavigation } from "./project-navigation"
+import { sessionsForMode } from "../companion"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -522,7 +523,17 @@ export const {
       const event = useEvent()
 
       const slots = createMemo(() => {
-        const existing = new Set(sync.data.session.filter((x) => x.parentID === undefined).map((x) => x.id))
+        const companionID =
+          route.data.type === "home"
+            ? route.data.companionID
+            : route.data.type === "session"
+              ? sync.session.get(route.data.sessionID)?.companionID
+              : undefined
+        const existing = new Set(
+          sessionsForMode(sync.data.session, companionID)
+            .filter((x) => x.parentID === undefined)
+            .map((x) => x.id),
+        )
         return sessionStore.pinned.filter((id) => existing.has(id)).slice(0, 9)
       })
 

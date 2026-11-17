@@ -326,6 +326,8 @@ description: 擅长简洁分析与清晰解释
 
 ### 6.1 概述
 
+本节 6.1–6.4 描述 **Code 的工程记忆**。Chat 的个人档案与它独立，见 [6.5](#65-redspace-chat-个人档案)。
+
 长期记忆由规则与 `memory` skill 引导 AI 维护，引擎负责加载已有的记忆文件，不会把每段对话自动提炼成长期教训。记忆分两层：
 
 - **项目级** `.redcode/MEMORY.md`——当前项目的决策、踩坑与工作路标
@@ -358,6 +360,45 @@ description: 擅长简洁分析与清晰解释
 ### 6.4 关闭记忆
 
 两条 MEMORY.md 由引擎**固定注入**（`session/instruction.ts` 的 systemPaths 硬编码路径），没有官方开关。确实不想要的话：清空两份 MEMORY.md 内容，或改 `instruction.ts` 重新编译（不推荐）。
+
+---
+
+### 6.5 RedSpace Chat 个人档案
+
+Chat 接续一个已经存在的伙伴。档案保存身份、关系、长期记忆和日记；Code 继续按原有默认 Soul 和工作区运行。产品模式只有 Chat / Code，Plan / RedMind / Auto 仍是独立的执行权限选择。
+
+#### TUI：导入与进入
+
+```powershell
+# 从 .openclaw 目录、其 workspace，或 ZIP 导入；路径包含空格时加引号
+redcode companion import "D:\Archives\.openclaw.zip" --id qiuqiu --name "秋秋"
+redcode companion list
+redcode --companion qiuqiu
+
+# 只续接这个伙伴最近的有效主会话
+redcode --companion qiuqiu --continue
+```
+
+从源码运行时，用 `bun dev companion import ...`、`bun dev --companion qiuqiu`。已进入本地 TUI 后，`/chat` 选择伙伴并续接会话，`/code` 选择开发工作区。Chat 中 `/new` 保留当前伙伴；`/soul` 不会改变伙伴身份或 Code 的默认 Soul。普通 `--continue` 只恢复 Code；`--session` 与 `--companion` 同用时必须匹配。远程 attach 暂不提供依赖本地目录切换的 `/chat`、`/code` 入口。
+
+#### GUI：同一份档案
+
+顶栏点 **Chat**，选择本地目录/ZIP，或输入服务端能访问的绝对路径，完成导入后开始聊天。连接远程服务时，浏览器所在机器的文件路径不代表服务器可访问；此时填写服务器上的路径。已有档案直接从列表选择。Chat 的新会话、关闭最后标签或归档当前会话都保留该伙伴；Code 的最近项目列表不混入个人档案目录。
+
+TUI 与 GUI 连接同一个后端、使用同一个本机数据目录时，读取的是同一份档案和会话。不同机器或不同后端之间尚无自动同步。
+
+#### 导入与续写的边界
+
+默认位置是 `~/.redcode/companions/<id>/`：`source/` 保留本次选择导入的原文，`workspace/` 是可继续写入的个人档案，`profile.json` 记录绑定与来源。身份正文单独注册到 Soul Registry；长期记忆不塞进 Soul 文件。已有会话仍保留自己的 Soul 内容版本。
+
+- 默认上下文有界加载 USER / IDENTITY、MEMORY 与最近两篇日记；需要更早经历时使用 `companion_memory search/read`，分页结果给出来源及续读位置。
+- 新的共同经历、偏好与承诺通过 `companion_memory remember` 选择性追加到对应时区的当日日记，成功后才确认记住。它遵守读取/编辑权限与用户不希望保存的意图；不会无条件把每轮原文复制进个人日记。普通会话仍按原有 Session 机制保存。
+- 同一档案重复导入返回已有绑定，不覆盖之后新增的记忆。同 ID 的不同档案返回冲突，需改用新 ID 或先人工整理；第一阶段不自动合并两个有分歧的档案。
+- 导入说明会列出异常编码等问题。源文件保留；不能可靠解码的内容不会被伪装成有效记忆。
+- 旧 AGENTS、技能和机制文件仅保留为来源或可读资料；旧渠道 token、设备密钥、网关认证、绝对路径和运行任务不被激活。旧 JSONL 会话、轨迹、梦境重建、心跳和 cron 调度未接入此阶段。导入成功不等于完整旧运行时迁移完成。
+- Chat 不因全局 Code 自动分享配置而被自动公开；显式分享仍沿用现有功能。个人档案与来源文件不应加入项目代码仓库。
+
+当前 CLI 名称、`.redcode` 路径与包名用于兼容既有安装；0.19.0 的这一阶段先接通两种模式及档案接续。
 
 ---
 

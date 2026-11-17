@@ -17,6 +17,7 @@ import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { SessionApi } from "./groups/session"
 import { SoulApi } from "./groups/soul"
+import { CompanionApi } from "./groups/companion"
 import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
@@ -53,6 +54,7 @@ export const InstanceHttpApi = HttpApi.make("redcode-instance")
   .addHttpApi(ProviderApi)
   .addHttpApi(SessionApi)
   .addHttpApi(SoulApi)
+  .addHttpApi(CompanionApi)
   .addHttpApi(SyncApi)
   .addHttpApi(V2Api)
   .addHttpApi(TuiApi)

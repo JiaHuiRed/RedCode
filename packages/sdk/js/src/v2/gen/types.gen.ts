@@ -123,6 +123,8 @@ export type Session = {
   client?: string
   soul?: string
   soulBodyHash?: string
+  mode?: "code" | "chat"
+  companionID?: string
   model?: {
     id: string
     providerID: string
@@ -1469,6 +1471,8 @@ export type GlobalSession = {
   client?: string
   soul?: string
   soulBodyHash?: string
+  mode?: "code" | "chat"
+  companionID?: string
   model?: {
     id: string
     providerID: string
@@ -4091,6 +4095,28 @@ export type SessionInfo = {
     archived?: number
   }
   title: string
+}
+
+export type CompanionImportResult = {
+  profile: CompanionInfo
+  imported: boolean
+}
+
+export type CompanionInfo = {
+  id: string
+  name: string
+  soulID: string
+  directory: string
+  createdAt: number | "Infinity" | "-Infinity" | "NaN"
+  files: number | "Infinity" | "-Infinity" | "NaN"
+  warnings: Array<string>
+  timezone: string
+}
+
+export type CompanionImportInput = {
+  source: string
+  id?: string
+  name?: string
 }
 
 export type SessionBusyError = {
@@ -7558,6 +7584,8 @@ export type SessionCreateData = {
     permission?: PermissionRuleset
     workspaceID?: string
     soul?: string
+    mode?: "code" | "chat"
+    companionID?: string
   }
   path?: never
   query?: {
@@ -9295,6 +9323,68 @@ export type SoulDefaultResponses = {
 }
 
 export type SoulDefaultResponse = SoulDefaultResponses[keyof SoulDefaultResponses]
+
+export type CompanionListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/companion"
+}
+
+export type CompanionListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionListError = CompanionListErrors[keyof CompanionListErrors]
+
+export type CompanionListResponses = {
+  /**
+   * Imported companion profiles without private memory content
+   */
+  200: Array<CompanionInfo>
+}
+
+export type CompanionListResponse = CompanionListResponses[keyof CompanionListResponses]
+
+export type CompanionImportData = {
+  body?: CompanionImportInput
+  path?: never
+  query?: never
+  url: "/companion/import"
+}
+
+export type CompanionImportErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionImportError = CompanionImportErrors[keyof CompanionImportErrors]
+
+export type CompanionImportResponses = {
+  /**
+   * Imported profile and whether this call created it
+   */
+  200: CompanionImportResult
+}
+
+export type CompanionImportResponse = CompanionImportResponses[keyof CompanionImportResponses]
 
 export type SyncStartData = {
   body?: never

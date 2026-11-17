@@ -27,6 +27,11 @@ import type {
   BackgroundSteerResponses,
   CommandListErrors,
   CommandListResponses,
+  CompanionImportErrors,
+  CompanionImportInput,
+  CompanionImportResponses,
+  CompanionListErrors,
+  CompanionListResponses,
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
@@ -3351,6 +3356,8 @@ export class Session2 extends HeyApiClient {
       permission?: PermissionRuleset
       workspaceID?: string
       soul?: string
+      mode?: "code" | "chat"
+      companionID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3368,6 +3375,8 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
             { in: "body", key: "soul" },
+            { in: "body", key: "mode" },
+            { in: "body", key: "companionID" },
           ],
         },
       ],
@@ -4931,6 +4940,44 @@ export class Soul extends HeyApiClient {
   }
 }
 
+export class Companion extends HeyApiClient {
+  /**
+   * List companion profiles
+   *
+   * List the existing companion identities available to Chat in both terminal and desktop clients.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<CompanionListResponses, CompanionListErrors, ThrowOnError>({
+      url: "/companion",
+      ...options,
+    })
+  }
+
+  /**
+   * Import an existing companion archive
+   *
+   * Import a local OpenClaw directory or ZIP on the server into a private companion workspace. Source files are preserved; credentials, old runtime instructions and scheduled jobs are not activated. Existing profiles are never overwritten.
+   */
+  public import<ThrowOnError extends boolean = false>(
+    parameters?: {
+      companionImportInput?: CompanionImportInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "companionImportInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<CompanionImportResponses, CompanionImportErrors, ThrowOnError>({
+      url: "/companion/import",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class History extends HeyApiClient {
   /**
    * List sync events
@@ -6145,6 +6192,11 @@ export class OpencodeClient extends HeyApiClient {
   private _soul?: Soul
   get soul(): Soul {
     return (this._soul ??= new Soul({ client: this.client }))
+  }
+
+  private _companion?: Companion
+  get companion(): Companion {
+    return (this._companion ??= new Companion({ client: this.client }))
   }
 
   private _sync?: Sync

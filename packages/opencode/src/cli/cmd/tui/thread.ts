@@ -22,6 +22,8 @@ import {
   sanitizedProcessEnv,
 } from "@redcode-ai/core/util/redcode-process"
 import { validateSession } from "./validate-session"
+import { Companion } from "@/companion/companion"
+import { Effect } from "effect"
 
 declare global {
   const REDCODE_WORKER_PATH: string
@@ -102,6 +104,16 @@ export async function latestProjectDirectory(): Promise<string | undefined> {
   return undefined
 }
 
+export const resolveStartupCompanion = Effect.fn("Tui.resolveStartupCompanion")(function* (id: string) {
+  const service = yield* Companion.Service
+  const profile = yield* service.get(id)
+  if (!profile)
+    return yield* Effect.fail(
+      new Error(`Companion "${id}" was not found. Import it with redcode companion import first.`),
+    )
+  return profile
+}, Effect.provide(Companion.defaultLayer))
+
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
   describe: "start redcode tui",
@@ -137,6 +149,10 @@ export const TuiThreadCommand = cmd({
       .option("agent", {
         type: "string",
         describe: "agent to use",
+      })
+      .option("companion", {
+        type: "string",
+        describe: "open Chat with an imported companion",
       }),
   handler: async (args) => {
     // Keep ENABLE_PROCESSED_INPUT cleared even if other code flips it.
@@ -155,14 +171,21 @@ export const TuiThreadCommand = cmd({
 
       // 261110 Red 不再弹启动前的 raw 选择器：显式 path 优先；否则尊重真实调用 cwd，
       // 只有 cwd 落在 exe 安装目录时才恢复最近仍有效的项目；都没有就留空直达首页。
+      const companion = args.companion ? await Effect.runPromise(resolveStartupCompanion(args.companion)) : undefined
+      if (companion && args.project && !sameDirectory(resolveThreadDirectory(args.project), companion.directory)) {
+        UI.error("--companion uses its personal workspace; omit the project path to open Chat")
+        process.exitCode = 1
+        return
+      }
       const next =
-        args.project !== undefined && args.project !== ""
+        companion?.directory ??
+        (args.project !== undefined && args.project !== ""
           ? resolveThreadDirectory(args.project)
           : (resolveInvocationDirectory({
               cwd: process.cwd(),
               execPath: process.execPath,
               compiled: typeof REDCODE_WORKER_PATH !== "undefined",
-            }) ?? (await latestProjectDirectory()))
+            }) ?? (await latestProjectDirectory())))
       const file = await target()
       if (next) {
         try {
@@ -258,6 +281,7 @@ export const TuiThreadCommand = cmd({
           sessionID: args.session,
           directory: cwd,
           fetch: transport.fetch,
+          companionID: companion?.id,
         })
       } catch (error) {
         UI.error(errorMessage(error))
@@ -292,6 +316,8 @@ export const TuiThreadCommand = cmd({
             model: args.model,
             prompt,
             fork: args.fork,
+            companionID: companion?.id,
+            companionName: companion?.name,
           },
         })
       } finally {

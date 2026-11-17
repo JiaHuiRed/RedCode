@@ -3,6 +3,27 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "mode.navigation": "Chat 与 Code",
+  "chat.title": "在这里，接着聊。",
+  "chat.description": "聊聊日常，也一起做事。带上已经积累的记忆，继续往后的相处。",
+  "chat.profile.files": "{{count}} 份档案文件",
+  "chat.profile.description": "可以开始新的聊天，也可以接着以前的对话。同一份档案会一直跟着她。",
+  "chat.profile.choose": "选择伙伴",
+  "chat.start": "开始聊天",
+  "chat.opening": "正在打开…",
+  "chat.recent": "你们的对话",
+  "chat.recent.empty": "来到这里之后的对话，会留在这份列表里。",
+  "chat.import.title": "把伙伴接过来",
+  "chat.import.description": "导入已有的 OpenClaw 或 RedClaw 档案，接上原来的身份与记忆。",
+  "chat.import.source": "档案位置",
+  "chat.import.placeholder": ".openclaw 文件夹或 ZIP 文件路径",
+  "chat.import.remote": "请输入所连接服务器上的路径。",
+  "chat.import.folder": "选择文件夹",
+  "chat.import.zip": "选择 ZIP",
+  "chat.import.action": "导入档案",
+  "chat.import.busy": "正在导入…",
+  "chat.import.notes": "导入说明",
+
   "session.deliverables.title": "本轮成果",
   "session.deliverables.subtitle": "写好的文件，点开就能看。",
   "session.deliverables.read": "阅读文档",

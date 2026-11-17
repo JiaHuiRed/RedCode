@@ -58,6 +58,10 @@ export const SessionTable = sqliteTable(
     // 决策：docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md
     soul: text(),
     soul_body_hash: text(),
+    mode: text({ enum: ["code", "chat"] })
+      .notNull()
+      .default("code"),
+    companion_id: text(),
     model: text({ mode: "json" }).$type<{
       id: string
       providerID: string

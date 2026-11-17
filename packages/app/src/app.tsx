@@ -50,6 +50,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 import { awaitStartupHealth } from "./utils/startup-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
+const ChatRoute = lazy(() => import("@/pages/chat"))
 const Session = lazy(() => import("@/pages/session"))
 
 // 260901 cc @pierre/diffs 改成用到才加载。
@@ -382,6 +383,7 @@ export function AppInterface(props: {
                   )}
                 >
                   <Route path="/" component={HomeRoute} />
+                  <Route path="/chat" component={ChatRoute} />
                   <Route path="/:dir" component={DirectoryLayout}>
                     <Route path="/" component={() => <Navigate href="session" />} />
                     <Route path="/session/:id?" component={SessionRoute} />

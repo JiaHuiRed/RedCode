@@ -3,6 +3,8 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { compareTime } from "@/utils/id"
 import { findLast } from "@redcode-ai/core/util/array"
 import { base64Encode } from "@redcode-ai/core/util/encode"
+import { companionSessions, isCodeSession } from "@/utils/product-mode"
+import { pathKey } from "@/utils/path-key"
 
 // 261003 Red undo 的「等待期快照保护」回归：直接抽取生产源码注入依赖运行，
 // 避免复制实现漂移（与 .redcode/temp 的审计探针同一手法）。保护语义：
@@ -21,6 +23,11 @@ const extract = (source: string, startMarker: string, endMarker: string) => {
 const commandSource = await Bun.file(new URL("./use-session-commands.tsx", import.meta.url)).text()
 const promptSource = await Bun.file(new URL("../../context/prompt.tsx", import.meta.url)).text()
 const undoSource = extract(commandSource, "  const undo = async () => {", "\n  const redo = async () => {")
+const sessionListSource = extract(
+  commandSource,
+  "  const sessionList = createMemo(() => {",
+  "\n  const currentSessionIndex = createMemo",
+)
 const pickSource = extract(promptSource, "    const pick = (scope?: Scope)", "\n    // ")
 const utilSource = extract(promptSource, "function isSelectionEqual(", "\nfunction cloneSelection(").replace(
   "export function isPromptEqual",
@@ -29,6 +36,35 @@ const utilSource = extract(promptSource, "function isSelectionEqual(", "\nfuncti
 const { isPromptEqual } = new Function(`${utilSource}; return { isPromptEqual }`)() as {
   isPromptEqual: (a: { type: string; content?: string }[], b: { type: string; content?: string }[]) => boolean
 }
+
+test("session navigation uses the decoded directory and the current companion binding", () => {
+  const directory = "C:/synthetic-only"
+  const sessions = [
+    { id: "legacy", directory, time: { created: 1, updated: 1 } },
+    { id: "code", directory, mode: "code", time: { created: 2, updated: 2 } },
+    { id: "chat", directory, mode: "chat", companionID: "first", time: { created: 3, updated: 3 } },
+    { id: "other", directory, mode: "chat", companionID: "second", time: { created: 4, updated: 4 } },
+    { id: "elsewhere", directory: "C:/other-project", time: { created: 5, updated: 5 } },
+  ]
+  let current = sessions[2]
+  const dependencies = {
+    createMemo: (fn: () => unknown) => fn,
+    params: { dir: base64Encode(directory) },
+    info: () => current,
+    sync: { data: { session: sessions } },
+    sdk: { directory },
+    companionSessions,
+    isCodeSession,
+    pathKey,
+    compareTime,
+  }
+  const list = new Function(...Object.keys(dependencies), `${sessionListSource}; return sessionList;`)(
+    ...Object.values(dependencies),
+  ) as () => { id: string }[]
+  expect(list().map((session) => session.id)).toEqual(["chat"])
+  current = sessions[1]
+  expect(list().map((session) => session.id)).toEqual(["code", "legacy"])
+})
 
 type PromptPart = { type: "text"; content: string; start: number; end: number }
 type Scope = { dir: string; id?: string }

@@ -900,6 +900,41 @@ const scenarios: Scenario[] = [
     .mutating()
     .at((ctx) => ({ path: "/session", headers: ctx.headers(), body: { soul: "missing-soul" } }))
     .status(400),
+  http.protected.get("/companion", "companion.list").json(200, (body) => {
+    array(body)
+    check(
+      body.every((item) => isRecord(item) && !("content" in item)),
+      "companion list should contain metadata only",
+    )
+  }),
+  http.protected
+    .post("/companion/import", "companion.import")
+    .mutating()
+    .seeded(() =>
+      Effect.promise(async () => {
+        const source = path.join(exerciseGlobalRoot, "companion-source")
+        await Bun.write(path.join(source, "workspace", "SOUL.md"), "# Mira\nA familiar companion.")
+        await Bun.write(path.join(source, "workspace", "MEMORY.md"), "We made a paper lantern together.")
+        return source
+      }),
+    )
+    .at((ctx) => ({
+      path: "/companion/import",
+      headers: ctx.headers(),
+      body: { source: ctx.state, id: "httpapi-companion", name: "Mira" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      object(body.profile)
+      check(body.profile.id === "httpapi-companion", "import should return the stable archive id")
+      check(body.profile.soulID === "httpapi-companion", "archive should bind its own Soul")
+      check(typeof body.profile.directory === "string", "archive should return its shared workspace")
+      array(body.profile.warnings)
+    }),
+  http.protected
+    .post("/companion/import", "companion.import.invalid")
+    .at((ctx) => ({ path: "/companion/import", headers: ctx.headers(), body: { source: "" } }))
+    .status(400),
   http.protected.get("/soul", "soul.list").json(200, (body) => {
     array(body)
     check(

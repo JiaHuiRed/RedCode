@@ -5,6 +5,8 @@ import type { PromptInfo } from "../component/prompt/history"
 export type HomeRoute = {
   type: "home"
   prompt?: PromptInfo
+  companionID?: string
+  companionName?: string
 }
 
 export type SessionRoute = {

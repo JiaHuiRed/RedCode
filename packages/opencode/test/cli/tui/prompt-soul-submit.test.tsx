@@ -48,8 +48,10 @@ const theme = {
 }
 const syntax = SyntaxStyle.fromTheme([])
 
-async function mountPrompt() {
+async function mountPrompt(companionID?: string) {
   const selected: string[] = []
+  const requests: { pathname: string; body: Record<string, unknown> }[] = []
+  const saved: { key: string; value: unknown }[] = []
   let ref: PromptRef | undefined
   let dispatchCommand!: (command: string) => void
   const local = {
@@ -91,9 +93,27 @@ async function mountPrompt() {
     },
     session: { get: () => undefined },
   }
-  const kv = { get: (_key: string, fallback?: unknown) => fallback, set: () => {} }
+  const kv = {
+    get: (_key: string, fallback?: unknown) => fallback,
+    set: (key: string, value: unknown) => saved.push({ key, value }),
+  }
   const config = createTuiResolvedConfig()
-  const fetch = Object.assign(async () => new Response("{}"), { preconnect: () => {} })
+  const fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const pathname = new URL(request.url).pathname
+      if (request.method === "POST") requests.push({ pathname, body: await request.json() })
+      if (pathname === "/session")
+        return Response.json({
+          id: "ses_companion_prompt",
+          soul: companionID ?? "karina",
+          mode: companionID ? "chat" : "code",
+          companionID,
+        })
+      return Response.json({})
+    },
+    { preconnect: () => {} },
+  )
 
   function OpenPrompt() {
     return <Prompt ref={(value) => (ref = value)} />
@@ -109,7 +129,7 @@ async function mountPrompt() {
         <TuiConfigProvider config={config}>
           <SDKProvider url="http://127.0.0.1" fetch={fetch} events={{ subscribe: async () => () => {} }}>
             <ArgsProvider>
-              <RouteProvider initialRoute={{ type: "home" }}>
+              <RouteProvider initialRoute={{ type: "home", companionID }}>
                 <ProjectProvider>
                   <EditorContextProvider>
                     <SyncContext.Provider value={sync as never}>
@@ -121,9 +141,9 @@ async function mountPrompt() {
                                 <PromptStashProvider>
                                   <ToastProvider>
                                     <DialogProvider>
-                                       <FrecencyProvider>
-                                         <OpenPrompt />
-                                       </FrecencyProvider>
+                                      <FrecencyProvider>
+                                        <OpenPrompt />
+                                      </FrecencyProvider>
                                     </DialogProvider>
                                   </ToastProvider>
                                 </PromptStashProvider>
@@ -167,7 +187,17 @@ async function mountPrompt() {
       await paint()
     }
   }
-  return { app, ref, selected, paint, waitForFrame, waitForSelection, dispatchCommand: (command: string) => dispatchCommand(command) }
+  return {
+    app,
+    ref,
+    selected,
+    requests,
+    saved,
+    paint,
+    waitForFrame,
+    waitForSelection,
+    dispatchCommand: (command: string) => dispatchCommand(command),
+  }
 }
 
 test("prompt.submit keeps the Soul selector open and supports selection or cancellation", async () => {
@@ -219,6 +249,42 @@ test("prompt.soul command opens the selector directly like registered slashes", 
     prompt.app.mockInput.pressEnter()
     await prompt.waitForFrame("选择灵魂", false)
     expect(prompt.selected).toContain("karina")
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})
+
+test("Chat keeps its companion and does not change Code's Soul preference", async () => {
+  const prompt = await mountPrompt("mira")
+  try {
+    prompt.ref.set({ input: "/soul yuqi", parts: [] })
+    expect(await prompt.ref.submit()).toBe(true)
+    expect(prompt.selected).toEqual([])
+    expect(await prompt.paint()).not.toContain("选择灵魂")
+    prompt.dispatchCommand("prompt.soul")
+    expect(await prompt.paint()).not.toContain("选择灵魂")
+    expect(prompt.selected).toEqual([])
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})
+
+test("Chat creates an explicitly bound session before sending its first message", async () => {
+  const prompt = await mountPrompt("mira")
+  try {
+    prompt.ref.set({ input: "Hello again", parts: [] })
+    expect(await prompt.ref.submit()).toBe(true)
+    expect(prompt.requests[0]).toEqual({
+      pathname: "/session",
+      body: {
+        agent: "redmind",
+        mode: "chat",
+        companionID: "mira",
+        model: { providerID: "test", id: "model" },
+      },
+    })
+    expect(prompt.requests[1]?.pathname).toBe("/session/ses_companion_prompt/prompt_async")
+    expect(prompt.saved.some((item) => item.key === "tui.lastSoul")).toBe(false)
   } finally {
     prompt.app.renderer.destroy()
   }

@@ -6,7 +6,7 @@ It understands and edits code, runs commands, uses developer tools, and works wi
 
 Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode is tailored to Chinese-language workflows and personalized collaboration.
 
-[![Version](https://badgen.net/badge/Version/0.18.6/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.19.0/blue)](CHANGELOG.md)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
@@ -57,6 +57,17 @@ After the first launch, connect your own model provider or local model. Model se
 Keep API keys and machine-specific paths in your local `~/.redcode/redcode.local.jsonc`, not in version control.
 
 For installation, model setup, permissions, and Soul configuration, see [MANUAL.md](MANUAL.md) (Chinese).
+
+## RedSpace: Chat and Code
+
+Version 0.19.0 starts the transition to two product modes sharing the same backend and personal archive in TUI and GUI:
+
+- **Code** keeps existing development workspaces, Souls, engineering memory, and permission modes.
+- **Chat** imports an existing OpenClaw / RedClaw companion's identity, long-term memory, and diaries. The same companion can also use tools for practical work.
+
+In the terminal, import with `redcode companion import <directory-or-zip> --id companion`, then open `redcode --companion companion`. Use `/chat` and `/code` during a local TUI session. When running from source, replace `redcode` with `bun dev`. In the GUI, use the Chat entry in the title bar.
+
+This first slice supports archive continuity and selective memory writes. Historical JSONL conversation reconstruction, heartbeat, dreams, and old scheduled jobs are follow-up work. Existing source directories, CLI names, and local configuration paths remain compatible. See the [manual](MANUAL.md#65-redspace-chat-个人档案) for migration boundaries.
 
 ## 📖 Documentation
 

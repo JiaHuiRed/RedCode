@@ -37,6 +37,7 @@ import { Git } from "../../src/git"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
+import { Companion } from "@/companion/companion"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
@@ -124,6 +125,7 @@ const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLaye
 
 function makeHttp() {
   const deps = Layer.mergeAll(
+    Companion.defaultLayer,
     Session.defaultLayer,
     Snapshot.defaultLayer,
     LLM.defaultLayer,

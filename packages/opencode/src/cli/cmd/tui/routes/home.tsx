@@ -52,6 +52,7 @@ export function Home() {
   let attempting = false
 
   const openSoul = async () => {
+    if (route.companionID) return
     if (!(await local.soul.refresh())) return
     dialog.replace(() => <DialogSoul />)
   }
@@ -132,13 +133,17 @@ export function Home() {
         <box height={1} minHeight={0} flexShrink={1} />
         <box onMouseUp={openSoul}>
           <text>
-            Soul:{" "}
-            {local.soul.label(local.soul.saved() ?? local.soul.default()) ??
-              local.soul.saved() ??
-              local.soul.default() ??
-              "server default"}
-            {local.soul.saved() ? " · last selected" : " · server default"}
-            {local.soul.ready() && local.soul.saved() && !local.soul.current() ? " · unavailable; choose /soul" : ""}
+            {route.companionID ? "Chat · " : "Code · Soul: "}
+            {route.companionID
+              ? (route.companionName ?? route.companionID)
+              : (local.soul.label(local.soul.saved() ?? local.soul.default()) ??
+                local.soul.saved() ??
+                local.soul.default() ??
+                "server default")}
+            {route.companionID ? " · /code 开发" : local.soul.saved() ? " · last selected" : " · server default"}
+            {!route.companionID && local.soul.ready() && local.soul.saved() && !local.soul.current()
+              ? " · unavailable; choose /soul"
+              : ""}
           </text>
         </box>
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>
@@ -147,7 +152,11 @@ export function Home() {
               <Prompt
                 ref={bind}
                 right={<TuiPluginRuntime.Slot name="home_prompt_right" />}
-                placeholders={placeholder}
+                placeholders={
+                  route.companionID
+                    ? { normal: ["今天想聊些什么？", "接着上次的话题聊聊", "帮我处理一件事"], shell: placeholder.shell }
+                    : placeholder
+                }
                 minHeight={HOME_PROMPT_MIN_HEIGHT}
               />
             </TuiPluginRuntime.Slot>

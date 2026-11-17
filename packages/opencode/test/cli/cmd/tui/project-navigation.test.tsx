@@ -13,6 +13,7 @@ import { tmpdir } from "../../../fixture/fixture"
 import { createTuiResolvedConfig } from "../../../fixture/tui-runtime"
 import { createEventSource, createFetch, directory, json, wait, type FetchHandler } from "./sync-fixture"
 import { ArgsProvider } from "../../../../src/cli/cmd/tui/context/args"
+import type { Args } from "../../../../src/cli/cmd/tui/context/args"
 import { ExitProvider } from "../../../../src/cli/cmd/tui/context/exit"
 import { KVProvider } from "../../../../src/cli/cmd/tui/context/kv"
 import { ProjectProvider } from "../../../../src/cli/cmd/tui/context/project"
@@ -26,7 +27,11 @@ function statusEvent(sessionID: string, status: "idle" | "busy"): GlobalEvent {
   return {
     directory,
     project: "proj_test",
-    payload: { id: `evt_status_${sessionID}`, type: "session.status", properties: { sessionID, status: { type: status } } },
+    payload: {
+      id: `evt_status_${sessionID}`,
+      type: "session.status",
+      properties: { sessionID, status: { type: status } },
+    },
   }
 }
 
@@ -36,7 +41,11 @@ function askedEvent(kind: "permission" | "question", id: string, sessionID: stri
     project: "proj_test",
     payload:
       kind === "permission"
-        ? { id: `evt_${id}`, type: "permission.asked", properties: { id, sessionID, permission: "file", patterns: [], metadata: {}, always: [] } }
+        ? {
+            id: `evt_${id}`,
+            type: "permission.asked",
+            properties: { id, sessionID, permission: "file", patterns: [], metadata: {}, always: [] },
+          }
         : { id: `evt_${id}`, type: "question.asked", properties: { id, sessionID, questions: [] } },
   }
 }
@@ -47,14 +56,18 @@ function repliedEvent(kind: "permission" | "question", requestID: string, sessio
     project: "proj_test",
     payload:
       kind === "permission"
-        ? { id: `evt_reply_${requestID}`, type: "permission.replied", properties: { sessionID, requestID, reply: "once" } }
+        ? {
+            id: `evt_reply_${requestID}`,
+            type: "permission.replied",
+            properties: { sessionID, requestID, reply: "once" },
+          }
         : { id: `evt_reply_${requestID}`, type: "question.replied", properties: { sessionID, requestID, answers: [] } },
   }
 }
 
 async function mountNavigation(
   override?: FetchHandler,
-  nav?: { local?: boolean; directory?: string | undefined },
+  nav?: { local?: boolean; directory?: string | undefined; args?: Args },
 ) {
   const calls = createFetch(override)
   const events = createEventSource()
@@ -81,7 +94,7 @@ async function mountNavigation(
               <ProjectNavigationProvider
                 directory={nav?.directory !== undefined ? nav.directory : directory}
                 config={createTuiResolvedConfig()}
-                args={{}}
+                args={nav?.args ?? {}}
                 local={nav?.local ?? true}
               >
                 <ProjectProvider>
@@ -198,6 +211,68 @@ describe("project navigation activity", () => {
     try {
       expect(navigation.enabled).toBe(false)
       expect(navigation.summary(directory)).toEqual({ busy: 0, waiting: 0 })
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+})
+
+describe("project navigation product modes", () => {
+  test("an explicit companion startup opens its bound Chat home", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    const { app, navigation } = await mountNavigation(undefined, {
+      args: { companionID: "mira", companionName: "Mira" },
+    })
+    try {
+      expect(navigation.current().view.route).toEqual({ type: "home", companionID: "mira", companionName: "Mira" })
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
+  test("Code navigation clears a saved Chat draft binding", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    await using target = await tmpdir()
+    const { app, navigation } = await mountNavigation()
+    try {
+      navigation.rememberView(target.path, { route: { type: "home", companionID: "mira", companionName: "Mira" } })
+      expect(await navigation.switchTo(target.path, undefined, "code")).toBe(true)
+      expect(navigation.current().view.route).toEqual({ type: "home" })
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
+  test("normal workspace navigation restores Chat while Code navigation returns to a Code home", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    await using target = await tmpdir()
+    const { app, navigation } = await mountNavigation((url) => {
+      if (url.pathname === "/session/ses_chat")
+        return json({
+          id: "ses_chat",
+          directory: target.path,
+          mode: "chat",
+          companionID: "mira",
+        })
+    })
+    try {
+      navigation.rememberView(target.path, { route: { type: "session", sessionID: "ses_chat" } })
+      expect(await navigation.switchTo(target.path)).toBe(true)
+      expect(navigation.current().view.route).toEqual({ type: "session", sessionID: "ses_chat" })
+      expect(await navigation.switchTo(target.path, undefined, "code")).toBe(true)
+      expect(navigation.current().view.route).toEqual({ type: "home" })
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous

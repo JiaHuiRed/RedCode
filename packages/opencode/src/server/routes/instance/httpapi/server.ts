@@ -40,6 +40,7 @@ import { PtyTicket } from "@/pty/ticket"
 import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { Soul } from "@/soul"
+import { Companion } from "@/companion/companion"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -84,6 +85,7 @@ import { ptyConnectRoute, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
 import { soulHandlers } from "./handlers/soul"
+import { companionHandlers } from "./handlers/companion"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { v2Handlers } from "./handlers/v2"
@@ -145,6 +147,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     providerHandlers,
     sessionHandlers,
     soulHandlers,
+    companionHandlers,
     syncHandlers,
     v2Handlers,
     tuiHandlers,
@@ -266,6 +269,7 @@ export function createRoutes(
       RuntimeFlags.defaultLayer,
       Session.defaultLayer,
       Soul.defaultLayer,
+      Companion.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
       SessionRevert.defaultLayer,

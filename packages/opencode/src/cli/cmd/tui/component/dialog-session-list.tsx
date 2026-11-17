@@ -18,6 +18,7 @@ import { errorMessage } from "@/util/error"
 import { DialogSessionDeleteFailed } from "./dialog-session-delete-failed"
 import { WorkspaceLabel } from "./workspace-label"
 import { useCommandShortcut } from "../keymap"
+import { sessionsForMode } from "../companion"
 
 export function DialogSessionList() {
   const dialog = useDialog()
@@ -44,7 +45,14 @@ export function DialogSessionList() {
   )
 
   const currentSessionID = createMemo(() => (route.data.type === "session" ? route.data.sessionID : undefined))
-  const sessions = createMemo(() => searchResults() ?? sync.data.session)
+  const companionID = createMemo(() =>
+    route.data.type === "home"
+      ? route.data.companionID
+      : route.data.type === "session"
+        ? sync.session.get(route.data.sessionID)?.companionID
+        : undefined,
+  )
+  const sessions = createMemo(() => sessionsForMode(searchResults() ?? sync.data.session, companionID()))
 
   function recover(session: NonNullable<ReturnType<typeof sessions>[number]>) {
     const workspace = project.workspace.get(session.workspaceID!)
@@ -102,7 +110,11 @@ export function DialogSessionList() {
           await sync.session.refresh()
           if (search()) await refetch()
           if (info?.workspaceID === session.workspaceID) {
-            route.navigate({ type: "home" })
+            route.navigate({
+              type: "home",
+              companionID: info?.companionID,
+              companionName: local.soul.label(info?.soul),
+            })
           }
           return true
         }}
@@ -130,7 +142,7 @@ export function DialogSessionList() {
       .map((x) => x.id)
   }
 
-  const [browseOrder] = createSignal<string[]>(orderByRecency(sync.data.session))
+  const [browseOrder] = createSignal<string[]>(orderByRecency(sessions()))
 
   const quickSwitchHint = createMemo(() => {
     const first = quickSwitch1()
@@ -218,7 +230,7 @@ export function DialogSessionList() {
 
   return (
     <DialogSelect
-      title="Sessions"
+      title={companionID() ? "Chat · 会话" : "Code · 会话"}
       options={options()}
       skipFilter={true}
       current={currentSessionID()}

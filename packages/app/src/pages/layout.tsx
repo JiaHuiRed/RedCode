@@ -53,6 +53,8 @@ import { setSessionHandoff } from "@/utils/session-handoff"
 import { createPrefetch } from "./layout/prefetch"
 import { createSDKNotificationToasts } from "./layout/notification-toasts"
 import { PetLayer } from "@/pet/pet-layer"
+import { useProductMode, useProductSession } from "@/context/product-mode"
+import { companionSessions, isCodeSession, newConversationHref, productMode } from "@/utils/product-mode"
 
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@redcode-ai/ui/theme/context"
@@ -131,6 +133,8 @@ export default function Layout(props: ParentProps) {
   const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))
   const colorSchemeLabel = (scheme: ColorScheme) => language.t(colorSchemeKey[scheme])
   const currentDir = createMemo(() => route().dir)
+  const mode = useProductMode()
+  const currentSession = useProductSession()
 
   // 260916 Red Layout owns the route-derived MCP directory; leaving the route clears it.
   // See docs/notes/implemented/bug-fix/2026-09-16-active-mcp-directory-owner.md.
@@ -456,6 +460,12 @@ export default function Layout(props: ParentProps) {
   })
 
   const currentSessions = createMemo(() => {
+    if (mode() === "chat") {
+      const current = currentSession()
+      if (!current?.companionID) return [] as Session[]
+      const [store] = globalSync.peek(current.directory, { bootstrap: false })
+      return companionSessions(store.session, current.companionID)
+    }
     const now = Date.now()
     const dirs = visibleSessionDirs()
     if (dirs.length === 0) return [] as Session[]
@@ -463,7 +473,7 @@ export default function Layout(props: ParentProps) {
     const result: Session[] = []
     for (const dir of dirs) {
       const [dirStore] = globalSync.child(dir, { bootstrap: true })
-      const dirSessions = sortedRootSessions(dirStore, now)
+      const dirSessions = sortedRootSessions(dirStore, now).filter(isCodeSession)
       result.push(...dirSessions)
     }
     return result
@@ -558,7 +568,10 @@ export default function Layout(props: ParentProps) {
 
   async function archiveSession(session: Session) {
     const [store, setStore] = globalSync.child(session.directory)
-    const sessions = store.session ?? []
+    const sessions =
+      session.mode === "chat" && session.companionID
+        ? companionSessions(store.session ?? [], session.companionID)
+        : (store.session ?? []).filter(isCodeSession)
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
@@ -590,7 +603,7 @@ export default function Layout(props: ParentProps) {
       if (nextSession) {
         navigate(`/${params.dir}/session/${nextSession.id}`)
       } else {
-        navigate(`/${params.dir}/session`)
+        navigate(newConversationHref(productMode("", session), params.dir, session.companionID))
       }
     }
   }
@@ -903,7 +916,9 @@ export default function Layout(props: ParentProps) {
       if (ticket !== navigationTicket) return false
       if (!canOpen(target.directory)) return false
       const [data] = globalSync.child(target.directory, { bootstrap: false })
-      if (data.session.some((item) => item.id === target.id)) {
+      const cached = data.session.find((item) => item.id === target.id)
+      if (cached && !isCodeSession(cached)) return false
+      if (cached) {
         setStore("lastProjectSession", root, { directory: target.directory, id: target.id, at: Date.now() })
         navigateWithSidebarReset(`/${base64Encode(target.directory)}/session/${target.id}`)
         return true
@@ -914,6 +929,7 @@ export default function Layout(props: ParentProps) {
         .catch(() => undefined)
       if (ticket !== navigationTicket) return false
       if (!resolved?.directory) return false
+      if (!isCodeSession(resolved)) return false
       if (!canOpen(resolved.directory)) return false
       setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
       navigateWithSidebarReset(`/${base64Encode(resolved.directory)}/session/${resolved.id}`)
@@ -930,7 +946,10 @@ export default function Layout(props: ParentProps) {
     }
 
     const latest = latestRootSession(
-      dirs.map((item) => globalSync.child(item, { bootstrap: false })[0]),
+      dirs.map((item) => {
+        const store = globalSync.child(item, { bootstrap: false })[0]
+        return { path: store.path, session: store.session.filter(isCodeSession) }
+      }),
       Date.now(),
     )
     if (latest && (await openSession(latest))) {
@@ -944,7 +963,7 @@ export default function Layout(props: ParentProps) {
           path: { directory: item },
           session: await globalSDK.client.session
             .list({ directory: item })
-            .then((x) => x.data ?? [])
+            .then((x) => (x.data ?? []).filter(isCodeSession))
             .catch(() => []),
         })),
       ),
@@ -1039,9 +1058,17 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), route().slug, params.id, currentProject()?.worktree, currentDir()] as const
+        return [
+          pageReady(),
+          route().slug,
+          params.id,
+          currentProject()?.worktree,
+          currentDir(),
+          mode(),
+          currentSession(),
+        ] as const
       },
-      ([ready, slug, id, root, dir]) => {
+      ([ready, slug, id, root, dir, mode, info]) => {
         if (!ready || !slug || !dir) {
           activeRoute.session = ""
           activeRoute.sessionProject = ""
@@ -1057,6 +1084,16 @@ export default function Layout(props: ParentProps) {
         }
 
         const session = `${slug}/${id}`
+        // Wait for the persisted binding before updating Code's last project.
+        if (!info) return
+
+        if (mode === "chat") {
+          notification.session.markViewed(id)
+          activeRoute.session = session
+          activeRoute.directory = dir
+          activeRoute.sessionProject = ""
+          return
+        }
 
         if (!root) {
           activeRoute.session = session

@@ -147,8 +147,8 @@ function extract(messages: MessageV2.WithParts[]) {
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
-  readonly system: () => Effect.Effect<string[], AppFileSystem.Error>
-  readonly describe: () => Effect.Effect<Inventory, AppFileSystem.Error>
+  readonly system: (options?: { memory?: boolean }) => Effect.Effect<string[], AppFileSystem.Error>
+  readonly describe: (options?: { memory?: boolean }) => Effect.Effect<Inventory, AppFileSystem.Error>
   readonly find: (dir: string) => Effect.Effect<string | undefined, AppFileSystem.Error>
   readonly resolve: (
     messages: MessageV2.WithParts[],
@@ -369,11 +369,11 @@ export const layer: Layer.Layer<
     // 261107 Red 预算管线只有一份：system()（注入文本，每轮热路径）与 describe()（注入
     // 清单，给 /instructions 与 HTTP 面）共用 evaluate()，防止两处各自演算预算语义后漂移。
     // evaluate 返回的 parts 与抽取前 system() 逐字节一致；report 是各来源命运的投影。
-    const evaluate = Effect.fn("Instruction.evaluate")(function* () {
+    const evaluate = Effect.fn("Instruction.evaluate")(function* (options?: { memory?: boolean }) {
       const config = yield* cfg.get()
       const maxSourceBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
       const maxTotalBytes = config.instruction_budget?.max_total_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxTotalBytes
-      const discovered = yield* discover()
+      const discovered = (yield* discover()).filter((source) => options?.memory !== false || source.kind !== "memory")
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
       )
@@ -522,15 +522,15 @@ export const layer: Layer.Layer<
       return { parts, report, total, maxSourceBytes, maxTotalBytes }
     })
 
-    const system = Effect.fn("Instruction.system")(function* () {
-      const { parts } = yield* evaluate()
+    const system = Effect.fn("Instruction.system")(function* (options?: { memory?: boolean }) {
+      const { parts } = yield* evaluate(options)
       return parts
     })
 
     // 261107 Red 注入清单：谁被注入、各占多少字节、谁被预算丢弃。只给用户/HTTP 面，
     // 不进模型上下文。
-    const describe = Effect.fn("Instruction.describe")(function* () {
-      const { report, total, maxSourceBytes, maxTotalBytes } = yield* evaluate()
+    const describe = Effect.fn("Instruction.describe")(function* (options?: { memory?: boolean }) {
+      const { report, total, maxSourceBytes, maxTotalBytes } = yield* evaluate(options)
       return { sources: report, totalBytes: total, budget: { maxSourceBytes, maxTotalBytes } }
     })
 

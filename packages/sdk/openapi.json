@@ -5597,6 +5597,13 @@
                   },
                   "soul": {
                     "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["code", "chat"]
+                  },
+                  "companionID": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -10104,6 +10111,123 @@
         ]
       }
     },
+    "/companion": {
+      "get": {
+        "tags": ["companion"],
+        "operationId": "companion.list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Imported companion profiles without private memory content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompanionInfo"
+                  },
+                  "description": "Imported companion profiles without private memory content"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "List the existing companion identities available to Chat in both terminal and desktop clients.",
+        "summary": "List companion profiles",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/companion/import": {
+      "post": {
+        "tags": ["companion"],
+        "operationId": "companion.import",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Imported profile and whether this call created it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Import a local OpenClaw directory or ZIP on the server into a private companion workspace. Source files are preserved; credentials, old runtime instructions and scheduled jobs are not activated. Existing profiles are never overwritten.",
+        "summary": "Import an existing companion archive",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanionImportInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.import({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/sync/start": {
       "post": {
         "tags": ["sync"],
@@ -13679,6 +13803,13 @@
             "type": "string"
           },
           "soulBodyHash": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["code", "chat"]
+          },
+          "companionID": {
             "type": "string"
           },
           "model": {
@@ -17675,6 +17806,13 @@
             "type": "string"
           },
           "soulBodyHash": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["code", "chat"]
+          },
+          "companionID": {
             "type": "string"
           },
           "model": {
@@ -25080,6 +25218,85 @@
         "required": ["id", "projectID", "cost", "tokens", "time", "title"],
         "additionalProperties": false
       },
+      "CompanionImportResult": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/CompanionInfo"
+          },
+          "imported": {
+            "type": "boolean"
+          }
+        },
+        "required": ["profile", "imported"],
+        "additionalProperties": false
+      },
+      "CompanionInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "soulID": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "files": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "name", "soulID", "directory", "createdAt", "files", "warnings", "timezone"],
+        "additionalProperties": false
+      },
+      "CompanionImportInput": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["source"],
+        "additionalProperties": false
+      },
       "SessionBusyError": {
         "type": "object",
         "properties": {
@@ -28111,6 +28328,9 @@
     },
     {
       "name": "soul"
+    },
+    {
+      "name": "companion"
     },
     {
       "name": "sync",

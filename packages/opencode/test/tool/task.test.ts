@@ -7,6 +7,7 @@ import { BackgroundCancel } from "@/background/cancel"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
+import { Companion } from "@/companion/companion"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { FetchHttpClient } from "effect/http"
 import { Format } from "@/format"
@@ -83,10 +84,8 @@ const toolRegistryLayer = ToolRegistry.layer.pipe(
   Layer.provide(Todo.defaultLayer),
   Layer.provide(Skill.defaultLayer),
   Layer.provide(Agent.defaultLayer),
-  Layer.provide(Session.defaultLayer),
-  Layer.provide(
-    Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundCancel.defaultLayer),
-  ),
+  Layer.provide(Layer.mergeAll(Session.defaultLayer, Companion.defaultLayer)),
+  Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundCancel.defaultLayer)),
   Layer.provide(Provider.defaultLayer),
   Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
   Layer.provide(Reference.defaultLayer),

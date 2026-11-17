@@ -27,6 +27,7 @@ import { Select } from "@redcode-ai/ui/select"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Button } from "@redcode-ai/ui/button"
 import { SoulAvatar } from "@/components/soul-avatar"
+import { isCodeSession } from "@/utils/product-mode"
 import { WordmarkV2 } from "@redcode-ai/ui/v2/components/wordmark-v2.jsx"
 import { readSessionDraft, sessionNextAction } from "./session-next-action"
 
@@ -91,7 +92,7 @@ export function NewSessionDesignView(props: {
     return dirs
       .flatMap((dir) => sortedRootSessions(globalSync.peek(dir, { bootstrap: false })[0], Date.now()))
       .filter((session) => {
-        if (seen.has(session.id)) return false
+        if (!isCodeSession(session) || seen.has(session.id)) return false
         seen.add(session.id)
         return true
       })

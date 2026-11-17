@@ -30,6 +30,8 @@ import { PluginRouteMissing } from "@tui/component/plugin-route-missing"
 import { ProjectProvider, useProject } from "@tui/context/project"
 import { ProjectNavigationProvider, useProjectNavigation, type ProjectScope } from "./context/project-navigation"
 import { DialogProjectSelect } from "./component/dialog-project-select"
+import { DialogCompanion } from "./component/dialog-companion"
+import { latestCodeSession, latestCompanionSession } from "./companion"
 import { EditorContextProvider } from "@tui/context/editor"
 import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
@@ -482,9 +484,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   createEffect(() => {
     // When using -c, session list is loaded in blocking phase, so we can navigate at "partial"
     if (continued || sync.status === "loading" || !args.continue) return
-    const match = sync.data.session
-      .toSorted((a, b) => b.time.updated - a.time.updated)
-      .find((x) => x.parentID === undefined)?.id
+    const match =
+      args.companionID && sdk.directory
+        ? latestCompanionSession(sync.data.session, args.companionID, sdk.directory)?.id
+        : latestCodeSession(sync.data.session)?.id
     if (match) {
       continued = true
       if (args.fork) {
@@ -498,6 +501,10 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       } else {
         route.navigate({ type: "session", sessionID: match })
       }
+    }
+    if (!match && sync.status === "complete") {
+      continued = true
+      route.navigate({ type: "home", companionID: args.companionID, companionName: args.companionName })
     }
   })
 
@@ -532,6 +539,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   const connected = useConnected()
   const appCommands = createMemo(() =>
     [
+      {
+        name: "space.chat",
+        title: "Chat · 与伙伴继续聊天",
+        category: "Space",
+        slashName: "chat",
+        hidden: navigation?.enabled !== true,
+        run: () => dialog.replace(() => <DialogCompanion />),
+      },
+      {
+        name: "space.code",
+        title: "Code · 打开开发工作区",
+        category: "Space",
+        slashName: "code",
+        hidden: navigation?.enabled !== true,
+        run: () => dialog.replace(() => <DialogProjectSelect codeOnly />),
+      },
       {
         name: "project.switch",
         title: "切换工作区",
@@ -577,8 +600,16 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "new",
         slashAliases: ["clear"],
         run: () => {
+          const session = route.data.type === "session" ? sync.session.get(route.data.sessionID) : undefined
+          const companionID = session?.companionID ?? (route.data.type === "home" ? route.data.companionID : undefined)
           route.navigate({
             type: "home",
+            companionID,
+            companionName: session
+              ? local.soul.label(session.soul)
+              : route.data.type === "home"
+                ? route.data.companionName
+                : undefined,
           })
           dialog.clear()
         },
@@ -948,7 +979,11 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
 
   event.on("session.deleted", (evt) => {
     if (route.data.type === "session" && route.data.sessionID === evt.properties.info.id) {
-      route.navigate({ type: "home" })
+      route.navigate({
+        type: "home",
+        companionID: evt.properties.info.companionID,
+        companionName: local.soul.label(evt.properties.info.soul),
+      })
       toast.show({
         variant: "info",
         message: "当前会话已被删除",

@@ -7,6 +7,7 @@ import { createStore } from "solid-js/store"
 import { useRoute } from "../../context/route"
 import { useDialog } from "../../ui/dialog"
 import { DialogStatus } from "../../component/dialog-status"
+import { useLocal } from "../../context/local"
 
 // 260615 Red shortcut hint helper
 function Hint(props: { key: string; label: string; theme: any }) {
@@ -22,6 +23,8 @@ export function Footer() {
   const { theme } = useTheme()
   const sync = useSync()
   const route = useRoute()
+  const local = useLocal()
+  const session = createMemo(() => (route.data.type === "session" ? sync.session.get(route.data.sessionID) : undefined))
   const mcp = createMemo(() => Object.values(sync.data.mcp).filter((x) => x.status === "connected").length)
   const mcpTotal = createMemo(() => Object.values(sync.data.mcp).length)
   const mcpError = createMemo(() => Object.values(sync.data.mcp).filter((x) => x.status === "failed").length)
@@ -73,7 +76,12 @@ export function Footer() {
 
   return (
     <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
-      <text fg={theme.textMuted}>{directory()}</text>
+      <text fg={theme.textMuted}>
+        {session()?.mode === "chat"
+          ? `Chat · ${local.soul.label(session()?.soul) ?? session()?.companionID} · `
+          : "Code · "}
+        {directory()}
+      </text>
       <box gap={2} flexDirection="row" flexShrink={0}>
         <Switch>
           <Match when={store.welcome}>

@@ -1,4 +1,28 @@
 export const dict = {
+  "mode.navigation": "Chat and Code",
+  "chat.title": "Pick up where you left off.",
+  "chat.description":
+    "A place for everyday conversations and getting things done, with the memories you have already made together.",
+  "chat.profile.files": "{{count}} archive files",
+  "chat.profile.description":
+    "Start a new conversation or return to an earlier one. The same companion archive stays with you.",
+  "chat.profile.choose": "Choose a companion",
+  "chat.start": "Start a conversation",
+  "chat.opening": "Opening…",
+  "chat.recent": "Your conversations",
+  "chat.recent.empty": "Your conversations here will appear in this list.",
+  "chat.import.title": "Bring your companion here",
+  "chat.import.description":
+    "Import an existing OpenClaw or RedClaw archive to continue with its identity and memories.",
+  "chat.import.source": "Archive location",
+  "chat.import.placeholder": ".openclaw directory or ZIP file path",
+  "chat.import.remote": "Enter a path on the connected server.",
+  "chat.import.folder": "Choose folder",
+  "chat.import.zip": "Choose ZIP",
+  "chat.import.action": "Import archive",
+  "chat.import.busy": "Importing…",
+  "chat.import.notes": "Import details",
+
   "session.deliverables.title": "Made this turn",
   "session.deliverables.subtitle": "Your files, ready to open.",
   "session.deliverables.read": "Read document",

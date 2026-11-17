@@ -72,6 +72,8 @@ import { referenceTextPart } from "./prompt/reference"
 import { makeShared } from "./prompt/shared"
 import { sessionSoul, sessionTitlePrefix } from "./soul"
 import * as Soul from "@/soul"
+import { Companion } from "@/companion/companion"
+import { companionAgent, isCompanionChat } from "./companion"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -154,6 +156,7 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
+    const companions = yield* Companion.Service
     const agents = yield* Agent.Service
     const provider = yield* Provider.Service
     const processor = yield* SessionProcessor.Service
@@ -1780,10 +1783,11 @@ export const layer = Layer.effect(
           continue
         }
 
-        const agent = stepSettings.agent
-        if (!agent) {
+        if (!stepSettings.agent) {
           throw yield* agentNotFound({ sessionID, name: stepSettings.user.agent })
         }
+        const agent = companionAgent(stepSettings.agent, stepSettings.session)
+        const personalChat = isCompanionChat(stepSettings.session)
         // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
         // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
         // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
@@ -2070,10 +2074,12 @@ export const layer = Layer.effect(
           const mediaEviction = (yield* config.get()).experimental?.mediaEviction
           const mediaOptions =
             mediaEviction?.enabled === false ? undefined : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
-          const [skills, env, instructions, mcpGuide, modelMsgs, soul] = yield* Effect.all([
+          const [skills, env, instructions, mcpGuide, modelMsgs, soul, companion] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
-            cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
+            cachedSystem
+              ? Effect.succeed(cachedSystem.instructions)
+              : instruction.system({ memory: !personalChat }).pipe(Effect.orDie),
             // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
             // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
@@ -2086,9 +2092,17 @@ export const layer = Layer.effect(
                 : mcpGuideText(),
             MessageV2.toModelMessagesEffect(visibleMsgs, model, mediaOptions),
             sessionSoul(sessionID, soulID, souls),
+            cachedSystem
+              ? Effect.succeed(cachedSystem.companion)
+              : personalChat
+                ? companions.bootstrap(stepSettings.session.companionID!).pipe(
+                    Effect.map((value) => value.text),
+                    Effect.orDie,
+                  )
+                : Effect.succeed(undefined),
           ])
           if (!cachedSystem) {
-            const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide }
+            const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide, companion }
             const sessionSystem = _caches.system.get(sessionID)
             if (sessionSystem) sessionSystem.set(modelKey, systemCache)
             else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
@@ -2125,6 +2139,7 @@ export const layer = Layer.effect(
             ...env,
             ...instructions,
             ...(soul.prompt ? [soul.prompt] : []),
+            ...(companion ? [companion] : []),
             ...(mcpGuide ? [mcpGuide] : []),
             ...(skills ? [skills] : []),
           ]
@@ -2219,9 +2234,10 @@ export const layer = Layer.effect(
           // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
           // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
           // injection-registry: memory-clause
-          system.push(
-            `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
-          )
+          if (!personalChat)
+            system.push(
+              `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
+            )
           // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
           // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
           // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
@@ -2839,7 +2855,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Truncate.defaultLayer),
     Layer.provide(Provider.defaultLayer),
     Layer.provide(Config.defaultLayer),
-    Layer.provide(Layer.mergeAll(Instruction.defaultLayer, Soul.defaultLayer)),
+    Layer.provide(Layer.mergeAll(Instruction.defaultLayer, Soul.defaultLayer, Companion.defaultLayer)),
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),

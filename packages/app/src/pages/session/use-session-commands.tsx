@@ -25,6 +25,8 @@ import { UserMessage } from "@redcode-ai/sdk/v2"
 import { useSessionLayout } from "@/context/session-layout"
 import { compareTime } from "@/utils/id"
 import { base64Encode } from "@redcode-ai/core/util/encode"
+import { companionSessions, isCodeSession, newConversationHref, productMode } from "@/utils/product-mode"
+import { pathKey } from "@/utils/path-key"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -96,14 +98,13 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   // 260602 Red 切 session：当前 project 内的 root session 列表（按 sidebar 排序）
   const sessionList = createMemo(() => {
     if (!params.dir) return []
-    const all = (sync.data.session ?? []) as Array<{
-      id: string
-      directory: string
-      parentID?: string
-      time?: { archived?: number; updated?: number; created?: number }
-    }>
+    const current = info()
+    const all =
+      current?.mode === "chat" && current.companionID
+        ? companionSessions(sync.data.session ?? [], current.companionID)
+        : (sync.data.session ?? []).filter(isCodeSession)
     return all
-      .filter((s) => s.directory === params.dir && !s.parentID && !s.time?.archived)
+      .filter((s) => pathKey(s.directory) === pathKey(sdk.directory) && !s.parentID && !s.time?.archived)
       .sort((a, b) => {
         const now = Date.now()
         const aUpdated = a.time?.updated ?? a.time?.created ?? 0
@@ -455,7 +456,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.new"),
       keybind: "mod+shift+s",
       slash: "new",
-      onSelect: () => navigate(`/${params.dir}/session`),
+      onSelect: () => navigate(newConversationHref(productMode("", info()), params.dir, info()?.companionID)),
     }),
     sessionCommand({
       id: "session.previous",

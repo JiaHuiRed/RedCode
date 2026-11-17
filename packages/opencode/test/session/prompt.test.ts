@@ -54,7 +54,7 @@ import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, provideInstance, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
@@ -62,6 +62,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
+import { Companion } from "@/companion/companion"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
 import { runSteerableTask, steerTask, steerTaskFromUser, TaskTool, type TaskPromptOps } from "@/tool/task"
@@ -241,6 +242,7 @@ function makePrompt(input?: {
 }) {
   const filesystem = input?.filesystem ?? AppFileSystem.defaultLayer
   const deps = Layer.mergeAll(
+    Companion.defaultLayer,
     Session.defaultLayer,
     Storage.defaultLayer,
     Snapshot.defaultLayer,
@@ -649,6 +651,92 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   const chat = yield* sessions.create(input ?? { title: "Pinned" })
   return { prompt, run, sessions, chat }
 })
+
+it.live("companion Chat recalls history, selectively saves a memory, and keeps Code separate", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    const source = path.join(directory, "archive")
+    yield* writeText(path.join(source, "workspace", "SOUL.md"), "# Mira\n\nMira identity sentinel.")
+    yield* writeText(path.join(source, "workspace", "MEMORY.md"), "We built a paper lantern together.")
+    yield* writeText(path.join(source, "workspace", "memory", "2026-01-02.md"), "We named the lantern Aurora.")
+
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const imported = yield* companions.importArchive({ source, id: "mira", name: "Mira" })
+      const souls = yield* Effect.gen(function* () {
+        return yield* Soul.Service
+      }).pipe(Effect.provide(Soul.defaultLayer))
+      yield* souls.create({ id: "coder", name: "Coder", content: "Code identity sentinel." })
+      const sessions = yield* Session.Service
+      const prompt = yield* SessionPrompt.Service
+      yield* ensureDir(path.join(imported.profile.directory, ".git"))
+      yield* writeConfig(imported.profile.directory, providerCfg(llm.url))
+      yield* writeText(path.join(imported.profile.directory, ".redcode", "MEMORY.md"), "Engineering memory sentinel.")
+
+      yield* Effect.gen(function* () {
+        const chat = yield* sessions.create({ title: "Mira Chat", mode: "chat", companionID: imported.profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+        yield* llm.tool("companion_memory", { action: "search", query: "Aurora" })
+        yield* llm.tool("companion_memory", { action: "remember", text: "Our lantern now has a blue ribbon." })
+        yield* llm.text("I will remember the blue ribbon.")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          parts: [{ type: "text", text: "Today we added a blue ribbon to Aurora." }],
+        })
+        const first = JSON.stringify((yield* llm.inputs)[0])
+        expect(first).toContain("Mira identity sentinel")
+        expect(first).toContain("paper lantern")
+        expect(first).toContain("named the lantern Aurora")
+        expect(first).toContain("companion_memory")
+        expect(first).not.toContain("Engineering memory sentinel")
+        const recalled = JSON.stringify((yield* llm.inputs)[1])
+        expect(recalled).toContain("named the lantern Aurora")
+        const toolSaved = yield* companions.search({ id: imported.profile.id, query: "Our lantern now" })
+        expect(toolSaved.results.some((result) => result.text.includes("Our lantern now has a blue ribbon"))).toBe(true)
+        const saved = yield* companions.search({ id: imported.profile.id, query: "blue ribbon" })
+        const diary = yield* companions.read({ id: imported.profile.id, path: saved.results[0].path })
+        expect(diary.text).toContain("Our lantern now has a blue ribbon")
+        expect(diary.text).not.toContain("Today we added a blue ribbon")
+        expect(diary.text).not.toContain("I will remember the blue ribbon")
+
+        const next = yield* sessions.create({ title: "Mira returns", mode: "chat", companionID: imported.profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(next.id).pipe(Effect.orDie))
+        yield* llm.text("The blue ribbon is in our diary.")
+        yield* prompt.prompt({
+          sessionID: next.id,
+          model: ref,
+          parts: [{ type: "text", text: "What did we do today?" }],
+        })
+        const second = JSON.stringify((yield* llm.inputs)[3])
+        expect(second).toContain("Our lantern now has a blue ribbon")
+        expect(second).toContain("paper lantern")
+      }).pipe(provideInstance(imported.profile.directory))
+
+      const codeDirectory = path.join(directory, "code")
+      yield* ensureDir(path.join(codeDirectory, ".git"))
+      yield* writeConfig(codeDirectory, providerCfg(llm.url))
+      yield* writeText(path.join(codeDirectory, ".redcode", "MEMORY.md"), "Engineering memory sentinel.")
+      yield* Effect.gen(function* () {
+        const code = yield* sessions.create({ title: "Code stays Code", soul: "coder" })
+        yield* Effect.addFinalizer(() => sessions.remove(code.id).pipe(Effect.orDie))
+        yield* llm.text("The code is ready.")
+        yield* prompt.prompt({ sessionID: code.id, model: ref, parts: [{ type: "text", text: "Review the code." }] })
+        const wire = JSON.stringify((yield* llm.inputs)[4])
+        expect(wire).toContain("Code identity sentinel")
+        expect(wire).toContain("Engineering memory sentinel")
+        expect(wire).not.toContain("Mira identity sentinel")
+        expect(wire).not.toContain("paper lantern")
+        expect(wire).not.toContain("blue ribbon")
+        expect(wire).not.toContain("companion_memory")
+      }).pipe(provideInstance(codeDirectory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
 
 it.instance("sends the pinned Soul body and attribution in an actual provider request", () =>
   Effect.gen(function* () {

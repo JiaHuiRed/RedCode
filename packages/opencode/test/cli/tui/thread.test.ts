@@ -2,13 +2,21 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Global } from "@redcode-ai/core/global"
-import { tmpdir } from "../../fixture/fixture"
+import { Effect, Layer } from "effect"
+import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import { Companion } from "../../../src/companion/companion"
+import { Soul } from "../../../src/soul"
+import { tmpdir, tmpdirScoped } from "../../fixture/fixture"
+import { testEffect } from "../../lib/effect"
 import { recordProjectVisit } from "../../../src/cli/cmd/tui/project-history"
 import {
   latestProjectDirectory,
   resolveInvocationDirectory,
+  resolveStartupCompanion,
   resolveThreadDirectory,
 } from "../../../src/cli/cmd/tui/thread"
+
+const it = testEffect(Layer.mergeAll(Companion.defaultLayer, CrossSpawnSpawner.defaultLayer))
 
 describe("tui thread", () => {
   async function check(project?: string) {
@@ -32,6 +40,27 @@ describe("tui thread", () => {
     await check(".")
   })
 })
+
+it.live("--companion resolves the persisted personal workspace and never falls back for a missing identity", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const source = path.join(directory, "source")
+    yield* Effect.promise(() => Bun.write(path.join(source, "workspace", "SOUL.md"), "# Mira\nA familiar companion."))
+    yield* Effect.gen(function* () {
+      const service = yield* Companion.Service
+      const imported = yield* service.importArchive({ source, id: "mira", name: "Mira" })
+      const profile = yield* resolveStartupCompanion("mira")
+      expect(profile.id).toBe("mira")
+      expect(profile.directory).toBe(imported.profile.directory)
+      expect(profile.soulID).toBe(imported.profile.soulID)
+      const missing = yield* resolveStartupCompanion("missing").pipe(Effect.flip)
+      expect(missing.message).toContain("was not found")
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
 
 // 261110 Red 启动目录规则：显式 path 与真实调用 cwd 优先，exe 目录不可信时回落最近项目，
 // 历史里的失效路径不能被当成启动位置。
