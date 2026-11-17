@@ -124,7 +124,7 @@ export default function Chat() {
       <div class="mx-auto flex w-full max-w-[960px] flex-col gap-8 px-6 py-10 md:px-10 md:py-14">
         <header class="space-y-3">
           <p class="text-12-medium text-text-weaker">RedSpace · Chat</p>
-          <h1 class="text-24-medium text-text-strong">{language.t("chat.title")}</h1>
+          <h1 class="text-20-medium text-text-strong">{language.t("chat.title")}</h1>
           <p class="max-w-[600px] text-14-regular text-text-weak">{language.t("chat.description")}</p>
         </header>
 
@@ -150,7 +150,7 @@ export default function Chat() {
                   <div class="flex items-center gap-4">
                     <SoulAvatar id={selected.soulID} soul={soul()} size="large" />
                     <div class="min-w-0">
-                      <h2 class="truncate text-20-medium text-text-strong">{selected.name}</h2>
+                      <h2 class="truncate text-16-medium text-text-strong">{selected.name}</h2>
                       <p class="mt-1 text-12-regular text-text-weaker">
                         {language.t("chat.profile.files", { count: selected.files })}
                       </p>

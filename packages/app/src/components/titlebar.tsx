@@ -1,4 +1,16 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, startTransition, Switch, untrack } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  on,
+  onCleanup,
+  Show,
+  startTransition,
+  Switch,
+  untrack,
+} from "solid-js"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
@@ -175,6 +187,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
   const productSession = useProductSession()
 
   const newSessionHref = () => {
+    if (!mode()) return
     if (mode() === "chat") {
       const companionID = productSession()?.companionID ?? new URLSearchParams(location.search).get("companion")
       return newConversationHref("chat", undefined, companionID ?? undefined)
@@ -230,8 +243,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
           )
           if (!closingActive) return
           const nextTab = remaining[index] ?? remaining[remaining.length - 1]
-          if (nextTab) navigate(nextTab.href)
-          else navigate(mode() === "chat" ? newSessionHref() : "/")
+          const target = nextTab?.href ?? (mode() === "code" ? "/" : newSessionHref())
+          if (target) navigate(target)
         })
       },
     }
@@ -410,7 +423,10 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       {/* 261114 Red UX-09：标签带可横向滚动，活动标签自动滚入视野；溢出时「全部已开」
           下拉列出全部打开的会话（含状态与目录）。 */}
       <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
-        <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar" ref={(el) => (tabsStripRef = el)}>
+        <div
+          class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar"
+          ref={(el) => (tabsStripRef = el)}
+        >
           <For each={tabsEnriched()}>
             {(tab, i) => (
               <>
@@ -439,6 +455,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
               icon={<IconV2 name="plus" />}
               as="a"
               href={newSessionHref()}
+              disabled={!mode()}
               aria-label={language.t("command.session.new")}
             />
           }

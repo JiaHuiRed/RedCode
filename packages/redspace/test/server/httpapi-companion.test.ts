@@ -49,6 +49,8 @@ const archive = Effect.fn("Test.companionArchive")(function* () {
 
 afterEach(async () => {
   await disposeAllInstances()
+  // 261117 Red Windows archive file handles may outlive disposed instances until GC.
+  Bun.gc(true)
   for (const id of created.splice(0)) {
     await fs.rm(path.join(Global.Path.home, ".redcode", "companions", id), { recursive: true, force: true })
     await fs.rm(path.join(Global.Path.home, ".redcode", "souls", `${id}.md`), { force: true })
@@ -68,7 +70,7 @@ describe("companion HTTP session boundary", () => {
         mode: "chat",
         companionID: imported.profile.id,
       })
-      expect(created.status).toBe(200)
+      expect(created.status, yield* Effect.promise(() => created.clone().text())).toBe(200)
       const chat = yield* json<Session.Info>(created)
       expect(chat).toMatchObject({
         mode: "chat",
@@ -135,7 +137,7 @@ describe("companion HTTP session boundary", () => {
         mode: "chat",
         companionID: imported.profile.id,
       })
-      expect(response.status).toBe(200)
+      expect(response.status, yield* Effect.promise(() => response.clone().text())).toBe(200)
       const chat = yield* json<Session.Info>(response)
       const forked = yield* request(`/session/${chat.id}/fork`, imported.profile.directory, {})
       expect(forked.status).toBe(200)

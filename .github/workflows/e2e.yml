@@ -7,7 +7,6 @@ name: e2e
 on:
   push:
     branches:
-      - dev
       - master
     paths:
       - "packages/app/**"
@@ -24,6 +23,7 @@ on:
     paths:
       - "packages/app/**"
       - "packages/desktop/**"
+      - "packages/redspace/**"
       - "packages/core/**"
       - "packages/sdk/**"
       - "packages/ui/**"
@@ -34,9 +34,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep every run on stable branches so cancelled checks do not pollute the default branch
+  # Keep every run on master so cancelled checks do not pollute the default branch
   # commit history. PRs and other branches still share a group and cancel stale runs.
-  group: ${{ case((github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/master'), format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  group: ${{ case(github.ref == 'refs/heads/master', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
   cancel-in-progress: true
 
 env:

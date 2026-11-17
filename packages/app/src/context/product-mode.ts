@@ -17,6 +17,7 @@ export function useProductSession() {
 
 export function useProductMode() {
   const location = useLocation()
+  const params = useParams()
   const session = useProductSession()
-  return createMemo(() => productMode(location.pathname, session()))
+  return createMemo(() => (params.id && !session() ? undefined : productMode(location.pathname, session())))
 }

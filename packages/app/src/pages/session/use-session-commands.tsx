@@ -456,6 +456,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.new"),
       keybind: "mod+shift+s",
       slash: "new",
+      disabled: !!params.id && !info(),
       onSelect: () => navigate(newConversationHref(productMode("", info()), params.dir, info()?.companionID)),
     }),
     sessionCommand({

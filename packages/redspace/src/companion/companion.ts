@@ -1,6 +1,7 @@
 // 261117 Red Chat companions keep a writable personal archive separate from pinned Souls and engineering memory.
 // Decision: docs/notes/implemented/architecture/2026-11-17-redspace-companion-chat.md.
 import { Global } from "@redcode-ai/core/global"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Flock } from "@redcode-ai/core/util/flock"
 import { Clock, Console, Context, Effect, Layer, Schema, Semaphore } from "effect"
 import fs from "node:fs/promises"
@@ -119,19 +120,19 @@ export const layer = Layer.effect(
               message: `Soul "${prepared.id}" already belongs to another identity. Choose a different companion id.`,
             })
           const createdAt = yield* Clock.currentTimeMillis
+          const staging = yield* io(async () => {
+            await fs.mkdir(root, { recursive: true, mode: 0o700 })
+            return fs.mkdtemp(path.join(root, `.import-${prepared.id}-`))
+          })
           const profile = new Info({
             id: prepared.id,
             name: prepared.name,
             soulID: prepared.id,
-            directory: path.join(root, prepared.id, "workspace"),
+            directory: path.join(AppFileSystem.resolve(root), prepared.id, "workspace"),
             createdAt,
             files: archive.files.length,
             warnings: archive.warnings,
             timezone: archive.timezone,
-          })
-          const staging = yield* io(async () => {
-            await fs.mkdir(root, { recursive: true, mode: 0o700 })
-            return fs.mkdtemp(path.join(root, `.import-${prepared.id}-`))
           })
           return yield* Effect.gen(function* () {
             yield* io(async () => {
@@ -179,7 +180,7 @@ export const layer = Layer.effect(
                         : new CompanionIO({ message: error.message }),
                   ),
                 )
-            yield* io(() => fs.rename(staging, path.join(root, prepared.id)))
+            yield* io(() => AppFileSystem.renameWithRetry(staging, path.join(root, prepared.id)))
             return new ImportResult({ profile, imported: true })
           }).pipe(
             Effect.ensuring(
@@ -390,7 +391,7 @@ export const layer = Layer.effect(
           if (existing === undefined) {
             const pending = `${entryPath}.${randomUUID()}.tmp`
             await fs.writeFile(pending, JSON.stringify(entry), { flag: "wx", mode: 0o600 })
-            await fs.rename(pending, entryPath)
+            await AppFileSystem.renameWithRetry(pending, entryPath)
           }
           if (!/^memory\/\d{4}-\d{2}-\d{2}\.md$/.test(saved.path))
             throw new CompanionInvalidInput({ message: "Stored memory entry has an invalid diary path." })
@@ -471,7 +472,10 @@ async function manifest(root: string, id: string) {
   if (result.profile.id !== id || result.profile.soulID !== id)
     throw new CompanionIO({ message: `Companion "${id}" has an inconsistent profile identity.` })
   // Resolve the private workspace from the current home so moving the profile directory remains possible.
-  return { ...result, profile: new Info({ ...result.profile, directory: path.join(root, id, "workspace") }) }
+  return {
+    ...result,
+    profile: new Info({ ...result.profile, directory: AppFileSystem.resolve(path.join(root, id, "workspace")) }),
+  }
 }
 
 function integer(value: number, min: number, max: number, label: string) {

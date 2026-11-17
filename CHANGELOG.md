@@ -10,6 +10,10 @@
 
 ### [Unreleased]
 
+- **RedSpace 首轮 Windows 验收修复**：伙伴档案在导入和读取时统一解析真实工作区，修复目录别名、junction 和 Windows 短路径导致 Chat 创建被误拒绝；档案落位与记忆索引提交复用已有的 Windows 有界 rename 重试。GUI 冷恢复会话时先等待绑定，不再把未加载的 Chat 当成 Code 新建；归档值 `0` 与 TUI 一样视为已归档。Chat 首页标题改用已定义的字号，避免不存在的工具类使主标题退回正文大小。
+- **本地维护与构建**：主要 push / PR 类型检查入口迁到 `master`；新增 `REDCODE_BUILD_DIR` 可将 TUI 构建输出到指定目录，自定义目录不做整目录清理，避免覆盖正在使用的 exe。没有变更 GitHub 默认分支或执行远端发布。
+- **接续链路复测**：真实档案目录离线导入保留 252 个来源文件并逐文件校验原字节；Chromium、真实隔离后端和编译版 TUI 验证双伙伴身份隔离、选择性记忆、新建、恢复与 Code 兼容。模型使用本地合成 provider，不代表真人格体验验收；完整旧运行配置与历史会话重建没有因档案导入而自动启用。详情见 `docs/notes/implemented/architecture/2026-11-17-redspace-companion-chat.md`。
+
 ### [0.19.0] - 2026-11-17
 
 - **RedSpace 第一阶段：Chat / Code 共用 TUI 与 GUI**：新增按会话持久化的产品模式与伙伴档案绑定；Code 继续使用原有 Soul 和工程记忆，Chat 继承导入的既有 Soul、USER / IDENTITY、长期记忆与日记。TUI 提供 `companion import/list`、`--companion`、`/chat`、`/code`；GUI 提供 Chat 导入与会话入口，两端恢复和新建会话均保持同一伙伴。旧会话通过增量迁移保留为 Code，产品模式与 Plan / RedMind / Auto 权限模式独立。
