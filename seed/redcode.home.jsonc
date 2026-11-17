@@ -99,7 +99,7 @@
       "enabled": true,
     },
     // 已移除/下沉：chrome-devtools（绝对路径，见本地层，日常用 WebQA 需要时手动开）、
-    // github（261024 退役：读侧走原生 github 工具 packages/opencode/src/tool/github.ts，写侧用 gh 命令行）。
+    // github（261024 退役：读侧走原生 github 工具 packages/redspace/src/tool/github.ts，写侧用 gh 命令行）。
   },
   // 保留空数组不删键：merge-home-config 是 deepMergeUserWins，删掉会被当"缺键"补回来。
   // opencode（260917 到期）：免费层按客户端指纹 403，接入=冒充官方客户端，不做；

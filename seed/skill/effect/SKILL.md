@@ -14,7 +14,7 @@ between v2/v3 and v4 — anything you remember is more likely stale than right.
 
 1. **The full TypeScript source ships inside the package. No clone needed.** Read
    `packages/<pkg>/node_modules/effect/src/*.ts` — note this is the **package-level** `node_modules`
-   (`packages/opencode/node_modules/effect/src/`), not the repo root. This repo runs `4.0.0-beta.x`.
+   (`packages/redspace/node_modules/effect/src/`), not the repo root. This repo runs `4.0.0-beta.x`.
 2. Search that `src/` tree for exact signatures, overloads, and naming patterns before answering or
    implementing Effect-specific code. `codegraph_explore` also indexes it.
 3. Also inspect existing repo code for local house style before introducing new patterns.
@@ -37,11 +37,11 @@ between v2/v3 and v4 — anything you remember is more likely stale than right.
 
 ## Testing Patterns
 
-- Use `testEffect(...)` from `packages/opencode/test/lib/effect.ts` for tests that exercise Effect services, layers, runtime context, scoped resources, or platform integrations.
+- Use `testEffect(...)` from `packages/redspace/test/lib/effect.ts` for tests that exercise Effect services, layers, runtime context, scoped resources, or platform integrations.
 - Use `it.live(...)` for filesystem, git repositories, HTTP servers, sockets, child processes, locks, real time, and other live platform behavior.
 - **Anything that touches the database wants `it.instance(...)`, not `it.effect(...)`.** `it.effect` does
   not stand up a `TestInstance`, so calls like `session.create` hit a foreign-key error that reads like
   a bug in the code under test. If a DB-backed test fails on FK, check which runner it uses first.
-- Run tests from package directories such as `packages/opencode`; never run package tests from the repo root.
+- Run tests from package directories such as `packages/redspace`; never run package tests from the repo root.
 - Prefer explicit test layers over ad hoc managed runtimes. Keep dependency provisioning visible in the test file.
 - Use scoped fixtures and finalizers for resources that must be cleaned up, including temporary directories, flags, databases, fibers, servers, and global state.

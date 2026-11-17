@@ -79,7 +79,7 @@ todo 是执行台账：进度、修了几轮、决定都记在 todo 和项目记
 
 ## 收尾清单
 
-1. 按影响面验证：受影响 package 的 typecheck + 对应测试全绿；仓库级改动才跑全量（TUI→packages/opencode，GUI→packages/desktop）
+1. 按影响面验证：受影响 package 的 typecheck + 对应测试全绿；仓库级改动才跑全量（TUI→packages/redspace，GUI→packages/desktop）
 2. 改了接口 → 用符号检索确认调用方都更新了
 3. 仅在用户明确要求后 commit：遵循项目 git log 风格
 4. worktree 合回（如开了）

@@ -24,7 +24,7 @@ description: 精简过度工程的代码——砍多余抽象/层级/防御检�
    - 兼容性 shim、// removed 注释、改名的 _unused 变量 → 直接删干净
    - 重复三行 < 提前抽象——能展开成简单直白的代码就别留抽象
 3. **不顺手做别的**：不重命名无关变量、不补无关注释/类型、不"顺便"优化别处。
-4. **验证行为没变**：跑对应 package 的 typecheck/test（TUI → cd packages/opencode && bun run typecheck；GUI → cd packages/desktop && bun run typecheck），改接口要更新所有调用方。
+4. **验证行为没变**：跑对应 package 的 typecheck/test（TUI → cd packages/redspace && bun run typecheck；GUI → cd packages/desktop && bun run typecheck），改接口要更新所有调用方。
 
 ## RedCode 工具链提示
 

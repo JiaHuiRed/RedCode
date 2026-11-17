@@ -16,7 +16,9 @@ const core = () => {
 export default {
   id: "redcode-core-memory",
   server: async () => ({
-    "experimental.chat.system.transform": async (_input: unknown, output: { system: string[] }) => {
+    promptModes: ["code"] as const,
+    "experimental.chat.system.transform": async (input: { mode?: "code" | "chat" }, output: { system: string[] }) => {
+      if (input?.mode === "chat") return
       const block = core()
       if (block) output.system.push(block)
     },
