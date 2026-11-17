@@ -45,6 +45,12 @@ describe("Chat and Code navigation", () => {
       session({ id: "other", mode: "chat", companionID: "second", time: { created: 1, updated: 9 } }),
       session({ id: "child", mode: "chat", companionID: "first", parentID: "older" }),
       session({ id: "archived", mode: "chat", companionID: "first", time: { created: 1, updated: 8, archived: 8 } }),
+      session({
+        id: "archived-zero",
+        mode: "chat",
+        companionID: "first",
+        time: { created: 1, updated: 8, archived: 0 },
+      }),
       session({ id: "code", mode: "code", soul: "same-soul", time: { created: 1, updated: 10 } }),
       session({ id: "latest", mode: "chat", companionID: "first", time: { created: 3, updated: 7 } }),
     ]

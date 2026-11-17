@@ -61,6 +61,8 @@ console.log(`Loaded ${migrations.length} migrations`)
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+// 261117 Red Stage a build without deleting binaries used by active sessions.
+const outdir = process.env.REDCODE_BUILD_DIR || "dist"
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -88,15 +90,13 @@ const createEmbeddedWebUIBundle = async () => {
 
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
-try {
-  await $`rm -rf dist`
-} catch {}
+if (outdir === "dist") await fs.promises.rm(outdir, { recursive: true, force: true })
 
 const binaries: Record<string, string> = {}
 // 260615 Red Windows-only single target
 const name = `${pkg.name}-windows-x64`
 console.log(`building ${name}`)
-await $`mkdir -p dist/${name}/bin`
+await $`mkdir -p ${path.join(outdir, name, "bin")}`
 
 const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
 const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
@@ -121,7 +121,7 @@ await Bun.build({
     autoloadTsconfig: true,
     autoloadPackageJson: true,
     target: "bun-windows-x64" as any,
-    outfile: `dist/${name}/bin/redcode`,
+    outfile: path.join(outdir, name, "bin", "redcode"),
     execArgv: [`--user-agent=redcode/${version}`, "--use-system-ca", "--"],
     windows: {
       icon: path.resolve(dir, "../desktop/赤.ico"),
@@ -142,7 +142,7 @@ await Bun.build({
 
 // Smoke test
 {
-  const binaryPath = `dist/${name}/bin/redcode`
+  const binaryPath = path.join(outdir, name, "bin", "redcode")
   console.log(`Running smoke test: ${binaryPath} --version`)
   try {
     const versionOutput = await $`${binaryPath} --version`.text()
@@ -153,10 +153,8 @@ await Bun.build({
   }
 }
 
-try {
-  await $`rm -rf ./dist/${name}/bin/tui`
-} catch {}
-await Bun.file(`dist/${name}/package.json`).write(
+await fs.promises.rm(path.join(outdir, name, "bin", "tui"), { recursive: true, force: true })
+await Bun.file(path.join(outdir, name, "package.json")).write(
   JSON.stringify(
     {
       name,

@@ -18,7 +18,10 @@ export function companionSessions(sessions: Session[], companionID: string) {
   return sessions
     .filter(
       (session) =>
-        session.mode === "chat" && session.companionID === companionID && !session.parentID && !session.time.archived,
+        session.mode === "chat" &&
+        session.companionID === companionID &&
+        !session.parentID &&
+        session.time.archived === undefined,
     )
     .sort(compareSessionTime)
 }

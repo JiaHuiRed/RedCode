@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Route } from "@playwright/test"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { fixture } from "./session-timeline.fixture"
 import { mockRedCodeServer } from "../utils/mock-server"
@@ -61,6 +61,7 @@ test("imported companion starts and resumes a bound Chat session without replaci
   })
 
   await page.goto("/chat")
+  await expect(page.locator('[data-component="chat-home"] h1')).toHaveCSS("font-size", "20px")
   const mode = page.locator('[data-component="product-mode-switch"]')
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
   const source = page.locator('[data-action="chat-import-source"]')
@@ -82,8 +83,9 @@ test("imported companion starts and resumes a bound Chat session without replaci
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
   await page.keyboard.press("Control+Shift+s")
   await expect(page).toHaveURL(new RegExp(`/chat\\?companion=${profile.id}$`))
-  await expect(page.getByRole("link", { name: boundSession.title })).toBeVisible()
-  await page.getByRole("link", { name: boundSession.title }).click()
+  const recentChat = page.locator('[data-component="chat-home"]').getByRole("link", { name: boundSession.title })
+  await expect(recentChat).toBeVisible()
+  await recentChat.click()
   await expect(page).toHaveURL(new RegExp(`/${base64Encode(fixture.directory)}/session/${boundSession.id}$`))
   await mode.locator('[data-mode="code"]').click()
   await expect(page.locator('[data-component="home-dashboard"]')).toBeVisible()
@@ -91,3 +93,109 @@ test("imported companion starts and resumes a bound Chat session without replaci
   expect(creates).toHaveLength(1)
   expect(errors).toEqual([])
 })
+
+// 261117 Red Hold both binding reads so cold navigation cannot borrow Code's defaults.
+const coldChatSessionID = "ses_companion_cold_chat"
+
+test("cold-opened bound Chat session keeps new-session entries off the Code route until the binding loads", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+
+  const profile = {
+    id: "existing-friend",
+    name: "Existing friend",
+    soulID: "companion-soul",
+    directory: fixture.directory,
+    createdAt: 1700000000000,
+    files: 12,
+    warnings: [],
+    timezone: "Asia/Shanghai",
+  }
+  await mockRedCodeServer(page, {
+    ...fixture,
+    sessions: [
+      ...fixture.sessions,
+      {
+        ...fixture.sessions[0]!,
+        id: coldChatSessionID,
+        title: "A continuing conversation",
+        mode: "chat",
+        companionID: profile.id,
+        soul: profile.soulID,
+      },
+    ],
+    pageMessages: () => ({ items: [] }),
+  })
+
+  const backendPort = process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"
+  const backendPath = (url: string) => {
+    const parsed = new URL(url)
+    return parsed.port === backendPort ? parsed.pathname : undefined
+  }
+  const held = (path: string) => path === "/session" || path === `/session/${coldChatSessionID}`
+
+  let releaseReads!: () => void
+  const readsHeld = new Promise<void>((resolve) => (releaseReads = resolve))
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    releaseReads()
+  }
+
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== backendPort) return route.fallback()
+    if (url.pathname === "/companion") return json(route, [profile])
+    if (!held(url.pathname)) return route.fallback()
+    await readsHeld
+    // A failed assertion may close the page before the held request is released.
+    await route.fallback().catch(() => undefined)
+  })
+
+  const sessionUrl = `/${base64Encode(fixture.directory)}/session/${coldChatSessionID}`
+  const mode = page.locator('[data-component="product-mode-switch"]')
+  const newSession = page.locator('[data-frost-surface="titlebar"]').getByLabel("New session", { exact: true })
+  const listSeen = page.waitForRequest(
+    (request) => request.method() === "GET" && backendPath(request.url()) === "/session",
+  )
+  const detailSeen = page.waitForRequest(
+    (request) => request.method() === "GET" && backendPath(request.url()) === `/session/${coldChatSessionID}`,
+  )
+
+  try {
+    await page.goto(sessionUrl)
+    await Promise.all([listSeen, detailSeen])
+    await expect(newSession).toBeVisible()
+
+    const codeEntry = `${new URL(page.url()).pathname.replace(/\/session\/[^/]+$/, "")}/session`
+
+    expect(
+      await newSession.getAttribute("href"),
+      "titlebar new-session entry must not target the Code new-session route before the Chat binding loads",
+    ).not.toBe(codeEntry)
+    await expect(newSession).toBeDisabled()
+
+    await page.keyboard.press("Control+Shift+s")
+    release()
+    await expect(page).toHaveURL(new RegExp(`/session/${coldChatSessionID}$`))
+    await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
+    await expect(newSession).toHaveAttribute("href", `/chat?companion=${profile.id}`)
+    await expect(newSession).toBeEnabled()
+    expect(errors).toEqual([])
+  } finally {
+    release()
+  }
+})
+
+function json(route: Route, body: unknown) {
+  return route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" },
+    body: JSON.stringify(body),
+  })
+}

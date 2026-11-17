@@ -48,6 +48,30 @@ function setup(body: (value: Fixture) => Effect.Effect<void, unknown, Companion.
 
 describe("companion archive", () => {
   it.live(
+    "returns the canonical workspace when the companion root is a directory alias",
+    setup((value) =>
+      Effect.gen(function* () {
+        const alias = path.join(path.dirname(value.root), "companion-alias")
+        yield* Effect.promise(async () => {
+          await fs.mkdir(value.root, { recursive: true })
+          await fs.symlink(value.root, alias, process.platform === "win32" ? "junction" : "dir")
+        })
+        const service = yield* Companion.Service
+        yield* Effect.gen(function* () {
+          const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+          const canonical = yield* Effect.promise(() => fs.realpath(imported.profile.directory))
+          expect(imported.profile.directory).toBe(canonical)
+          expect((yield* service.get("maple"))?.directory).toBe(canonical)
+          expect((yield* service.list())[0]?.directory).toBe(canonical)
+          const repeated = yield* service.importArchive({ source: value.source, id: "maple" })
+          expect(repeated.imported).toBe(false)
+          expect(repeated.profile.directory).toBe(canonical)
+        }).pipe(Effect.provideService(Companion.directory, alias))
+      }),
+    ),
+  )
+
+  it.live(
     "imports the existing identity and personal sources without activating old instructions or copying credentials",
     setup((value) =>
       Effect.gen(function* () {
