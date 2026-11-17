@@ -2,7 +2,7 @@
 import * as mod from "./logo"
 
 const docs = `### Overview
-RedCode logo assets: mark, splash, and wordmark.
+RedSpace logo assets: mark, splash, and wordmark.
 
 Use Mark for compact spaces, Logo for headers, Splash for hero sections.
 

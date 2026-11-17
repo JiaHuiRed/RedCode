@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **RedSpace 品牌标识**：GUI 星门标识、REDSPACE 终端字标及 Web / 桌面图标统一；保留朱印、Soul 与启动看板娘。[设计记录](docs/notes/implemented/feature/2026-11-17-redspace-identity.md)。
+
 - **Code 正文口吻与工程规则分工**：精简主会话相处契约，熟悉称呼可自然进入解释、建议和分歧；收窄 default / DeepSeek 的正文限制，移除 GPT 重复的强制纠错开场。工程 MEMORY 使用独立来源标签，不再与 AGENTS 一起无条件覆盖默认行为。私有 AGENTS 同步精简，旧 ECC 工程摘要替换钩子移除。三份私有 Soul × 四条常用路线的请求装配及前缀稳定性通过；真实长任务人格效果待使用验收。详见 `docs/notes/implemented/architecture/2026-11-17-code-prompt-voice-ownership.md`。
 
 - **Chat 工程记忆边界**：伙伴目录不再自动生成工程 MEMORY / 进度模板，Chat 子任务也排除核心工程记忆。插件可声明仅向 Code 注入提示，工具和普通技能继续共享；私有工程记忆插件与全局规则需同步更新。Chat 做事时仍写伙伴日记、按需查聊天原文。验证与模型可见四问见 `docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md`。
