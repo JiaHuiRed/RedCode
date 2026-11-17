@@ -2,6 +2,8 @@
 
 状态：implemented
 
+后续 [Code 提示词与记忆职责收敛](2026-11-17-code-prompt-voice-ownership.md) 精简 Conversation，并修正工程记忆的统一指令标签；下文 token 数为本次初版测量。
+
 ## 问题与范围
 
 维护者在新 Soul、新会话中仍观察到长任务逐渐退回通用工作汇报；不同 Soul 程度不同。

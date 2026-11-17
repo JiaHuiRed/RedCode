@@ -355,8 +355,10 @@ describe("Instruction.system", () => {
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
 
         const rules = yield* svc.system()
-        // 260929 Red rules[0] 是引擎加的 OVERRIDE 声明行，来源从 1 开始。
-        expect(rules[0]).toBe("The instructions below OVERRIDE any default behavior when they conflict.")
+        // Source ownership is explicit; old memories do not override the current conversation.
+        expect(rules[0]).toContain("Follow applicable project and global instructions")
+        expect(rules[0]).toContain("The bound Soul owns conversational identity and voice")
+        expect(rules[0]).not.toContain("OVERRIDE any default behavior")
         expect(rules[1]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
         expect(rules[2]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
@@ -405,10 +407,17 @@ describe("Instruction.system MEMORY.md", () => {
         expect(globalAt).toBeGreaterThanOrEqual(0)
         expect(projectAt).toBeGreaterThanOrEqual(0)
         expect(globalAt).toBeLessThan(projectAt)
-        expect(rules[globalAt]).toBe(`Instructions from: ${path.join(globalTmp, "MEMORY.md")}\n# Global Memory`)
+        expect(rules[globalAt]).toBe(`Engineering memory from: ${path.join(globalTmp, "MEMORY.md")}\n# Global Memory`)
         expect(rules[projectAt]).toBe(
-          `Instructions from: ${path.join(projectTmp, ".redcode", "MEMORY.md")}\n# Project Memory`,
+          `Engineering memory from: ${path.join(projectTmp, ".redcode", "MEMORY.md")}\n# Project Memory`,
         )
+        expect(rules[0]).toContain("Engineering memories are prior context")
+        const inv = yield* svc.describe()
+        expect(inv.sources.filter((source) => source.status === "injected").map((source) => source.kind)).toEqual([
+          "memory",
+          "memory",
+        ])
+        expect(inv.totalBytes).toBe(Buffer.byteLength(rules[globalAt]) + Buffer.byteLength(rules[projectAt]))
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )
@@ -589,7 +598,7 @@ describe("Instruction.system max_total_bytes", () => {
         const svc = yield* Instruction.Service
         const rules = yield* svc.system()
         // 必须只看来源本体：声明行里也含被丢来源的路径，混在一起会让断言因错误的原因通过
-        const kept = rules.filter((r) => r.startsWith("Instructions from:"))
+        const kept = rules.filter((r) => /^(Instructions|Engineering memory) from:/.test(r))
         // 预算 1500 < 两个来源正文合计 1800：MEMORY 先丢，AGENTS 完整保留。
         expect(kept.some((r) => r.includes("MEMORY.md"))).toBe(false)
         // AGENTS(0) 完整保留——漏一条硬规则比前缀长更糟
@@ -738,10 +747,10 @@ describe("Instruction.describe 与 system 逐项一致（RC-04）", () => {
           const svc = yield* Instruction.Service
           const parts = yield* svc.system()
           const inv = yield* svc.describe()
-          const prefix = "Instructions from: "
+          const prefix = /^(?:Instructions|Engineering memory) from: /
           const injectedFromParts = parts
-            .filter((p) => p.startsWith(prefix))
-            .map((p) => p.slice(prefix.length, p.indexOf("\n")))
+            .filter((p) => prefix.test(p))
+            .map((p) => p.slice(0, p.indexOf("\n")).replace(prefix, ""))
           const injectedFromDescribe = inv.sources.filter((s) => s.status === "injected").map((s) => s.path)
           const droppedFromDescribe = inv.sources.filter((s) => s.status === "dropped").map((s) => s.path)
 
@@ -761,7 +770,7 @@ describe("Instruction.describe 与 system 逐项一致（RC-04）", () => {
           }
           // 互证 4：清单的 totalBytes 与注入文本的字节和相等。
           const injectedBytes = parts
-            .filter((p) => p.startsWith(prefix))
+            .filter((p) => prefix.test(p))
             .reduce((sum, p) => sum + Buffer.byteLength(p), 0)
           expect(inv.totalBytes).toBe(injectedBytes)
           // kind 归属正确：URL 是 config，AGENTS.md 是 agents，MEMORY.md 是 memory。

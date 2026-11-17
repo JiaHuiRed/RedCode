@@ -46,7 +46,7 @@ export const SourceInfo = Schema.Struct({
   kind: Schema.Literals(["agents", "memory", "config"]),
   bytes: Schema.Number,
   status: Schema.Literals(["injected", "skipped", "dropped", "truncated", "missing", "empty"]),
-  // 注入/被丢/被截断时的最终格式化字节（含 "Instructions from:" 前缀）；missing/empty 无。
+  // 注入/被丢/被截断时的最终格式化字节（含来源类型与路径前缀）；missing/empty 无。
   effectiveBytes: Schema.optional(Schema.Number),
 }).annotate({ identifier: "InstructionSource" })
 
@@ -417,7 +417,7 @@ export const layer: Layer.Layer<
             entry.status = "skipped"
             return [entry]
           }
-          entry.text = `Instructions from: ${item.path}\n${content}`
+          entry.text = `${item.kind === "memory" ? "Engineering memory from" : "Instructions from"}: ${item.path}\n${content}`
           entry.status = "injected"
           return [entry]
         }),
@@ -495,11 +495,15 @@ export const layer: Layer.Layer<
         )
       }
 
-      // 260929 Red 显式优先级声明。没有这句时，用户自己写的 AGENTS.md 与引擎默认提示词
-      // 冲突，谁赢全靠模型自己猜；放在所有来源之前，位置稳定、不随后续增删而移动。
-      // 没有任何来源时不输出——没有"下面的指令"时这句话是纯噪音，还白占 token。
+      // Keep engineering instructions authoritative in their scope without promoting old memories
+      // into identity or reply-format rules. Source order, retention and byte budgets stay unchanged.
+      // docs/notes/implemented/architecture/2026-11-17-code-prompt-voice-ownership.md
       const parts = [
-        ...(sources.length > 0 ? ["The instructions below OVERRIDE any default behavior when they conflict."] : []),
+        ...(sources.length > 0
+          ? [
+              "Follow applicable project and global instructions over default engineering workflow. Engineering memories are prior context: apply relevant facts and lessons, checking conflicts against current instructions. The bound Soul owns conversational identity and voice.",
+            ]
+          : []),
         ...sources.map((s) => s.text),
       ]
       if (dropped.length > 0) {

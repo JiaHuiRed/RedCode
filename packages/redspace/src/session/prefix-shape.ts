@@ -46,7 +46,7 @@ const systemSections = new WeakMap<PrefixShape, string[]>()
 
 function sectionLabel(text: string, index: number) {
   const first = text.trimStart().split("\n", 1)[0] ?? ""
-  if (first.startsWith("Instructions from:")) return first
+  if (first.startsWith("Instructions from:") || first.startsWith("Engineering memory from:")) return first
   if (first.startsWith("You are powered by the model")) return "environment"
   if (first.startsWith("Skills provide specialized instructions")) return "skills"
   if (first.startsWith("Today's date:")) return "today's date"

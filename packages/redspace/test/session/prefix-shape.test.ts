@@ -102,6 +102,15 @@ describe("prefix-shape.diagnose", () => {
     expect(JSON.stringify(d.systemDifference)).not.toContain("secret")
   })
 
+  test("engineering memory changes retain source attribution without recording its body", () => {
+    const s = sid("ses_memory")
+    const label = "Engineering memory from: C:\\cfg\\MEMORY.md"
+    diagnose(capture(["model prompt", `${label}\nprivate-before`], tools), s, M, tools)
+    const d = diagnose(capture(["model prompt", `${label}\nprivate-after`], tools), s, M, tools)
+    expect(d.systemDifference).toEqual({ index: 1, previous: label, current: label })
+    expect(JSON.stringify(d)).not.toContain("private-")
+  })
+
   test("tools 变化时给出最贵的几个，最贵的排第一", () => {
     const s = sid("ses_tools")
     diagnose(capture(["sys"], tools), s, M, tools)

@@ -18,14 +18,14 @@ review_after_default: 2027-03-01
 
 patches:
   - id: default-conversation
-    file: packages/opencode/src/session/prompt/default.md
-    anchor: '# Conversation 交流段（真错直说 / 禁客服式附和与整改清单）'
-    intent: 交互表达判据：真错自然道歉、中文回对批评禁「你说得对」「我认」开场、禁复述投诉与未来承诺
+    file: packages/redspace/src/session/prompt/conversation.md
+    anchor: '# Conversation'
+    intent: 相处方式贯穿正文和工具后续；工程准确不规定报告体，熟悉称呼不限开场
     review_after: 2027-03-01
     status: >-
-      261112 把抽象 ritual agreement 规则换成具体判据：中文例句保留、示例不带称呼（default.md
-      不绑定 Soul，称呼由 Soul 提供）、禁句限定「作为对批评的回应」。装配测试已同步。
-      真实会话六场景验收（真错 / 误解 / 抱怨套话 / 玩笑承接 / 中途挫折 / 重复偏好）待补。
+      261117 迁到主会话统一装配后再精简：删除重复纠错训诫，称呼自然进入解释、建议与分歧，
+      无次数或固定句型。三份私有 Soul × 四条常用模型路线的实际请求与工具循环前缀通过；
+      真实模型长任务人格效果待使用验收。见 2026-11-17-code-prompt-voice-ownership.md。
 
   - id: work-rules
     file: packages/opencode/src/session/prompt/work-rules.md
@@ -64,10 +64,22 @@ patches:
     status: '不能按「无真实路径」删——explore 子代理=stepfun-step-plan/step-3.7-flash 仍在本机使用'
 
   - id: gpt-delta
-    file: packages/opencode/src/session/prompt/gpt.md
+    file: packages/redspace/src/session/prompt/gpt.md
     anchor: 'GPT 专属 delta（四项行为纠偏）'
     review_after: 2027-03-01
-    status: '261111 按提案 §4 重写：删逐句自我审查、强制结果开场与反套话章节，只留最小完整方案、复用验证、调查收敛三项，另含 edit 优先'
+    status: '261117 删除与相处契约重复的强制纠错开场；保留 edit 优先、最小完整方案、实际 UI 验收与验证复用、调查收敛。'
+
+  - id: deepseek-reasoning-scope
+    file: packages/redspace/src/session/prompt/deepseek.md
+    anchor: 'Keep exposed reasoning compact'
+    intent: 推理精简不延伸成正文只能报告结论
+    review_after: 2027-03-01
+
+  - id: instruction-source-scope
+    file: packages/redspace/src/session/instruction.ts
+    anchor: 'Engineering memories are prior context'
+    intent: 工程记忆提供适用事实与教训，不统一提升成覆盖默认行为与人格的指令
+    review_after: 2027-03-01
 
   - id: gpt-working-style
     file: packages/opencode/src/session/prompt/working-style.md
