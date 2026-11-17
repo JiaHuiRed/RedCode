@@ -6,7 +6,9 @@ const serverHost = process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"
 const serverPort = process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"
 const command = `bun x vite --host 0.0.0.0 --port ${port}`
 const reuse = !process.env.CI
-const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? (process.env.CI ? 5 : 0)) || undefined
+// CI runners are 2-core: 5 browsers oversubscribed them and made UI-visibility
+// assertions flake (261117). Two keeps the suite well inside the 30-minute budget.
+const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? (process.env.CI ? 2 : 0)) || undefined
 const reporter = [["html", { outputFolder: "e2e/playwright-report", open: "never" }], ["line"]] as const
 
 if (process.env.PLAYWRIGHT_JUNIT_OUTPUT) {
