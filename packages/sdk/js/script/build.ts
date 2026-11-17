@@ -9,11 +9,10 @@ import path from "path"
 
 import { generateSdk } from "./codegen"
 
-// 260728 Karina 目录名仍是 opencode，只有 package.json 里的 name 改成了 redcode。
-// 这里原本写 "../../redcode"，解析出 packages/redcode —— 该目录不存在，
-// $.cwd() 直接抛 "No such file or directory"，SDK 构建必然失败。
-// 因为它是 test 任务的前置依赖，CI 上 unit 作业还没跑到测试就整体中止（只跑了 6 个）。
-const redcode = path.resolve(dir, "../../opencode")
+// 261117 Red 共享引擎目录已从 packages/opencode 迁到 packages/redspace（0.19.1）。
+// 这里必须指向真实存在的目录，否则 $.cwd() 抛 "No such file or directory"，SDK 构建失败；
+// 它是 test 任务的前置依赖，CI 上 unit 作业会在跑测试前整体中止。
+const redcode = path.resolve(dir, "../../redspace")
 
 await $`bun dev generate > ${dir}/openapi.json`.cwd(redcode)
 
