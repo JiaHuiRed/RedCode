@@ -4100,6 +4100,35 @@ export type SessionInfo = {
 export type CompanionImportResult = {
   profile: CompanionInfo
   imported: boolean
+  coverage?: CompanionCoverage
+}
+
+export type CompanionCoverage = {
+  jsonl: {
+    scanned: number | "Infinity" | "-Infinity" | "NaN"
+    extracted: number | "Infinity" | "-Infinity" | "NaN"
+    internalExcluded: number | "Infinity" | "-Infinity" | "NaN"
+    noUsableText: number | "Infinity" | "-Infinity" | "NaN"
+    parseFailedRecords: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  trajectory: {
+    scanned: number | "Infinity" | "-Infinity" | "NaN"
+    notImported: number | "Infinity" | "-Infinity" | "NaN"
+    reason: string
+  }
+  deleted: {
+    found: number | "Infinity" | "-Infinity" | "NaN"
+    excluded: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  other: {
+    deduplicated: number | "Infinity" | "-Infinity" | "NaN"
+    conflicts: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  final: {
+    searchableFiles: number | "Infinity" | "-Infinity" | "NaN"
+    humanTurns: number | "Infinity" | "-Infinity" | "NaN"
+    uncoveredSources: number | "Infinity" | "-Infinity" | "NaN"
+  }
 }
 
 export type CompanionInfo = {

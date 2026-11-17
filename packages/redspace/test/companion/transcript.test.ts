@@ -24,6 +24,9 @@ describe("OpenClaw transcript import", () => {
     ].join("\n")
     const result = await transcript(raw, "agents/main/sessions/old.jsonl")
     expect(result.invalid).toBe(0)
+    expect(result.humanTurns).toBe(1)
+    expect(result.extracted).toBe(2)
+    expect(result.internal).toBe(false)
     expect(result.text).toContain("Source: agents/main/sessions/old.jsonl")
     expect(result.text).toContain("User | 2026-11-16T08:00:00.000Z | JSONL line 2")
     expect(result.text).toContain("I chose silver thread.\n\nIt reminds me of home.")
@@ -74,16 +77,12 @@ describe("OpenClaw transcript import", () => {
       ).text,
     ).toBe("")
     for (const sessionKey of ["agent:main:cron:job", "agent:main:subagent:child", "dreaming-narrative-run-1"]) {
-      expect(
-        (
-          await transcript(
-            [message("user", "not a human message"), JSON.stringify({ type: "custom", data: { sessionKey } })].join(
-              "\n",
-            ),
-            "old.jsonl",
-          )
-        ).text,
-      ).toBe("")
+      const internal = await transcript(
+        [message("user", "not a human message"), JSON.stringify({ type: "custom", data: { sessionKey } })].join("\n"),
+        "old.jsonl",
+      )
+      expect(internal.text).toBe("")
+      expect(internal.internal).toBe(true)
     }
   })
 

@@ -663,4 +663,54 @@ describe("companion archive", () => {
       }),
     ),
   )
+
+  it.live(
+    "reports a per-source import census without leaking personal text into coverage",
+    setup((value) =>
+      Effect.gen(function* () {
+        const sessions = path.join(value.source, "agents", "main", "sessions")
+        const msg = (role: string, text: string) =>
+          JSON.stringify({ type: "message", timestamp: "2026-11-16T08:00:00Z", message: { role, content: text } })
+        yield* Effect.promise(async () => {
+          await fs.mkdir(sessions, { recursive: true })
+          // One plain conversation with a real human turn and one assistant reply.
+          await fs.writeFile(
+            path.join(sessions, "aaa11111.jsonl"),
+            [msg("user", "PRIVATE_HUMAN_LINE"), msg("assistant", "PRIVATE_REPLY_LINE")].join("\n"),
+          )
+          // One internal cron session that must be excluded as a source, not counted as human.
+          await fs.writeFile(
+            path.join(sessions, "bbb22222.jsonl"),
+            JSON.stringify({ type: "custom", data: { sessionKey: "agent:main:cron:job:run" } }) +
+              "\n" +
+              msg("user", "PRIVATE_CRON_LINE"),
+          )
+          // Non-importable sources: a trajectory trace and a deleted session backup.
+          await fs.writeFile(path.join(sessions, "ccc33333.trajectory.jsonl"), '{"traceSchema":"openclaw-trajectory"}')
+          await fs.writeFile(path.join(sessions, "ddd44444.jsonl.deleted.2026-11-16"), msg("user", "PRIVATE_DELETED"))
+        })
+        const service = yield* Companion.Service
+        const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+        const coverage = imported.coverage!
+        expect(coverage.jsonl.scanned).toBe(2)
+        expect(coverage.jsonl.internalExcluded).toBeGreaterThanOrEqual(1)
+        expect(coverage.trajectory.scanned).toBe(1)
+        expect(coverage.trajectory.notImported).toBe(1)
+        expect(coverage.deleted.found).toBe(1)
+        expect(coverage.deleted.excluded).toBe(1)
+        expect(coverage.final.humanTurns).toBe(1)
+        expect(coverage.final.searchableFiles).toBe(1)
+        expect(coverage.final.uncoveredSources).toBeGreaterThanOrEqual(3)
+        // The census is counts only; private text never enters it.
+        const serialized = JSON.stringify(coverage)
+        for (const secret of ["PRIVATE_HUMAN_LINE", "PRIVATE_REPLY_LINE", "PRIVATE_CRON_LINE", "PRIVATE_DELETED"])
+          expect(serialized).not.toContain(secret)
+        // profile.json persists the census for later audit.
+        const stored = yield* Effect.promise(() =>
+          Bun.file(path.join(value.root, "maple", "profile.json")).text().then(JSON.parse),
+        )
+        expect(stored.coverage.final.humanTurns).toBe(1)
+      }),
+    ),
+  )
 })

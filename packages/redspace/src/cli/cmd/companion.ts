@@ -1,7 +1,37 @@
 import { Console, Effect } from "effect"
 import { Companion } from "@/companion/companion"
+import type { Coverage } from "@/companion/schema"
 import { effectCmd, fail } from "../effect-cmd"
 import { cmd } from "./cmd"
+
+// 0.19.1 audit F-05: render the import census as a readable checklist. Counts only — never echoes personal text.
+function renderCoverage(coverage: InstanceType<typeof Coverage>): string {
+  const { jsonl, trajectory, deleted, other, final } = coverage
+  return [
+    "History import coverage",
+    "",
+    "Plain JSONL:",
+    `  scanned: ${jsonl.scanned}`,
+    `  extracted: ${jsonl.extracted}`,
+    `  internal tasks excluded: ${jsonl.internalExcluded}`,
+    `  no usable text: ${jsonl.noUsableText}`,
+    `  parse-failed records: ${jsonl.parseFailedRecords}`,
+    "Trajectory:",
+    `  scanned: ${trajectory.scanned}`,
+    `  not imported: ${trajectory.notImported}`,
+    `  reason: ${trajectory.reason}`,
+    "Deleted:",
+    `  found: ${deleted.found}`,
+    `  excluded by default: ${deleted.excluded}`,
+    "Other sources:",
+    `  deduplicated: ${other.deduplicated}`,
+    `  conflicts: ${other.conflicts}`,
+    "Final:",
+    `  searchable history files: ${final.searchableFiles}`,
+    `  searchable human turns: ${final.humanTurns}`,
+    `  uncovered sources: ${final.uncoveredSources}`,
+  ].join("\n")
+}
 
 const list = effectCmd({
   command: "list",
@@ -38,6 +68,7 @@ const importArchive = effectCmd({
       `${result.imported ? "Imported" : "Already imported"}: ${result.profile.name} (${result.profile.id})`,
     )
     yield* Console.log(`Chat: redcode --companion ${result.profile.id}`)
+    if (result.coverage) yield* Console.log(`\n${renderCoverage(result.coverage)}`)
     for (const warning of result.profile.warnings) yield* Console.warn(warning)
   }),
 })

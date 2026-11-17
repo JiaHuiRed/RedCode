@@ -2,10 +2,26 @@ import { Reader, Uint8ArrayWriter, ZipReader } from "@zip.js/zip.js"
 import { createHash } from "node:crypto"
 import fs, { type FileHandle } from "node:fs/promises"
 import path from "node:path"
-import { CompanionInvalidInput, Limits } from "./schema"
+import { Coverage, CompanionInvalidInput, Limits } from "./schema"
 import { internalTranscripts, transcript, transcriptPath } from "./transcript"
 
 type Entry = { path: string; size: number; read: () => Promise<Uint8Array> }
+
+// 0.19.1 audit F-05: classify every session-source path without reading file contents.
+// Only `jsonl` sources are eligible for import; the rest are counted for the coverage census.
+type SourceKind = "jsonl" | "trajectory" | "deleted" | "other"
+type SourceCensus = Record<SourceKind, number>
+
+function classifySource(file: string): SourceKind | undefined {
+  if (!/^agents\/[^/]+\/sessions\//.test(file)) return undefined
+  if (transcriptPath(file)) return "jsonl"
+  if (/\.trajectory\.jsonl$|\.trajectory-path\.json$/.test(file)) return "trajectory"
+  if (/\.deleted(?:\.|$)/.test(file)) return "deleted"
+  if (/\.jsonl$|\.jsonl\./.test(file)) return "other"
+  return undefined
+}
+
+const emptyCensus = (): SourceCensus => ({ jsonl: 0, trajectory: 0, deleted: 0, other: 0 })
 
 class ArchiveReader extends Reader<FileHandle> {
   constructor(
@@ -47,6 +63,8 @@ export type Archive = {
   timezone: string
   preferences: { voice?: string; autoVoice?: string }
   warnings: string[]
+  coverage: InstanceType<typeof Coverage>
+  sourceCensus: SourceCensus
 }
 
 export function digest(value: string | Uint8Array) {
@@ -157,7 +175,7 @@ async function metadata(entries: Entry[], warnings: string[]) {
   }
 }
 
-async function collect(entries: Entry[]): Promise<Archive> {
+async function collect(entries: Entry[], census: SourceCensus = emptyCensus()): Promise<Archive> {
   const warnings: string[] = []
   const selected = entries.filter((entry) => personalFile(entry.path)).sort((a, b) => a.path.localeCompare(b.path))
   if (!selected.some((entry) => entry.path === "workspace/SOUL.md"))
@@ -222,8 +240,15 @@ async function collect(entries: Entry[]): Promise<Archive> {
     throw new CompanionInvalidInput({ message: "Conversation sources exceed 4096 transcripts / 64 MiB." })
   const derived: SourceFile[] = []
   let invalidRecords = 0
+  let extracted = 0
+  let humanTurns = 0
+  let internalExcluded = 0
+  let noUsableText = 0
   for (const entry of histories) {
-    if (internal.has(path.posix.basename(entry.path).split(".jsonl")[0])) continue
+    if (internal.has(path.posix.basename(entry.path).split(".jsonl")[0])) {
+      internalExcluded++
+      continue
+    }
     if (entry.size > Limits.sourceFile)
       throw new CompanionInvalidInput({ message: `Conversation source exceeds 8 MiB: ${entry.path}` })
     const raw = await entry.read()
@@ -231,6 +256,10 @@ async function collect(entries: Entry[]): Promise<Archive> {
       throw new CompanionInvalidInput({ message: `Conversation source size changed while reading: ${entry.path}` })
     const result = await transcript(decode(raw, entry.path), entry.path, digest(raw))
     invalidRecords += result.invalid
+    extracted += result.extracted
+    humanTurns += result.humanTurns
+    if (result.internal) internalExcluded++
+    else if (!result.text) noUsableText++
     if (!result.text) continue
     const bytes = Buffer.from(result.text)
     if (bytes.byteLength > Limits.textFile)
@@ -258,17 +287,45 @@ async function collect(entries: Entry[]): Promise<Archive> {
     throw new CompanionInvalidInput({
       message: "Personal files and readable conversations exceed 4096 files / 64 MiB.",
     })
+  const trajectorySkipped = census.trajectory
+  const coverage = new Coverage({
+    jsonl: {
+      scanned: census.jsonl,
+      extracted,
+      internalExcluded,
+      noUsableText,
+      parseFailedRecords: invalidRecords,
+    },
+    trajectory: {
+      scanned: trajectorySkipped,
+      notImported: trajectorySkipped,
+      reason: "Runtime traces and cron/heartbeat sessions are not reliable personal conversations; kept at source.",
+    },
+    deleted: { found: census.deleted, excluded: census.deleted },
+    other: {
+      deduplicated: 0,
+      conflicts: 0,
+    },
+    final: {
+      searchableFiles: derived.length,
+      humanTurns,
+      uncoveredSources: census.trajectory + census.deleted + census.other + internalExcluded + noUsableText,
+    },
+  })
   return {
     files: [...files, ...derived],
     digest: originalDigest,
     historyDigest: digest(JSON.stringify(derived.map((file) => [file.path, file.hash]))),
     ...details,
     warnings,
+    coverage,
+    sourceCensus: census,
   }
 }
 
-async function directoryEntries(root: string): Promise<Entry[]> {
+async function directoryEntries(root: string): Promise<{ entries: Entry[]; census: SourceCensus }> {
   const entries: Entry[] = []
+  const census = emptyCensus()
   const workspaceOnly = await fs.lstat(path.join(root, "SOUL.md")).then(
     (stat) => stat.isFile(),
     (error: NodeJS.ErrnoException) => {
@@ -293,12 +350,15 @@ async function directoryEntries(root: string): Promise<Entry[]> {
           await walk(source)
         continue
       }
+      if (!child.isFile()) continue
+      // Census every session source (including skipped ones) before the import filter.
+      const kind = classifySource(key)
+      if (kind) census[kind]++
       if (
-        !child.isFile() ||
-        (!personalFile(key) &&
-          key !== "openclaw.json" &&
-          !transcriptPath(key) &&
-          !/^agents\/[^/]+\/sessions\/sessions\.json$/.test(key))
+        !personalFile(key) &&
+        key !== "openclaw.json" &&
+        !transcriptPath(key) &&
+        !/^agents\/[^/]+\/sessions\/sessions\.json$/.test(key)
       )
         continue
       const full = path.join(root, source)
@@ -307,13 +367,16 @@ async function directoryEntries(root: string): Promise<Entry[]> {
     }
   }
   await walk("")
-  return entries
+  return { entries, census }
 }
 
 export async function readArchive(source: string) {
   if (!path.isAbsolute(source)) throw new CompanionInvalidInput({ message: "Archive source must be an absolute path." })
   const stat = await fs.lstat(source)
-  if (stat.isDirectory()) return collect(await directoryEntries(source))
+  if (stat.isDirectory()) {
+    const { entries, census } = await directoryEntries(source)
+    return collect(entries, census)
+  }
   if (!stat.isFile() || !/\.zip$/i.test(source))
     throw new CompanionInvalidInput({ message: "Select a directory or a ZIP archive." })
   if (stat.size > Limits.archive)
@@ -344,7 +407,12 @@ export async function readArchive(source: string) {
         },
       ]
     })
-    return await collect(entries)
+    const census = emptyCensus()
+    for (const name of names) {
+      const kind = classifySource(name)
+      if (kind) census[kind]++
+    }
+    return await collect(entries, census)
   } finally {
     await reader.close()
   }

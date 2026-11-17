@@ -25226,9 +25226,211 @@
           },
           "imported": {
             "type": "boolean"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/CompanionCoverage"
           }
         },
         "required": ["profile", "imported"],
+        "additionalProperties": false
+      },
+      "CompanionCoverage": {
+        "type": "object",
+        "properties": {
+          "jsonl": {
+            "type": "object",
+            "properties": {
+              "scanned": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "extracted": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "internalExcluded": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "noUsableText": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "parseFailedRecords": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["scanned", "extracted", "internalExcluded", "noUsableText", "parseFailedRecords"],
+            "additionalProperties": false
+          },
+          "trajectory": {
+            "type": "object",
+            "properties": {
+              "scanned": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "notImported": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": ["scanned", "notImported", "reason"],
+            "additionalProperties": false
+          },
+          "deleted": {
+            "type": "object",
+            "properties": {
+              "found": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "excluded": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["found", "excluded"],
+            "additionalProperties": false
+          },
+          "other": {
+            "type": "object",
+            "properties": {
+              "deduplicated": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "conflicts": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["deduplicated", "conflicts"],
+            "additionalProperties": false
+          },
+          "final": {
+            "type": "object",
+            "properties": {
+              "searchableFiles": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "humanTurns": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "uncoveredSources": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["searchableFiles", "humanTurns", "uncoveredSources"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["jsonl", "trajectory", "deleted", "other", "final"],
         "additionalProperties": false
       },
       "CompanionInfo": {

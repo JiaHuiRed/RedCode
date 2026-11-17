@@ -17,9 +17,41 @@ export class ImportInput extends Schema.Class<ImportInput>("CompanionImportInput
   name: Schema.optional(Schema.String),
 }) {}
 
+// 0.19.1 audit F-05: a structured census of what an OpenClaw history import scanned,
+// extracted and deliberately skipped. Counts only — no personal text ever enters this shape.
+// Decision: docs/notes/implemented/feature/2026-11-17-history-import-coverage.md
+export class Coverage extends Schema.Class<Coverage>("CompanionCoverage")({
+  jsonl: Schema.Struct({
+    scanned: Schema.Number,
+    extracted: Schema.Number,
+    internalExcluded: Schema.Number,
+    noUsableText: Schema.Number,
+    parseFailedRecords: Schema.Number,
+  }),
+  trajectory: Schema.Struct({
+    scanned: Schema.Number,
+    notImported: Schema.Number,
+    reason: Schema.String,
+  }),
+  deleted: Schema.Struct({
+    found: Schema.Number,
+    excluded: Schema.Number,
+  }),
+  other: Schema.Struct({
+    deduplicated: Schema.Number,
+    conflicts: Schema.Number,
+  }),
+  final: Schema.Struct({
+    searchableFiles: Schema.Number,
+    humanTurns: Schema.Number,
+    uncoveredSources: Schema.Number,
+  }),
+}) {}
+
 export class ImportResult extends Schema.Class<ImportResult>("CompanionImportResult")({
   profile: Info,
   imported: Schema.Boolean,
+  coverage: Schema.optional(Coverage),
 }) {}
 
 export class Bootstrap extends Schema.Class<Bootstrap>("CompanionBootstrap")({

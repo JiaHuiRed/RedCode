@@ -17,6 +17,7 @@ import {
   CompanionIO,
   CompanionInvalidInput,
   CompanionNotFound,
+  Coverage,
   Info,
   ImportResult,
   Limits,
@@ -64,6 +65,8 @@ const Manifest = Schema.Struct({
   // 0.19.1 审计 F-04：来源身份摘要。同一档案换了 id 再次导入时按它复用旧档案，
   // 而不是生成第二份 companion-<hash> 身份。旧档案没有这个字段，回退到 source.agentID。
   identity: Schema.optional(Schema.String),
+  // 0.19.1 审计 F-05：本次导入的来源覆盖清单，供回溯与再次导入核对。旧档案没有此字段。
+  coverage: Schema.optional(Coverage),
 })
 const Entry = Schema.Struct({ path: Schema.String, text: Schema.String, source: Schema.optional(Schema.String) })
 const SearchCursor = Schema.Struct({ scope: Schema.String, offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })
@@ -187,6 +190,7 @@ export const layer = Layer.effect(
                     identity: prepared.identity,
                     source: { format: "openclaw", path: input.source, agentID: archive.agentID },
                     preferences: archive.preferences,
+                    coverage: archive.coverage,
                     files: archive.files.map((file) => ({
                       path: file.path,
                       bytes: file.bytes.byteLength,
@@ -213,7 +217,7 @@ export const layer = Layer.effect(
                   ),
                 )
             yield* io(() => AppFileSystem.renameWithRetry(staging, path.join(root, targetID)))
-            return new ImportResult({ profile, imported: true })
+            return new ImportResult({ profile, imported: true, coverage: archive.coverage })
           }).pipe(
             Effect.ensuring(
               io(() => fs.rm(staging, { recursive: true, force: true })).pipe(
@@ -580,7 +584,7 @@ async function appendHistory(root: string, id: string, archive: Archive) {
     })
   const histories = archive.files.filter((file) => file.path.startsWith("workspace/history/openclaw-"))
   if (previous.historyDigest === archive.historyDigest || !histories.length)
-    return new ImportResult({ profile: previous.profile, imported: false })
+    return new ImportResult({ profile: previous.profile, imported: false, coverage: archive.coverage })
   const files = Schema.decodeUnknownSync(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))(
     previous.raw.files ?? [],
   )
@@ -614,6 +618,7 @@ async function appendHistory(root: string, id: string, archive: Archive) {
         ...previous.raw,
         profile,
         historyDigest: archive.historyDigest,
+        coverage: archive.coverage,
         files: [
           ...files,
           ...added.map((file) => ({
@@ -630,7 +635,7 @@ async function appendHistory(root: string, id: string, archive: Archive) {
     { flag: "wx", mode: 0o600 },
   )
   await AppFileSystem.renameWithRetry(pending, path.join(target, "profile.json"))
-  return new ImportResult({ profile, imported: true })
+  return new ImportResult({ profile, imported: true, coverage: archive.coverage })
 }
 
 function integer(value: number, min: number, max: number, label: string) {
