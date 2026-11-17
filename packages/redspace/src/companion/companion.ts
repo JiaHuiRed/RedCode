@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto"
 import { Soul } from "@/soul"
 import { ID_PATTERN } from "@/soul/schema"
 import { makeRuntime } from "@/effect/run-service"
-import { activeFile, decode, digest, readArchive, safePath } from "./archive"
+import { activeFile, decode, digest, readArchive, safePath, type Archive } from "./archive"
 import {
   Bootstrap,
   CompanionConflict,
@@ -49,8 +49,9 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Companion") {}
 
-const Manifest = Schema.Struct({ profile: Info, digest: Schema.String })
+const Manifest = Schema.Struct({ profile: Info, digest: Schema.String, historyDigest: Schema.optional(Schema.String) })
 const Entry = Schema.Struct({ path: Schema.String, text: Schema.String, source: Schema.optional(Schema.String) })
+const SearchCursor = Schema.Struct({ scope: Schema.String, offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })
 
 export const layer = Layer.effect(
   Service,
@@ -112,7 +113,7 @@ export const layer = Layer.effect(
               return yield* new CompanionConflict({
                 message: `Companion "${prepared.id}" already exists with a different archive. Existing memories were not changed.`,
               })
-            return new ImportResult({ profile: previous.profile, imported: false })
+            return yield* io(() => appendHistory(root, prepared.id, archive))
           }
           const existing = yield* souls.get(prepared.id)
           if (existing && (existing.content.trim() !== prepared.content.trim() || existing.name !== prepared.name))
@@ -153,6 +154,7 @@ export const layer = Layer.effect(
                     version: 1,
                     profile,
                     digest: archive.digest,
+                    historyDigest: archive.historyDigest,
                     source: { format: "openclaw", path: input.source, agentID: archive.agentID },
                     preferences: archive.preferences,
                     files: archive.files.map((file) => ({
@@ -247,8 +249,26 @@ export const layer = Layer.effect(
               message: "Search paths must be existing recall sources from this companion.",
             })
         }
+        files.sort().reverse()
+        const scope = digest(JSON.stringify({ id: profile.id, query, files }))
+        if (input.cursor && Buffer.byteLength(input.cursor) > 1024)
+          throw new CompanionInvalidInput({ message: "Memory search cursor exceeds 1024 bytes." })
+        const cursor = input.cursor
+          ? Schema.decodeUnknownSync(SearchCursor)(JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8")))
+          : undefined
+        if (cursor && (cursor.scope !== scope || cursor.offset > files.length))
+          throw new CompanionInvalidInput({
+            message: "Memory search sources or filters changed; restart the search without a cursor.",
+          })
         const warnings: string[] = []
-        const matches: Array<{ path: string; startLine: number; endLine: number; text: string; score: number }> = []
+        const matches: Array<{
+          path: string
+          startLine: number
+          endLine: number
+          text: string
+          byteOffset?: number
+          score: number
+        }> = []
         const terms = [...new Set(query.match(/[a-z0-9][a-z0-9_-]+|[\p{Script=Han}]+/gu) ?? [query])]
         const fragments = [
           ...new Set(
@@ -260,16 +280,19 @@ export const layer = Layer.effect(
           ),
         ]
         let scanned = 0
-        for (const file of files.sort().reverse()) {
+        let nextCursor: string | undefined
+        for (let index = cursor?.offset ?? 0; index < files.length; index++) {
+          const file = files[index]
           const text = await optionalText(profile.directory, file, warnings)
           if (text === undefined) continue
-          scanned += Buffer.byteLength(text)
-          if (scanned > Limits.scan) {
+          if (scanned + Buffer.byteLength(text) > Limits.scan) {
+            nextCursor = Buffer.from(JSON.stringify({ scope, offset: index })).toString("base64url")
             warnings.push(
-              "Memory search reached its 8 MiB scan limit; narrow the date or read a known source directly.",
+              "Memory search reached its 8 MiB page limit; continue with nextCursor and the same query, even if this page has no matches.",
             )
             break
           }
+          scanned += Buffer.byteLength(text)
           const lines = text.split(/\r?\n/)
           const ranked: Array<{ index: number; score: number }> = []
           for (let index = 0; index < lines.length; index++) {
@@ -287,11 +310,32 @@ export const layer = Layer.effect(
           for (const item of ranked) {
             const start = Math.max(0, item.index - 1)
             const end = Math.min(lines.length, item.index + 3)
+            const excerpt = lines.slice(start, end).join("\n")
+            if (Buffer.byteLength(excerpt) > 1400) {
+              // A long preceding line must not consume the whole excerpt and hide the hit.
+              // Anchor inside the matching line and return a byte cursor for exact UTF-8 readback.
+              const line = lines[item.index]
+              const lower = line.toLowerCase()
+              const term = [query, ...terms, ...fragments].find((term) => lower.includes(term))!
+              let position = Math.max(0, lower.indexOf(term) - 60)
+              if (position && /[\uDC00-\uDFFF]/.test(line[position])) position--
+              let lineStart = 0
+              for (let index = 0; index < item.index; index++) lineStart = text.indexOf("\n", lineStart) + 1
+              matches.push({
+                path: file,
+                startLine: item.index + 1,
+                endLine: item.index + 1,
+                byteOffset: Buffer.byteLength(text.slice(0, lineStart + position)),
+                text: bounded(line.slice(position), 1400, "\n[Excerpt truncated.]"),
+                score: item.score,
+              })
+              continue
+            }
             matches.push({
               path: file,
               startLine: start + 1,
               endLine: end,
-              text: bounded(lines.slice(start, end).join("\n"), 1400, "\n[Excerpt truncated.]"),
+              text: excerpt,
               score: item.score,
             })
           }
@@ -300,7 +344,9 @@ export const layer = Layer.effect(
         if (warnings.length > visibleWarnings.length)
           visibleWarnings.push(`${warnings.length - visibleWarnings.length} additional sources could not be searched.`)
         let remaining =
-          Limits.search - Buffer.byteLength(JSON.stringify({ results: [], warnings: visibleWarnings })) - limit
+          Limits.search -
+          Buffer.byteLength(JSON.stringify({ results: [], warnings: visibleWarnings, nextCursor })) -
+          limit
         const results = matches
           .sort((a, b) => b.score - a.score || b.path.localeCompare(a.path))
           .slice(0, limit)
@@ -310,7 +356,7 @@ export const layer = Layer.effect(
             remaining -= size
             return [result]
           })
-        return new SearchResult({ results, warnings: visibleWarnings })
+        return new SearchResult({ results, warnings: visibleWarnings, ...(nextCursor ? { nextCursor } : {}) })
       })
     })
 
@@ -478,8 +524,74 @@ async function manifest(root: string, id: string) {
   // Resolve the private workspace from the current home so moving the profile directory remains possible.
   return {
     ...result,
+    raw: stored as Record<string, unknown>,
     profile: new Info({ ...result.profile, directory: AppFileSystem.resolve(path.join(root, id, "workspace")) }),
   }
+}
+
+// Re-import adds derived transcripts, never replaces a living diary or pinned identity.
+// docs/notes/implemented/feature/2026-11-17-companion-transcript-import.md
+async function appendHistory(root: string, id: string, archive: Archive) {
+  const target = path.join(root, id)
+  await using lease = await Flock.acquire("history-import", { dir: path.join(target, ".locks"), timeoutMs: 10_000 })
+  const previous = (await manifest(root, id))!
+  if (previous.digest !== archive.digest)
+    throw new CompanionConflict({
+      message: "The personal archive changed during history import. Existing memories were not replaced.",
+    })
+  const histories = archive.files.filter((file) => file.path.startsWith("workspace/history/openclaw-"))
+  if (previous.historyDigest === archive.historyDigest || !histories.length)
+    return new ImportResult({ profile: previous.profile, imported: false })
+  const files = Schema.decodeUnknownSync(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))(
+    previous.raw.files ?? [],
+  )
+  const known = new Set(files.map((file) => file.path))
+  for (const file of histories) {
+    for (const destination of [path.join(target, "source", file.path), path.join(target, file.path)]) {
+      await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 })
+      await containedPath(target, path.dirname(destination))
+      const saved = await fs.readFile(destination).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined
+        throw error
+      })
+      if (saved !== undefined && digest(saved) !== file.hash)
+        throw new CompanionConflict({
+          message: `Existing imported conversation differs: ${file.path}. It was not overwritten.`,
+        })
+      if (saved === undefined) await fs.writeFile(destination, file.bytes, { flag: "wx", mode: 0o600 })
+    }
+  }
+  const added = histories.filter((file) => !known.has(file.path))
+  const profile = new Info({
+    ...previous.profile,
+    files: previous.profile.files + added.length,
+    warnings: archive.warnings,
+  })
+  const pending = path.join(target, `profile.${randomUUID()}.tmp`)
+  await fs.writeFile(
+    pending,
+    JSON.stringify(
+      {
+        ...previous.raw,
+        profile,
+        historyDigest: archive.historyDigest,
+        files: [
+          ...files,
+          ...added.map((file) => ({
+            path: file.path,
+            bytes: file.bytes.byteLength,
+            hash: file.hash,
+            encoding: file.encoding,
+          })),
+        ],
+      },
+      null,
+      2,
+    ),
+    { flag: "wx", mode: 0o600 },
+  )
+  await AppFileSystem.renameWithRetry(pending, path.join(target, "profile.json"))
+  return new ImportResult({ profile, imported: true })
 }
 
 function integer(value: number, min: number, max: number, label: string) {
@@ -527,6 +639,7 @@ function recallFile(file: string) {
   return (
     /^(MEMORY|USER|IDENTITY)\.md$/.test(file) ||
     /^memory\/\d{4}-\d{2}-\d{2}[^/]*\.md$/.test(file) ||
+    /^history\/openclaw-[a-f0-9]+\.md$/.test(file) ||
     /^\.learnings\/[^/]+\.md$/.test(file)
   )
 }
@@ -538,7 +651,9 @@ function readableFile(file: string) {
 async function memoryFiles(root: string) {
   const entries = await fs.readdir(root, { withFileTypes: true })
   const result = entries.filter((entry) => entry.isFile() && recallFile(entry.name)).map((entry) => entry.name)
-  for (const dir of entries.filter((entry) => entry.isDirectory() && ["memory", ".learnings"].includes(entry.name))) {
+  for (const dir of entries.filter(
+    (entry) => entry.isDirectory() && ["memory", ".learnings", "history"].includes(entry.name),
+  )) {
     const children = await fs.readdir(path.join(root, dir.name), { withFileTypes: true })
     result.push(
       ...children

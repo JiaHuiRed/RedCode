@@ -33,6 +33,7 @@ export class SearchInput extends Schema.Class<SearchInput>("CompanionSearchInput
   query: Schema.String,
   limit: Schema.optional(Schema.Number),
   paths: Schema.optional(Schema.Array(Schema.String)),
+  cursor: Schema.optional(Schema.String),
 }) {}
 
 export class Passage extends Schema.Class<Passage>("CompanionPassage")({
@@ -40,11 +41,13 @@ export class Passage extends Schema.Class<Passage>("CompanionPassage")({
   startLine: Schema.Number,
   endLine: Schema.Number,
   text: Schema.String,
+  byteOffset: Schema.optional(Schema.Number),
 }) {}
 
 export class SearchResult extends Schema.Class<SearchResult>("CompanionSearchResult")({
   results: Schema.Array(Passage),
   warnings: Schema.Array(Schema.String),
+  nextCursor: Schema.optional(Schema.String),
 }) {}
 
 export class ReadInput extends Schema.Class<ReadInput>("CompanionReadInput")({

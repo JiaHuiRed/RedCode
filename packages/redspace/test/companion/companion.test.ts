@@ -48,6 +48,71 @@ function setup(body: (value: Fixture) => Effect.Effect<void, unknown, Companion.
 
 describe("companion archive", () => {
   it.live(
+    "anchors long Chinese and emoji search hits to readable UTF-8 byte positions",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+        for (const separator of ["", "\r\n"]) {
+          const content = `${"🔴中文".repeat(2000)}${separator}TARGET_NEEDLE 后面的原话。`
+          yield* Effect.promise(() => fs.writeFile(path.join(imported.profile.directory, "MEMORY.md"), content))
+          const result = yield* service.search({ id: "maple", query: "TARGET_NEEDLE" })
+          expect(result.results[0].text).toContain("TARGET_NEEDLE")
+          expect(result.results[0].byteOffset).toBeGreaterThan(0)
+          const read = yield* service.read({
+            id: "maple",
+            path: result.results[0].path,
+            byteOffset: result.results[0].byteOffset,
+          })
+          expect(read.text).toContain("TARGET_NEEDLE 后面的原话。")
+          expect(read.text).not.toContain("\uFFFD")
+        }
+      }),
+    ),
+  )
+
+  it.live(
+    "continues past the scan budget without making old memories unreachable",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+        yield* Effect.promise(async () => {
+          for (const day of [10, 11, 12])
+            await fs.writeFile(
+              path.join(imported.profile.directory, `memory/2026-11-${day}.md`),
+              `${"x".repeat(3 * 1024 * 1024)}\n${day === 10 ? "older-unrecorded-detail" : ""}`,
+            )
+        })
+        const first = yield* service.search({ id: "maple", query: "older-unrecorded-detail" })
+        expect(first.results).toEqual([])
+        expect(first.nextCursor).toBeDefined()
+        const next = yield* service.search({ id: "maple", query: "older-unrecorded-detail", cursor: first.nextCursor })
+        expect(next.results.some((result) => result.path === "memory/2026-11-10.md")).toBe(true)
+        const hit = next.results.find((result) => result.path === "memory/2026-11-10.md")!
+        expect(hit.text).toContain("older-unrecorded-detail")
+        expect((yield* service.read({ id: "maple", path: hit.path, byteOffset: hit.byteOffset })).text).toContain(
+          "older-unrecorded-detail",
+        )
+        expect(next.nextCursor).toBeUndefined()
+        expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThanOrEqual(Companion.Limits.search)
+        expect(Buffer.byteLength(JSON.stringify(next))).toBeLessThanOrEqual(Companion.Limits.search)
+        const changed = yield* service
+          .search({ id: "maple", query: "different", cursor: first.nextCursor })
+          .pipe(Effect.flip)
+        expect(changed._tag).toBe("CompanionInvalidInput")
+        yield* Effect.promise(() =>
+          fs.writeFile(path.join(imported.profile.directory, "memory/2026-11-13.md"), "a newer source"),
+        )
+        const stale = yield* service
+          .search({ id: "maple", query: "older-unrecorded-detail", cursor: first.nextCursor })
+          .pipe(Effect.flip)
+        expect(stale._tag).toBe("CompanionInvalidInput")
+      }),
+    ),
+  )
+
+  it.live(
     "returns the canonical workspace when the companion root is a directory alias",
     setup((value) =>
       Effect.gen(function* () {
@@ -250,7 +315,7 @@ describe("companion archive", () => {
   )
 
   it.live(
-    "imports a wrapped ZIP byte-for-byte and reports legacy encoding and deferred conversations",
+    "imports a wrapped ZIP byte-for-byte and reports legacy encoding and conversation import",
     setup((value) =>
       Effect.gen(function* () {
         const archive = path.join(value.source, "personal.zip")
@@ -282,6 +347,72 @@ describe("companion archive", () => {
         expect((yield* service.read({ id: "maple", path: "memory/2026-10-08.md" }).pipe(Effect.flip))._tag).toBe(
           "CompanionInvalidInput",
         )
+      }),
+    ),
+  )
+
+  it.live(
+    "adds historical chat to an existing archive without replacing living memories, and persists recall across reloads",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const initial = yield* service.importArchive({ source: value.source, id: "maple" })
+        yield* Effect.promise(async () => {
+          const file = path.join(value.root, "maple/profile.json")
+          const stored = JSON.parse(await fs.readFile(file, "utf8"))
+          delete stored.historyDigest // An existing 0.19.0 profile from before transcript support.
+          await fs.writeFile(file, JSON.stringify(stored))
+        })
+        const saved = yield* service.remember({
+          id: "maple",
+          text: "A newer living memory.",
+          time: Date.UTC(2026, 10, 17),
+        })
+        const line = (role: string, text: string) =>
+          JSON.stringify({
+            type: "message",
+            timestamp: "2026-03-01T08:00:00Z",
+            message: { role, content: [{ type: "text", text }] },
+          })
+        yield* Effect.promise(async () => {
+          const directory = path.join(value.source, "agents/main/sessions")
+          await fs.mkdir(directory, { recursive: true })
+          await fs.writeFile(
+            path.join(directory, "old.jsonl"),
+            [
+              line("user", "I chose silver thread for our lantern."),
+              line("assistant", "I remember that quiet evening."),
+            ].join("\n"),
+          )
+          await fs.writeFile(
+            path.join(directory, "cron.jsonl"),
+            [line("user", "[cron:job] automatic task"), line("assistant", "CRON_SENTINEL")].join("\n"),
+          )
+          await fs.mkdir(path.join(value.source, "agents/dev/sessions"), { recursive: true })
+          await fs.writeFile(
+            path.join(value.source, "agents/dev/sessions/other.jsonl"),
+            line("user", "OTHER_AGENT_SENTINEL"),
+          )
+        })
+        const upgraded = yield* service.importArchive({ source: value.source, id: "maple" })
+        expect(upgraded.imported).toBe(true)
+        expect(upgraded.profile.files).toBe(initial.profile.files + 1)
+        const result = yield* service.search({ id: "maple", query: "silver thread" })
+        expect(result.results).toHaveLength(1)
+        expect(result.results[0].path).toMatch(/^history\/openclaw-/)
+        const original = yield* service.read({ id: "maple", path: result.results[0].path })
+        expect(original.text).toContain("I chose silver thread for our lantern.")
+        expect(original.text).toContain("## User | 2026-03-01T08:00:00.000Z | JSONL line 1")
+        expect(original.text).toContain("## Assistant |")
+        expect((yield* service.read({ id: "maple", path: saved.path })).text).toContain("A newer living memory.")
+        expect((yield* service.search({ id: "maple", query: "SENTINEL" })).results).toEqual([])
+        expect((yield* service.bootstrap("maple")).text).not.toContain("silver thread")
+        expect((yield* service.importArchive({ source: value.source, id: "maple" })).imported).toBe(false)
+        yield* Effect.gen(function* () {
+          const reloaded = yield* Companion.Service
+          expect((yield* reloaded.search({ id: "maple", query: "silver thread" })).results).toEqual(result.results)
+          expect((yield* reloaded.read({ id: "maple", path: saved.path })).text).toContain("A newer living memory.")
+        }).pipe(Effect.provide(Companion.layer))
       }),
     ),
   )

@@ -8,6 +8,7 @@ import DESCRIPTION from "./companion-memory.md" with { type: "text" }
 export const Parameters = Schema.Struct({
   action: Schema.Literals(["search", "read", "remember"]),
   query: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
+  cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
   path: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))),
   text: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8192))),
   offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
@@ -53,6 +54,7 @@ export const CompanionMemoryTool = Tool.define(
                   query: args.query!,
                   limit: Math.min(args.limit ?? 5, 10),
                   paths,
+                  cursor: args.cursor,
                 })
               : args.action === "read"
                 ? yield* companions.read({

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import fs, { type FileHandle } from "node:fs/promises"
 import path from "node:path"
 import { CompanionInvalidInput, Limits } from "./schema"
+import { internalTranscripts, transcript, transcriptPath } from "./transcript"
 
 type Entry = { path: string; size: number; read: () => Promise<Uint8Array> }
 
@@ -40,6 +41,7 @@ export type SourceFile = {
 export type Archive = {
   files: SourceFile[]
   digest: string
+  historyDigest: string
   name?: string
   agentID?: string
   timezone: string
@@ -87,6 +89,7 @@ export function activeFile(file: string) {
     /^(SOUL|MEMORY|USER|IDENTITY|TOOLS|HEARTBEAT|DREAMS)\.md$/i.test(relative) ||
     /^memory\/\d{4}-\d{2}-\d{2}[^/]*\.md$/.test(relative) ||
     /^\.learnings\/[^/]+\.md$/.test(relative) ||
+    /^history\/openclaw-[a-f0-9]+\.md$/.test(relative) ||
     /^(?:avatars\/)?[^/]*avatar[^/]*\.(png|jpe?g|webp)$/i.test(relative)
   )
 }
@@ -187,19 +190,78 @@ async function collect(entries: Entry[]): Promise<Archive> {
     }
     files.push({ path: entry.path, bytes, hash: digest(bytes), text, encoding: verified })
   }
-  if (entries.some((entry) => entry.path.startsWith("agents/") && /\.jsonl(?:\.|$)/.test(entry.path)))
-    warnings.push(
-      "Session transcripts and trajectories remain in the original archive; this first import supports personal files, not historical conversation reconstruction.",
-    )
   warnings.push(
     "Legacy AGENTS.md and skills are preserved as sources only. Heartbeat, scheduled tasks, channels and voice are not activated by importing.",
   )
   if (!files.some((file) => file.path === "workspace/MEMORY.md"))
     warnings.push("No MEMORY.md was found; only the available personal files were imported.")
   const details = await metadata(entries, warnings)
+  // Keep the original personal-file digest stable so a repeat import can add history
+  // to an existing profile without replacing its independently updated diary or Soul.
+  const originalDigest = digest(JSON.stringify({ files: files.map((file) => [file.path, file.hash]), ...details }))
+  const agent = details.agentID ?? "main"
+  if (!/^[a-zA-Z0-9_-]+$/.test(agent))
+    throw new CompanionInvalidInput({ message: "OpenClaw agent id is not a safe transcript directory name." })
+  const index = entries.find((entry) => entry.path === `agents/${agent}/sessions/sessions.json`)
+  let internal = new Set<string>()
+  if (index && index.size <= 1024 * 1024) {
+    try {
+      internal = internalTranscripts(decode(await index.read(), index.path))
+    } catch {
+      // The index is optional; record-level provenance still applies to every transcript.
+      warnings.push("Session index could not be read; historical conversations use record-level provenance only.")
+    }
+  }
+  const histories = entries
+    .filter((entry) => transcriptPath(entry.path, agent))
+    .sort((a, b) => a.path.localeCompare(b.path))
+  if (
+    histories.reduce((sum, entry) => sum + entry.size, 0) > Limits.importBytes ||
+    histories.length > Limits.importFiles
+  )
+    throw new CompanionInvalidInput({ message: "Conversation sources exceed 4096 transcripts / 64 MiB." })
+  const derived: SourceFile[] = []
+  let invalidRecords = 0
+  for (const entry of histories) {
+    if (internal.has(path.posix.basename(entry.path).split(".jsonl")[0])) continue
+    if (entry.size > Limits.sourceFile)
+      throw new CompanionInvalidInput({ message: `Conversation source exceeds 8 MiB: ${entry.path}` })
+    const raw = await entry.read()
+    if (raw.byteLength !== entry.size)
+      throw new CompanionInvalidInput({ message: `Conversation source size changed while reading: ${entry.path}` })
+    const result = await transcript(decode(raw, entry.path), entry.path, digest(raw))
+    invalidRecords += result.invalid
+    if (!result.text) continue
+    const bytes = Buffer.from(result.text)
+    if (bytes.byteLength > Limits.textFile)
+      throw new CompanionInvalidInput({ message: `Readable conversation exceeds 4 MiB: ${entry.path}` })
+    derived.push({
+      path: `workspace/history/openclaw-${digest(entry.path).slice(0, 24)}.md`,
+      bytes,
+      hash: digest(bytes),
+      text: true,
+      encoding: "utf8",
+    })
+  }
+  if (invalidRecords)
+    warnings.push(
+      `${invalidRecords} invalid historical conversation records were skipped; intact records were retained.`,
+    )
+  if (histories.length)
+    warnings.push(
+      `Imported ${derived.length} historical conversation text files. Internal tasks, trajectories, deleted sessions and tool payloads remain outside personal recall.`,
+    )
+  if (
+    files.length + derived.length > Limits.importFiles ||
+    [...files, ...derived].reduce((sum, file) => sum + file.bytes.byteLength, 0) > Limits.importBytes
+  )
+    throw new CompanionInvalidInput({
+      message: "Personal files and readable conversations exceed 4096 files / 64 MiB.",
+    })
   return {
-    files,
-    digest: digest(JSON.stringify({ files: files.map((file) => [file.path, file.hash]), ...details })),
+    files: [...files, ...derived],
+    digest: originalDigest,
+    historyDigest: digest(JSON.stringify(derived.map((file) => [file.path, file.hash]))),
     ...details,
     warnings,
   }
@@ -222,18 +284,23 @@ async function directoryEntries(root: string): Promise<Entry[]> {
       const source = path.posix.join(relative, child.name)
       const key = workspaceOnly ? `workspace/${source}` : source
       if (child.isDirectory()) {
-        if (!workspaceOnly && source === "agents") {
-          // Only a sentinel is needed to report deferred session import; no transcript content is read here.
-          entries.push({ path: "agents/session-history.jsonl", size: 0, read: async () => new Uint8Array() })
-        }
         if (
           workspaceOnly ||
-          /^(workspace(?:\/|$)|oldmemory$|workspace-backup-[^/]+$|profiles(?:\/|$)|media(?:\/|$))/.test(source)
+          /^(workspace(?:\/|$)|oldmemory$|workspace-backup-[^/]+$|profiles(?:\/|$)|media(?:\/|$)|agents$|agents\/[^/]+(?:\/sessions)?$)/.test(
+            source,
+          )
         )
           await walk(source)
         continue
       }
-      if (!child.isFile() || (!personalFile(key) && key !== "openclaw.json")) continue
+      if (
+        !child.isFile() ||
+        (!personalFile(key) &&
+          key !== "openclaw.json" &&
+          !transcriptPath(key) &&
+          !/^agents\/[^/]+\/sessions\/sessions\.json$/.test(key))
+      )
+        continue
       const full = path.join(root, source)
       const stat = await fs.stat(full)
       entries.push({ path: safePath(key), size: stat.size, read: () => fs.readFile(full) })
