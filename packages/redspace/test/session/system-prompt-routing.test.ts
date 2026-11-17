@@ -6,6 +6,7 @@ import PROMPT_GPT from "../../src/session/prompt/gpt.md" with { type: "text" }
 import PROMPT_STEP from "../../src/session/prompt/step.md" with { type: "text" }
 import PROMPT_HY from "../../src/session/prompt/hy.md" with { type: "text" }
 import PROMPT_QWEN from "../../src/session/prompt/qwen.md" with { type: "text" }
+import CONVERSATION from "../../src/session/prompt/conversation.md" with { type: "text" }
 import PROMPT_DEFAULT from "../../src/session/prompt/default.md" with { type: "text" }
 import PROMPT_WORKING_STYLE from "../../src/session/prompt/working-style.md" with { type: "text" }
 
@@ -39,10 +40,10 @@ describe("system prompt routing", () => {
     expect(provider(model("claude-sonnet-4-5", "anthropic"))).toEqual([PROMPT_DEFAULT])
   })
 
-  // 261111 Red 声线由公共 Conversation 段与 Soul 承担，GPT Delta 不再重复。
-  test("GPT Delta 继承公共交流契约与 soul", () => {
-    expect(PROMPT_DEFAULT).toContain("# Conversation")
-    expect(PROMPT_DEFAULT).toContain("The bound Soul defines who you are")
+  // 261117 Red 相处契约由主会话装配，与模型和 agent prompt 无关。
+  test("model prompts leave conversation ownership to the session and Soul", () => {
+    expect(PROMPT_DEFAULT).not.toContain("# Conversation")
+    expect(CONVERSATION).toContain("The bound Soul defines who you are")
     expect(PROMPT_GPT).toContain("Follow the common engineering contract and the bound Soul.")
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })

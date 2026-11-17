@@ -960,6 +960,49 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  for (const native of [false, true]) {
+    itCompaction.instance(`${native ? "native" : "legacy"} compaction carries conversation continuity with the task`, () => {
+      const responses = llm()
+      let captured = ""
+      const checkpoint = "## Conversation Continuity\n- The user named our lantern Aurora; return to its blue ribbon after the parser fix."
+      responses.push(reply(checkpoint, (input) => { captured = JSON.stringify(input.messages) }))
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const ctx = yield* TestInstance
+        const chat = yield* ssn.create({ title: "Conversation and work" })
+        yield* Effect.addFinalizer(() => ssn.remove(chat.id).pipe(Effect.orDie))
+        const first = yield* createUserMessage(chat.id, "We named our lantern Aurora. After the parser fix, let's return to its blue ribbon.")
+        const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+        yield* ssn.updatePart({
+          id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+          text: "Parser investigation evidence. ".repeat(500),
+        })
+        yield* createUserMessage(chat.id, "Keep fixing the parser.")
+        yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+        const messages = yield* ssn.messages({ sessionID: chat.id })
+        yield* SessionCompaction.use.process({
+          parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: false,
+        })
+        expect(captured).toContain("We named our lantern Aurora")
+        expect(captured).toContain("## Conversation Continuity")
+        expect(captured).toContain("who said or experienced what")
+        expect(captured).toContain("not permission to write a personal archive")
+        expect(captured).toContain("## Progress")
+        const after = yield* ssn.messages({ sessionID: chat.id })
+        const summary = after.find((message) => message.info.role === "assistant" && message.info.summary)
+        if (!summary || summary.info.role !== "assistant") throw new Error("Missing compaction summary")
+        expect(summary.info.error).toBeUndefined()
+        expect(MessageV2.summaryText(summary)).toBe(checkpoint)
+      }).pipe(withCompaction({
+        llm: responses.layer, provider: wide(),
+        config: cfg({ tail_turns: 1, native: {
+          enabled: native, trigger_tokens: 60000, target_tokens: 40000,
+          reminder_tokens: 54000, summary_max_tokens: 1000,
+        } }),
+      }))
+    })
+  }
+
   for (const reuse of [true, false]) {
     itCompaction.instance(
       `native summary ${reuse ? "keeps tool schemas without executable callbacks" : "falls back when the cached prefix exceeds the input budget"}`,
@@ -1016,6 +1059,7 @@ describe("session.compaction.process", () => {
           })).toBe("continue")
           expect(executed).toBe(0)
           expect(captured?.toolChoice).toBe("none")
+          expect(JSON.stringify(captured?.messages)).toContain("## Conversation Continuity")
           expect(captured?.agent.name).toBe(reuse ? "build" : "compaction")
           if (reuse) expect(captured?.agent.prompt).toBe("SENT_AGENT_PROMPT")
           expect(captured?.system).toEqual(reuse ? ["sent-system"] : [])

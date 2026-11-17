@@ -25,6 +25,7 @@ import { get as getCanary, check as checkCanary } from "./canary"
 import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.md" with { type: "text" }
 import WORK_RULES from "./prompt/work-rules.md" with { type: "text" }
+import CONVERSATION from "./prompt/conversation.md" with { type: "text" }
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -2139,6 +2140,10 @@ export const layer = Layer.effect(
             ...env,
             ...instructions,
             ...(soul.prompt ? [soul.prompt] : []),
+            // 261117 Red 主会话共享相处契约，身份仍只取绑定 Soul；工具循环不重复追加。
+            // docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md
+            // injection-registry: conversation-contract
+            ...(!stepSettings.session.parentID ? [CONVERSATION] : []),
             ...(companion ? [companion] : []),
             ...(mcpGuide ? [mcpGuide] : []),
             ...(skills ? [skills] : []),

@@ -63,6 +63,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
 import { Companion } from "@/companion/companion"
+import CONVERSATION from "@/session/prompt/conversation.md" with { type: "text" }
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
 import { runSteerableTask, steerTask, steerTaskFromUser, TaskTool, type TaskPromptOps } from "@/tool/task"
@@ -678,6 +679,7 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         const chat = yield* sessions.create({ title: "Mira Chat", mode: "chat", companionID: imported.profile.id })
         yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
         yield* llm.tool("companion_memory", { action: "search", query: "Aurora" })
+        yield* llm.tool("companion_memory", { action: "read", path: "memory/2026-01-02.md" })
         yield* llm.tool("companion_memory", { action: "remember", text: "Our lantern now has a blue ribbon." })
         yield* llm.text("I will remember the blue ribbon.")
         yield* prompt.prompt({
@@ -685,7 +687,18 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
           model: ref,
           parts: [{ type: "text", text: "Today we added a blue ribbon to Aurora." }],
         })
-        const first = JSON.stringify((yield* llm.inputs)[0])
+        const requests = yield* llm.inputs
+        const prefix = (requests[0].messages as { role: string; content: string }[])[0]
+        expect(prefix.role).toBe("system")
+        expect(prefix.content).toContain(CONVERSATION)
+        expect(prefix.content.split(CONVERSATION)).toHaveLength(2)
+        expect(prefix.content).not.toContain("Search: query and limit")
+        expect(JSON.stringify(requests[0].tools)).toContain("then read the needed source lines")
+        for (const request of requests.slice(1, 4)) {
+          expect((request.messages as unknown[])[0]).toEqual(prefix)
+          expect(request.tools).toEqual(requests[0].tools)
+        }
+        const first = JSON.stringify(requests[0])
         expect(first).toContain("Mira identity sentinel")
         expect(first).toContain("paper lantern")
         expect(first).toContain("named the lantern Aurora")
@@ -709,7 +722,7 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
           model: ref,
           parts: [{ type: "text", text: "What did we do today?" }],
         })
-        const second = JSON.stringify((yield* llm.inputs)[3])
+        const second = JSON.stringify((yield* llm.inputs)[4])
         expect(second).toContain("Our lantern now has a blue ribbon")
         expect(second).toContain("paper lantern")
       }).pipe(provideInstance(imported.profile.directory))
@@ -723,13 +736,24 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         yield* Effect.addFinalizer(() => sessions.remove(code.id).pipe(Effect.orDie))
         yield* llm.text("The code is ready.")
         yield* prompt.prompt({ sessionID: code.id, model: ref, parts: [{ type: "text", text: "Review the code." }] })
-        const wire = JSON.stringify((yield* llm.inputs)[4])
+        const wire = JSON.stringify((yield* llm.inputs)[5])
+        expect(wire).toContain(JSON.stringify(CONVERSATION).slice(1, -1))
+        expect(wire.match(/# Conversation/g)).toHaveLength(1)
         expect(wire).toContain("Code identity sentinel")
         expect(wire).toContain("Engineering memory sentinel")
         expect(wire).not.toContain("Mira identity sentinel")
         expect(wire).not.toContain("paper lantern")
         expect(wire).not.toContain("blue ribbon")
         expect(wire).not.toContain("companion_memory")
+        expect(wire).not.toContain("then read the needed source lines")
+
+        const child = yield* sessions.create({ parentID: code.id })
+        yield* llm.text("Subtask result.")
+        yield* prompt.prompt({ sessionID: child.id, model: ref, parts: [{ type: "text", text: "Inspect the parser." }] })
+        const childWire = JSON.stringify((yield* llm.inputs)[6])
+        expect(childWire).toContain("Code identity sentinel")
+        expect(childWire).not.toContain("# Conversation")
+        expect(childWire).not.toContain("companion_memory")
       }).pipe(provideInstance(codeDirectory))
     }).pipe(
       Effect.provideService(Companion.directory, path.join(directory, "companions")),

@@ -98,13 +98,18 @@ const MIN_PRESERVE_RECENT_TOKENS = 2_000
 // （budget 仍受 usable*0.25 上限约束，模型可用上下文小的时候自动收缩）。
 // 260818 Red 远端 a6c2af1 曾调 30K（哥哥在家基于未回退 466bb79 的再调优），合并时保留 50K——实测值。
 const MAX_PRESERVE_RECENT_TOKENS = 50_000
+// 261117 Red 同时延续任务与相处，原生/传统压缩共用；不把摘要当人格记忆写回。
+// docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
-- [single-sentence task summary]
+- [current task or conversational topic; do not invent a task for casual conversation]
 
 ## Constraints & Preferences
 - [session-specific constraints that add to or override the standing instructions, or "(none)"; write "only touch the parser", not "ask before pushing"]
+
+## Conversation Continuity
+- [relevant shared experiences, user-stated feelings or preferences, unfinished personal topics and explicit promises, or "(none)"; retain who said or experienced what and any later correction]
 
 ## Progress
 ### Done
@@ -132,6 +137,7 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 Rules:
 - Keep every section, even when empty.
 - Use terse bullets, not prose paragraphs.
+- Preserve meaningful conversational continuity even when it adds no engineering information. Do not copy the Soul biography or manufacture feelings, relationship changes or shared history. Distinguish direct statements from interpretations, imagined scenes and dreams from events, and promises from completed or scheduled actions. Preserve requests not to save personal information; this checkpoint is session context, not permission to write a personal archive.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
 - Do not mention the summary process or that context was compacted.
 - If the conversation already contains a prior checkpoint summary, merge it instead of copying it forward: keep facts that are still true, drop stale ones, and fold newer information into one consolidated summary.
