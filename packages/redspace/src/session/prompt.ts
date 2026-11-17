@@ -1999,7 +1999,29 @@ export const layer = Layer.effect(
           // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
           // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
 
+          // 261117 Red 插件改写与 pin 交互的诊断：memory-recall 每轮把检索块追加到最后一条
+          // user 消息的 text part，queued 消息又跳过 pin，首次 pin 时内容可能已变 → 历史中段
+          // 改写 = 该轮整段 miss（15:02 两个会话同时复现）。有界：只记最后一条 user 消息，
+          // 正文只取前 60 字符。
+          const textLength = (parts: MessageV2.WithParts["parts"]) =>
+            parts.reduce((total, part) => total + (part.type === "text" ? part.text.length : 0), 0)
+          const textHead = (parts: MessageV2.WithParts["parts"]) =>
+            parts
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .slice(0, 60)
+          const transformTail = msgs.findLast((message) => message.info.role === "user")
+          const transformBefore = transformTail ? textLength(transformTail.parts) : 0
           yield* plugin.trigger("experimental.chat.messages.transform", { sessionID }, { messages: msgs })
+          if (transformTail && textLength(transformTail.parts) !== transformBefore)
+            log.info("msg-pin transform", {
+              "msg.id": transformTail.info.id,
+              before: transformBefore,
+              after: textLength(transformTail.parts),
+              head: textHead(transformTail.parts),
+            })
 
           // 260618 Red pin post-DCP message content for prefix cache stability.
           // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
@@ -2026,6 +2048,13 @@ export const layer = Layer.effect(
               } else {
                 pinnedMessages.messages.set(mid, structuredClone(msg.parts))
                 cached++
+                if (msg.info.role === "user")
+                  log.info("msg-pin first", {
+                    "msg.id": mid,
+                    "msg.delivery": msg.info.delivery ?? "",
+                    "msg.length": textLength(msg.parts),
+                    "msg.head": textHead(msg.parts),
+                  })
               }
               // 260706 Red: periodic yield so event loop can serve heartbeat + health check
               if ((pinned + cached) % 10 === 0) {
