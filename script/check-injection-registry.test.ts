@@ -23,7 +23,7 @@ const GOOD_REGISTRY = `{
 }`
 const BROKEN_REGISTRY = GOOD_REGISTRY.replace("TOKEN_ANCHOR", "GONE_ANCHOR")
 const PROMPT = "export const x = 1 // TOKEN_ANCHOR\n"
-// 脚本里 PROMPT_TS 写死为 packages/opencode/src/session/prompt.ts，fixture 必须镜像该布局
+// 脚本里 PROMPT_TS 写死为 packages/redspace/src/session/prompt.ts，fixture 必须镜像该布局
 const SESSION_PROMPT_REL = path.join("packages", "opencode", "src", "session", "prompt.ts")
 
 let fixtureRoot: string

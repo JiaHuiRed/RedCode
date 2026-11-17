@@ -1,8 +1,8 @@
 # 贡献指南
 
-RedCode 是 [opencode](https://github.com/anomalyco/opencode) 的个人 fork，由一个人维护，**只面向 Windows 10/11 开发和测试**——其他平台既不构建也不验证。
+RedSpace 是从 RedCode 演进而来的独立维护项目，历史源码包含 [OpenCode](https://github.com/anomalyco/opencode) 的开源成果，原有许可证和版权声明继续保留。当前由个人维护，**仅面向 Windows 10/11 开发和测试**——其他平台既不构建也不验证。
 
-仓库公开是为了透明和备份，不是在招贡献者。Issue 和 PR 没有自动化 triage，回应看维护者的时间。如果你想在此基础上做自己的东西，直接 fork 更省事。
+仓库公开是为了透明和备份，不是在招贡献者。Issue 和 PR 没有自动化 triage，回应看维护者的时间。如果你想在此基础上继续开发，可以在相应开源许可证允许的范围内创建自己的分支或衍生项目。
 
 ## 开发环境
 
@@ -17,14 +17,14 @@ bun install
 常用命令：
 
 ```bash
-bun dev                                  # 启动 TUI（在 packages/opencode 下）
+bun dev                                  # 启动 TUI（在 packages/redspace 下）
 bun turbo typecheck                      # 全仓类型检查
 bun run script/check-version-consistency.ts   # 版本号一致性自检
 ```
 
 单个 package 的类型检查在对应目录下跑 `bun run typecheck`。**不要在仓库根目录直接跑 `tsc`**——这是个 monorepo，根目录没有可用的 tsconfig 入口。
 
-编译产物：`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`。
+编译产物：`packages/redspace/dist/redcode-windows-x64/bin/redcode.exe`。
 
 更完整的配置、MCP、Skill 说明见 [MANUAL.md](MANUAL.md)；给 AI 代理看的工作约定见 [AGENTS.md](AGENTS.md)。
 

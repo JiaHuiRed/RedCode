@@ -1,6 +1,6 @@
-# RedCode TUI 核心
+# RedSpace 共享执行核心
 
-本包是 RedCode 的 TUI / 服务端核心（CLI、plugin、MCP、Effect、session）。
+本包是 RedSpace 的 TUI / Chat / Code / GUI 共享服务端核心（CLI、plugin、MCP、Effect、session）。
 
 ## 依赖
 

@@ -9,7 +9,7 @@ const { relative } = path
 
 const require = createRequire(import.meta.url)
 
-const REDCODE_SERVER_DIST = "../opencode/dist/node"
+const REDCODE_SERVER_DIST = "../redspace/dist/node"
 
 const channel = (() => {
   const raw = process.env.REDCODE_CHANNEL
@@ -75,7 +75,7 @@ export default defineConfig({
           const outDir = "./out/main"
           const configDir = path.dirname(fileURLToPath(import.meta.url))
           const dist = path.resolve(configDir, REDCODE_SERVER_DIST)
-          const opencodeNodeModules = path.resolve(configDir, "../opencode/node_modules")
+          const redspaceNodeModules = path.resolve(configDir, "../redspace/node_modules")
 
           await fs.mkdir(outDir, { recursive: true })
 
@@ -94,11 +94,11 @@ export default defineConfig({
           }
 
           // jsonc-parser (no deps, needed by bundle as external)
-          const jp = path.join(opencodeNodeModules, "jsonc-parser")
+          const jp = path.join(redspaceNodeModules, "jsonc-parser")
           await fs.cp(jp, path.join(outDir, "node_modules/jsonc-parser"), { recursive: true, dereference: true })
 
           // @parcel/watcher shim + native binary
-          const pkgDir = path.join(opencodeNodeModules, "@parcel")
+          const pkgDir = path.join(redspaceNodeModules, "@parcel")
           const outPkgDir = path.join(outDir, "node_modules/@parcel")
           const outWatcherDir = path.join(outPkgDir, "watcher")
           await fs.mkdir(outWatcherDir, { recursive: true })

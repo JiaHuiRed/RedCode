@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - dev
+      - master
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  # Keep every run on dev so cancelled checks do not pollute the default branch
+  # Keep every run on stable branches so cancelled checks do not pollute the default branch
   # commit history. PRs and other branches still share a group and cancel stale runs.
-  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
+  group: ${{ case((github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/master'), format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
   cancel-in-progress: true
 
 permissions:
@@ -49,7 +50,7 @@ jobs:
           save-cache: "false"
 
       - name: Run smoke tests
-        working-directory: packages/opencode
+        working-directory: packages/redspace
         run: bun run test:smoke
         env:
           REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
@@ -58,7 +59,7 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
-          report_paths: packages/opencode/.artifacts/smoke/*.xml
+          report_paths: packages/redspace/.artifacts/smoke/*.xml
           check_name: "smoke results (windows)"
           detailed_summary: true
           include_time_in_summary: true
@@ -72,7 +73,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-          path: packages/opencode/.artifacts/smoke/*.xml
+          path: packages/redspace/.artifacts/smoke/*.xml
 
   gitleaks:
     name: secrets scan

@@ -1,7 +1,7 @@
 // 260929 Red 模块阅读包：一条命令产出某模块的有界上下文，替代「进场先翻几十个文件」。
 // 设计学自 ZCode 的 `pnpm architecture:context <module-id>`（scripts/architecture/index.mjs）：
 // 只读、不猜实现，输出 package 身份 / 公开入口 / 源码地图 / 依赖与反向依赖 / spec 与测试清单。
-// 用法：bun run script/module-context.ts <packages/app | packages/opencode/src/session | ...>
+// 用法：bun run script/module-context.ts <packages/app | packages/redspace/src/session | ...>
 import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { join, relative, resolve } from "path"
 
@@ -88,7 +88,7 @@ function walk(dir: string, depth: number, out: string[] = [], skip: ReadonlySet<
 const target = process.argv[2]
 if (!target) {
   console.error("usage: bun run script/module-context.ts <package-dir | subdir>")
-  console.error("  e.g. packages/app   packages/opencode/src/session   packages/ui/src/components")
+  console.error("  e.g. packages/app   packages/redspace/src/session   packages/ui/src/components")
   process.exit(1)
 }
 

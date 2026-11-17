@@ -3,7 +3,7 @@ rem Mirror seed\scripts -> %USERPROFILE%\.redcode\scripts, and nothing else.
 rem
 rem Same mirror step as script\sync-home.bat, split out so a plain "git pull" can
 rem restore these without a full build: sync-home.bat is only ever called from
-rem packages\opencode\build.bat and packages\desktop\build-and-package.bat, and it
+rem packages\redspace\build.bat and packages\desktop\build-and-package.bat, and it
 rem also runs the version check and the config merger - too much for "put my scripts back".
 rem
 rem 260901 seed became the single source of truth for these scripts and the private

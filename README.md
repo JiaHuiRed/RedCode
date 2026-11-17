@@ -1,10 +1,10 @@
-# ⚡ RedCode
+# ⚡ RedSpace
 
-**RedCode 是一个支持多模型的 AI 编程 Agent，提供终端（TUI）与桌面（GUI）两种使用方式。**
+**RedSpace 是一个拥有 Chat 与 Code 双模式的 AI 协作空间，同时支持终端（TUI）与桌面（GUI）。**
 
-它可以理解和修改代码、执行命令、调用开发工具，并通过自然语言与你协作完成实际开发任务。
+Chat 能接续原有伙伴的人格和长期记忆，也能直接调用工具完成任务；Code 保留 RedCode 的多模型编程、调试、文件操作与工程工作流。
 
-基于 [OpenCode](https://github.com/anomalyco/opencode) 深度开发，面向中文使用习惯与个性化工作流持续优化。
+自 0.19.0 起，RedCode 演进为 RedSpace：在同一底层延续人格、会话与执行能力。
 
 [![版本](https://badgen.net/badge/版本/0.19.0/blue)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
@@ -20,7 +20,7 @@
   <img src="docs/assets/screenshot.png" width="760" alt="RedCode 桌面工作台：文件树、输入区与上下文看板">
 </p>
 
-## ❤️ Why RedCode?
+## ❤️ Why RedSpace?
 
 **自由选择模型。** 接入不同供应商的 Coding Plan、兼容 API 或本地模型，根据任务选择适合的模型，而不受限于单一服务。
 
@@ -58,14 +58,14 @@ bun run dev:desktop
 
 更多安装、模型接入、权限与 Soul 配置说明见 [MANUAL.md](MANUAL.md)。
 
-## RedSpace：Chat 与 Code
+## 两种模式：Chat 与 Code
 
 0.19.0 开始在同一个应用中提供两个模式，TUI 与 GUI 共用后端和个人档案：
 
 - **Code**：继续使用现有开发工作区、Soul、工程记忆和权限模式。
 - **Chat**：导入已有 OpenClaw / RedClaw 个人档案，接续同一个伙伴的人格、长期记忆和日记，也可以使用工具完成工作。
 
-TUI 可用 `redcode companion import <目录或ZIP> --id companion` 导入，再用 `redcode --companion companion` 进入；运行中使用 `/chat` 与 `/code`。源码运行时把 `redcode` 换成 `bun dev`。GUI 使用顶栏 Chat 入口导入并开始聊天。
+TUI 推荐用 `redspace companion import <目录或ZIP> --id companion` 导入，再用 `redspace --companion companion` 进入（原 `redcode` 命令仍兼容）；运行中使用 `/chat` 与 `/code`。源码运行时把 `redcode` 换成 `bun dev`。GUI 使用顶栏 Chat 入口导入并开始聊天。
 
 这批实现接通档案继承与选择性记忆续写；历史 JSONL 对话重建、心跳、梦境和旧定时任务仍待后续接入。旧源码目录、CLI 命令与本地配置路径保持兼容。操作与迁移边界见[手册](MANUAL.md#65-redspace-chat-个人档案)。
 
@@ -76,6 +76,6 @@ TUI 可用 `redcode companion import <目录或ZIP> --id companion` 导入，再
 
 ## 💙 致谢
 
-RedCode 基于 [OpenCode](https://github.com/anomalyco/opencode) 开发，感谢原项目及相关开源社区的贡献。
+RedSpace 从 RedCode 演进而来，历史源码包含 [OpenCode](https://github.com/anomalyco/opencode) 的开源成果；许可证、版权及贡献历史保留。感谢原项目与相关开源社区。
 
 本项目采用 [MIT License](LICENSE)。

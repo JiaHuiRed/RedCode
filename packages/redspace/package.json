@@ -21,7 +21,8 @@
     "db": "bun drizzle-kit"
   },
   "bin": {
-    "redcode": "./bin/redcode"
+    "redcode": "./bin/redcode",
+    "redspace": "./bin/redcode"
   },
   "exports": {
     "./*": "./src/*.ts"

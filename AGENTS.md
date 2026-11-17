@@ -1,6 +1,6 @@
 # 边界
 
-**只写"RedCode长什么样"**：目录路由、构建/验证命令、代码风格、版本清单、分支与 commit scope、本仓红线。
+**只写"RedSpace 长什么样"**：目录路由、构建/验证命令、代码风格、版本清单、分支与 commit scope、本仓红线。
 
 **"我该怎么干活"一律在全局 `~/.redcode/AGENTS.md`**。
 
@@ -10,7 +10,7 @@
 
 | 目录                 | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 入口 AGENTS.md                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| `packages/opencode/` | **TUI 核心** — CLI、plugin 系统、MCP、Effect、session                                                                                                                                                                                                                                                                                                                                                                                                                          | `packages/opencode/AGENTS.md` |
+| `packages/redspace/` | **TUI 核心** — CLI、plugin 系统、MCP、Effect、session                                                                                                                                                                                                                                                                                                                                                                                                                          | `packages/redspace/AGENTS.md` |
 | `packages/desktop/`  | **GUI** — Electron、main/renderer、sidecar                                                                                                                                                                                                                                                                                                                                                                                                                                     | `packages/desktop/AGENTS.md`  |
 | `packages/app/`      | **SolidJS Web UI** — 组件、路由、i18n                                                                                                                                                                                                                                                                                                                                                                                                                                          | `packages/app/AGENTS.md`      |
 | `packages/plugin/`   | Plugin SDK 类型定义                                                                                                                                                                                                                                                                                                                                                                                                                                                            | -                             |
@@ -21,7 +21,7 @@
 # 验证命令
 
 - **从 package 目录跑，别在 repo root 跑 `tsc`**：
-  - 改 TUI → `cd packages/opencode && bun run typecheck`
+  - 改 TUI → `cd packages/redspace && bun run typecheck`
   - 改 GUI → `cd packages/desktop && bun run typecheck`
 - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
 - 跑单测**必须带完整文件路径过滤**：不带过滤的 `bun test` 会碰 live 配置（已修根因，但 plugin-loader 那类直接操作 live 文件名的用例仍靠路径隔离兜着）
@@ -42,14 +42,14 @@
 **跑的检查必须匹配改动面，永远不要默认跑全量测试套件。**（事故：想验一个测试却跑了全量 `bun test`，测试套件洗掉 live 配置——见 `docs/notes/`）
 
 - 行为改动 → 只跑对应的测试文件（带路径过滤），**必须带包脚本的超时 `--timeout 30000`**——裸 `bun test <file>` 是默认 5 秒，session 套件会大面积假超时（判定指纹：失败耗时齐刷刷贴着超时值＝命令用错，不是回归）
-- 改了进 OpenAPI 的 schema 出口（`packages/opencode/src/config/*.ts`、`session/status.ts` 等 `Schema.Struct`）→ **commit 前跑 `bun run check:openapi-drift`**（~8s，不一致就跑两条生成命令：`bun ./packages/sdk/js/script/build.ts` + `bun run gen:openapi`）。pre-commit 钩子也会拦，但钩子是兜底、不是不跑的理由——推送时才发现就要补 fixup commit（9-01 以来已发生 6 次）
+- 改了进 OpenAPI 的 schema 出口（`packages/redspace/src/config/*.ts`、`session/status.ts` 等 `Schema.Struct`）→ **commit 前跑 `bun run check:openapi-drift`**（~8s，不一致就跑两条生成命令：`bun ./packages/sdk/js/script/build.ts` + `bun run gen:openapi`）。pre-commit 钩子也会拦，但钩子是兜底、不是不跑的理由——推送时才发现就要补 fixup commit（9-01 以来已发生 6 次）
 - 提示词/模型可见内容改动 → 对照该模型的实际会话验证
 - 版本号/徽章/发布清单相关文档改动 → `check-version-consistency.ts`；普通措辞或注释变更只需对应检查
 - 构建路径改动 → 该 package 的 build
 - 全量套件只在用户明确要求、或改动确属仓库级时才跑
 ### 测试 lane（bun test 无 exclude，lane = package.json scripts 分组，260929 立）
 
-| lane | 命令（packages/opencode 下） | 用途 |
+| lane | 命令（packages/redspace 下） | 用途 |
 |---|---|---|
 | unit（默认） | `bun run test` | 全量单进程顺序跑。写 `process.env` 的「进程绑定」文件与全局态耦合，排污染前先 `bun run script/lane-inventory.ts` 重新生成清单（约 41 个，会漂移，别背） |
 | httpapi | `bun run test:httpapi` | 真服务器 HTTP 覆盖 / auth / Effect 三模式。< 32GB 且非 CI 的机器全量 effect 会响亮跳过（261116 实测峰值 ~12GB 打穿 16GB 机器，Bun panic）——完整门禁归 nightly，本地定向跑 `script/httpapi-exercise.ts --mode effect --include <名>`；coverage/auth 不受限 |
@@ -84,7 +84,7 @@
 
   ```bash
   bun ./packages/sdk/js/script/build.ts                              # → packages/sdk/js/src/v2/gen/**
-  cd packages/opencode && bun dev generate > ../sdk/openapi.json     # → packages/sdk/openapi.json
+  cd packages/redspace && bun dev generate > ../sdk/openapi.json     # → packages/sdk/openapi.json
   ```
 
   第一条自己也会生成一份 openapi，但落在 `packages/sdk/js/` 下当临时输入，末尾 `rm` 掉，
@@ -94,7 +94,7 @@
 
 - **不为推测性防御买单**：给推测性的、或几乎不会发生的竞态/安全边界加复杂度前，先讲清具体失败模式、发生概率和复杂度成本，征得同意再加，不为理论健壮性悄悄扩范围。同理，未知值只在拥有它的边界校验一次、向内传类型值，不对 schema/构造器/内部类型已保证的值重复防御检查。
 - 尽量避免 `try`/`catch` 和 `any`
-- **`catch` 要么处理要么说明**：空 `catch` 必须用一行注释写清它吞掉的是什么、以及为什么别的错误到不了这里；`try` 只包会抛的那一条语句。（`packages/opencode/src` 现有 97 处空的或无说明的 catch，不要求一次清完，新写的必须带说明。）
+- **`catch` 要么处理要么说明**：空 `catch` 必须用一行注释写清它吞掉的是什么、以及为什么别的错误到不了这里；`try` 只包会抛的那一条语句。（`packages/redspace/src` 现有 97 处空的或无说明的 catch，不要求一次清完，新写的必须带说明。）
 - 优先用类型推断、Bun API、函数式数组（`flatMap`、`filter`、`map`）
 - 优先 `const` + 三元/early return，避免 `else`
 - 值只用一次就内联，减少变量

@@ -1,6 +1,6 @@
-> 本包 = **TUI 核心**（`packages/opencode`）。客户端类型不决定人格；当前身份与署名由会话绑定的 Soul 决定。
+> 本包 = **RedSpace Chat/Code 共享执行核心（含 TUI）**（`packages/redspace`）。客户端类型不决定人格；当前身份与署名由会话绑定的 Soul 决定。
 
-# opencode database guide
+# RedSpace database guide
 
 ## Database
 
@@ -13,8 +13,8 @@
 
 ## Development server
 
-- Running `bun dev` from `packages/opencode` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
-- This is a Windows-only fork — there is no `tmux`. Use the `mcp-process-mgmt` MCP server instead
+- Running `bun dev` from `packages/redspace` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
+- This is a Windows-first standalone project — there is no `tmux`. Use the `mcp-process-mgmt` MCP server instead
   (`start_process` / `read_process_output` / `stop_process`), which exists precisely for interactive
   and long-running shell sessions.
 - If you must drive the TUI programmatically (keystrokes, selector navigation), the harness has to run
@@ -77,7 +77,7 @@ import { SessionStatus } from "@/session/status"
 Barrels in multi-sibling directories force every import through the barrel to
 evaluate every sibling, which defeats tree-shaking and slows module load.
 
-# opencode Effect rules
+# RedSpace Effect rules
 
 Use these rules when writing or migrating Effect code.
 

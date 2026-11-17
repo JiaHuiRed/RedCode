@@ -10,7 +10,7 @@ process.chdir(dir)
 const generated = await import("./generate.ts")
 
 const pkg = await Bun.file("package.json").json()
-// TUI uses its own version from packages/opencode/package.json (independent from GUI)
+// 共享 Chat/Code 引擎从 packages/redspace/package.json 读取全仓统一版本
 const redcodeVersion: string = pkg.version
 
 const migrations = (await fs.promises.readdir(path.join(dir, "migration"), { withFileTypes: true }))

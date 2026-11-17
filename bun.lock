@@ -266,11 +266,12 @@
         "@types/bun": "catalog:",
       },
     },
-    "packages/opencode": {
+    "packages/redspace": {
       "name": "redcode",
       "version": "0.18.1",
       "bin": {
         "redcode": "./bin/redcode",
+        "redspace": "./bin/redcode",
       },
       "dependencies": {
         "@actions/core": "1.11.1",
@@ -3824,7 +3825,7 @@
 
     "recma-stringify": ["recma-stringify@1.0.0", "", { "dependencies": { "@types/estree": "^1.0.0", "estree-util-to-js": "^2.0.0", "unified": "^11.0.0", "vfile": "^6.0.0" } }, "sha512-cjwII1MdIIVloKvC9ErQ+OgAtwHBmcZ0Bg4ciz78FtbT8In39aAYbaA7zvxQ61xVMSPE8WxhLwLbhif4Js2C+g=="],
 
-    "redcode": ["redcode@workspace:packages/opencode"],
+    "redcode": ["redcode@workspace:packages/redspace"],
 
     "redent": ["redent@3.0.0", "", { "dependencies": { "indent-string": "^4.0.0", "strip-indent": "^3.0.0" } }, "sha512-6tDA8g98We0zd0GvVeMT9arEOnTw9qM03L9cJXaCjrip1OO764RDBLBfrB4cwzNGDj5OA5ioymC9GkizgWJDUg=="],
 

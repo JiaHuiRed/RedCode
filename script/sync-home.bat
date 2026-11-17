@@ -1,5 +1,5 @@
 @echo off
-rem Shared home sync: called by packages/opencode/build.bat and packages/desktop/build-and-package.bat
+rem Shared home sync: called by packages/redspace/build.bat and packages/desktop/build-and-package.bat
 rem Now only syncs community/shared files. Personal files (souls/memory/MEMORY.md) live in ~/.redcode/
 rem and come from the user's private redcode-private repo.
 rem 260805 source dir renamed .opencode -> seed: it was never loaded as project config
@@ -47,7 +47,7 @@ if exist "seed\tool\sqlite.ts" copy /y "seed\tool\sqlite.ts" "%USERPROFILE%\.red
 if errorlevel 1 exit /b 1
 
 rem 260828 no agent seeding on purpose: the two built-in subagents (explore/execute) are
-rem defined in packages/opencode/src/agent/definition/*.md and inlined at BUILD time. Seeding a
+rem defined in packages/redspace/src/agent/definition/*.md and inlined at BUILD time. Seeding a
 rem byte-identical copy into ~/.redcode/agent/ would make ConfigAgent.load append the same flat
 rem whitelist AFTER the user's global permission - findLast then voids both that and the engine's
 rem external_directory patch. See docs/agent-roles-plan.md, correction 9. Hand-written agent md

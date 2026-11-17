@@ -22,7 +22,7 @@ export function checkToolDescriptionBudget(directory: string) {
 }
 
 if (import.meta.main) {
-  const result = checkToolDescriptionBudget(join(import.meta.dir, "../packages/opencode/src/tool"))
+  const result = checkToolDescriptionBudget(join(import.meta.dir, "../packages/redspace/src/tool"))
   console.log(
     `check-tool-description-budget: ${result.files} files, ${result.bytes}/${MAX_TOOL_DESCRIPTION_BYTES} bytes ` +
       `(${result.remaining} bytes remaining)`,

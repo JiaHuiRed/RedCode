@@ -3,12 +3,12 @@
   "entries": [
     {
       "name": "cli",
-      "entry": "packages/opencode/src/index.ts",
+      "entry": "packages/redspace/src/index.ts",
       "maxFiles": 1,
       "forbid": [
-        "packages/opencode/src/cli/",
-        "packages/opencode/src/server/",
-        "packages/opencode/src/session/"
+        "packages/redspace/src/cli/",
+        "packages/redspace/src/server/",
+        "packages/redspace/src/session/"
       ],
       "allowedExternal": [
         "os",
@@ -18,12 +18,12 @@
     },
     {
       "name": "windows-job-runner",
-      "entry": "packages/opencode/src/util/windows-job-runner.ts",
+      "entry": "packages/redspace/src/util/windows-job-runner.ts",
       "maxFiles": 2,
       "forbid": [
-        "packages/opencode/src/cli/",
-        "packages/opencode/src/server/",
-        "packages/opencode/src/session/"
+        "packages/redspace/src/cli/",
+        "packages/redspace/src/server/",
+        "packages/redspace/src/session/"
       ],
       "allowedExternal": [
         "bun:ffi",
@@ -33,7 +33,7 @@
     },
     {
       "name": "record-utility",
-      "entry": "packages/opencode/src/util/record.ts",
+      "entry": "packages/redspace/src/util/record.ts",
       "maxFiles": 1,
       "forbid": [],
       "allowedExternal": []
@@ -45,13 +45,13 @@
     "timeoutMs": 30000,
     "probeTimeoutMs": 1000,
     "pollIntervalMs": 50,
-    "cliEntry": "packages/opencode/src/index.ts",
+    "cliEntry": "packages/redspace/src/index.ts",
     "cliArgs": [
       "--pure",
       "debug",
       "startup"
     ],
-    "serverEntry": "packages/opencode/src/index.ts",
+    "serverEntry": "packages/redspace/src/index.ts",
     "serverArgs": [
       "--pure",
       "serve",

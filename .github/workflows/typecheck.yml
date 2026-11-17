@@ -2,14 +2,14 @@ name: typecheck
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, master]
   pull_request:
-    branches: [dev]
+    branches: [dev, master]
   workflow_dispatch:
 
 jobs:
   typecheck:
-    # 260728 Karina 本 fork 只面向 Windows 10/11，CI 一律在 Windows 上跑，
+    # 260728 Karina 本项目当前只面向 Windows 10/11，CI 一律在 Windows 上跑，
     # 免得平台差异（路径、大小写、行尾）在本地和 CI 之间对不上账
     runs-on: windows-latest
     steps:
@@ -20,6 +20,9 @@ jobs:
       # 避免并发 job 抢同一个 cache key 白等 6 分钟。
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+
+      - name: Check RedSpace core layout
+        run: bun run check:redspace-layout
 
       - name: Run typecheck
         run: bun typecheck

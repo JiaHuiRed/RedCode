@@ -1,6 +1,6 @@
-# RedCode 用户手册
+# RedSpace 用户手册
 
-> 从克隆到精通，一步步配置和使用 RedCode 的全部功能。
+> RedSpace 由 RedCode 演进而来：Chat 接续伙伴与长期记忆，Code 专注开发；两种模式共享执行核心与 TUI / GUI。下文的 redcode CLI 与 ~/.redcode 路径仍用于兼容旧安装。
 
 ---
 
@@ -44,12 +44,12 @@ cd packages/desktop && bun run dev
 ### 编译打包
 
 > 嫌敲命令麻烦？直接双击两个一键 bat 即可：
-> TUI → `packages/opencode/build.bat`；桌面 GUI → `packages/desktop/build-and-package.bat`。
+> TUI → `packages/redspace/build.bat`；桌面 GUI → `packages/desktop/build-and-package.bat`。
 
 ```bash
 # TUI 单文件 exe（可在无 Bun 环境的机器运行）
 # 产物本来就是 Windows 单目标，无需额外开关
-cd packages/opencode && bun run build
+cd packages/redspace && bun run build
 
 # 桌面 GUI
 cd packages/desktop && bun run build && bun run package
@@ -97,7 +97,7 @@ RedCode 支持多种模型。首次启动后，你需要至少配置一个 provi
 - **没有 `type` 字段**。决定用哪个协议适配器的是 `npm`。
 - **`apiKey` / `baseURL` 必须嵌在 `options` 里**，不能放在 provider 顶层。多余的键会被静默丢弃，结果是一个没有凭据的 provider，且不产生任何报错。
 
-provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api`、`env`、`id`、`whitelist`、`blacklist`（定义见 `packages/opencode/src/config/provider.ts`）。
+provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api`、`env`、`id`、`whitelist`、`blacklist`（定义见 `packages/redspace/src/config/provider.ts`）。
 
 常用的 `npm` 适配器：
 
@@ -655,10 +655,10 @@ seed/                          ~/.redcode/
 └── redcode.home.jsonc ← 配置模板 └── data/           ← 会话 DB / 日志 / 快照
 
 （seed/ 是播种源，不是项目配置目录；技能首启播种见第 1 节，其余共享资源由 script/sync-home.bat 同步。
-　人格与 MEMORY 模板已内嵌进二进制，见 packages/opencode/src/project/template/）
+　人格与 MEMORY 模板已内嵌进二进制，见 packages/redspace/src/project/template/）
 ```
 
-内置子代理（explore/execute）定义在 `packages/opencode/src/agent/definition/`，构建时内联，不复制到用户目录；自行编写的 `~/.redcode/agent/*.md` 仍可使用。
+内置子代理（explore/execute）定义在 `packages/redspace/src/agent/definition/`，构建时内联，不复制到用户目录；自行编写的 `~/.redcode/agent/*.md` 仍可使用。
 
 - 仓库**仅包含模板和共享配置**，没有任何你的个人数据
 - `~/.redcode/` **不在仓库中**，不会被推送

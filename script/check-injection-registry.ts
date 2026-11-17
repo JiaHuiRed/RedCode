@@ -27,7 +27,7 @@ const root =
     : join(__dirname, "..")
 
 const REGISTRY = "docs/injection-registry.jsonc"
-const PROMPT_TS = "packages/opencode/src/session/prompt.ts"
+const PROMPT_TS = "packages/redspace/src/session/prompt.ts"
 const CHANNELS = new Set(["prefix", "per-turn", "conditional", "output", "history"])
 
 interface Row {
