@@ -2001,17 +2001,10 @@ export const layer = Layer.effect(
 
           // 261117 Red 插件改写与 pin 交互的诊断：memory-recall 每轮把检索块追加到最后一条
           // user 消息的 text part，queued 消息又跳过 pin，首次 pin 时内容可能已变 → 历史中段
-          // 改写 = 该轮整段 miss（15:02 两个会话同时复现）。有界：只记最后一条 user 消息，
-          // 正文只取前 60 字符。
+          // 改写 = 该轮整段 miss（15:02 两个会话同时复现）。有界且不落正文：
+          // 只记长度变化与消息 ID，用户原话不进普通日志（0.19.1 审计 F-03）。
           const textLength = (parts: MessageV2.WithParts["parts"]) =>
             parts.reduce((total, part) => total + (part.type === "text" ? part.text.length : 0), 0)
-          const textHead = (parts: MessageV2.WithParts["parts"]) =>
-            parts
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join(" ")
-              .replace(/\s+/g, " ")
-              .slice(0, 60)
           const transformTail = msgs.findLast((message) => message.info.role === "user")
           const transformBefore = transformTail ? textLength(transformTail.parts) : 0
           yield* plugin.trigger("experimental.chat.messages.transform", { sessionID }, { messages: msgs })
@@ -2020,7 +2013,6 @@ export const layer = Layer.effect(
               "msg.id": transformTail.info.id,
               before: transformBefore,
               after: textLength(transformTail.parts),
-              head: textHead(transformTail.parts),
             })
 
           // 260618 Red pin post-DCP message content for prefix cache stability.
@@ -2053,7 +2045,6 @@ export const layer = Layer.effect(
                     "msg.id": mid,
                     "msg.delivery": msg.info.delivery ?? "",
                     "msg.length": textLength(msg.parts),
-                    "msg.head": textHead(msg.parts),
                   })
               }
               // 260706 Red: periodic yield so event loop can serve heartbeat + health check

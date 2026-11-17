@@ -9,6 +9,7 @@ export const dict = {
   "chat.profile.files": "{{count}} 份档案文件",
   "chat.profile.description": "可以开始新的聊天，也可以接着以前的对话。同一份档案会一直跟着她。",
   "chat.profile.choose": "选择伙伴",
+  "chat.profile.missing": "这份伙伴档案不存在或已迁移。可以重新选择，或在下方导入档案。",
   "chat.start": "开始聊天",
   "chat.opening": "正在打开…",
   "chat.recent": "你们的对话",

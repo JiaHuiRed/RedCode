@@ -7,6 +7,7 @@ export const dict = {
   "chat.profile.description":
     "Start a new conversation or return to an earlier one. The same companion archive stays with you.",
   "chat.profile.choose": "Choose a companion",
+  "chat.profile.missing": "This companion profile no longer exists. Choose another profile or import one below.",
   "chat.start": "Start a conversation",
   "chat.opening": "Opening…",
   "chat.recent": "Your conversations",

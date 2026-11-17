@@ -5,6 +5,8 @@ export const dict = {
   "chat.profile.files": "アーカイブファイル {{count}} 件",
   "chat.profile.description": "新しい会話を始めたり、以前の会話を続けたりできます。同じアーカイブを引き継ぎます。",
   "chat.profile.choose": "パートナーを選択",
+  "chat.profile.missing":
+    "このパートナーのプロフィールは見つかりません。別のプロフィールを選択するか、下でアーカイブを読み込んでください。",
   "chat.start": "会話を始める",
   "chat.opening": "開いています…",
   "chat.recent": "これまでの会話",

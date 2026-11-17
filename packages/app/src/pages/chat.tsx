@@ -34,7 +34,13 @@ export default function Chat() {
     queryKey: ["soul", sdk.url, "list"],
     queryFn: async () => (await sdk.client.soul.list({ throwOnError: true })).data,
   }))
-  const profile = createMemo(() => profiles.data?.find((item) => item.id === search.companion) ?? profiles.data?.[0])
+  // 0.19.1 审计 F-01：显式指定但找不到时不能回退到第一个档案——那会把用户选择的
+  // 身份静默换成另一个真实 Companion，并带着错误 ID 创建会话。只在未指定时才取默认。
+  const profile = createMemo(() => {
+    const requested = search.companion
+    if (requested === undefined) return profiles.data?.[0]
+    return profiles.data?.find((item) => item.id === requested)
+  })
   const soul = createMemo(() => souls.data?.find((item) => item.id === profile()?.soulID))
   const sessions = useQuery(() => ({
     queryKey: ["companion", sdk.url, profile()?.id, "sessions"],
@@ -143,6 +149,17 @@ export default function Chat() {
         </Show>
 
         <Show when={!profiles.isPending} fallback={<Spinner class="size-6" />}>
+          <Show when={!profile() && search.companion !== undefined}>
+            <div
+              role="alert"
+              class="flex items-center justify-between gap-4 rounded-lg border border-border-critical-base bg-surface-critical-weak p-4 text-13-regular text-text-strong"
+            >
+              <span>{language.t("chat.profile.missing")}</span>
+              <Button variant="secondary" onClick={() => setSearch({ companion: undefined }, { replace: true })}>
+                {language.t("chat.profile.choose")}
+              </Button>
+            </div>
+          </Show>
           <Show when={profile()} keyed>
             {(selected) => (
               <section class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label={selected.name}>
