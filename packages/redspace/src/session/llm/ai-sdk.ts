@@ -57,7 +57,7 @@ export function adapterState() {
 }
 
 // 260803 Red byte counters feed the interrupted-stream usage estimate in llm.ts.
-const byteLength = (text: string) => new TextEncoder().encode(text).length
+const byteLength = (text: string) => Buffer.byteLength(text, "utf8")
 
 function finishReason(value: string | undefined): FinishReason {
   return Schema.is(FinishReason)(value) ? value : "unknown"

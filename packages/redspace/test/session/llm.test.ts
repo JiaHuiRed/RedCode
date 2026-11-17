@@ -231,6 +231,21 @@ describe("session.llm.estimatedFinishEvents", () => {
 describe("session.llm.ai-sdk adapter", () => {
   type AISDKAdapterEvent = Parameters<typeof LLMAISDK.toLLMEvents>[1]
 
+  test("counts UTF-8 bytes without changing text, reasoning or inline-think routing", async () => {
+    const text = "你好 café 🙂 \ud800"
+    const reasoning = "思考 🧠 \udfff"
+    const state = LLMAISDK.adapterState()
+    for (const event of [
+      { type: "text-delta", id: "text", text: `<think>${reasoning}</think>${text}` },
+      { type: "text-end", id: "text" },
+      { type: "reasoning-delta", id: "reasoning", text: reasoning },
+    ] satisfies AISDKAdapterEvent[]) {
+      await Effect.runPromise(LLMAISDK.toLLMEvents(state, event))
+    }
+    expect(state.textBytes).toBe(new TextEncoder().encode(text).length)
+    expect(state.reasoningBytes).toBe(new TextEncoder().encode(reasoning).length * 2)
+  })
+
   const adapt = (events: ReadonlyArray<AISDKAdapterEvent>) => {
     const state = LLMAISDK.adapterState()
     return Effect.runPromise(

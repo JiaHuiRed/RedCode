@@ -48,6 +48,45 @@ function setup(body: (value: Fixture) => Effect.Effect<void, unknown, Companion.
 
 describe("companion archive", () => {
   it.live(
+    "keeps the best two memory lines and preserves earlier equal-score matches",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const lines = [
+          "alpha",
+          "none",
+          "none",
+          "none",
+          "alpha beta first",
+          "none",
+          "none",
+          "none",
+          "alpha beta second",
+          "none",
+          "none",
+          "none",
+          "alpha beta third",
+        ]
+        yield* Effect.promise(() => fs.writeFile(path.join(value.source, "workspace/MEMORY.md"), lines.join("\n")))
+        yield* service.importArchive({ source: value.source, id: "maple" })
+        const all = yield* service.search({ id: "maple", query: "ALPHA BETA", limit: 10 })
+        const restricted = yield* service.search({
+          id: "maple",
+          query: "alpha beta",
+          paths: ["MEMORY.md", "MEMORY.md"],
+          limit: 10,
+        })
+        expect(all).toEqual(restricted)
+        expect(all.results.map((item) => item.startLine)).toEqual([4, 8])
+        expect(all.results[0]?.text).toContain("alpha beta first")
+        expect(all.results[1]?.text).toContain("alpha beta second")
+        expect((yield* service.search({ id: "maple", query: "absent" })).results).toEqual([])
+        expect((yield* service.search({ id: "maple", query: "third" })).results).toHaveLength(1)
+      }),
+    ),
+  )
+
+  it.live(
     "imports the existing identity and personal sources without activating old instructions or copying credentials",
     setup((value) =>
       Effect.gen(function* () {

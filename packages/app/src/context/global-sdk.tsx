@@ -88,13 +88,14 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
 
       // 261011 Red B0.1: 统计必须在 done() 前取真值——done 复用并清空 pulled.events
       // 所指的同一数组（事后读 length 恒为 0，21d0f715 的错误教训）。
-      const started = performance.now()
+      const diagnostics = guiDiagnostics.enabled()
+      const started = diagnostics ? performance.now() : 0
       last = Date.now()
       let stats: ReturnType<typeof processBatch> | undefined
       batch(() => {
-        stats = processBatch(pulled, (event) => emitter.emit(event.directory, event.payload))
+        stats = processBatch(pulled, (event) => emitter.emit(event.directory, event.payload), diagnostics)
       })
-      const duration = performance.now() - started
+      const duration = diagnostics ? performance.now() - started : 0
       const snapshots = pulled.snapshots?.size ?? 0
       eventBatch.done()
       if (stats) flushStats.push({ ...stats, duration, snapshots })

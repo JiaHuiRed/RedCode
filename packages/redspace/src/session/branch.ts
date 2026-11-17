@@ -125,11 +125,27 @@ export const layer = Layer.effect(
      * 所在岛分支的分叉点，天然不与可见链的对应消息跨岛聚合。
      */
     const versions = Effect.fn("SessionBranch.versions")(function* (input: { sessionID: SessionID }) {
-      const rows = yield* MessageV2.allIncludingDetached({ sessionID: input.sessionID })
-      const groups = new Map<string, MessageV2.BranchRow[]>()
+      // Navigation needs only tree metadata, never message bodies, summary patches or parts.
+      const rows = Database.use((db) =>
+        db
+          .select({
+            id: MessageTable.id,
+            role: sql<MessageV2.Info["role"]>`json_extract(${MessageTable.data}, '$.role')`,
+            parentID: sql<MessageID | null>`json_extract(${MessageTable.data}, '$.parentID')`,
+            selectedChildID: sql<MessageID | null>`json_extract(${MessageTable.data}, '$.selectedChildID')`,
+            timeCreated: sql<number>`json_extract(${MessageTable.data}, '$.time.created')`,
+            detached: sql<number | null>`json_extract(${MessageTable.data}, '$.detached')`,
+          })
+          .from(MessageTable)
+          .where(eq(MessageTable.session_id, input.sessionID))
+          .orderBy(MessageTable.time_created, MessageTable.id)
+          .all(),
+      )
+      const byId = new Map(rows.map((row) => [row.id, row]))
+      const groups = new Map<string, typeof rows>()
       for (const row of rows) {
-        if (row.info.role !== "user") continue
-        const key = row.info.parentID ?? ""
+        if (row.role !== "user") continue
+        const key = row.parentID ?? ""
         const list = groups.get(key)
         if (list) list.push(row)
         else groups.set(key, [row])
@@ -142,14 +158,13 @@ export const layer = Layer.effect(
         // 时按不变量兜底到未弃岛成员。列举是读路径，兜底不响。
         let current: MessageID | undefined
         if (parentID !== undefined) {
-          const parent = rows.find((row) => row.info.id === parentID)
-          const selected = parent?.info.selectedChildID
-          if (selected && members.some((row) => row.info.id === selected)) current = selected
+          const selected = byId.get(parentID)?.selectedChildID
+          if (selected && members.some((row) => row.id === selected)) current = selected
         }
-        current ??= members.find((row) => !row.detached)?.info.id ?? members.at(-1)!.info.id
+        current ??= members.find((row) => !row.detached)?.id ?? members.at(-1)!.id
         out.push({
           parentID,
-          versions: members.map((row) => ({ messageID: row.info.id, timeCreated: row.info.time.created })),
+          versions: members.map((row) => ({ messageID: row.id, timeCreated: row.timeCreated })),
           current,
         })
       }

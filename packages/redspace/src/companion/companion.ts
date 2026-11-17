@@ -239,10 +239,13 @@ export const layer = Layer.effect(
         const limit = integer(input.limit ?? 5, 1, 10, "limit")
         const available = await memoryFiles(profile.directory)
         const files = input.paths === undefined ? available : [...new Set(input.paths.map(safePath))]
-        if (files.some((file) => !recallFile(file) || !available.includes(file)))
-          throw new CompanionInvalidInput({
-            message: "Search paths must be existing recall sources from this companion.",
-          })
+        if (input.paths !== undefined) {
+          const allowed = new Set(available)
+          if (files.some((file) => !allowed.has(file)))
+            throw new CompanionInvalidInput({
+              message: "Search paths must be existing recall sources from this companion.",
+            })
+        }
         const warnings: string[] = []
         const matches: Array<{ path: string; startLine: number; endLine: number; text: string; score: number }> = []
         const terms = [...new Set(query.match(/[a-z0-9][a-z0-9_-]+|[\p{Script=Han}]+/gu) ?? [query])]
@@ -267,18 +270,19 @@ export const layer = Layer.effect(
             break
           }
           const lines = text.split(/\r?\n/)
-          const ranked = lines
-            .map((line, index) => {
-              const value = line.toLowerCase()
-              const score =
-                (value.includes(query) ? 12 : 0) +
-                terms.filter((term) => value.includes(term)).length * 4 +
-                fragments.filter((term) => value.includes(term)).length
-              return { index, score }
-            })
-            .filter((item) => item.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 2)
+          const ranked: Array<{ index: number; score: number }> = []
+          for (let index = 0; index < lines.length; index++) {
+            const value = lines[index].toLowerCase()
+            let score = value.includes(query) ? 12 : 0
+            for (const term of terms) if (value.includes(term)) score += 4
+            for (const term of fragments) if (value.includes(term)) score++
+            if (score === 0) continue
+            // Only two excerpts are used per file. Strict comparison preserves earlier lines on ties.
+            const position = ranked.findIndex((item) => score > item.score)
+            if (position === -1 && ranked.length === 2) continue
+            ranked.splice(position === -1 ? ranked.length : position, 0, { index, score })
+            if (ranked.length > 2) ranked.pop()
+          }
           for (const item of ranked) {
             const start = Math.max(0, item.index - 1)
             const end = Math.min(lines.length, item.index + 3)

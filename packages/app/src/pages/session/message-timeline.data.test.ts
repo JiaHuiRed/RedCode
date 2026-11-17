@@ -47,6 +47,48 @@ type TimelineRow = ReturnType<typeof Timeline.constructMessageRows>[number]
 
 const tags = (rows: TimelineRow[]) => rows.map((row) => row._tag)
 
+describe("Timeline diff summaries", () => {
+  test("keeps the last diff per file in last-occurrence order without mutating the source", () => {
+    const diffs = [
+      { file: "a.ts", additions: 1, deletions: 0 },
+      { file: "b.ts", additions: 2, deletions: 0 },
+      { file: "a.ts", additions: 3, deletions: 1 },
+      { file: "c.ts", additions: 4, deletions: 0 },
+    ]
+    const message = { ...userMessage("u1", 1), summary: { title: "", body: "", diffs } }
+    const rows = Timeline.constructMessageRows(message, () => [], [], 0, false, "idle", true)
+    const summary = rows.find((row) => row._tag === "DiffSummary")
+    expect(summary?._tag).toBe("DiffSummary")
+    if (summary?._tag !== "DiffSummary") throw new Error("missing summary")
+    expect(summary.diffs).toEqual([diffs[1], diffs[2], diffs[3]])
+    expect(summary.diffs[1]).toBe(diffs[2])
+    expect(diffs.map((diff) => diff.file)).toEqual(["a.ts", "b.ts", "a.ts", "c.ts"])
+  })
+
+  test("does not read hidden diffs during an active run, but shows completed turns", () => {
+    let reads = 0
+    const message = {
+      ...userMessage("u1", 1),
+      summary: {
+        title: "",
+        body: "",
+        get diffs() {
+          reads++
+          return [{ file: "a.ts", additions: 1, deletions: 0 }]
+        },
+      },
+    }
+    for (const status of ["busy", "retry"] as const) {
+      expect(tags(Timeline.constructMessageRows(message, () => [], [], 0, false, status, true))).not.toContain(
+        "DiffSummary",
+      )
+    }
+    expect(reads).toBe(0)
+    expect(tags(Timeline.constructMessageRows(message, () => [], [], 0, false, "busy", false))).toContain("DiffSummary")
+    expect(reads).toBe(1)
+  })
+})
+
 describe("Timeline.constructMessageRows — AssistantPending 兜底", () => {
   const noParts = () => []
 
