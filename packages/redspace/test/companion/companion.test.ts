@@ -137,6 +137,21 @@ describe("companion archive", () => {
   )
 
   it.live(
+    "reuses the existing companion when the same archive is imported without an explicit id",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const first = yield* service.importArchive({ source: value.source, id: "maple" })
+        expect(first.profile.id).toBe("maple")
+        const repeated = yield* service.importArchive({ source: value.source })
+        expect(repeated.imported).toBe(false)
+        expect(repeated.profile.id).toBe("maple")
+        expect((yield* service.list()).map((profile) => profile.id)).toEqual(["maple"])
+      }),
+    ),
+  )
+
+  it.live(
     "keeps the best two memory lines and preserves earlier equal-score matches",
     setup((value) =>
       Effect.gen(function* () {

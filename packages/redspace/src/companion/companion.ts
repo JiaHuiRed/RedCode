@@ -57,7 +57,14 @@ export const workspaceProfile = Effect.fn("Companion.workspaceProfile")(function
   return yield* (yield* Service).get(relative[0])
 })
 
-const Manifest = Schema.Struct({ profile: Info, digest: Schema.String, historyDigest: Schema.optional(Schema.String) })
+const Manifest = Schema.Struct({
+  profile: Info,
+  digest: Schema.String,
+  historyDigest: Schema.optional(Schema.String),
+  // 0.19.1 审计 F-04：来源身份摘要。同一档案换了 id 再次导入时按它复用旧档案，
+  // 而不是生成第二份 companion-<hash> 身份。旧档案没有这个字段，回退到 source.agentID。
+  identity: Schema.optional(Schema.String),
+})
 const Entry = Schema.Struct({ path: Schema.String, text: Schema.String, source: Schema.optional(Schema.String) })
 const SearchCursor = Schema.Struct({ scope: Schema.String, offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })
 
@@ -108,36 +115,50 @@ export const layer = Layer.effect(
           throw new CompanionInvalidInput({
             message: "Companion name must be one non-empty line of at most 256 UTF-8 bytes.",
           })
-        return { id, name, content }
+        return { id, name, content, identity }
       })
       return yield* writes.withPermits(1)(
         Effect.gen(function* () {
-          const previous = yield* io(() => manifest(root, prepared.id))
+          // 0.19.1 审计 F-04：未显式指定 id 时，先按来源身份复用已有档案——TUI 用自定义 id
+          // 导入过的档案，GUI 再导入同一来源不会生成第二份 identity。显式 id 仍以调用方为准。
+          const targetID = yield* io(async () => {
+            if (input.id !== undefined) return prepared.id
+            const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+            for (const entry of entries) {
+              if (!entry.isDirectory() || !ID_PATTERN.test(entry.name)) continue
+              const value = await manifest(root, entry.name)
+              if (!value) continue
+              const stored = value.identity ?? identityOf(value.raw, value.profile)
+              if (stored === prepared.identity) return entry.name
+            }
+            return prepared.id
+          })
+          const previous = yield* io(() => manifest(root, targetID))
           if (previous) {
             if (
               previous.digest !== archive.digest ||
               (input.name !== undefined && previous.profile.name !== prepared.name)
             )
               return yield* new CompanionConflict({
-                message: `Companion "${prepared.id}" already exists with a different archive. Existing memories were not changed.`,
+                message: `Companion "${targetID}" already exists with a different archive. Existing memories were not changed.`,
               })
-            return yield* io(() => appendHistory(root, prepared.id, archive))
+            return yield* io(() => appendHistory(root, targetID, archive))
           }
-          const existing = yield* souls.get(prepared.id)
+          const existing = yield* souls.get(targetID)
           if (existing && (existing.content.trim() !== prepared.content.trim() || existing.name !== prepared.name))
             return yield* new CompanionConflict({
-              message: `Soul "${prepared.id}" already belongs to another identity. Choose a different companion id.`,
+              message: `Soul "${targetID}" already belongs to another identity. Choose a different companion id.`,
             })
           const createdAt = yield* Clock.currentTimeMillis
           const staging = yield* io(async () => {
             await fs.mkdir(root, { recursive: true, mode: 0o700 })
-            return fs.mkdtemp(path.join(root, `.import-${prepared.id}-`))
+            return fs.mkdtemp(path.join(root, `.import-${targetID}-`))
           })
           const profile = new Info({
-            id: prepared.id,
+            id: targetID,
             name: prepared.name,
-            soulID: prepared.id,
-            directory: path.join(AppFileSystem.resolve(root), prepared.id, "workspace"),
+            soulID: targetID,
+            directory: path.join(AppFileSystem.resolve(root), targetID, "workspace"),
             createdAt,
             files: archive.files.length,
             warnings: archive.warnings,
@@ -163,6 +184,7 @@ export const layer = Layer.effect(
                     profile,
                     digest: archive.digest,
                     historyDigest: archive.historyDigest,
+                    identity: prepared.identity,
                     source: { format: "openclaw", path: input.source, agentID: archive.agentID },
                     preferences: archive.preferences,
                     files: archive.files.map((file) => ({
@@ -180,7 +202,7 @@ export const layer = Layer.effect(
             })
             if (!existing)
               yield* souls
-                .create({ id: prepared.id, name: prepared.name, content: prepared.content })
+                .create({ id: targetID, name: prepared.name, content: prepared.content })
                 .pipe(
                   Effect.mapError((error) =>
                     error._tag === "SoulConflict"
@@ -190,7 +212,7 @@ export const layer = Layer.effect(
                         : new CompanionIO({ message: error.message }),
                   ),
                 )
-            yield* io(() => AppFileSystem.renameWithRetry(staging, path.join(root, prepared.id)))
+            yield* io(() => AppFileSystem.renameWithRetry(staging, path.join(root, targetID)))
             return new ImportResult({ profile, imported: true })
           }).pipe(
             Effect.ensuring(
@@ -535,6 +557,15 @@ async function manifest(root: string, id: string) {
     raw: stored as Record<string, unknown>,
     profile: new Info({ ...result.profile, directory: AppFileSystem.resolve(path.join(root, id, "workspace")) }),
   }
+}
+
+// 0.19.1 审计 F-04：旧档案没有 identity 字段时，从 profile.json 的来源信息重建同一摘要。
+// 只认 agentID（来源身份的一部分），缺失就返回 undefined —— 宁可不复用，也不误合并两个身份。
+function identityOf(raw: Record<string, unknown>, profile: Info) {
+  const source = raw.source as { agentID?: unknown } | undefined
+  const agentID = typeof source?.agentID === "string" ? source.agentID : undefined
+  if (!agentID) return undefined
+  return digest(`${agentID}:${profile.name}`)
 }
 
 // Re-import adds derived transcripts, never replaces a living diary or pinned identity.
