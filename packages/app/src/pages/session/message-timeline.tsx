@@ -1077,7 +1077,10 @@ export function MessageTimeline(props: {
 
     let groupToggled = false
     let host: HTMLElement | undefined
-    for (let attempt = 0; attempt < 40; attempt++) {
+    // 261117 Red 40 帧约 0.67 秒，2 核 CI 上虚拟列表还没挂载完就放弃了，
+    // 「返回工具」会定位不到目标 part。放宽到 120 帧，并周期性补一次滚动，
+    // 覆盖挂载晚于首帧、以及渲染窗口随滚动才展开的情况。
+    for (let attempt = 0; attempt < 120; attempt++) {
       host = findPartHost(root, partID)
       if (host) break
       // 组渲染出来才点一次；逐帧重复点会把刚展开的组又关回去。
@@ -1089,7 +1092,7 @@ export function MessageTimeline(props: {
         }
       }
       await nextFrame()
-      if (!usingNative() && index !== undefined && mounted && attempt === 12) {
+      if (!usingNative() && index !== undefined && mounted && attempt % 12 === 11) {
         mounted.handle.scrollToIndex(index, { align: "center" })
       }
     }
