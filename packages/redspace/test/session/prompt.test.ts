@@ -1510,7 +1510,8 @@ it.instance("native preflight does not replace the last sent request with unsent
       compaction: {
         native: {
           enabled: true,
-          trigger_tokens: 10000,
+          // 261117 Red The shared conversation block raises fixed context; keep this first request below preflight.
+          trigger_tokens: 15000,
           target_tokens: 1000,
           reminder_tokens: 10000,
           summary_max_tokens: 1000,
