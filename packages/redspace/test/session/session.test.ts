@@ -19,6 +19,7 @@ import { Soul } from "@/soul"
 import path from "node:path"
 import fs from "node:fs"
 import { TestInstance } from "../fixture/fixture"
+import { PromptPin } from "../../src/session/prompt-pin"
 
 void Log.init({ print: false })
 
@@ -299,6 +300,38 @@ describe("Session", () => {
 
       const getExit = yield* session.get(info.id).pipe(Effect.exit)
       expect(Exit.isFailure(getExit)).toBe(true)
+    }),
+  )
+
+  // 261118 Red 用户主动删会话必须清掉 prompt pin（v3 起含完整私人对话 parts）。
+  // 此前的清理只在 evictor 回收路径 dropSession 上，删除会话会留下隐私快照孤儿。
+  it.live("remove 清掉该会话的 prompt pin 文件", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const sandbox = yield* tmpdirScoped({ git: true })
+      const prev = process.env["REDCODE_PROMPT_PIN_DIR"]
+      process.env["REDCODE_PROMPT_PIN_DIR"] = path.join(sandbox, "prompt-pin")
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (prev === undefined) delete process.env["REDCODE_PROMPT_PIN_DIR"]
+          else process.env["REDCODE_PROMPT_PIN_DIR"] = prev
+        }),
+      )
+
+      const info = yield* provideInstance(sandbox)(session.create({ title: "remove-drops-pin" }))
+      PromptPin.save({
+        sessionID: info.id,
+        tools: new Map([["bash", { description: "run shell", inputSchema: {} }]]),
+        mcpGuide: undefined,
+        messages: new Map([["msg_a", [{ type: "text", text: "private" }]]]),
+      })
+      yield* Effect.promise(() => PromptPin.flush())
+      const pinPath = path.join(sandbox, "prompt-pin", `${info.id.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`)
+      expect(fs.existsSync(pinPath)).toBe(true)
+
+      yield* provideInstance(sandbox)(remove(info.id))
+      yield* Effect.promise(() => PromptPin.flush())
+      expect(fs.existsSync(pinPath)).toBe(false)
     }),
   )
 })

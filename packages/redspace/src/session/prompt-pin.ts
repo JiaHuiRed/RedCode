@@ -109,18 +109,22 @@ function extractSchema(value: unknown): unknown {
 }
 
 // 261117 Red 消息快照按体积裁剪：从最近的消息往前累计，超过上限就停。
-// 至少保留一条（单条超限也比完全不复用强，冷恢复该条仍稳定）。
+// 261118 Red 收紧为严格硬上限：单条自身超限直接放弃该条，不再「至少保留一条」无限突破——
+// DB 实测单会话 part 曾达 289MB，原样落盘会吃掉 GB 级磁盘；512KB 必须是真上限而非软目标。
+// 决策更新：docs/notes/implemented/feature/2026-11-17-prompt-pin-messages.md「体积硬上限」节
 function packMessages(messages: Map<string, unknown[]>): Record<string, unknown[]> | undefined {
   const entries = [...messages]
   if (!entries.length) return undefined
   const kept: [string, unknown[]][] = []
   let bytes = 0
   for (let index = entries.length - 1; index >= 0; index--) {
-    bytes += Buffer.byteLength(JSON.stringify(entries[index][1]))
-    if (bytes > MESSAGE_BYTES_MAX && kept.length) break
+    const size = Buffer.byteLength(JSON.stringify(entries[index][1]))
+    if (size > MESSAGE_BYTES_MAX) continue
+    if (bytes + size > MESSAGE_BYTES_MAX) break
+    bytes += size
     kept.push(entries[index])
   }
-  return Object.fromEntries(kept.reverse())
+  return kept.length ? Object.fromEntries(kept.reverse()) : undefined
 }
 
 export function save(input: {

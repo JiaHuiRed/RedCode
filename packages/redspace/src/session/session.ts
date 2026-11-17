@@ -28,6 +28,7 @@ import { Storage } from "@/storage/storage"
 import * as Log from "@redcode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
 import { hasExplicitBranches, materialize, visiblePath } from "./message-tree"
+import { PromptPin } from "./prompt-pin"
 import * as ContextCompaction from "./context-compaction"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
@@ -823,6 +824,9 @@ export const layer: Layer.Layer<
         yield* sync.remove(sessionID)
         // 260904 cc storage 里那份 session_diff/<id>.json 跟着删——此前从不清理，本机 615 个文件里 186 个（22MB）是已删会话的孤儿
         yield* storage.remove(["session_diff", sessionID]).pipe(Effect.ignore)
+        // 261118 Red 用户主动删除会话不走 evictor 的 dropSession，pin（v3 起含完整私人对话 parts）会残留。
+        // 与 session_diff 并列清理：pin 路径含 sanitize，drop 是 fire-and-forget，失败留孤儿无害。
+        yield* Effect.sync(() => PromptPin.drop(sessionID))
       } catch (e) {
         log.error(e)
       }

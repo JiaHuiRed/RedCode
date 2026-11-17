@@ -213,7 +213,8 @@ describe("prompt-pin", () => {
     expect(kept).toEqual(["msg_mid", "msg_new"])
   })
 
-  test("单条消息本身超上限时仍保留一条，不会清空", async () => {
+  // 261118 Red 硬上限收紧：单条自身超限直接放弃，不让「至少保留一条」突破上限吃 GB 级磁盘
+  test("单条消息本身超上限时放弃该条，快照字段不出现", async () => {
     const huge = "x".repeat(600 * 1024)
     PromptPin.save({
       sessionID: "ses_huge",
@@ -223,7 +224,22 @@ describe("prompt-pin", () => {
     })
     await PromptPin.flush()
     const pin = PromptPin.load("ses_huge")
-    expect(Object.keys(pin!.messages!)).toEqual(["msg_only"])
+    expect(pin).toBeDefined()
+    expect(pin!.messages).toBeUndefined()
+  })
+
+  test("多条中一条超限：跳过它，仍保留未超限的最近消息", async () => {
+    const huge = "x".repeat(600 * 1024)
+    const small = [{ type: "text", text: "ok" }]
+    const parts = new Map<string, unknown[]>([
+      ["msg_huge", [{ type: "text", text: huge }]],
+      ["msg_small", small],
+    ])
+    PromptPin.save({ sessionID: "ses_mix", tools: defs(), mcpGuide: undefined, messages: parts })
+    await PromptPin.flush()
+    const pin = PromptPin.load("ses_mix")
+    expect(Object.keys(pin!.messages!)).toEqual(["msg_small"])
+    expect(pin!.messages!["msg_small"]).toEqual(small)
   })
 
   // 261117 Red F-07：消息快照结构损坏时单独丢弃，不能连累工具 pin 的复用
