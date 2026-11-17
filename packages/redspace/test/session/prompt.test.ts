@@ -804,35 +804,66 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
   }),
 )
 
-it.instance("sends the pinned Soul body and attribution in an actual provider request", () =>
+it.instance("sends the pinned Soul and scoped engineering memory through each active model route", () =>
   Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const models = ["test-model", "gpt-6.1-terra", "deepseek-v4.1-flash", "glm-5.3-flash"]
+    const { dir, llm } = yield* useServerConfig((url) => {
+      const config = providerCfg(url)
+      return {
+        ...config,
+        provider: {
+          test: {
+            ...config.provider.test,
+            models: Object.fromEntries(models.map((id) => [id, { ...cfg.provider.test.models["test-model"], id }])),
+          },
+        },
+      }
+    })
     const soulsDirectory = path.join(dir, "souls")
     const sourceFile = process.env.REDCODE_SOUL_ACCEPTANCE_FILE
     const source = sourceFile
       ? yield* Effect.promise(() => Bun.file(sourceFile).text())
       : "---\nid: third\nname: Third\ndisplay_name: Partner\ncommit_prefix: ThirdOwner\n---\n\n# Third persona\n\nwire soul sentinel\n"
     yield* writeText(path.join(soulsDirectory, "third.md"), source)
+    const agentsFile = process.env.REDCODE_AGENTS_ACCEPTANCE_FILE
+    yield* writeText(path.join(dir, "AGENTS.md"), agentsFile
+      ? yield* Effect.promise(() => Bun.file(agentsFile).text())
+      : "Use focused checks for this project.")
+    yield* writeText(path.join(dir, ".redcode/MEMORY.md"), "Engineering lesson sentinel: inspect the parser before changing it.")
+    yield* writeText(path.join(dir, "probe.txt"), "The requested file is available.")
     yield* Effect.gen(function* () {
       const registry = yield* Effect.gen(function* () {
         return yield* Soul.Service
       }).pipe(Effect.provide(Soul.defaultLayer))
-      const info = (yield* registry.list())[0]
+      const id = (yield* registry.list())[0]?.id
+      const info = id ? yield* registry.get(id) : undefined
       if (!info) return yield* Effect.die("acceptance Soul did not load")
       const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Pinned", soul: info.id })
-      yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
-      yield* llm.text("wire checked")
-      yield* (yield* SessionPrompt.Service).prompt({
-        sessionID: chat.id,
-        model: ref,
-        parts: [{ type: "text", text: "check the pinned identity" }],
-      })
-      const wire = JSON.stringify((yield* llm.inputs)[0])
-      expect(wire).toContain(info.displayName)
-      expect(wire).toContain(`Commit attribution owner: [${info.commitPrefix}]`)
-      expect(wire).toContain(source.split("---")[2]?.trim().split("\n")[0] ?? "wire soul sentinel")
-      expect(wire).not.toContain("Instructions from: " + path.join(soulsDirectory, "Tsoul.md"))
+      for (const modelID of models) {
+        const chat = yield* sessions.create({ title: "Pinned", soul: info.id })
+        yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+        yield* llm.tool("read", { filePath: path.join(dir, "probe.txt") })
+        yield* llm.text("wire checked")
+        yield* (yield* SessionPrompt.Service).prompt({
+          sessionID: chat.id,
+          model: { providerID: ref.providerID, modelID: ModelID.make(modelID) },
+          parts: [{ type: "text", text: "Read probe.txt and tell me what matters." }],
+        })
+        const requests = (yield* llm.inputs).slice(-2)
+        const prefix = (requests[0].messages as { role: string; content: string }[])[0]
+        expect(prefix.role).toBe("system")
+        expect(prefix.content.includes(info.content)).toBe(true)
+        expect(prefix.content).toContain(`Commit attribution owner: [${info.commitPrefix}]`)
+        expect(prefix.content.split(CONVERSATION)).toHaveLength(2)
+        expect(prefix.content).toContain("Engineering memory from:")
+        expect(prefix.content).toContain("Engineering lesson sentinel")
+        expect(prefix.content).not.toContain("OVERRIDE any default behavior")
+        expect(prefix.content).not.toContain("the visible reply carries conclusions and actions")
+        expect(prefix.content).not.toContain("lead with the corrected finding")
+        expect(prefix.content).not.toContain("conclusion-shaped")
+        expect((requests[1].messages as unknown[])[0]).toEqual(prefix)
+        expect(requests[1].tools).toEqual(requests[0].tools)
+      }
     }).pipe(Effect.provideService(Soul.directory, soulsDirectory))
   }),
 )
