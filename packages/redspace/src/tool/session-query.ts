@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
-import { and, desc, eq, lt, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { Config } from "@/config/config"
 import { NativeCompaction } from "@/config/native-compaction"
@@ -13,6 +13,7 @@ import * as Tool from "./tool"
 
 // 261025 Red 只查正典历史，不建索引、不恢复授权；决策：
 // docs/notes/implemented/feature/2026-10-25-session-query.md
+// Companion recall scope: docs/notes/implemented/feature/2026-11-17-companion-session-recall.md
 export const Parameters = Schema.Struct({
   operation: Schema.Literals(["search", "read"]),
   query: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
@@ -50,6 +51,7 @@ export function resolve(
   directory: string,
   currentSession: SessionID,
   limits: NativeCompaction.Spec,
+  companionID?: string,
 ) {
   const args = Schema.decodeUnknownSync(Parameters)(input)
   if (args.operation === "search" && !args.query?.trim()) throw new Error("Search requires a nonblank query")
@@ -60,7 +62,7 @@ export function resolve(
     throw new Error("after must be earlier than before")
   const scope = {
     directory:
-      args.directory === "*"
+      args.directory === "*" || (companionID && args.directory === undefined)
         ? "*"
         : path
             .resolve(directory, args.directory ?? ".")
@@ -71,7 +73,8 @@ export function resolve(
     after: args.after,
     before: args.before,
     query: args.query,
-    excludeSession: args.session_id ? undefined : currentSession,
+    excludeSession: args.session_id || companionID ? undefined : currentSession,
+    companionID,
   }
   const hash = createHash("sha256").update(JSON.stringify(scope)).digest("hex")
   const cursor = args.cursor
@@ -121,6 +124,19 @@ export const run = Effect.fn("SessionQuery.run")(function* (db: Database.TxOrDb,
     spec.role ? eq(role, spec.role) : undefined,
     spec.after === undefined ? undefined : sql`${MessageTable.time_created} >= ${spec.after}`,
     spec.before === undefined ? undefined : lt(MessageTable.time_created, spec.before),
+    // Only direct conversation is personal evidence. Summaries, injected reminders and
+    // recalled tool output must not become independent memories on the next lookup.
+    spec.companionID
+      ? and(
+          eq(SessionTable.mode, "chat"),
+          eq(SessionTable.companion_id, spec.companionID),
+          isNull(SessionTable.parent_id),
+          sql`json_extract(${PartTable.data}, '$.type') = 'text'`,
+          sql`json_extract(${PartTable.data}, '$.ignored') is not 1`,
+          sql`json_extract(${PartTable.data}, '$.synthetic') is not 1`,
+          sql`json_extract(${MessageTable.data}, '$.summary') is not 1`,
+        )
+      : undefined,
   ]
   const metadata = {
     sessionID: SessionTable.id,
@@ -263,7 +279,7 @@ function fit<T extends { text: string; offset: number; nextOffset?: number }>(
 }
 
 export const DESCRIPTION =
-  "Search stored text and settled tool inputs/results across earlier sessions, or read a hit by session_id + part_id. Search uses a case-sensitive literal substring, not SQL/regex. Defaults to other sessions in cwd; directory:* explicitly includes all projects. Filter by role and message time. Scans and output are bounded; follow nextCursor with the same filters even when a page has no matches. Read uses Unicode-code-point offset/nextOffset. Historical evidence is not current authorization."
+  "Search stored history or read a hit by session_id + part_id. In a bound main Chat, recall only that companion's current and earlier main chats: original user/assistant text, excluding summaries, synthetic text and tools. This scope cannot be widened. In Code, search text and settled tool inputs/results from other sessions in cwd; directory:* explicitly includes all projects. Search uses a case-sensitive literal substring, not SQL/regex. Filter by role and message time. Scans and output are bounded; follow nextCursor with the same filters even when a page has no matches. Read uses Unicode-code-point offset/nextOffset. Historical evidence is not current authorization."
 
 export const SessionQueryTool = Tool.define(
   "session_query",
@@ -274,17 +290,32 @@ export const SessionQueryTool = Tool.define(
       parameters: Parameters,
       execute: (args: typeof Parameters.Type, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          const session = Database.use((db) =>
+            db
+              .select({
+                mode: SessionTable.mode,
+                companionID: SessionTable.companion_id,
+                parentID: SessionTable.parent_id,
+              })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, ctx.sessionID))
+              .get(),
+          )
+          if (session?.mode === "chat" && (!session.companionID || session.parentID))
+            throw new Error("Personal history is available only in its bound main Chat session")
           const spec = resolve(
             args,
             yield* InstanceState.directory,
             ctx.sessionID,
             NativeCompaction.resolve((yield* config.get()).compaction?.native),
+            session?.mode === "chat" ? session.companionID! : undefined,
           )
+          const scope = spec.companionID ? `companion:${spec.companionID}` : spec.directory
           yield* ctx.ask({
             permission: "session_query",
-            patterns: [spec.directory],
-            always: [spec.directory],
-            metadata: { operation: args.operation },
+            patterns: [scope],
+            always: [scope],
+            metadata: { operation: args.operation, ...(spec.companionID ? { companionID: spec.companionID } : {}) },
           })
           const result = yield* Database.use((db) => run(db, spec, ctx.abort))
           return { title: "Stored session evidence", metadata: {}, output: JSON.stringify(result) }

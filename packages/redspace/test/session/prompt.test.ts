@@ -685,7 +685,9 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         yield* prompt.prompt({
           sessionID: chat.id,
           model: ref,
-          parts: [{ type: "text", text: "Today we added a blue ribbon to Aurora." }],
+          parts: [
+            { type: "text", text: "Today we added a blue ribbon to Aurora. I chose silver thread for the handle." },
+          ],
         })
         const requests = yield* llm.inputs
         const prefix = (requests[0].messages as { role: string; content: string }[])[0]
@@ -713,10 +715,12 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         expect(diary.text).toContain("Our lantern now has a blue ribbon")
         expect(diary.text).not.toContain("Today we added a blue ribbon")
         expect(diary.text).not.toContain("I will remember the blue ribbon")
+        expect(diary.text).not.toContain("silver thread")
 
         const next = yield* sessions.create({ title: "Mira returns", mode: "chat", companionID: imported.profile.id })
         yield* Effect.addFinalizer(() => sessions.remove(next.id).pipe(Effect.orDie))
-        yield* llm.text("The blue ribbon is in our diary.")
+        yield* llm.tool("session_query", { operation: "search", query: "silver thread", role: "user" })
+        yield* llm.text("The blue ribbon is in our diary, and you chose silver thread for the handle.")
         yield* prompt.prompt({
           sessionID: next.id,
           model: ref,
@@ -725,6 +729,11 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         const second = JSON.stringify((yield* llm.inputs)[4])
         expect(second).toContain("Our lantern now has a blue ribbon")
         expect(second).toContain("paper lantern")
+        expect(second).not.toContain("silver thread")
+        const recalledHistory = (yield* llm.inputs)[5]
+        expect(JSON.stringify(recalledHistory)).toContain("I chose silver thread for the handle")
+        expect((recalledHistory.messages as unknown[])[0]).toEqual(((yield* llm.inputs)[4].messages as unknown[])[0])
+        expect(recalledHistory.tools).toEqual((yield* llm.inputs)[4].tools)
       }).pipe(provideInstance(imported.profile.directory))
 
       const codeDirectory = path.join(directory, "code")
@@ -736,7 +745,7 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         yield* Effect.addFinalizer(() => sessions.remove(code.id).pipe(Effect.orDie))
         yield* llm.text("The code is ready.")
         yield* prompt.prompt({ sessionID: code.id, model: ref, parts: [{ type: "text", text: "Review the code." }] })
-        const wire = JSON.stringify((yield* llm.inputs)[5])
+        const wire = JSON.stringify((yield* llm.inputs)[6])
         expect(wire).toContain(JSON.stringify(CONVERSATION).slice(1, -1))
         expect(wire.match(/# Conversation/g)).toHaveLength(1)
         expect(wire).toContain("Code identity sentinel")
@@ -744,13 +753,18 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         expect(wire).not.toContain("Mira identity sentinel")
         expect(wire).not.toContain("paper lantern")
         expect(wire).not.toContain("blue ribbon")
+        expect(wire).not.toContain("silver thread")
         expect(wire).not.toContain("companion_memory")
         expect(wire).not.toContain("then read the needed source lines")
 
         const child = yield* sessions.create({ parentID: code.id })
         yield* llm.text("Subtask result.")
-        yield* prompt.prompt({ sessionID: child.id, model: ref, parts: [{ type: "text", text: "Inspect the parser." }] })
-        const childWire = JSON.stringify((yield* llm.inputs)[6])
+        yield* prompt.prompt({
+          sessionID: child.id,
+          model: ref,
+          parts: [{ type: "text", text: "Inspect the parser." }],
+        })
+        const childWire = JSON.stringify((yield* llm.inputs)[7])
         expect(childWire).toContain("Code identity sentinel")
         expect(childWire).not.toContain("# Conversation")
         expect(childWire).not.toContain("companion_memory")

@@ -8,7 +8,7 @@ import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import type { MessageV2 } from "@/session/message-v2"
 import { MessageID, PartID, SessionID } from "@/session/schema"
-import { SessionTable } from "@/session/session.sql"
+import { MessageTable, PartTable, SessionTable } from "@/session/session.sql"
 import { ProviderID, ModelID } from "@/provider/schema"
 import * as Database from "@/storage/db"
 import { Parameters, resolve, run, SessionQueryTool } from "@/tool/session-query"
@@ -255,6 +255,168 @@ describe("session_query", () => {
       )
       expect((yield* Database.use((db) => run(db, foreign, ctx.abort)).pipe(Effect.exit))._tag).toBe("Failure")
     }),
+  )
+
+  it.instance(
+    "recalls the bound companion's current and earlier chats without summary echoes or identity crossover",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { directory } = yield* TestInstance
+        const caller = yield* sessions.create({})
+        const earlier = yield* sessions.create({})
+        const foreign = yield* sessions.create({})
+        const code = yield* sessions.create({})
+        const child = yield* sessions.create({ parentID: caller.id })
+        // These are persisted rows; archive import/session creation have their own integration tests.
+        for (const session of [caller, earlier, foreign, child]) {
+          Database.use((db) =>
+            db
+              .update(SessionTable)
+              .set({ mode: "chat", companion_id: session.id === foreign.id ? "other" : "mira" })
+              .where(eq(SessionTable.id, session.id))
+              .run(),
+          )
+        }
+        const old = yield* add(earlier.id, 1, "shared needle: the user chose silver thread")
+        const reply = yield* add(earlier.id, 2, "shared needle: the companion suggested a ribbon", "assistant")
+        const own = yield* add(caller.id, 3, "shared needle: an earlier turn outside active context")
+        const outsiders = yield* Effect.all(
+          [foreign, code, child].map((session) => add(session.id, 4, "shared needle")),
+        )
+        const summary = yield* add(caller.id, 5, "shared needle: summary echo", "assistant")
+        const synthetic = yield* add(caller.id, 6, "shared needle: injected reminder")
+        const ignored = yield* add(caller.id, 7, "shared needle: ignored text")
+        Database.use((db) => {
+          db.update(MessageTable)
+            .set({ data: sql`json_set(${MessageTable.data}, '$.summary', true)` })
+            .where(eq(MessageTable.id, summary.messageID))
+            .run()
+          db.update(PartTable)
+            .set({ data: sql`json_set(${PartTable.data}, '$.synthetic', true)` })
+            .where(eq(PartTable.id, synthetic.partID))
+            .run()
+          db.update(PartTable)
+            .set({ data: sql`json_set(${PartTable.data}, '$.ignored', true)` })
+            .where(eq(PartTable.id, ignored.partID))
+            .run()
+        })
+        const echo = yield* sessions.updatePart({
+          id: PartID.ascending(),
+        sessionID: earlier.id,
+        messageID: reply.messageID,
+          type: "tool",
+          callID: "memory-echo",
+          tool: "companion_memory",
+          state: {
+            status: "completed",
+            input: {},
+            output: "shared needle: retrieved echo",
+            title: "",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        })
+        const tool = yield* Tool.init(yield* SessionQueryTool)
+        const permissions: string[] = []
+        const ctx: Tool.Context = {
+          sessionID: caller.id,
+          messageID: own.messageID,
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: (request) =>
+            Effect.sync(() => {
+              permissions.push(`${request.permission}:${request.patterns[0]}`)
+            }),
+        }
+        const result = yield* tool.execute({ operation: "search", query: "shared needle", directory: "*" }, ctx)
+        expect(JSON.parse(result.output).results.map((hit: { partID: string }) => hit.partID)).toEqual([
+          own.partID,
+          reply.partID,
+          old.partID,
+        ])
+        expect(permissions).toEqual(["session_query:companion:mira"])
+        const read = yield* tool.execute({ operation: "read", session_id: earlier.id, part_id: old.partID }, ctx)
+        expect(JSON.parse(read.output)).toMatchObject({
+          role: "user",
+          text: "shared needle: the user chose silver thread",
+          createdAt: 1,
+        })
+        for (const row of [...outsiders, summary, synthetic, ignored, { sessionID: earlier.id, partID: echo.id }]) {
+          const exit = yield* tool
+            .execute({ operation: "read", session_id: row.sessionID, part_id: row.partID, directory: "*" }, ctx)
+            .pipe(Effect.exit)
+          expect(exit._tag).toBe("Failure")
+        }
+        const asked = permissions.length
+        const childExit = yield* tool
+          .execute({ operation: "search", query: "shared needle" }, { ...ctx, sessionID: child.id })
+          .pipe(Effect.exit)
+        expect(childExit._tag).toBe("Failure")
+        expect(permissions).toHaveLength(asked)
+        const denied = yield* tool
+          .execute(
+            { operation: "search", query: "shared needle" },
+            {
+              ...ctx,
+              ask: () => Effect.die(new Error("personal history denied")),
+            },
+          )
+          .pipe(Effect.exit)
+        expect(denied._tag).toBe("Failure")
+
+        const budget = NativeCompaction.resolve({ max_messages: 1 })
+        const first = yield* Database.use((db) =>
+          run(
+            db,
+            resolve({ operation: "search", query: "silver thread" }, directory, caller.id, budget, "mira"),
+            ctx.abort,
+          ),
+        )
+        if (!("results" in first)) throw new Error("Expected search result")
+        expect(first.results).toEqual([])
+        expect(first.nextCursor).toBeDefined()
+        expect(() =>
+          resolve(
+            { operation: "search", query: "silver thread", cursor: first.nextCursor },
+            directory,
+            foreign.id,
+            budget,
+            "other",
+          ),
+        ).toThrow("different search filters")
+        const second = yield* Database.use((db) =>
+          run(
+            db,
+            resolve(
+              { operation: "search", query: "silver thread", cursor: first.nextCursor },
+              directory,
+              caller.id,
+              budget,
+              "mira",
+            ),
+            ctx.abort,
+          ),
+        )
+        if (!("results" in second)) throw new Error("Expected search result")
+        const third = yield* Database.use((db) =>
+          run(
+            db,
+            resolve(
+              { operation: "search", query: "silver thread", cursor: second.nextCursor },
+              directory,
+              caller.id,
+              budget,
+              "mira",
+            ),
+            ctx.abort,
+          ),
+        )
+        if (!("results" in third)) throw new Error("Expected search result")
+        expect(third.results.map((hit) => hit.partID)).toEqual([old.partID])
+      }),
   )
 
   it.instance("checks aborts before database work and bounds aggregate Chinese output", () =>
