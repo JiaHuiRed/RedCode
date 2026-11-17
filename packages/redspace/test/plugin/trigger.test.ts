@@ -17,6 +17,10 @@ import { testEffect } from "../lib/effect"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
+import { Session } from "../../src/session/session"
+import { SessionTable } from "../../src/session/session.sql"
+import * as Database from "../../src/storage/db"
+import { eq } from "drizzle-orm"
 
 const configLayer = Config.layer.pipe(
   Layer.provide(EffectFlock.defaultLayer),
@@ -35,6 +39,7 @@ const it = testEffect(
       Layer.provide(RuntimeFlags.layer({ disableDefaultPlugins: true })),
     ),
     CrossSpawnSpawner.defaultLayer,
+    Session.defaultLayer,
   ),
 )
 const systemHook = "experimental.chat.system.transform"
@@ -84,6 +89,39 @@ const triggerSystemTransform = Effect.fn("PluginTriggerTest.triggerSystemTransfo
 })
 
 describe("plugin.trigger", () => {
+  it.live("limits engineering prompt hooks to Code using persisted mode, while leaving tools shared", () =>
+    withProject(
+      `export default async () => ({
+        promptModes: ["code"],
+        "experimental.chat.system.transform": (input, output) => { output.system.push("engineering:" + input.mode) },
+        "experimental.chat.messages.transform": (input, output) => { output.messages.push({ info: { id: "engineering" }, parts: [] }) },
+        "tool.definition": (_input, output) => { output.description = "shared tool" },
+      })`,
+      Effect.gen(function* () {
+        const plugin = yield* Plugin.Service
+        const sessions = yield* Session.Service
+        const chat = yield* sessions.create({})
+        const code = yield* sessions.create({})
+        Database.use((db) =>
+          db.update(SessionTable).set({ mode: "chat", companion_id: "mira" }).where(eq(SessionTable.id, chat.id)).run(),
+        )
+        const model = { providerID: ProviderID.anthropic, modelID: ModelID.make("claude-sonnet-4-6") }
+        const root = { system: [] as string[] }
+        yield* plugin.trigger(systemHook, { sessionID: chat.id, mode: "code", model }, root)
+        expect(root.system).toEqual([])
+        const messages = { messages: [] }
+        yield* plugin.trigger("experimental.chat.messages.transform", { sessionID: chat.id }, messages)
+        expect(messages.messages).toEqual([])
+        const work = { system: [] as string[] }
+        yield* plugin.trigger(systemHook, { sessionID: code.id, mode: "chat", model }, work)
+        expect(work.system).toEqual(["engineering:code"])
+        const shared = { description: "before", parameters: {} }
+        yield* plugin.trigger("tool.definition", { toolID: "example" }, shared)
+        expect(shared.description).toBe("shared tool")
+      }),
+    ),
+  )
+
   it.live("runs synchronous hooks without crashing", () =>
     withProject(
       [

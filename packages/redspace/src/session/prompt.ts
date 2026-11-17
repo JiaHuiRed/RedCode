@@ -1789,6 +1789,7 @@ export const layer = Layer.effect(
         }
         const agent = companionAgent(stepSettings.agent, stepSettings.session)
         const personalChat = isCompanionChat(stepSettings.session)
+        const chatMode = stepSettings.session.mode === "chat"
         // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
         // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
         // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
@@ -1998,7 +1999,7 @@ export const layer = Layer.effect(
           // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
           // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
 
-          yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+          yield* plugin.trigger("experimental.chat.messages.transform", { sessionID }, { messages: msgs })
 
           // 260618 Red pin post-DCP message content for prefix cache stability.
           // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
@@ -2080,7 +2081,7 @@ export const layer = Layer.effect(
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
             cachedSystem
               ? Effect.succeed(cachedSystem.instructions)
-              : instruction.system({ memory: !personalChat }).pipe(Effect.orDie),
+              : instruction.system({ memory: !chatMode }).pipe(Effect.orDie),
             // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
             // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
@@ -2239,7 +2240,7 @@ export const layer = Layer.effect(
           // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
           // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
           // injection-registry: memory-clause
-          if (!personalChat)
+          if (!chatMode)
             system.push(
               `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
             )

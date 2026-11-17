@@ -12,6 +12,10 @@ import { createOpencodeClient } from "@redcode-ai/sdk"
 import { ServerAuth } from "@/server/auth"
 import { CodexAuthPlugin } from "./codex"
 import { Session } from "@/session/session"
+import { SessionTable } from "@/session/session.sql"
+import { SessionID } from "@/session/schema"
+import * as Database from "@/storage/db"
+import { eq } from "drizzle-orm"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
 import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
@@ -350,7 +354,42 @@ export const layer = Layer.effect(
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
       const s = yield* InstanceState.get(state)
+      // Memory injectors can target Code while MCP, skills and other plugin capabilities stay shared.
+      // Resolve persisted binding here so system/compaction and message hooks agree.
+      // docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md
+      const prompt = name === "experimental.chat.messages.transform" || name === "experimental.chat.system.transform"
+      const sessionID =
+        prompt &&
+        input !== null &&
+        typeof input === "object" &&
+        "sessionID" in input &&
+        typeof input.sessionID === "string"
+          ? SessionID.make(input.sessionID)
+          : undefined
+      const session = sessionID
+        ? Database.use((db) =>
+            db
+              .select({
+                mode: SessionTable.mode,
+                companionID: SessionTable.companion_id,
+                parentID: SessionTable.parent_id,
+              })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get(),
+          )
+        : undefined
+      const context =
+        prompt && input !== null && typeof input === "object"
+          ? {
+              ...input,
+              mode: session?.mode ?? "code",
+              companionID: session?.companionID ?? undefined,
+              parentID: session?.parentID ?? undefined,
+            }
+          : input
       for (const hook of s.hooks) {
+        if (prompt && hook.promptModes && !hook.promptModes.includes(session?.mode ?? "code")) continue
         const fn = hook[name] as any
         if (!fn) continue
         // 260810 cc audit R5: 此前是裸 Effect.promise——插件 hook 抛异常=defect 整轮报废，
@@ -359,7 +398,7 @@ export const layer = Layer.effect(
         // output 字段改写，不靠 throw，不受影响）。超时只是不再等它，底层 promise 会继续
         // 跑完，不截断插件的副作用。
         yield* Effect.tryPromise({
-          try: () => Promise.resolve(fn(input, output)),
+          try: () => Promise.resolve(fn(context, output)),
           catch: (err) => err,
         }).pipe(
           Effect.timeout("30 seconds"),

@@ -11,6 +11,8 @@ import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { waitGlobalBusEvent } from "../server/global-bus"
 import { projectRoot } from "../../src/project/root"
+import { Companion } from "../../src/companion/companion"
+import { Soul } from "../../src/soul"
 
 const it = testEffect(Layer.mergeAll(InstanceLayer.layer, CrossSpawnSpawner.defaultLayer))
 
@@ -122,5 +124,29 @@ it.live("InstanceBootstrap uses project directory for non-git worktree", () =>
     const projectRedcode = path.join(dir, ".redcode", "MEMORY.md")
     expect(existsSync(projectRedcode)).toBe(true)
     expect(projectRoot({ worktree: "/", directory: dir })).toBe(dir)
+  }),
+)
+
+it.live("a registered companion workspace shares config without scaffolding engineering memory", () =>
+  Effect.gen(function* () {
+    const temp = yield* tmpdirScoped({ bare: true })
+    const source = path.join(temp, "source")
+    yield* Effect.promise(() => Bun.write(path.join(source, "workspace/SOUL.md"), "A companion."))
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const profile = (yield* companions.importArchive({ source, id: "bootstrap-companion" })).profile
+      const store = yield* InstanceStore.Service
+      yield* store.load({ directory: profile.directory })
+      expect(existsSync(path.join(profile.directory, ".redcode/MEMORY.md"))).toBe(false)
+      expect(existsSync(path.join(profile.directory, ".redcode/docs/README.md"))).toBe(false)
+      const entry = yield* companions.remember({ id: profile.id, text: "Our personal diary." })
+      expect(existsSync(path.join(profile.directory, entry.path))).toBe(true)
+      yield* store.reload({ directory: profile.directory })
+      expect(existsSync(path.join(profile.directory, ".redcode/MEMORY.md"))).toBe(false)
+    }).pipe(
+      Effect.provide(Companion.defaultLayer),
+      Effect.provideService(Companion.directory, path.join(temp, "companions")),
+      Effect.provideService(Soul.directory, path.join(temp, "souls")),
+    )
   }),
 )

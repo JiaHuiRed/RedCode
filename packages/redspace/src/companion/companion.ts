@@ -49,6 +49,14 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Companion") {}
 
+// A personal workspace is identified by its registered profile, not by the current tool's cwd.
+export const workspaceProfile = Effect.fn("Companion.workspaceProfile")(function* (workspace: string) {
+  const root = AppFileSystem.resolve(yield* directory)
+  const relative = path.relative(root, AppFileSystem.resolve(workspace)).split(path.sep)
+  if (relative.length !== 2 || relative[1] !== "workspace" || !ID_PATTERN.test(relative[0])) return undefined
+  return yield* (yield* Service).get(relative[0])
+})
+
 const Manifest = Schema.Struct({ profile: Info, digest: Schema.String, historyDigest: Schema.optional(Schema.String) })
 const Entry = Schema.Struct({ path: Schema.String, text: Schema.String, source: Schema.optional(Schema.String) })
 const SearchCursor = Schema.Struct({ scope: Schema.String, offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })

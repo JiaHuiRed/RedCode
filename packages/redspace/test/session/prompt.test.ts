@@ -671,8 +671,20 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
       yield* souls.create({ id: "coder", name: "Coder", content: "Code identity sentinel." })
       const sessions = yield* Session.Service
       const prompt = yield* SessionPrompt.Service
+      const pluginFile = path.join(directory, "engineering-memory-plugin.ts")
+      yield* writeText(pluginFile, `export default async () => ({
+        promptModes: ["code"],
+        "experimental.chat.system.transform": (_input, output) => { output.system.push("ENGINEERING_PLUGIN_SENTINEL") },
+        "experimental.chat.messages.transform": (_input, output) => {
+          const last = output.messages.at(-1)
+          if (last?.info.role === "user") last.parts.find(p => p.type === "text").text += " ENGINEERING_RECALL_SENTINEL"
+        },
+      })`)
+      const skillRoot = path.join(directory, "shared-skills")
+      yield* writeText(path.join(skillRoot, "shared-helper/SKILL.md"), "---\nname: shared-helper\ndescription: Shared practical capability sentinel.\n---\nHelp with an ordinary task.")
+      const sharedConfig = { ...providerCfg(llm.url), plugin: [pathToFileURL(pluginFile).href], skills: { paths: [skillRoot] } }
       yield* ensureDir(path.join(imported.profile.directory, ".git"))
-      yield* writeConfig(imported.profile.directory, providerCfg(llm.url))
+      yield* writeConfig(imported.profile.directory, sharedConfig)
       yield* writeText(path.join(imported.profile.directory, ".redcode", "MEMORY.md"), "Engineering memory sentinel.")
 
       yield* Effect.gen(function* () {
@@ -706,6 +718,9 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         expect(first).toContain("named the lantern Aurora")
         expect(first).toContain("companion_memory")
         expect(first).not.toContain("Engineering memory sentinel")
+        expect(first).not.toContain("ENGINEERING_PLUGIN_SENTINEL")
+        expect(first).not.toContain("ENGINEERING_RECALL_SENTINEL")
+        expect(first).toContain("Shared practical capability sentinel")
         const recalled = JSON.stringify((yield* llm.inputs)[1])
         expect(recalled).toContain("named the lantern Aurora")
         const toolSaved = yield* companions.search({ id: imported.profile.id, query: "Our lantern now" })
@@ -734,22 +749,35 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         expect(JSON.stringify(recalledHistory)).toContain("I chose silver thread for the handle")
         expect((recalledHistory.messages as unknown[])[0]).toEqual(((yield* llm.inputs)[4].messages as unknown[])[0])
         expect(recalledHistory.tools).toEqual((yield* llm.inputs)[4].tools)
+        const child = yield* sessions.create({ parentID: chat.id })
+        yield* llm.text("The practical task is done.")
+        yield* prompt.prompt({ sessionID: child.id, model: ref, parts: [{ type: "text", text: "Inspect the requested file." }] })
+        const childWire = JSON.stringify((yield* llm.inputs)[6])
+        expect(childWire).toContain("Mira identity sentinel")
+        expect(childWire).not.toContain("Engineering memory sentinel")
+        expect(childWire).not.toContain("ENGINEERING_PLUGIN_SENTINEL")
+        expect(childWire).not.toContain("ENGINEERING_RECALL_SENTINEL")
+        expect(childWire).not.toContain("paper lantern")
+        expect(childWire).not.toContain("companion_memory")
       }).pipe(provideInstance(imported.profile.directory))
 
       const codeDirectory = path.join(directory, "code")
       yield* ensureDir(path.join(codeDirectory, ".git"))
-      yield* writeConfig(codeDirectory, providerCfg(llm.url))
+      yield* writeConfig(codeDirectory, sharedConfig)
       yield* writeText(path.join(codeDirectory, ".redcode", "MEMORY.md"), "Engineering memory sentinel.")
       yield* Effect.gen(function* () {
         const code = yield* sessions.create({ title: "Code stays Code", soul: "coder" })
         yield* Effect.addFinalizer(() => sessions.remove(code.id).pipe(Effect.orDie))
         yield* llm.text("The code is ready.")
         yield* prompt.prompt({ sessionID: code.id, model: ref, parts: [{ type: "text", text: "Review the code." }] })
-        const wire = JSON.stringify((yield* llm.inputs)[6])
+        const wire = JSON.stringify((yield* llm.inputs)[7])
         expect(wire).toContain(JSON.stringify(CONVERSATION).slice(1, -1))
         expect(wire.match(/# Conversation/g)).toHaveLength(1)
         expect(wire).toContain("Code identity sentinel")
         expect(wire).toContain("Engineering memory sentinel")
+        expect(wire).toContain("ENGINEERING_PLUGIN_SENTINEL")
+        expect(wire).toContain("ENGINEERING_RECALL_SENTINEL")
+        expect(wire).toContain("Shared practical capability sentinel")
         expect(wire).not.toContain("Mira identity sentinel")
         expect(wire).not.toContain("paper lantern")
         expect(wire).not.toContain("blue ribbon")
@@ -764,7 +792,7 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
           model: ref,
           parts: [{ type: "text", text: "Inspect the parser." }],
         })
-        const childWire = JSON.stringify((yield* llm.inputs)[7])
+        const childWire = JSON.stringify((yield* llm.inputs)[8])
         expect(childWire).toContain("Code identity sentinel")
         expect(childWire).not.toContain("# Conversation")
         expect(childWire).not.toContain("companion_memory")

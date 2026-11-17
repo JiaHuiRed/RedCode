@@ -220,6 +220,8 @@ export type ProviderHook = {
 export type AuthOuathResult = AuthOAuthResult
 
 export interface Hooks {
+  /** Restrict prompt transformations by product mode. Tools/auth/config remain shared. Defaults to both. */
+  promptModes?: ReadonlyArray<"code" | "chat">
   event?: (input: { event: Event }) => Promise<void>
   config?: (input: Config) => Promise<void>
   tool?: {
@@ -341,7 +343,7 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.messages.transform"?: (
-    input: {},
+    input: { sessionID?: string; mode?: "code" | "chat"; companionID?: string; parentID?: string },
     output: {
       messages: {
         info: Message
@@ -350,7 +352,7 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.system.transform"?: (
-    input: { sessionID?: string; model: Model },
+    input: { sessionID?: string; model: Model; mode?: "code" | "chat"; companionID?: string; parentID?: string },
     output: {
       system: string[]
     },

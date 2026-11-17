@@ -12,6 +12,7 @@ import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Config } from "@/config/config"
+import { Companion } from "@/companion/companion"
 import { Service } from "./bootstrap-service"
 import { Reference } from "@/reference/reference"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -33,6 +34,7 @@ export const layer = Layer.effect(
     // InstanceStore imports only the lightweight tag from bootstrap-service.ts,
     // so it can depend on bootstrap without importing this implementation graph.
     const config = yield* Config.Service
+    const companions = yield* Companion.Service
     const file = yield* File.Service
     const fileWatcher = yield* FileWatcher.Service
     const format = yield* Format.Service
@@ -136,7 +138,16 @@ export const layer = Layer.effect(
       //   （默认不入库，项目可自行加 `!` 例外），并建 .redcode/docs/ 承接私有进度；MEMORY 模板
       //   带当前工作路标格式与 docs/notes 决策笔记指引（否则新项目拿不到这套惯例——它们只写在
       //   RedCode 自己的工作区 AGENTS.md 里，别的工作区注入不到）。
-      if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && projectRoot(ctx) !== Global.Path.home) {
+      // Personal Chat keeps its own diary; it is not an engineering project to scaffold.
+      // docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md
+      if (
+        !Flag.REDCODE_DISABLE_PROJECT_CONFIG &&
+        projectRoot(ctx) !== Global.Path.home &&
+        !(yield* Companion.workspaceProfile(ctx.directory).pipe(
+          Effect.provideService(Companion.Service, companions),
+          Effect.orDie,
+        ))
+      ) {
         yield* Effect.gen(function* () {
           const root = projectRoot(ctx)
           const hasOpencode = yield* fs.existsSafe(path.join(root, ".opencode"))
@@ -177,6 +188,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
   Layer.provide([
     Bus.layer,
     Config.defaultLayer,
+    Companion.defaultLayer,
     File.defaultLayer,
     FileWatcher.defaultLayer,
     Format.defaultLayer,

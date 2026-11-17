@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **Chat 工程记忆边界**：伙伴目录不再自动生成工程 MEMORY / 进度模板，Chat 子任务也排除核心工程记忆。插件可声明仅向 Code 注入提示，工具和普通技能继续共享；私有工程记忆插件与全局规则需同步更新。Chat 做事时仍写伙伴日记、按需查聊天原文。验证与模型可见四问见 `docs/notes/implemented/bug-fix/2026-11-17-chat-engineering-memory-boundary.md`。
+
 ### [0.19.1] - 2026-11-17
 
 - **RedSpace 首轮 Windows 验收修复**：伙伴档案在导入和读取时统一解析真实工作区，修复目录别名、junction 和 Windows 短路径导致 Chat 创建被误拒绝；档案落位与记忆索引提交复用已有的 Windows 有界 rename 重试。GUI 冷恢复会话时先等待绑定，不再把未加载的 Chat 当成 Code 新建；归档值 `0` 与 TUI 一样视为已归档。Chat 首页标题改用已定义的字号，避免不存在的工具类使主标题退回正文大小。
