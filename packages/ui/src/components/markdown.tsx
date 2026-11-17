@@ -6,7 +6,7 @@ import morphdom from "morphdom"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { ComponentProps, createEffect, createResource, createSignal, onCleanup, splitProps } from "solid-js"
 import { isServer } from "solid-js/web"
-import { createMarkdownStream } from "./markdown-stream"
+import { blockChecksum, createMarkdownStream } from "./markdown-stream"
 
 type Entry = {
   hash: string
@@ -276,7 +276,7 @@ export function Markdown(
       const base = src.key ?? checksum(src.text)
       return Promise.all(
         streamMarkdown(src.text, src.streaming, src.key).map(async (block, index) => {
-          const hash = checksum(block.raw)
+          const hash = blockChecksum(block)
           const key = base ? `${base}:${index}:${block.mode}` : hash
 
           if (key && hash) {

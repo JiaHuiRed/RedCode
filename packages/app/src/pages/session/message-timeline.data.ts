@@ -444,21 +444,23 @@ export namespace Timeline {
 
     if (isActive && status === "retry") rows.push(new TimelineRow.Retry({ userMessageID: userMessage.id }))
 
-    const diffs = (userMessage.summary?.diffs ?? [])
-      .reduceRight<SummaryDiff[]>((result, diff) => {
-        if (!isSummaryDiff(diff)) return result
-        if (result.some((item) => item.file === diff.file)) return result
-        result.push(diff)
-        return result
-      }, [])
-      .reverse()
-    if (diffs.length > 0 && (status === "idle" || !isActive)) {
-      rows.push(
-        new TimelineRow.DiffSummary({
-          userMessageID: userMessage.id,
-          diffs,
-        }),
-      )
+    if (status === "idle" || !isActive) {
+      const seen = new Set<string>()
+      const diffs = (userMessage.summary?.diffs ?? [])
+        .reduceRight<SummaryDiff[]>((result, diff) => {
+          if (!isSummaryDiff(diff) || seen.has(diff.file)) return result
+          seen.add(diff.file)
+          result.push(diff)
+          return result
+        }, [])
+        .reverse()
+      if (diffs.length > 0)
+        rows.push(
+          new TimelineRow.DiffSummary({
+            userMessageID: userMessage.id,
+            diffs,
+          }),
+        )
     }
 
     // 261013 Red 摘要错误已在压缩分割线显示；保留 error 的等待守卫与普通回复错误。

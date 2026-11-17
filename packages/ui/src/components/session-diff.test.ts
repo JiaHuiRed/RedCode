@@ -72,6 +72,24 @@ describe("session diff", () => {
     expect(text(view, "additions")).toBe("two\n")
   })
 
+  test("adds file headers to a bare partial hunk and reuses the cached diff", () => {
+    const source = { file: "bare.ts", patch: "@@ -20,2 +20,2 @@\n keep\n-old\n+new\n" }
+    const diff = resolveFileDiff(source)
+    expect(diff.name).toBe("bare.ts")
+    expect(diff.isPartial).toBe(true)
+    expect(diff.additionLines).toEqual(["keep\n", "new\n"])
+    expect(resolveFileDiff(source)).toBe(diff)
+  })
+
+  test("keeps separated full-context hunks partial", () => {
+    const diff = resolveFileDiff({
+      file: "separated.ts",
+      patch: "--- separated.ts\t\n+++ separated.ts\t\n@@ -1 +1 @@\n-old\n+new\n@@ -20 +20 @@\n-before\n+after\n",
+    })
+    expect(diff.isPartial).toBe(true)
+    expect(diff.hunks).toHaveLength(2)
+  })
+
   test("ignores malformed persisted patches", () => {
     const diff = {
       file: "a.ts",

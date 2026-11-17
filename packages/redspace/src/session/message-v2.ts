@@ -1465,11 +1465,11 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
 })
 
 // 261114 Red 消息树分支 Phase 3：含弃岛行的全量时序读（规范序 (time_created, id)）。
-// 版本列举与切换必须看到岛——page() 的 detached WHERE 对标准读侧是正确的，对切换器
+// 版本切换必须看到岛——page() 的 detached WHERE 对标准读侧是正确的，对切换器
 // 是盲区（见 page() 内注释「版本切换器读岛时绕过本原语」）。detached / islandSnapshot
 // 是 revert/branch 写的内部簿记（裸 json_set，不进 Info schema），在这里作为行元信息
 // 显式带出，不混进 info——派生字段泄漏进 info 正是 Phase 1 否决读时规范化的原因。
-// 只供 branch.ts 消费，不进任何标准读路径。
+// 只供 branch.ts 的切换消费；版本列举单独投影树元数据，不加载 parts。不进标准读路径。
 export type BranchRow = WithParts & { detached: boolean; islandSnapshot?: string }
 export const allIncludingDetached = Effect.fn("MessageV2.allIncludingDetached")(function* (input: {
   sessionID: SessionID
