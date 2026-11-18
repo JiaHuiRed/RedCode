@@ -89,7 +89,8 @@ export const SessionListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   roots: Schema.optional(QueryBoolean),
   start: Schema.optional(Schema.NumberFromString),
-  cursor: Schema.optional(Schema.NumberFromString),
+  // 261118 Red 复合游标 `updated:id`（与列表排序键同宽）。纯数字仍被解析为旧式时间游标。
+  cursor: Schema.optional(Schema.String),
   search: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
   archived: Schema.optional(QueryBoolean),

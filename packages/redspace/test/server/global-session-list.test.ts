@@ -1,7 +1,10 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Layer } from "effect"
+import { inArray } from "drizzle-orm"
 import { Project } from "@/project/project"
 import { Session as SessionNs } from "@/session/session"
+import { SessionTable } from "@/session/session.sql"
+import { Database } from "@/storage/db"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import * as Log from "@redcode-ai/core/util/log"
 import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -120,6 +123,52 @@ describe("session.listGlobal", () => {
 
         expect(ids).toContain(first.id)
         expect(ids).not.toContain(second.id)
+      }),
+    { git: true },
+  )
+
+  // 261118 Red 同毫秒跨页：排序键是 (time_updated DESC, id DESC)，只带时间的游标会让
+  // 时间相等的行在下一页被整批跳过。create() 用真实时钟，同毫秒不可靠复现，所以这里
+  // 直接把三行钉到同一个 time_updated——这是刻意构造的存储状态，不是运行时行为。
+  it.instance(
+    "pages same-millisecond sessions without dropping rows",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+
+        const a = yield* withSession({ title: "same-ms-a" })
+        const b = yield* withSession({ title: "same-ms-b" })
+        const c = yield* withSession({ title: "same-ms-c" })
+
+        yield* Effect.sync(() =>
+          Database.use((db) =>
+            db
+              .update(SessionTable)
+              .set({ time_updated: 1_700_000_000_000 })
+              .where(inArray(SessionTable.id, [a.id, b.id, c.id]))
+              .run(),
+          ),
+        )
+
+        const all = yield* Effect.sync(() => [...SessionNs.listGlobal({ directory: test.directory, limit: 10 })])
+        expect(all.map((session) => session.id).sort()).toEqual([a.id, b.id, c.id].sort())
+
+        const first = yield* Effect.sync(() => [...SessionNs.listGlobal({ directory: test.directory, limit: 2 })])
+        expect(first.length).toBe(2)
+
+        const cursor = SessionNs.listCursor(first[first.length - 1]!)
+        const next = yield* Effect.sync(() => [
+          ...SessionNs.listGlobal({ directory: test.directory, limit: 2, cursor }),
+        ])
+        // 核心断言：复合游标翻完两页不重不漏（旧游标这一页会是空数组）。
+        const paged = [...first, ...next].map((session) => session.id)
+        expect(new Set(paged).size).toBe(3)
+
+        // 旧客户端只发时间戳：保持原语义（同毫秒行不进入下一页），兼容路径不静默升级。
+        const legacy = yield* Effect.sync(() => [
+          ...SessionNs.listGlobal({ directory: test.directory, limit: 2, cursor: first[1]!.time.updated }),
+        ])
+        expect(legacy).toHaveLength(0)
       }),
     { git: true },
   )

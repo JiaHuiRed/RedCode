@@ -1656,16 +1656,40 @@ function* listByProject(
   }
 }
 
+// 261118 Red 列表游标必须与排序键同宽。排序是 (time_updated DESC, id DESC)，游标却只带
+// 时间戳时，同一毫秒的多条记录跨页会被整批跳过——`lt(time_updated, cursor)` 对时间相等的
+// 行全部为假。复合游标写成 `${updated}:${id}`；纯数字是旧客户端游标，保留旧语义。
+function parseListCursor(cursor: string | number | undefined) {
+  if (cursor === undefined) return undefined
+  if (typeof cursor === "number") return { updated: cursor, id: undefined }
+  const at = cursor.indexOf(":")
+  if (at < 0) {
+    const legacy = Number.parseInt(cursor, 10)
+    return Number.isFinite(legacy) ? { updated: legacy, id: undefined } : undefined
+  }
+  const updated = Number.parseInt(cursor.slice(0, at), 10)
+  const id = cursor.slice(at + 1)
+  if (!Number.isFinite(updated) || id.length === 0) return undefined
+  return { updated, id }
+}
+
+/** 列表下一页游标：与 orderBy(desc(time_updated), desc(id)) 保持同一组键。 */
+export function listCursor(item: { id: string; time: { updated: number } }) {
+  return `${item.time.updated}:${item.id}`
+}
+
 export function* listGlobal(input?: {
   directory?: string
   roots?: boolean
   start?: number
-  cursor?: number
+  /** 复合游标 `updated:id`；纯数字兼容旧客户端（只按时间翻页）。 */
+  cursor?: string | number
   search?: string
   limit?: number
   archived?: boolean
 }) {
   const conditions: SQL[] = []
+  const cursor = parseListCursor(input?.cursor)
 
   if (input?.directory) {
     conditions.push(directoryMatch(input.directory))
@@ -1676,8 +1700,17 @@ export function* listGlobal(input?: {
   if (input?.start) {
     conditions.push(gte(SessionTable.time_updated, input.start))
   }
-  if (input?.cursor) {
-    conditions.push(lt(SessionTable.time_updated, input.cursor))
+  if (cursor) {
+    conditions.push(
+      cursor.id
+        ? or(
+            lt(SessionTable.time_updated, cursor.updated),
+            // id 列是 SessionID 品牌类型，游标解析出的是普通字符串；比较只发生在 SQL 里，
+            // 不把未校验的字符串重新品牌化成 SessionID。
+            and(eq(SessionTable.time_updated, cursor.updated), sql`${SessionTable.id} < ${cursor.id}`),
+          )!
+        : lt(SessionTable.time_updated, cursor.updated),
+    )
   }
   if (input?.search) {
     conditions.push(like(SessionTable.title, `%${input.search}%`))
