@@ -93,3 +93,11 @@ GUI 中的赤已有真实事件归一化和静态姿态，权限、提问、成�
 快照与事件流的乱序竞态（HTTP 往返间隙事件穿过）用 bootstrap journal 仲裁：`beginPetBootstrap` 开启按目录的 journal，在途事件记录其中；快照写入 batch 内通过 `onSnapshot(kind)` 按分区清算（`settlePetBootstrap`）并把 journal 事件按序重放回 child reducer——asked/replied/status 的 child 处理都是幂等确定性操作，重放净效果等于事件流最终态，不复活已回复请求、不倒退状态。残余 journal 在 bootstrap 收尾丢弃（失败轮快照未写入，无需修正）。journal 生命周期等于单轮 bootstrap，无跨轮 tombstone。
 
 已知限制：status 残留最多活到该会话下一个 status 事件（回合结束必有 idle，自愈）；问题标题的敏感形状过滤同上一批，不宣称完整。
+
+## 2026-11-18：Windows 独立桌宠
+
+- Windows 版沿用「显示桌宠」开关；赤现在住在独立透明置顶窗，不占任务栏，不抢主窗焦点。主窗最小化或隐藏不会带走她，退出 RedSpace 则一起结束；浏览器及其他桌面平台仍使用窗内 PetLayer。
+- 主进程用系统 DIP 坐标和当前显示器工作区处理拖放与重开恢复，不混用网页坐标。拖动时保留抓取偏移，只在松手后保存；拔掉屏幕后夹回可用屏幕。仅宠物热点与关闭按钮接收点击，透明区和气泡透传。
+- 独立窗复用 PetView、素材和本地台词，只收状态类别、装扮和表现偏好；不把会话标识、工具名和提问标题带到桌面。无模型可见改动。
+- App / Desktop 类型检查、79 项定向测试和 Electron 构建通过。隔离 Electron 使用实际构建的 renderer，在本机两块 100% 缩放屏幕上验证主窗最小化时仍显示并更新、从主屏拖到负坐标副屏、重开恢复位置。拖动由 Chromium 指针事件和注入的系统坐标样本驱动，未覆盖物理鼠标及混合 DPI。
+- TUI 不开 GUI 时共用桌宠的后续方案见 [TUI 与 GUI 共用桌面上的赤](../../proposed/feature/2026-11-18-tui-shared-desktop-pet.md)，仍为 proposed。
