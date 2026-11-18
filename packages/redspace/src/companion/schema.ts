@@ -33,6 +33,9 @@ export class Details extends Schema.Class<Details>("CompanionDetails")({
   user: Schema.String,
   companionName: Schema.String,
   userName: Schema.String,
+  // Raw avatar image from the imported workspace as a data URL, when present. The client re-encodes
+  // it through its own bounded avatar pipeline before display; the backend stores no avatar data.
+  avatar: Schema.optional(Schema.String),
   paths: Schema.Struct({
     directory: Schema.String,
     user: Schema.String,
@@ -188,4 +191,5 @@ export const Limits = {
   scan: 8 * 1024 * 1024,
   remember: 8 * 1024,
   diary: 4 * 1024 * 1024,
+  avatar: 1024 * 1024,
 } as const

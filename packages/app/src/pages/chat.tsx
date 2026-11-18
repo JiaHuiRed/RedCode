@@ -9,9 +9,11 @@ import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { SoulAvatar } from "@/components/soul-avatar"
+import { prepareSoulAvatar } from "@/utils/soul-avatar-image"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import { useCompanionWorkspace } from "@/context/companion-workspace"
 import { companionSessions } from "@/utils/product-mode"
 import { errorMessage } from "@/utils/session-helpers"
@@ -28,6 +30,7 @@ export default function Chat() {
   const navigate = useNavigate()
   const dialog = useDialog()
   const workspace = useCompanionWorkspace()
+  const settings = useSettings()
   const [search, setSearch] = useSearchParams<{ companion?: string }>()
   const queryClient = useQueryClient()
   const [state, setState] = createStore({
@@ -75,6 +78,28 @@ export default function Chat() {
   const introduction = () => (profile() ? introductionState(profile()!) : "available")
   const updateProfile = (value: CompanionInfo) =>
     queryClient.setQueryData<CompanionInfo[]>(profileKey(), (current) => upsertCompanion(current, value))
+  // 261119 Red Adopt an avatar shipped inside an imported companion workspace once: re-encode it
+  // through the client's bounded avatar pipeline and store it in local media settings. A removed
+  // avatar is an explicit empty entry, so only "never set" is adopted, and only one attempt per
+  // session prevents a failing conversion from retrying on every render.
+  const adoptedAvatars = new Set<string>()
+  createEffect(() => {
+    const selected = profile()
+    if (!selected || !settings.mediaReady() || adoptedAvatars.has(selected.soulID)) return
+    if (settings.personalization.hasSoulAvatar(selected.soulID)) return
+    adoptedAvatars.add(selected.soulID)
+    void (async () => {
+      try {
+        const details = (await sdk.client.companion.get({ id: selected.id }, { throwOnError: true })).data
+        if (!details.avatar) return
+        const blob = await (await fetch(details.avatar)).blob()
+        const image = await prepareSoulAvatar(new File([blob], "avatar", { type: blob.type }))
+        settings.personalization.setSoulAvatar(selected.soulID, image)
+      } catch (error) {
+        console.warn("Adopting the companion avatar failed", error)
+      }
+    })()
+  })
   createEffect(() => {
     const first = profiles.data?.[0]
     if (!first || !workspace.ready()) return

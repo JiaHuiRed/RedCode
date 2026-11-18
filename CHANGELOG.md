@@ -8,6 +8,12 @@
 
 ---
 
+## [Unreleased]
+
+- **混合编码日记忠实转码**：Companion 导入对 UTF-8 头 + GBK 主体的旧 Windows 日记做字节级忠实转码（逐序列歧义仲裁 + 强字符率门限 + 坏字节 U+FFFD 标记），原字节保留在 `source/`、manifest hash 不变，重导入可修复已存在档案且不触碰本地修改过的记忆。live 秋秋档案的 2026-05-31 / 06-21 / 06-23 三份日记恢复召回。详见 [转码与头像决策](docs/notes/implemented/feature/2026-11-19-companion-transcode-avatar.md)。
+
+- **导入伙伴头像接线**：`GET /companion/{id}` 响应新增可选 `avatar`（workspace 头像文件的原始 data URL，≤1 MiB，后端不落库）；聊天页对"从未设置过头像"的伙伴做一次性收养，经前端既有 256×256 PNG 重编码管线写入本地 settings，显式删除过的头像不会被覆盖。渲染器与存储格式不变。
+
 ### [0.19.3] - 2026-11-18
 
 - **缓存字段归因与 6.2 实测**：`request-evidence` 接入服务端 `usage.attribution.request_fields.instructions`，派生「本轮未读缓存 / 顶层指令未命中 / 尚未归因」三个数值；AI SDK 与 native 两条路径共用同一投影，字段缺失显示未知而不是 0。同日在 `gpt-6.2-sol` 与 `gpt-6.2-astra` 各跑两轮低推理请求：两模型 `instructions` 均为 21.7k 全未命中，Sol 第二轮其它部分命中 12,800，Astra 第二轮为 0；样本仅两轮，结论限定为「顶层指令是本次缺口主体」。诊断只读数值，不改变请求形状与缓存行为。详见 [归因诊断](docs/notes/implemented/feature/2026-11-18-cache-attribution-diagnostics.md) 与 [增量工具声明提案](docs/notes/proposed/feature/2026-11-18-incremental-tool-declarations.md)（提案原「tools 不缓存」结论已按实测修正）。

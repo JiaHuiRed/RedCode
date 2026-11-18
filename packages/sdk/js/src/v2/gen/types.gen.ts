@@ -4155,6 +4155,7 @@ export type CompanionDetails = {
   user: string
   companionName: string
   userName: string
+  avatar?: string
   paths: {
     directory: string
     user: string

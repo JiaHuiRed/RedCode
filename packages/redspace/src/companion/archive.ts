@@ -49,10 +49,14 @@ class ArchiveReader extends Reader<FileHandle> {
 }
 export type SourceFile = {
   path: string
+  // Active-workspace bytes: the faithful UTF-8 transcode for mixed-encoding sources, otherwise the original.
   bytes: Uint8Array
+  // Original source bytes; set only when `bytes` is a transcode. The source/ copy and the manifest
+  // hash keep these so a repeat import still matches the archive digest.
+  original?: Uint8Array
   hash: string
   text: boolean
-  encoding: "utf8" | "binary" | "unknown"
+  encoding: "utf8" | "binary" | "unknown" | "transcoded"
 }
 export type Archive = {
   files: SourceFile[]
@@ -78,6 +82,150 @@ export function decode(bytes: Uint8Array, file: string) {
     // The source bytes stay intact; replacement decoding would silently rewrite old memories.
     throw new CompanionInvalidInput({ message: `${file} is not valid UTF-8; its original bytes were preserved.` })
   }
+}
+
+// 261118 Red Legacy OpenClaw diaries written on Windows mix a UTF-8 head with a GBK body (or the
+// reverse, from editor round-trips). A faithful byte-level transcode makes them searchable without
+// rewriting the preserved source bytes: primary runs pass through, the other encoding fills the
+// gaps, and the decoded text must stay overwhelmingly CJK/ASCII or the file stays excluded. The
+// manifest hash keeps the original bytes, so a re-import of the same source still matches its digest.
+// Decision: docs/notes/implemented/feature/2026-11-19-companion-transcode-avatar.md
+const GB18030 = new TextDecoder("gb18030", { fatal: true })
+
+// Length of the well-formed UTF-8 sequence at `index` (overlong forms, surrogates and 0xF5+ rejected), or 0.
+function utf8LengthAt(bytes: Uint8Array, index: number): number {
+  const lead = bytes[index]
+  if (lead < 0x80) return 1
+  if (lead < 0xc2 || lead > 0xf4) return 0
+  const continuation = (offset: number, low: number, high: number) =>
+    index + offset < bytes.length && bytes[index + offset] >= low && bytes[index + offset] <= high
+  if (lead < 0xe0) return continuation(1, 0x80, 0xbf) ? 2 : 0
+  if (lead < 0xf0) {
+    const low = lead === 0xe0 ? 0xa0 : lead === 0xed ? 0x80 : 0x80
+    const high = lead === 0xed ? 0x9f : 0xbf
+    return continuation(1, low, high) && continuation(2, 0x80, 0xbf) ? 3 : 0
+  }
+  const low = lead === 0xf0 ? 0x90 : lead === 0xf4 ? 0x80 : 0x80
+  const high = lead === 0xf4 ? 0x8f : 0xbf
+  return continuation(1, low, high) && continuation(2, 0x80, 0xbf) && continuation(3, 0x80, 0xbf) ? 4 : 0
+}
+
+// GB18030 sequence length at `index`: ASCII and the euro sign are single bytes, 0x81–0xFE starts a
+// two- or four-byte run, 0x7F and 0xFF never occur.
+function gbLengthAt(bytes: Uint8Array, index: number): number {
+  const lead = bytes[index]
+  if (lead < 0x81) return 1
+  if (lead === 0xff || index + 1 >= bytes.length) return 0
+  const second = bytes[index + 1]
+  if (second >= 0x30 && second <= 0x39)
+    return index + 3 < bytes.length &&
+      bytes[index + 2] >= 0x81 &&
+      bytes[index + 2] <= 0xfe &&
+      bytes[index + 3] >= 0x30 &&
+      bytes[index + 3] <= 0x39
+      ? 4
+      : 0
+  return (second >= 0x40 && second <= 0x7e) || (second >= 0x80 && second <= 0xfe) ? 2 : 0
+}
+
+function classify(code: number) {
+  return (
+    (code >= 0x20 && code <= 0x7e) ||
+    code === 0x09 ||
+    code === 0x0a ||
+    code === 0x0d ||
+    (code >= 0x2e80 && code <= 0x9fff) ||
+    (code >= 0x3000 && code <= 0x303f) ||
+    (code >= 0xff00 && code <= 0xffef) ||
+    (code >= 0x2000 && code <= 0x206f) ||
+    (code >= 0x2600 && code <= 0x27bf) ||
+    (code >= 0x1f000 && code <= 0x1faff)
+  )
+}
+
+function decodeUtf8(slice: Uint8Array) {
+  return new TextDecoder("utf-8", { fatal: true }).decode(slice)
+}
+
+function decodeSlice(bytes: Uint8Array, index: number, length: number, encoding: "utf8" | "gb18030") {
+  try {
+    return (encoding === "utf8" ? decodeUtf8(bytes.subarray(index, index + length)) : GB18030.decode(bytes.subarray(index, index + length))) as string
+  } catch {
+    return undefined
+  }
+}
+
+// Scan byte by byte, consuming one encoding sequence at a time. Where both encodings claim the
+// bytes (GBK two-byte pairs frequently shape legal UTF-8), decode both and keep the reading that
+// yields plausible CJK/ASCII text; when neither is stronger, `tieBreak` decides. This resolves the
+// classic UTF-8-head/GBK-body diaries without a global guess, and the remaining weak-character
+// share is capped by the caller's strength gate.
+function scanMixed(
+  bytes: Uint8Array,
+  tieBreak: "utf8" | "gb18030",
+): { text: string; strong: number; total: number } | undefined {
+  const parts: string[] = []
+  let strong = 0
+  let total = 0
+  let index = 0
+  while (index < bytes.length) {
+    const utf8Length = utf8LengthAt(bytes, index)
+    const gbLength = gbLengthAt(bytes, index)
+    let encoding: "utf8" | "gb18030" | "broken"
+    if (utf8Length === 0 && gbLength === 0) encoding = "broken"
+    else if (utf8Length === 0) encoding = "gb18030"
+    else if (gbLength === 0 || utf8Length === 1) encoding = "utf8"
+    else {
+      const utf8Text = decodeSlice(bytes, index, utf8Length, "utf8")
+      const gbText = decodeSlice(bytes, index, gbLength, "gb18030")
+      if (gbText === undefined && utf8Text === undefined) encoding = "broken"
+      else if (gbText === undefined) encoding = "utf8"
+      else if (utf8Text === undefined) encoding = "gb18030"
+      else {
+        const utf8Strong = [...utf8Text].every((char) => classify(char.codePointAt(0)!))
+        const gbStrong = [...gbText].every((char) => classify(char.codePointAt(0)!))
+        encoding = utf8Strong === gbStrong ? tieBreak : utf8Strong ? "utf8" : "gb18030"
+      }
+    }
+    // Interrupted legacy writes leave a few truncated sequences (a GB lead before a newline).
+    // Mark them with U+FFFD — the standard "damaged byte" reading — instead of rejecting the
+    // whole diary; the strength gate below still rejects files that are mostly damaged.
+    if (encoding === "broken") {
+      parts.push("\uFFFD")
+      total++
+      index++
+      continue
+    }
+    const length = encoding === "utf8" ? utf8Length : gbLength
+    const text = decodeSlice(bytes, index, length, encoding)
+    if (text === undefined) {
+      parts.push("\uFFFD")
+      total++
+      index += Math.max(length, 1)
+      continue
+    }
+    for (const char of text) {
+      total++
+      if (classify(char.codePointAt(0)!)) strong++
+    }
+    parts.push(text)
+    index += length
+  }
+  if (total === 0) return undefined
+  return { text: parts.join(""), strong, total }
+}
+
+export function transcodeMixed(bytes: Uint8Array): Uint8Array | undefined {
+  const candidates = [scanMixed(bytes, "utf8"), scanMixed(bytes, "gb18030")].filter(
+    (value): value is { text: string; strong: number; total: number } => value !== undefined,
+  )
+  // 95% strong characters: real diaries decode almost entirely into plausible text, while a wrong
+  // encoding choice floods the output with Latin/Greek mojibake. Prefer the UTF-8 head on ties.
+  const best = candidates
+    .filter((value) => value.strong / value.total >= 0.95)
+    .sort((a, b) => b.strong / b.total - a.strong / a.total)[0]
+  if (!best) return undefined
+  return new TextEncoder().encode(best.text)
 }
 
 export function safePath(value: string) {
@@ -197,16 +345,28 @@ async function collect(entries: Entry[], census: SourceCensus = emptyCensus()): 
       throw new CompanionInvalidInput({ message: `Personal source size changed while reading: ${entry.path}` })
     const text = /\.(md|txt|json|html)(?:\.[^/]*)?$/i.test(entry.path)
     let verified: SourceFile["encoding"] = text ? "utf8" : "binary"
+    let stored: Uint8Array = bytes
+    let original: Uint8Array | undefined
     if (text) {
       try {
         decode(bytes, entry.path)
         verified = "utf8"
       } catch {
-        warnings.push(`Non-UTF-8 source preserved; excluded from automatic recall until repaired: ${entry.path}`)
-        verified = "unknown"
+        const repaired = transcodeMixed(bytes)
+        if (repaired) {
+          // The active copy becomes a faithful UTF-8 transcode; source bytes and the manifest hash
+          // keep the original so repeat imports of the same archive still match.
+          warnings.push(`Mixed-encoding source transcoded to UTF-8 for recall; original bytes preserved: ${entry.path}`)
+          verified = "transcoded"
+          stored = repaired
+          original = bytes
+        } else {
+          warnings.push(`Non-UTF-8 source preserved; excluded from automatic recall until repaired: ${entry.path}`)
+          verified = "unknown"
+        }
       }
     }
-    files.push({ path: entry.path, bytes, hash: digest(bytes), text, encoding: verified })
+    files.push({ path: entry.path, bytes: stored, original, hash: digest(bytes), text, encoding: verified })
   }
   warnings.push(
     "Legacy AGENTS.md and skills are preserved as sources only. Heartbeat, scheduled tasks, channels and voice are not activated by importing.",

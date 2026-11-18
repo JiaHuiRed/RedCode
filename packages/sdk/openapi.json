@@ -25978,6 +25978,9 @@
           "userName": {
             "type": "string"
           },
+          "avatar": {
+            "type": "string"
+          },
           "paths": {
             "type": "object",
             "properties": {

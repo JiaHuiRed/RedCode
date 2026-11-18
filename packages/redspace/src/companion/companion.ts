@@ -142,14 +142,19 @@ export const layer = Layer.effect(
       const profile = yield* requireProfile(id)
       const soul = yield* souls.details(profile.soulID)
       if (!soul) return yield* new CompanionIO({ message: `The companion's Soul is unavailable: ${profile.soulID}` })
-      const [user, identity] = yield* io(() =>
-        Promise.all([profileText(profile.directory, "USER.md"), profileText(profile.directory, "IDENTITY.md")]),
+      const [user, identity, avatar] = yield* io(() =>
+        Promise.all([
+          profileText(profile.directory, "USER.md"),
+          profileText(profile.directory, "IDENTITY.md"),
+          avatarDataURL(profile.directory),
+        ]),
       )
       return new Details({
         profile,
         user,
         companionName: profileField(identity, "companion-name").value,
         userName: profileField(user, "preferred-name").value,
+        ...(avatar === undefined ? {} : { avatar }),
         paths: {
           directory: profile.directory,
           user: path.join(profile.directory, "USER.md"),
@@ -360,7 +365,7 @@ export const layer = Layer.effect(
               for (const file of archive.files) {
                 const original = path.join(staging, "source", file.path)
                 await fs.mkdir(path.dirname(original), { recursive: true, mode: 0o700 })
-                await fs.writeFile(original, file.bytes, { flag: "wx", mode: 0o600 })
+                await fs.writeFile(original, file.original ?? file.bytes, { flag: "wx", mode: 0o600 })
                 // Legacy AGENTS and installed skills are sources, never automatically activated in Chat.
                 if (!activeFile(file.path)) continue
                 const target = path.join(staging, file.path)
@@ -780,6 +785,24 @@ async function profileText(root: string, file: "USER.md" | "IDENTITY.md") {
   return decode(await fs.readFile(target), file)
 }
 
+// Imported workspaces can carry an avatar image beside the Markdown sources (same pattern activeFile
+// matches). Details exposes it raw so the client can adopt it through its own bounded pipeline.
+async function avatarDataURL(root: string) {
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+  const name = entries
+    .filter((entry) => entry.isFile() && /avatar.*\.(png|jpe?g|webp)$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort()[0]
+  if (!name) return undefined
+  const target = path.join(root, name)
+  const stat = await fs.lstat(target).catch(() => undefined)
+  if (!stat?.isFile() || stat.size > Limits.avatar) return undefined
+  await containedPath(root, target)
+  const bytes = await fs.readFile(target)
+  const mime = /\.png$/i.test(name) ? "image/png" : /\.jpe?g$/i.test(name) ? "image/jpeg" : "image/webp"
+  return `data:${mime};base64,${bytes.toString("base64")}`
+}
+
 async function readJSON(file: string): Promise<unknown | undefined> {
   const bytes = await fs.readFile(file).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined
@@ -812,8 +835,9 @@ function identityOf(raw: Record<string, unknown>, profile: Info) {
   return digest(`${agentID}:${profile.name}`)
 }
 
-// Re-import adds derived transcripts, never replaces a living diary or pinned identity.
-// docs/notes/implemented/feature/2026-11-17-companion-transcript-import.md
+// Re-import adds derived transcripts and encoding repairs, never replaces a living diary or
+// pinned identity. docs/notes/implemented/feature/2026-11-17-companion-transcript-import.md
+// and docs/notes/implemented/feature/2026-11-19-companion-transcode-avatar.md
 async function appendHistory(root: string, id: string, archive: Archive) {
   const target = path.join(root, id)
   await using lease = await Flock.acquire("history-import", { dir: path.join(target, ".locks"), timeoutMs: 10_000 })
@@ -823,12 +847,16 @@ async function appendHistory(root: string, id: string, archive: Archive) {
       message: "The personal archive changed during history import. Existing memories were not replaced.",
     })
   const histories = archive.files.filter((file) => file.path.startsWith("workspace/history/openclaw-"))
-  if (previous.historyDigest === archive.historyDigest || !histories.length)
+  // Mixed-encoding repair: the workspace still holds the excluded original bytes; overwrite them
+  // with the faithful transcode only when the on-disk file still matches the recorded source hash.
+  const repairs = archive.files.filter((file) => file.encoding === "transcoded")
+  if ((previous.historyDigest === archive.historyDigest || !histories.length) && !repairs.length)
     return new ImportResult({ profile: previous.profile, imported: false, coverage: archive.coverage })
-  const files = Schema.decodeUnknownSync(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))(
+  let files = Schema.decodeUnknownSync(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))(
     previous.raw.files ?? [],
   )
   const known = new Set(files.map((file) => file.path))
+  const warnings: string[] = []
   for (const file of histories) {
     for (const destination of [path.join(target, "source", file.path), path.join(target, file.path)]) {
       await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 })
@@ -844,11 +872,35 @@ async function appendHistory(root: string, id: string, archive: Archive) {
       if (saved === undefined) await fs.writeFile(destination, file.bytes, { flag: "wx", mode: 0o600 })
     }
   }
+  let repaired = 0
+  for (const file of repairs) {
+    const destination = path.join(target, file.path)
+    await containedPath(target, path.dirname(destination))
+    const saved = await fs.readFile(destination).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined
+      throw error
+    })
+    if (saved !== undefined && digest(saved) !== file.hash) {
+      warnings.push(`Transcoded source ${file.path} was already modified locally; the local copy was kept.`)
+      continue
+    }
+    // The lock serializes imports; "w" overwrites the still-original excluded copy after the hash check.
+    await fs.writeFile(destination, file.bytes, { flag: saved === undefined ? "wx" : "w", mode: 0o600 })
+    repaired++
+    const recordedIndex = files.findIndex((entry) => entry["path"] === file.path)
+    if (recordedIndex >= 0)
+      files = files.map((entry, position) =>
+        position === recordedIndex ? { ...entry, bytes: file.bytes.byteLength, encoding: "transcoded" } : entry,
+      )
+  }
   const added = histories.filter((file) => !known.has(file.path))
+  if (!added.length && !repaired)
+    // Nothing was written: keep the stored profile untouched, including its warnings.
+    return new ImportResult({ profile: previous.profile, imported: false, coverage: archive.coverage })
   const profile = new Info({
     ...previous.profile,
     files: previous.profile.files + added.length,
-    warnings: archive.warnings,
+    warnings: [...archive.warnings, ...warnings],
   })
   const pending = path.join(target, `profile.${randomUUID()}.tmp`)
   await fs.writeFile(

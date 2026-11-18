@@ -923,4 +923,52 @@ describe("companion archive", () => {
       }),
     ),
   )
+
+  it.live(
+    "transcodes mixed UTF-8/GBK diaries faithfully and exposes the workspace avatar",
+    setup((value) =>
+      Effect.gen(function* () {
+        // Legacy Windows diaries mix a UTF-8 head with a GBK body and leave truncated writes.
+        const mixed = Buffer.concat([
+          Buffer.from("# 2026-01-05 日记\n\n## 晚间总结\n\n", "utf8"),
+          Buffer.from(
+            "2d20cdeab3c9c1cb205265644d6f6e20d3cecfb7cfeec4bf0a2d20c3f7ccecd2aabcecb2e9d6d0cec4c3fbd7d6b5c4cbd1cbf70a",
+            "hex",
+          ),
+          Buffer.from([0x92]),
+          Buffer.from("\n- 晚安\n", "utf8"),
+        ])
+        const avatar = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])
+        yield* Effect.promise(async () => {
+          await fs.writeFile(path.join(value.source, "workspace", "memory", "2026-01-05.md"), mixed)
+          await fs.writeFile(path.join(value.source, "workspace", "qiuqiu-avatar.jpg"), avatar)
+        })
+        const service = yield* Companion.Service
+        yield* service.importArchive({ source: value.source, id: "maple" })
+        // The active diary is searchable through its transcoded GBK body text.
+        const found = yield* service.search({ id: "maple", query: "晚间总结" })
+        expect(found.results.some((result) => result.path === "memory/2026-01-05.md")).toBe(true)
+        // The source copy keeps the original bytes; the manifest records the original hash.
+        const preserved = yield* Effect.promise(() =>
+          fs.readFile(path.join(value.root, "maple", "source", "workspace", "memory", "2026-01-05.md")),
+        )
+        expect(Buffer.compare(preserved, mixed)).toBe(0)
+        const manifest = yield* Effect.promise(() =>
+          Bun.file(path.join(value.root, "maple", "profile.json"))
+            .text()
+            .then(JSON.parse),
+        )
+        const recorded = manifest.files.find((file: { path: string }) => file.path === "workspace/memory/2026-01-05.md")
+        expect(recorded.encoding).toBe("transcoded")
+        // Details exposes the raw avatar for the client's bounded adoption pipeline.
+        const details = yield* service.details("maple")
+        expect(details.avatar).toBe(`data:image/jpeg;base64,${avatar.toString("base64")}`)
+        // A repeat import of the same archive stays idempotent and keeps the diary searchable.
+        const repeated = yield* service.importArchive({ source: value.source, id: "maple" })
+        expect(repeated.imported).toBe(false)
+        const again = yield* service.search({ id: "maple", query: "晚间总结" })
+        expect(again.results.length).toBeGreaterThan(0)
+      }),
+    ),
+  )
 })

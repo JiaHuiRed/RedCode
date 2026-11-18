@@ -293,6 +293,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
 
     return {
       ready,
+      mediaReady,
       get current() {
         return store
       },
@@ -488,6 +489,11 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
         soulAvatar(id: string | undefined) {
           return readSoulAvatar(media, id)
+        },
+        // Distinguishes "never set" (an imported avatar may still be adopted) from an explicit
+        // removal, which soulAvatar's empty-string return cannot express on its own.
+        hasSoulAvatar(id: string | undefined) {
+          return id !== undefined && Object.hasOwn(media.soulAvatars ?? {}, id)
         },
         setSoulAvatar(id: string, value: string) {
           if (!/^[a-z0-9][a-z0-9_-]*$/.test(id) || ["__proto__", "constructor", "prototype"].includes(id))
