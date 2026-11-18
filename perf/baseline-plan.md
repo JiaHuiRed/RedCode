@@ -33,7 +33,7 @@ E3 = 待现场验收：真实 Windows、Electron、用户本机配置、真实�
 
 - 启动基准：`bun run bench:startup -- --mode cli|server [--runs N] [--warmup N]`（`package.json:19`）。默认配置来自 `parseBudgetConfig` 的 `startup` 段；环境变量强制隔离 `REDCODE_TEST_HOME` / `REDCODE_CONFIG_DIR` / `REDCODE_DB` / `REDCODE_PURE` / `REDCODE_DISABLE_MODELS_FETCH`，不碰用户数据。
 - 测试套件耗时：`packages/redspace` 的 `bench:test` / `profile:test`，方法与边界见 `perf/test-suite.md`（**注意该文档路径仍写 `packages/opencode`，属 F-10 命名债，待统一改名**）。
-- 生产路径预算：`packages/redspace` 的 `bench:budget`，128 与 2612 条会话、median + 放大比 + 内存增长，超预算非零退出；不读用户库/网络。
+- 生产路径预算：`packages/redspace` 的 `bench:budget`，有效摘要与空摘要两组、各 128 与 2612 条会话，先硬断言返回条数与折叠边界，再取 median + 放大比 + 内存增长，超预算非零退出；不读用户库/网络。
 - GUI 诊断：`packages/app/src/context/gui-diagnostics.ts`。默认关闭（关闭时 `record()` 只做一次布尔判断），录制由用户显式开启；环形缓冲有 `maxRecords=2000` / `maxBytes=512KiB` 上限；导出含 `durations` 的 min/max/avg/p50/p95。事件时间用 `performance.now()`，字符串经过脱敏与匿名 key，导出前仍需人工预览。
 - GUI 埋点位置：`timeline.message-read` / `group-build` / `merge` / `measure` 在 `packages/app/src/pages/session/message-timeline.tsx`（429、610、646 行附近）；`ui.input` / `ui.session.transition` / `sse.flush` / `renderer.longtask` 等类型定义见 `gui-diagnostics.ts:18-34`。
 - sidecar 启动：`packages/desktop/src/main/index.ts:817` 的 `[timing] sidecar ready` 日志。
@@ -61,18 +61,31 @@ E3 = 待现场验收：真实 Windows、Electron、用户本机配置、真实�
 
 ### A 组 · 生产路径预算 `bench:budget`（2026-11-18，本机 Windows / Bun 1.3.14）
 
-命令：`cd packages/redspace && bun run bench:budget`（隔离临时 DB，不读用户库/网络）。自检 3/3 通过；连跑两次结果稳定。
+命令：`cd packages/redspace && bun run bench:budget`（隔离临时 DB，不读用户库/网络）。自检 3/3 通过。
 
-| METRIC | run 1 | run 2 | 预算 | 结论 |
-|---|---|---|---|---|
-| `filter_compacted_small_median_ms`（128 条） | 5.16 | 5.21 | — | 基线 |
-| `filter_compacted_large_median_ms`（2612 条） | 59.41 | 63.21 | ≤50 | **超限** |
-| `filter_compacted_scaling_ratio` | 11.51 | 12.13 | ≤6 | **超限** |
-| `filter_compacted_large_memory_growth_bytes` | — | 15244 | ≤16777216 | 通过（≈15KB） |
+基准分两组，先做条数与边界硬断言，再预热 2 次、测量 5 次取中位数：
 
-原始逐轮（run 2）：small 5.65 / 5.71 / 4.87 / 5.21 / 5.21 ms；large 63.68 / 63.21 / 63.81 / 60.63 / 59.34 ms。命令退出码 1（预算违规），**不是**测量失败。
+- **有效摘要**：摘要助手消息带非空 `text` part，`filterCompactedEffect` 按 `tail_start_id` 折叠历史，两个样本都应返回 72 条（压缩触发 + 摘要 + 保留尾重排）。
+- **空摘要**：摘要助手消息没有正文，生产代码保留全部原文（失败保护路径），应返回 128 / 2,612 条。
 
-**定位：待调查信号，不是已定论的回归。** 两次都超、且放大比 ~12× 远超 6×，说明 128→2612 条的耗时增长超出线性预算；但这是 `bench:budget` 首次在本机采集，没有历史基线可比，也无法排除本机负载/文件缓存波动。下一步应在稳定环境多轮复测，再决定是否要查 `filterCompactedEffect` 的算法复杂度；在拿到重复数据前不据此改代码，也不把 A 组"通过"写死。
+| METRIC | 2026-11-18（一轮完整输出） | 预算 | 结论 |
+|---|---|---|---|
+| `filter_compacted_small_median_ms`（128 条，有效摘要，返回 72） | 9.12 | — | 基线 |
+| `filter_compacted_large_median_ms`（2612 条，有效摘要，返回 72） | 6.76 | ≤50 | 通过 |
+| `filter_compacted_scaling_ratio` | 0.74 | ≤6 | 通过 |
+| `filter_compacted_large_memory_growth_bytes` | 459 | ≤16777216 | 通过（≈0.45 KiB） |
+| `filter_compacted_empty_small_median_ms`（128 条，空摘要，返回 128） | 7.91 | — | 基线 |
+| `filter_compacted_empty_large_median_ms`（2612 条，空摘要，返回 2612） | 135.50 | ≤600 | 通过（只防数量级退化） |
+| `filter_compacted_empty_scaling_ratio` | 17.13 | — | 只记录 |
+| `filter_compacted_empty_large_memory_growth_bytes` | 3192065 | — | 只记录（≈3.05 MiB） |
+
+多次复测（同日，5 轮）：有效组 large 6.5–9.4 ms、放大比 0.74–1.12；空摘要组 large 130–175 ms、放大比 12–17.5。有效组的两个样本返回条数相同，耗时差异落在噪声内，放大比因此可以小于 1——这说明折叠路径在当前构造下是常数级。
+
+**旧数据口径更正。** 本节此前记录的 59.41 / 63.21 ms 与 11.51 / 12.13 放大比来自空摘要构造（摘要消息没有 `text` part），测的是「保留全部原文」的全量回读路径，不是折叠路径，也不是 `filterCompactedEffect` 的算法回归。同口径当日复测落在 130–175 ms，说明那两次 59–63 ms 属文件缓存与机器负载窗口，不能与固定前缀路径混谈。
+
+**空摘要预算的边界。** 600 ms 是灾难守卫（本机区间的约 4 倍），只用于发现数量级退化，不用于跨机器比较——机器负载、OS 文件缓存和同一进程内前序测量留下的堆状态都会改变这个绝对值。若未来挂入 CI，先按目标机器重定阈值再启用。
+
+**结论：** A 组由「待调查信号」转为「两条路径各有基线」。折叠路径（有效摘要）有可解释的绝对耗时与内存数字，预算有余量；空摘要路径的数字单独记录，不再与折叠路径共用一个条数断言。
 
 ### B 组（E3 真机）
 
