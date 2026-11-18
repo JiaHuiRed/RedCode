@@ -99,23 +99,10 @@ export const companionContinuity = Effect.fn("Session.companionContinuity")(func
     )
     if (previous) {
       const messages = yield* input.sessions.messages({ sessionID: previous.id, limit: 8 })
-      const savedTurns = new Set(
-        messages.flatMap((m) =>
-          m.info.role === "assistant" &&
-          m.parts.some(
-            (part) =>
-              part.type === "tool" &&
-              part.tool === "companion_memory" &&
-              part.state.status === "completed" &&
-              ["remember", "retain"].includes(String(part.state.input.action)),
-          )
-            ? [m.info.parentID]
-            : [],
-        ),
-      )
+      // 261118 Red 保存一句不等于整轮都覆盖：只 retain 偏好时整轮排除会把同一句里
+      // 没入档的经历一起丢掉。允许短引文与长期记忆重叠，也别让没保存的原话消失。
       const recent = messages
         .flatMap((m) => {
-          if (savedTurns.has(m.info.role === "user" ? m.info.id : m.info.parentID)) return []
           if (m.info.role === "assistant" && (m.info.summary || m.info.error || !m.info.time.completed)) return []
           if (m.info.role === "user" && ["queued", "pending_steer"].includes(m.info.delivery ?? "")) return []
           const line = spoken(m)

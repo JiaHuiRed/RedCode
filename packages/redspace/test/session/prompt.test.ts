@@ -886,6 +886,85 @@ it.live("native companion carries a short ordinary chat into a new session and k
   }),
 )
 
+it.live("companion continuity keeps the half of a turn that a memory call did not save", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const { profile } = yield* companions.initialize()
+      yield* ensureDir(path.join(profile.directory, ".git"))
+      yield* writeConfig(profile.directory, providerCfg(llm.url))
+      yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const preference = "我偏爱下雨天。"
+        const tale = "今天排到我时，最后一个蛋挞刚卖掉。"
+        const original = "---\ntitle: 伙伴手记\n---\n"
+        yield* writeText(path.join(profile.directory, "MEMORY.md"), original + "旧记忆原文。")
+
+        // 只 retain 一句偏好：同一句里的蛋挞经历没入档，下次见面仍要接得上。
+        const raining = yield* sessions.create({ title: "Rainy afternoon", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(raining.id).pipe(Effect.orDie))
+        yield* llm.tool("companion_memory", { action: "retain", text: preference })
+        yield* llm.text("雨天配蛋挞，听着都不错。")
+        yield* prompt.prompt({ sessionID: raining.id, model: ref, parts: [{ type: "text", text: preference + tale }] })
+
+        const back = yield* sessions.create({ title: "Rainy afternoon again", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(back.id).pipe(Effect.orDie))
+        yield* llm.text("今天总算买到了。")
+        yield* prompt.prompt({ sessionID: back.id, model: ref, parts: [{ type: "text", text: "今天总算买到了。" }] })
+        const followUp = (yield* llm.inputs).at(-1)!
+        expect(JSON.stringify((followUp.messages as unknown[])[0])).toContain(preference)
+        expect(JSON.stringify(followUp.messages)).toContain(tale)
+        const retained = (yield* companions.read({ id: profile.id, path: "MEMORY.md" })).text
+        expect(retained.startsWith(original)).toBe(true)
+        expect(retained).toContain(preference)
+        expect(retained).not.toContain(tale)
+
+        // 只 remember 其中一件：另一件靠临时召回带回，召回本身不写新日记。
+        const evening = yield* sessions.create({ title: "Evening run", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(evening.id).pipe(Effect.orDie))
+        yield* llm.tool("companion_memory", { action: "remember", text: "用户偏爱下雨天。" })
+        yield* llm.text("雨天配蛋挞，听着都不错。")
+        yield* prompt.prompt({ sessionID: evening.id, model: ref, parts: [{ type: "text", text: preference + tale }] })
+        // remember 写的是当天的日记，不是 MEMORY.md。
+        const diaryHit = (yield* companions.search({ id: profile.id, query: "用户偏爱下雨天" })).results[0]
+        expect(diaryHit?.text).toContain("用户偏爱下雨天")
+        const diaryBefore = (yield* companions.read({ id: profile.id, path: diaryHit!.path })).text
+        const filesBefore = (yield* companions.sources(profile.id)).filter((file) => file.startsWith("memory/"))
+
+        const morning = yield* sessions.create({ title: "Morning run", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(morning.id).pipe(Effect.orDie))
+        yield* llm.text("今天总算买到了。")
+        yield* prompt.prompt({ sessionID: morning.id, model: ref, parts: [{ type: "text", text: "今天总算买到了。" }] })
+        const resumed = (yield* llm.inputs).at(-1)!
+        expect(JSON.stringify(resumed.messages)).toContain(tale)
+        // 打开新会话和读取前情本身不写新日记。
+        expect((yield* companions.read({ id: profile.id, path: diaryHit!.path })).text).toBe(diaryBefore)
+        expect((yield* companions.sources(profile.id)).filter((file) => file.startsWith("memory/"))).toEqual(filesBefore)
+
+        // 禁用 session_query 时不自动附带上一会话原话；固定个人上下文照常加载。
+        const quiet = yield* sessions.create({ title: "Quiet morning", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(quiet.id).pipe(Effect.orDie))
+        yield* llm.text("今天总算买到了。")
+        yield* prompt.prompt({
+          sessionID: quiet.id,
+          model: ref,
+          tools: { session_query: false },
+          parts: [{ type: "text", text: "今天总算买到了。" }],
+        })
+        const withoutHistory = (yield* llm.inputs).at(-1)!
+        expect(JSON.stringify((withoutHistory.messages as unknown[])[0])).toContain(preference)
+        expect(JSON.stringify(withoutHistory.messages)).not.toContain(tale)
+      }).pipe(provideInstance(profile.directory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
+
 it.live("companion Chat recalls history, selectively saves a memory, and keeps Code separate", () =>
   Effect.gen(function* () {
     const directory = yield* tmpdirScoped()
@@ -987,7 +1066,9 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         const second = JSON.stringify((yield* llm.inputs)[4])
         expect(second).toContain("Our lantern now has a blue ribbon")
         expect(second).toContain("paper lantern")
-        expect(second).not.toContain("silver thread")
+        // 261118 Red 写过记忆的轮次不再整轮排除：同一轮里没入档的原话随召回段回来，
+        // 允许与长期记忆重叠（见 docs/notes/implemented/feature/2026-11-18-companion-continuity.md）。
+        expect(second).toContain("silver thread")
         const recalledHistory = (yield* llm.inputs)[5]
         expect(JSON.stringify(recalledHistory)).toContain("I chose silver thread for the handle")
         expect((recalledHistory.messages as unknown[])[0]).toEqual(((yield* llm.inputs)[4].messages as unknown[])[0])
