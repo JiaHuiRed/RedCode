@@ -21,6 +21,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { errorMessage } from "@/utils/session-helpers"
 import { composeCompanionUser, splitCompanionUser } from "@/utils/companion-profile"
 import { introductionState, upsertCompanion } from "@/utils/companion-workspace"
+import { CompanionDiary } from "./companion-diary"
 import { SoulAvatar } from "./soul-avatar"
 import { SettingsList, SettingsRow } from "./settings-list"
 import { SettingsSoulEditor, SettingsSourceActions } from "./settings-soul-editor"
@@ -384,6 +385,7 @@ export const SettingsChatCompanion: Component = () => {
           </section>
           <section class="flex flex-col gap-2">
             <h3 class="text-14-medium text-text-strong">{language.t("settings.companion.dailyMemory")}</h3>
+            <CompanionDiary directory={data.paths.directory} />
             <SettingsSourceActions path={`${data.paths.directory.replace(/[\\/]+$/, "")}/memory`} directory />
           </section>
         </div>

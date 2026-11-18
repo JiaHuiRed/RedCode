@@ -826,6 +826,66 @@ it.live("native Chat starts before setup and refreshes saved USER across model c
   }),
 )
 
+it.live("native companion carries a short ordinary chat into a new session and keeps only grounded preferences", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const { profile } = yield* companions.initialize()
+      yield* ensureDir(path.join(profile.directory, ".git"))
+      yield* writeConfig(profile.directory, providerCfg(llm.url))
+      yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const open = () => sessions.create({ title: "Tea break", mode: "chat", companionID: profile.id })
+        const first = yield* open()
+        yield* Effect.addFinalizer(() => sessions.remove(first.id).pipe(Effect.orDie))
+        yield* llm.text("那只差一个的蛋挞，听着都替你可惜。")
+        yield* prompt.prompt({ sessionID: first.id, model: ref, parts: [{ type: "text", text: "排到我时，最后一个蛋挞刚卖掉。" }] })
+        const empty = yield* open()
+        yield* Effect.addFinalizer(() => sessions.remove(empty.id).pipe(Effect.orDie))
+        const next = yield* open()
+        yield* Effect.addFinalizer(() => sessions.remove(next.id).pipe(Effect.orDie))
+        const preference = "我喜欢少糖的蛋挞。"
+        const original = "---\ntitle: 伙伴手记\n---\n"
+        yield* writeText(path.join(profile.directory, "MEMORY.md"), original + "旧记忆原文。")
+        yield* llm.tool("companion_memory", { action: "remember", text: "昨天差一个，今天终于买到了。" })
+        yield* llm.tool("companion_memory", { action: "retain", text: preference })
+        yield* llm.text("这回轮到你啦。")
+        yield* prompt.prompt({ sessionID: next.id, model: ref, parts: [{ type: "text", text: "今天总算买到了！" + preference }] })
+        const request = (yield* llm.inputs)[1]
+        const wire = JSON.stringify(request.messages)
+        expect(wire).toContain("最后一个蛋挞刚卖掉")
+        expect(JSON.stringify((request.messages as unknown[])[0])).not.toContain("最后一个蛋挞刚卖掉")
+        const longTerm = (yield* companions.read({ id: profile.id, path: "MEMORY.md" })).text
+        expect(longTerm.startsWith(original)).toBe(true)
+        expect(longTerm).toContain(preference)
+        expect(longTerm).toContain("旧记忆原文。")
+        expect((yield* companions.bootstrap(profile.id)).text).toContain("昨天差一个，今天终于买到了")
+        yield* llm.tool("companion_memory", { action: "retain", text: "我讨厌薄荷" })
+        yield* llm.text("下次再聊。")
+        yield* prompt.prompt({ sessionID: next.id, model: ref, parts: [{ type: "text", text: "回头聊。" }] })
+        expect((yield* companions.read({ id: profile.id, path: "MEMORY.md" })).text).not.toContain("薄荷")
+        const oldDiary = "雨巷唱片店只卖蓝色唱片。"
+        yield* writeText(path.join(profile.directory, "memory/2025-03-01.md"), oldDiary)
+        yield* llm.text("好。")
+        yield* prompt.prompt({ sessionID: next.id, model: ref, parts: [{ type: "text", text: "雨巷唱片店" }] })
+        const last = (yield* llm.inputs).at(-1)!
+        expect(JSON.stringify((last.messages as unknown[]).at(-1))).toContain(oldDiary)
+        expect(JSON.stringify((last.messages as unknown[])[0])).not.toContain(oldDiary)
+        yield* llm.text("好。")
+        yield* prompt.prompt({ sessionID: next.id, model: ref, tools: { companion_memory: false }, parts: [{ type: "text", text: "雨巷唱片店" }] })
+        const disabled = (yield* llm.inputs).at(-1)!
+        expect(JSON.stringify(disabled.messages)).not.toContain(oldDiary)
+      }).pipe(provideInstance(profile.directory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
+
 it.live("companion Chat recalls history, selectively saves a memory, and keeps Code separate", () =>
   Effect.gen(function* () {
     const directory = yield* tmpdirScoped()

@@ -250,3 +250,35 @@ function json(route: Route, body: unknown) {
     body: JSON.stringify(body),
   })
 }
+
+test("read a companion's latest diary and switch to an earlier date", async ({ page }) => {
+  const profile = {
+    id: "diary-friend", soulID: "diary-friend", name: "Luna", directory: fixture.directory,
+    createdAt: 1700000000000, files: 2, timezone: "UTC", warnings: [],
+  }
+  await mockRedCodeServer(page, { ...fixture, pageMessages: () => ({ items: [] }) })
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (url.pathname === "/companion") return json(route, [profile])
+    if (url.pathname === "/companion/diary-friend")
+      return json(route, { profile, paths: { directory: profile.directory, memory: profile.directory + "/MEMORY.md" } })
+    if (url.pathname === "/soul/diary-friend") return json(route, { id: profile.id, name: profile.name })
+    if (url.pathname === "/file" && url.searchParams.get("path") === "memory")
+      return json(route, ["2026-05-01.md", "2026-05-03.md"].map((name) => ({ type: "file", name })))
+    if (url.pathname === "/file/content") {
+      expect(url.searchParams.get("directory")).toBe(profile.directory)
+      const latest = url.searchParams.get("path") === "memory/2026-05-03.md"
+      return json(route, { type: "text", content: latest ? "An egg tart at last!" : "One place too late." })
+    }
+    return route.fallback()
+  })
+  await page.goto("/chat")
+  await page.getByRole("button", { name: "Companion settings" }).click()
+  await page.locator("section").filter({ has: page.getByRole("heading", { name: "Memory", exact: true }) })
+    .getByRole("button", { name: "View details" }).click()
+  const diary = page.locator('[data-component="companion-diary"]')
+  await expect(diary.getByText("An egg tart at last!")).toBeVisible()
+  await diary.locator("select").selectOption("2026-05-01.md")
+  await expect(diary.getByText("One place too late.")).toBeVisible()
+})
