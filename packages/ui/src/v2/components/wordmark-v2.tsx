@@ -60,10 +60,12 @@ export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { anim
   return (
     <span
       data-component="wordmark"
+      role="img"
+      aria-label="REDSPACE"
       style={{
         "font-family": "'Space Grotesk', sans-serif",
         "font-weight": 500,
-        "letter-spacing": "0.26em",
+        "letter-spacing": "var(--wordmark-tracking)",
         "white-space": "nowrap",
         "text-transform": "uppercase",
         display: "inline-block",
@@ -79,7 +81,23 @@ export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { anim
               ...(animated() ? { "animation-delay": `${letter.index * 40}ms` } : {}),
             }}
           >
-            {letter.char}
+            {letter.char === "A" ? (
+              // 261118 Red 用合并后的轮廓替代字体的重叠描边，避免横梁穿进斜腿。
+              <svg
+                class="wordmark-outline-glyph"
+                viewBox="0 0 67 76"
+                width="0.67em"
+                height="0.76em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                aria-hidden="true"
+              >
+                <path d="M2 74 26 2h15l24 72H52l-6.5-20h-24L15 74Z M24.5 44h18L33.5 15Z" />
+              </svg>
+            ) : (
+              letter.char
+            )}
           </span>
         )}
       </For>

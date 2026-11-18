@@ -5,6 +5,13 @@
 [data-component="wordmark"] {
   display: inline-block;
   position: relative;
+  --wordmark-tracking: 0.26em;
+}
+
+.wordmark-outline-glyph {
+  display: inline-block;
+  vertical-align: -0.015em;
+  margin-inline-end: var(--wordmark-tracking);
 }
 
 /* 逐字母升起。用 backwards 填充：动画结束后不保留最终帧，否则会压住后续的 transform。
