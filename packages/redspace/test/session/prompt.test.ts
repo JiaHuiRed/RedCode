@@ -1565,6 +1565,88 @@ itColdResume.instance("cold resume restores pinned message bytes instead of repl
   ),
 )
 
+// 261118 Red 冷恢复前缀契约（上游 codex#62071 的意图，不照搬 additional_tools 机制）：
+// 进程内缓存丢失、磁盘 pin 保留时，续接首请求的 system 段与工具定义必须与上一进程
+// 逐字节一致——磁盘 pin 优先于现算，工具描述升级也不该打穿既有前缀。
+type WireBody = {
+  messages: Array<Record<string, unknown>>
+  tools?: Array<{ function?: { name?: string; description?: string } }>
+}
+const wireBody = (hit: { body: Record<string, unknown> }) => hit.body as unknown as WireBody
+const toolDescription = (body: WireBody, name: string) =>
+  (body.tools ?? []).find((tool) => tool.function?.name === name)?.function?.description
+
+itColdResume.instance("cold resume keeps the pinned instruction and tool prefix intact", () =>
+  Effect.gen(function* () {
+    const pinDir = yield* Effect.promise(async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "redcode-pin-prefix-"))
+      process.env["REDCODE_PROMPT_PIN_DIR"] = dir
+      return dir
+    })
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "prefix contract" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "first question" }],
+    })
+    yield* llm.text("reply one")
+    yield* prompt.loop({ sessionID: chat.id })
+    yield* Effect.promise(() => PromptPin.flush())
+
+    const first = wireBody((yield* llm.hits)[0]!)
+    const name = (first.tools ?? [])[0]?.function?.name
+    expect(name).toBeDefined()
+
+    // 模拟新进程：进程内 tools/system/消息缓存全丢，磁盘 pin 保留。
+    PromptCaches.tools.delete(chat.id)
+    PromptCaches.system.delete(chat.id)
+    PromptCaches.msgPin.delete(chat.id)
+    PromptCaches.modelMsgs.delete(chat.id)
+
+    // 把 pin 里首个工具的描述改成标记值，模拟「磁盘上是上一进程钉住的旧定义」。
+    const pin = PromptPin.load(chat.id)!
+    PromptPin.save({
+      sessionID: chat.id,
+      tools: new Map([
+        [name!, { description: "PINNED-OLD-DEFINITION", inputSchema: pin.tools[name!]!.inputSchema }],
+      ]),
+      mcpGuide: pin.mcpGuide,
+      ...(pin.messages ? { messages: new Map(Object.entries(pin.messages)) } : {}),
+    })
+    yield* Effect.promise(() => PromptPin.flush())
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "second question" }],
+    })
+    yield* llm.text("reply two")
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const resumed = wireBody((yield* llm.hits).at(-1)!)
+    // 工具定义走磁盘 pin，不跟现算的新定义走。
+    expect(toolDescription(resumed, name!)).toBe("PINNED-OLD-DEFINITION")
+    expect(toolDescription(first, name!)).not.toBe("PINNED-OLD-DEFINITION")
+    // system 段与上一进程逐字节一致；历史只追加，不改既有条目。
+    expect(resumed.messages[0]).toEqual(first.messages[0])
+    expect(resumed.messages.slice(0, first.messages.length)).toEqual(first.messages)
+  }).pipe(
+    Effect.ensuring(
+      Effect.promise(async () => {
+        const dir = process.env["REDCODE_PROMPT_PIN_DIR"]
+        delete process.env["REDCODE_PROMPT_PIN_DIR"]
+        if (dir) await fs.rm(dir, { recursive: true, force: true })
+      }),
+    ),
+  ),
+)
+
 it.instance("reserved queued messages stay editable only after release", () =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
