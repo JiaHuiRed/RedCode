@@ -1,0 +1,15 @@
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  --font-family-sans: system-ui, sans-serif;
+  --font-size-small: 12px;
+  --font-size-large: 16px;
+  --font-size-x-large: 20px;
+  --v2-border-border-focus: #e84057;
+  --v2-border-border-base: #51202a;
+  --v2-background-bg-base: #fff7f3;
+  --surface-raised-stronger-non-alpha: #fff7f3;
+  --v2-text-text-base: #51202a;
+}

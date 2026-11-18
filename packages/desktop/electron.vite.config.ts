@@ -135,7 +135,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: "src/preload/index.ts" },
+        input: { index: "src/preload/index.ts", pet: "src/preload/pet.ts" },
         output: {
           format: "cjs",
           entryFileNames: "[name].js",
@@ -161,6 +161,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",
+          pet: "src/renderer/pet.html",
         },
       },
     },

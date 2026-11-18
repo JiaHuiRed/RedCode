@@ -166,6 +166,7 @@ const createPlatform = (): Platform => {
   return {
     platform: "desktop",
     os,
+    desktopPet: os === "windows" ? window.api.desktopPet : undefined,
     version: pkg.version,
 
     async openDirectoryPickerDialog(opts) {

@@ -2,6 +2,7 @@ import { createSimpleContext } from "@redcode-ai/ui/context"
 import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
 import type { DesktopMenuAction } from "../desktop-menu"
+import type { DesktopPetBridge } from "../pet/desktop-pet"
 import { ServerConnection } from "./server"
 
 type PickerPaths = string | string[] | null
@@ -124,6 +125,9 @@ export type Platform = {
   /** 桌面端 Network Service 子进程崩溃重启的次数（desktop only）。
       递增即代表本地请求刚被整批掐断，事件流需要立刻重建。 */
   networkServiceRestart?: Accessor<number>
+
+  /** Native desktop pet window bridge; absent means the inline GUI pet stays in charge (desktop only) */
+  desktopPet?: DesktopPetBridge
 
   /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
   getPinchZoomEnabled?(): Promise<boolean> | boolean

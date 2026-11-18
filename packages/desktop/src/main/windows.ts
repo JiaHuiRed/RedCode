@@ -8,7 +8,7 @@ import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { resolveExternalURL } from "./external-url"
 import { exportDebugLogs, write as writeLog, writeCrashReport, writeResourceSnapshot } from "./logging"
 import { allowRendererPermissions } from "./renderer-permissions"
-import { isTrustedRendererUrl, rendererHost, rendererProtocol } from "./renderer-url"
+import { isTrustedRendererUrl, rendererHost, rendererPage, rendererProtocol } from "./renderer-url"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
 
@@ -35,6 +35,7 @@ let relaunchHandler = () => {
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
+const mainWindows = new WeakSet<BrowserWindow>()
 const titlebarHeight = 40
 const maxZoomLevel = 10
 const minZoomLevel = 0.2
@@ -91,7 +92,7 @@ export function updateTitlebar(win: BrowserWindow) {
 
 export function setPinchZoomEnabled(enabled: boolean) {
   getStore().set(PINCH_ZOOM_ENABLED_KEY, enabled)
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of getMainWindows()) {
     pinchZoomEnabled.set(win, enabled)
     win.webContents.send("pinch-zoom-enabled-changed", enabled)
     if (!enabled && win.webContents.getZoomFactor() !== 1) win.webContents.setZoomFactor(1)
@@ -107,6 +108,10 @@ export function setDockIcon() {
   if (process.platform !== "darwin") return
   const icon = nativeImage.createFromPath(join(iconsDir(), "dock.png"))
   if (!icon.isEmpty()) app.dock?.setIcon(icon)
+}
+
+export function getMainWindows() {
+  return BrowserWindow.getAllWindows().filter((win) => mainWindows.has(win))
 }
 
 export function createMainWindow() {
@@ -151,7 +156,8 @@ export function createMainWindow() {
     },
   })
 
-  allowRendererPermissions(win.webContents.session, () => BrowserWindow.getAllWindows())
+  mainWindows.add(win)
+  allowRendererPermissions(win.webContents.session, getMainWindows)
   wireWindowRecovery(win, "main")
   wireNavigationPolicy(win)
 
@@ -162,7 +168,7 @@ export function createMainWindow() {
   })
 
   state.manage(win)
-  loadWindow(win, "index.html")
+  void win.loadURL(rendererPage("index.html"))
   wireZoom(win)
 
   win.once("ready-to-show", () => {
@@ -227,16 +233,6 @@ function wireNavigationPolicy(win: BrowserWindow) {
     event.preventDefault()
     openExternalURL(url)
   })
-}
-
-function loadWindow(win: BrowserWindow, html: string) {
-  const devUrl = process.env.ELECTRON_RENDERER_URL
-  if (devUrl) {
-    const url = new URL(html, devUrl)
-    void win.loadURL(url.toString())
-    return
-  }
-  void win.loadURL(`${rendererProtocol}://${rendererHost}/${html}`)
 }
 
 function wireWindowRecovery(win: BrowserWindow, name: string) {

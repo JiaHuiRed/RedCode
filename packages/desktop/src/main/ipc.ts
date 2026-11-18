@@ -4,6 +4,7 @@ import { join, resolve, sep } from "node:path"
 import { BrowserWindow, Notification, app, dialog, ipcMain as electronIpcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
+import type { DesktopPetSnapshot } from "@redcode-ai/app/desktop-pet"
 
 import type {
   InitStep,
@@ -23,8 +24,9 @@ import { getStore } from "./store"
 import { closeBrowserPreview, openHtmlPreview } from "./browser-preview"
 import type { UpdateCheckResult, UpdateInstallResult } from "./updater"
 import type { SidecarState } from "./sidecar-supervisor"
-import { getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
+import { getMainWindows, getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import { openPathChecked } from "./path-actions"
+import { closeDesktopPet, desktopPetHit, desktopPetReady, dragDesktopPet, isPetRenderer, updateDesktopPet } from "./pet-window"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -91,6 +93,24 @@ export function registerIpcHandlers(deps: Deps) {
       })
     },
   }
+
+  ipcMain.handle("desktop-pet:update", (event, snapshot: DesktopPetSnapshot | null) => {
+    const source = BrowserWindow.fromWebContents(event.sender)
+    if (!source || !getMainWindows().includes(source) || event.senderFrame !== event.sender.mainFrame) return false
+    return updateDesktopPet(source, snapshot)
+  })
+  const onPet = (name: string, handler: (payload: unknown) => void) =>
+    ipcMain.on(`desktop-pet:${name}`, (event, payload: unknown) => {
+      if (isPetRenderer(event.sender) && event.senderFrame === event.sender.mainFrame) handler(payload)
+    })
+  onPet("ready", desktopPetReady)
+  onPet("close", closeDesktopPet)
+  onPet("hit", (value) => {
+    if (typeof value === "boolean") desktopPetHit(value)
+  })
+  onPet("drag", (phase) => {
+    if (phase === "start" || phase === "move" || phase === "end" || phase === "cancel") dragDesktopPet(phase)
+  })
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   // 261021 Red 审计 RC21-06：自动恢复进入 failed 之后，界面上的显式重试走这条；
@@ -277,7 +297,7 @@ export function registerIpcHandlers(deps: Deps) {
     if (win && !win.isFocused()) win.flashFrame(flash !== false)
   })
 
-  ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)
+  ipcMain.handle("get-window-count", () => getMainWindows().length)
 
   ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -348,5 +368,5 @@ export function sendNetworkServiceRestart(win: BrowserWindow) {
 // 261021 Red 审计 RC21-06：恢复状态（starting / running / recovering / failed）发给所有窗口。
 //   failed 带原因，界面据此给终态与重试按钮；只传状态，不传环境或凭据。
 export function broadcastSidecarState(state: SidecarState) {
-  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sidecar-state", state)
+  for (const win of getMainWindows()) win.webContents.send("sidecar-state", state)
 }

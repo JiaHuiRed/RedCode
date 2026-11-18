@@ -278,6 +278,13 @@
   transform: scale(0.96);
 }
 
+/* 261118 Red 原生桌宠窗：渲染进程没有主界面 hover 上下文，关闭钮必须常驻可点
+   （命中检测也包含 .pet-layer-close，主进程据此临时取消穿透）。 */
+.pet-layer[data-native="true"] .pet-layer-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 @keyframes pet-breathe {
   0%,
   100% {

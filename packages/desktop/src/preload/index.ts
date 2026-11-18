@@ -3,6 +3,13 @@ import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 
 const api: ElectronAPI = {
   appVersion: process.env.npm_package_version ?? "unknown",
+  desktopPet: {
+    update: (snapshot) => ipcRenderer.invoke("desktop-pet:update", snapshot),
+    onClosed: (listener) => {
+      ipcRenderer.on("desktop-pet:closed", listener)
+      return () => ipcRenderer.removeListener("desktop-pet:closed", listener)
+    },
+  },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
+    "./desktop-pet": "./src/pet/pet-layer.tsx",
     "./vite": "./vite.js",
     "./pages/chat": "./src/pages/chat/index.tsx",
     "./index.css": "./src/index.css"

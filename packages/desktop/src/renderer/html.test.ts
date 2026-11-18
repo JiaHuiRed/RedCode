@@ -17,7 +17,7 @@ const html = async (name: string) => Bun.file(join(dir, name)).text()
  */
 describe("electron renderer html", () => {
   // 261106 Red loading.html 已随 loading-window 死 lane 一起删除（260901 起主窗内 Splash 取代）
-  for (const name of ["index.html"]) {
+  for (const name of ["index.html", "pet.html"]) {
     describe(name, () => {
       test("script src attributes use relative paths", async () => {
         const content = await html(name)

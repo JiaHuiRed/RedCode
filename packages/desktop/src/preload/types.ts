@@ -1,4 +1,5 @@
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
+import type { DesktopPetBridge } from "@redcode-ai/app/desktop-pet"
 import type { SidecarState } from "../main/sidecar-supervisor"
 import type { UpdateCheckResult, UpdateInstallResult } from "../main/updater"
 
@@ -56,6 +57,7 @@ export type FatalRendererError = {
 
 export type ElectronAPI = {
   appVersion: string
+  desktopPet: DesktopPetBridge
   killSidecar: () => Promise<void>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getWindowConfig: () => Promise<WindowConfig>

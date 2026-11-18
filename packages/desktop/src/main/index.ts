@@ -50,6 +50,7 @@ import { createSidecarSupervisor } from "./sidecar-supervisor"
 import { beginStaleSidecarSweep, forgetSidecarTree, killOrphanChildren, rememberSidecarTree } from "./sidecar-registry"
 import {
   createMainWindow,
+  getMainWindows,
   iconPath,
   registerRendererProtocol,
   setRelaunchHandler,
@@ -213,7 +214,7 @@ const deepLinks = createDeepLinkDelivery((urls) => {
   // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口；全无时丢弃本次
   //   投递（返回 false 让链接留在 pending，窗口重建后的 flush 会再投）——仓里没有
   //   重建主窗的先例，不引入
-  const win = mainWindow ?? BrowserWindow.getAllWindows()[0]
+  const win = mainWindow ?? getMainWindows()[0]
   if (!win) return false
   sendDeepLinks(win, urls)
   return true
@@ -604,7 +605,7 @@ const main = Effect.gen(function* () {
       emitDeepLinks(urls)
     }
     // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口
-    const win = mainWindow ?? BrowserWindow.getAllWindows()[0]
+    const win = mainWindow ?? getMainWindows()[0]
     if (win) {
       win.show()
       win.focus()
@@ -633,7 +634,7 @@ const main = Effect.gen(function* () {
     if (details.type !== "Utility" || details.serviceName !== "network.mojom.NetworkService") return
     // 260916 Red Network Service 崩溃渲染层是无感的（连接静默挂死，不报错），只能靠 90s 心跳超时
     //   才重连；这里立刻推一条通知，让渲染层主动拆掉旧事件流重建，把恢复时间从 90s 压到秒级。
-    for (const win of BrowserWindow.getAllWindows()) sendNetworkServiceRestart(win)
+    for (const win of getMainWindows()) sendNetworkServiceRestart(win)
   })
 
   app.on("render-process-gone", (_event, webContents, details) => {
@@ -875,7 +876,7 @@ const main = Effect.gen(function* () {
     createMenu({
       trigger: (id) => {
         // 261106 Red mainWindow 可能在 darwin 关窗后已销毁，回退到现存窗口
-        const win = BrowserWindow.getFocusedWindow() ?? mainWindow ?? BrowserWindow.getAllWindows()[0]
+    const win = getMainWindows().find((candidate) => candidate.isFocused()) ?? mainWindow ?? getMainWindows()[0]
         if (win) sendMenuCommand(win, id)
       },
       checkForUpdates: () => {
