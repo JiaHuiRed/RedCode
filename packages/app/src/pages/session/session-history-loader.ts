@@ -206,15 +206,19 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     return target < anchor ? ("older" as const) : ("newer" as const)
   }
 
-  const walkUntil = async (id: string, arrived: () => boolean, direction: Direction) => {
+  // 261118 Red 远跳与普通分页共用同一归属判据。旧实现只比会话 id：A→B→A 时迟到的
+  // 请求在切回 A 之后会重新被认成当前操作，继续翻页并参与定位/shift 收尾。
+  const walkUntil = async (id: string, arrived: () => boolean, direction: Direction, gen: number) => {
+    const owned = () => input.sessionID() === id && generation === gen
     let boundary = pageBoundary(direction)
     let stalls = 0
     for (let page = 0; page < MAX_JUMP_PAGES; page++) {
+      if (!owned()) return false
       if (arrived()) return true
       if (!hasMore(direction)) return false
 
       await loadPage(id, direction)
-      if (input.sessionID() !== id) return false
+      if (!owned()) return false
 
       const nextBoundary = pageBoundary(direction)
       if (nextBoundary !== boundary) {
@@ -225,17 +229,18 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       if (++stalls > MAX_STALLS) return false
       await new Promise((resolve) => setTimeout(resolve, STALL_WAIT_MS))
     }
-    return arrived()
+    return owned() && arrived()
   }
 
-  const walk = (id: string, messageID: string, direction: Direction) =>
-    walkUntil(id, () => input.visibleUserMessages().some((message) => message.id === messageID), direction)
+  const walk = (id: string, messageID: string, direction: Direction, gen: number) =>
+    walkUntil(id, () => input.visibleUserMessages().some((message) => message.id === messageID), direction, gen)
 
   const loadThrough = async (messageID: string) => {
     const id = input.sessionID()
     if (!id) return false
     if (input.visibleUserMessages().some((message) => message.id === messageID)) return true
 
+    const gen = generation
     cancelShiftReset()
     setState("shift", true)
     // 260926 Red 多页远跳期间先冻结时间线投影，所有页面仍正常进入同步 store；目标进窗后
@@ -246,15 +251,15 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     setState("stagedHistory", { sessionID: id, token, messages: input.visibleUserMessages() })
     try {
       const preferred = directionOf(messageID)
-      if (preferred !== "newer" && (await walk(id, messageID, "older"))) return true
-      if (preferred !== "older" && (await walk(id, messageID, "newer"))) return true
+      if (preferred !== "newer" && (await walk(id, messageID, "older", gen))) return true
+      if (preferred !== "older" && (await walk(id, messageID, "newer", gen))) return true
       return false
     } catch {
       // 260918 Red 跳转途中拉页失败：当作"够不到"返回 false，别把 rejection 冒给 void 调用方变 uncaught。
       return false
     } finally {
       if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
-      if (input.sessionID() === id) scheduleShiftReset()
+      if (input.sessionID() === id && generation === gen) scheduleShiftReset()
     }
   }
 
@@ -313,6 +318,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     if (!id) return undefined
     if (loadedMessages().some((message) => message.id === target.messageID)) return userTurnFor(target)
 
+    const gen = generation
     cancelShiftReset()
     setState("shift", true)
     const token = Symbol()
@@ -320,15 +326,15 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     try {
       const arrived = () => loadedMessages().some((message) => message.id === target.messageID)
       const preferred = targetDirection(target)
-      if (preferred !== "newer" && (await walkUntil(id, arrived, "older"))) return userTurnFor(target)
-      if (preferred !== "older" && (await walkUntil(id, arrived, "newer"))) return userTurnFor(target)
+      if (preferred !== "newer" && (await walkUntil(id, arrived, "older", gen))) return userTurnFor(target)
+      if (preferred !== "older" && (await walkUntil(id, arrived, "newer", gen))) return userTurnFor(target)
       return undefined
     } catch {
       // 与 loadThrough 同口径：拉页失败当作够不到，由调用方提示。
       return undefined
     } finally {
       if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
-      if (input.sessionID() === id) scheduleShiftReset()
+      if (input.sessionID() === id && generation === gen) scheduleShiftReset()
     }
   }
 

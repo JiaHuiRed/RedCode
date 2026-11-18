@@ -291,6 +291,60 @@ describe("createSessionHistoryLoader", () => {
     ctx.dispose()
   })
 
+  // 261118 Red 远跳（loadThrough）此前只比 sessionID：A→B→A 之后，迟到的翻页会重新被
+  //   认成当前操作，继续往两个方向各翻到 MAX_STALLS 才停手。归属判据必须与普通分页同宽。
+  test("an in-flight jump from an earlier visit to the same session stops paging", async () => {
+    const pending = gate()
+    let first = true
+    const ctx = setup(async () => {
+      if (!first) return
+      first = false
+      pending.enter()
+      await pending.pending
+    })
+    ctx.setMessages([message("current")])
+
+    const jump = ctx.loader.loadThrough("target")
+    await pending.entered
+    // A→B→A：id 回到原值，只有代次能区分这是同一次访问还是新一次。
+    ctx.setSessionID("ses_next")
+    await tick()
+    ctx.setSessionID("ses_test")
+    await tick()
+
+    pending.release()
+    expect(await jump).toBe(false)
+    // 修复前两个方向会各自翻到 MAX_STALLS；修复后第二个方向在入口就被代次拦下，
+    // 只有被卡住的那一次真的发出去了。
+    expect(ctx.count()).toBe(1)
+    ctx.dispose()
+  })
+
+  // 261118 Red locateTarget 是独立入口，同样要走代次归属。
+  test("an in-flight locate from an earlier visit to the same session stops paging", async () => {
+    const pending = gate()
+    let first = true
+    const ctx = setup(async () => {
+      if (!first) return
+      first = false
+      pending.enter()
+      await pending.pending
+    })
+    ctx.setMessages([message("current", 10)])
+
+    const locate = ctx.loader.locateTarget({ messageID: "target", createdAt: 10 })
+    await pending.entered
+    ctx.setSessionID("ses_next")
+    await tick()
+    ctx.setSessionID("ses_test")
+    await tick()
+
+    pending.release()
+    expect(await locate).toBeUndefined()
+    expect(ctx.count()).toBe(1)
+    ctx.dispose()
+  })
+
   // 261021 Red 审计 RC21-03 回归锁：切走之后迟到的失败不能把新会话钉在 stalled 上。
   test("an older-page failure from a previous session does not stall the next session", async () => {
     const pending = gate()
