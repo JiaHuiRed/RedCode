@@ -8,7 +8,25 @@
 
 ---
 
-### [Unreleased]
+### [0.19.3] - 2026-11-18
+
+- **缓存字段归因与 6.2 实测**：`request-evidence` 接入服务端 `usage.attribution.request_fields.instructions`，派生「本轮未读缓存 / 顶层指令未命中 / 尚未归因」三个数值；AI SDK 与 native 两条路径共用同一投影，字段缺失显示未知而不是 0。同日在 `gpt-6.2-sol` 与 `gpt-6.2-astra` 各跑两轮低推理请求：两模型 `instructions` 均为 21.7k 全未命中，Sol 第二轮其它部分命中 12,800，Astra 第二轮为 0；样本仅两轮，结论限定为「顶层指令是本次缺口主体」。诊断只读数值，不改变请求形状与缓存行为。详见 [归因诊断](docs/notes/implemented/feature/2026-11-18-cache-attribution-diagnostics.md) 与 [增量工具声明提案](docs/notes/proposed/feature/2026-11-18-incremental-tool-declarations.md)（提案原「tools 不缓存」结论已按实测修正）。
+
+- **会话列表同毫秒分页**：`/experimental/session` 的游标改为与排序键同宽的 `updated:id`，修复同一毫秒的多条会话跨页被整批跳过；纯数字游标保留旧语义，旧客户端行为不变。回归用例直接钉同一 `time_updated`，断言两页不重不漏，并验证旧游标不会静默升级。
+
+- **历史远跳补齐会话代次**：搜索定位与多页远跳此前只比较会话 id，A→B→A 后迟到的翻页会重新被认成当前操作；现在与普通分页共用「会话 + 代次」归属判据，过期远跳在每个方向入口即停。回归用例覆盖 `loadThrough` 与 `locateTarget` 两条入口。
+
+- **冷恢复前缀契约回归**：新增端到端用例——进程内 tools/system/消息缓存全部丢弃、磁盘 pin 保留时，续接首请求的工具定义仍取磁盘 pin 的旧值，`system` 段逐字节不变，历史只追加。这是客户端稳定性门禁，不宣称服务端缓存命中；对应上游 codex#62071 的意图，不引入其 `additional_tools` 机制。
+
+- **桌宠独立窗口**：桌面端把桌宠从主窗口提升为独立窗口，TUI 与桌面共享方案另记决策。详见 `docs/notes/proposed/feature/2026-11-18-tui-shared-desktop-pet.md`。
+
+- **Chat 首次发送与会话消失**：会话在发送前被清理时恢复首条发送，不再留下空草稿或静默失败。
+
+- **Codex 模型白名单按版本门槛**：改为放行 6.2 系列、过滤 5.6，不再逐型号维护白名单。
+
+- **RedSpace 欢迎字标与 Windows 图标收尾**：修正欢迎页字标排版，恢复 Chi 版 Windows 图标，补齐合并分支两侧的改动。
+
+- **性能基线**：入库 F-09 性能基线计划与 A 组 `bench:budget` 采集结果（记录超预算信号）；`bench:budget` 的压缩摘要路径拆分统计，避免两类请求混在同一预算口径。
 
 - **伙伴的小日记与跨会话接续**。新伙伴和已导入的伙伴都可以在新会话接上上次的短聊，聊天时按相关词想起旧日记，并将有出处的长期偏好留在自己的档案。设置里可按日期翻阅日记。TUI 与后端在新建 Code 会话时排除已绑定的伙伴 Soul。此版从 Chat 基础提示末段和个人记忆工具声明起重建对应缓存，此后的逐轮召回只进入当轮消息。详见 [伙伴记忆决策](docs/notes/implemented/feature/2026-11-18-companion-continuity.md)。
 

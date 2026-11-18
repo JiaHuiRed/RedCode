@@ -6,7 +6,7 @@ Chat 能接续原有伙伴的人格和长期记忆，并按需召回导入档案
 
 自 0.19.0 起，RedCode 演进为 RedSpace：在同一底层延续人格、会话与执行能力。
 
-[![版本](https://badgen.net/badge/版本/0.19.2/blue)](CHANGELOG.md)
+[![版本](https://badgen.net/badge/版本/0.19.3/blue)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
