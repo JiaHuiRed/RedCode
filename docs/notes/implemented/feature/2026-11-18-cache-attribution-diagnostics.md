@@ -26,7 +26,9 @@
 
 诊断只在 finish 之后读取数值并写日志，不改变请求形状、固定前缀、缓存行为，也不新增模型上下文。日志字段仍是白名单数值（上界 12 项）加三个派生数值，不含原文。若端点整体不返回 `attribution`，诊断显示「未知」而不是 0——这说明端点没提供归因，不是我们丢了字段。
 
-## 回家验证步骤（2026-11-18 待办）
+## 回家验证步骤（2026-11-18 已完成）
+
+> 结论已回填，见本节末尾「实测结果」。以下步骤保留为复现方法。
 
 1. 打开 RedCode，选 `gpt-6.2-sol`（OAuth），发一条会走至少一轮工具调用的消息；能连续两轮更好。
 2. 日志目录 `%USERPROFILE%\.redcode\data\log\`，按文件名时间戳找当次会话对应的 `<时间戳>.log`。注意每次重启会换文件。
@@ -47,6 +49,19 @@
 | 连续两轮 `uncachedInputTokens` 都约 22k、`instructions.missTokens` 恒等于指令总量 | 固定块每轮全丢 | 与 issue #62109 的观察同类，按上一条处理 |
 
 6. 如果确认了指令归因，把两轮日志行原样保存（数值即可，不需要提示词），作为后续 A/B 的对照基线。
+
+### 实测结果（2026-11-18）
+
+在 `2b02a501` 上用 `redcode run` 各开独立标题会话，`variant=low`，只回复 `OK`，无工具调用：
+
+- `gpt-6.2-sol`：第二轮 `cachedTokens=reported`、`cached=12,800`，`instructions.missTokens=21,741`（全未命中），
+  `unattributedInputTokens=1,285`。
+- `gpt-6.2-astra`：第二轮 `cachedTokens=reported-zero`、`cached=0`，`instructions.missTokens=21,740`（全未命中），
+  `unattributedInputTokens=14,087`。
+
+判定落在第 5 步表格的「连续两轮 `uncachedInputTokens` 约 22k、`instructions.missTokens` 恒等于指令总量」一行：
+顶层指令是缺口主体。两轮之间 `system`/`tools` 段哈希未变，说明不是本地装配漂移。样本仅两轮，不能推断长期行为。
+完整数值表见增量工具声明提案的「字段归因实测」节。
 
 ## 相关
 
