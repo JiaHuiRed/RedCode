@@ -22,3 +22,10 @@ Space 指宇宙与探索。朱红色的开放星门与四角星光构成产品�
 ## 验证
 
 UI、app、redspace 类型检查通过；原朱印 3 项测试与快照通过。矢量及 16/24/32/48px 缩略图已目视检查，预览见 [品牌预览](../../../assets/redspace-identity.png)。当前环境未运行 Electron 安装包；实际打包后的 OS 图标仍需安装后确认。
+
+## 2026-11-18 GUI 品牌与桌面应用图标分工
+
+- 新建会话页的 `WordmarkV2` 改为 REDSPACE，保留原有 RED 渐变、SPACE 空心描边与逐字母入场；字距及字号适配八字母的宽度。
+- Windows GUI 的多帧 `icon.ico` 与 32/64/128/256 像素 PNG 恢复为 2026-11-17 品牌迁移之前的「赤」原始资源（dev/beta/prod 三渠道），不重新生成角色图。
+- `script/brand/build-redspace.mjs` 仅生成 Web 品牌资源，不再覆盖桌面图标。桌面图标交由 `packages/desktop/scripts/build-icons.ts` 独立维护。
+- 本次不改 TUI 启动字标、macOS 图标或应用名称。Windows 实际安装包图标需要在本地重编后确认；Windows 图标缓存可能需要刷新。

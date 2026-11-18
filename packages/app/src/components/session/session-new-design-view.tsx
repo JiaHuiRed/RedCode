@@ -133,9 +133,9 @@ export function NewSessionDesignView(props: {
               有它自己的宽度约束、没跟着变宽，底下的项目/分支那行按外层宽度起头就顶到输入框
               左边去了（哥哥的原话是「冒出头了」）。要放宽得先改输入框自己的约束，不在这一层。 */}
           <div class="text-center">
-            {/* 260828 cc 72 → 88px。字标是这一屏的视觉中心，之前偏小、又被钉在上方，
-                两头不靠。逐字母升起与流光见 wordmark-v2.css。 */}
-            <WordmarkV2 class="text-[88px] leading-none" />
+            {/* 261118 RedSpace 八字母字标：响应式字号不超出 720px 主列，
+                保留原组件逐字母入场与减少动态效果偏好。 */}
+            <WordmarkV2 class="text-[clamp(30px,8vw,82px)] leading-none" />
           </div>
           {/* 260828 cc 问候语。字标是品牌、输入框是功能，中间这一句是唯一说人话的地方，
               所以放这儿。字号刻意压在 15px：它是陪衬，抢了输入框的注意力就本末倒置了。 */}
