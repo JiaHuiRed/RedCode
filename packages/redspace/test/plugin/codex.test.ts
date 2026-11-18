@@ -198,10 +198,9 @@ describe("plugin.codex", () => {
     })
   })
 
- // 260923 Red 随白名单补 gpt-6-sol / gpt-6-luna 扩充：Astra 那条只覆盖到 gpt-6-astra，
- // 上游 260922 发布 Sol/Luna 后同样会被旧断言放过的形状——加进同一用例的两侧。
- // 260930 Red 补 gpt-6.1-sol（GPT-6.1 Sol 发布，后端名单实测在列），同侧第三次扩充。
- test("keeps newly released GPT-6 models while excluding older models", async () => {
+ // 261118 Red 白名单改成版本门槛：6.x 全放行（含尚未发布的 6.3/7，防第四次手抄重演），
+ // 5.x 与无版本号型号（gpt-reserve / codex-auto-review）一律挡掉。
+ test("admits GPT-6+ by version gate and filters older models", async () => {
    const hooks = await CodexAuthPlugin({
      client: {} as never,
      project: {} as never,
@@ -228,10 +227,25 @@ describe("plugin.codex", () => {
            providerID: "openai",
            api: { id: "gpt-5.6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
+         "gpt-reserve": {
+           id: "gpt-reserve",
+           providerID: "openai",
+           api: { id: "gpt-reserve", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
          "gpt-6-astra": {
            id: "gpt-6-astra",
            providerID: "openai",
            api: { id: "gpt-6-astra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6-sol": {
+           id: "gpt-6-sol",
+           providerID: "openai",
+           api: { id: "gpt-6-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6-luna": {
+           id: "gpt-6-luna",
+           providerID: "openai",
+           api: { id: "gpt-6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
          "gpt-6.1-sol": {
            id: "gpt-6.1-sol",
@@ -243,15 +257,25 @@ describe("plugin.codex", () => {
            providerID: "openai",
            api: { id: "gpt-6.1-terra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
-         "gpt-6-sol": {
-           id: "gpt-6-sol",
+         "gpt-6.2-astra": {
+           id: "gpt-6.2-astra",
            providerID: "openai",
-           api: { id: "gpt-6-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+           api: { id: "gpt-6.2-astra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
-         "gpt-6-luna": {
-           id: "gpt-6-luna",
+         "gpt-6.2-sol": {
+           id: "gpt-6.2-sol",
            providerID: "openai",
-           api: { id: "gpt-6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+           api: { id: "gpt-6.2-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6.3-orion": {
+           id: "gpt-6.3-orion",
+           providerID: "openai",
+           api: { id: "gpt-6.3-orion", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-7-sol": {
+           id: "gpt-7-sol",
+           providerID: "openai",
+           api: { id: "gpt-7-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
        },
      } as never,
@@ -266,12 +290,15 @@ describe("plugin.codex", () => {
    )
 
     expect(Object.keys(models)).toEqual([
-      "gpt-5.6-luna",
       "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6.1-terra",
       "gpt-6-sol",
       "gpt-6-luna",
+      "gpt-6.1-sol",
+      "gpt-6.1-terra",
+      "gpt-6.2-astra",
+      "gpt-6.2-sol",
+      "gpt-6.3-orion",
+      "gpt-7-sol",
     ])
  })
 

@@ -25,23 +25,17 @@ const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 // —— gpt-5.2 / gpt-5.3-codex / gpt-5.3-codex-spark / gpt-5.5-pro / **裸 gpt-5.6** 全部实测被拒。
 // 260907 Red 这是产品筛选白名单，不是版本号猜测：旧型号不加入；新发布且已确认可用的型号要放行，
 // 否则更新后的模型会被旧列表挡在 GUI 之外。
-// 260923 Red 补 gpt-6-sol / gpt-6-luna：上游 260922 随 GPT-6 Sol/Luna 发布进入 models.dev openai
-// 目录（gpt-6-astra 之后同批，reasoning_options 到 max），codex 官方 catalog（#47332/#47347）亦已
-// 收录且 supported_in_api；本机 models.dev 缓存 260923 已刷新在列，哥哥的 codex 客户端也能选到。
-const ALLOWED_MODELS = new Set([
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
-  "gpt-6-astra",
-  "gpt-6-sol",
-  "gpt-6-luna",
- // 260930 Red 补 gpt-6.1-sol：随 GPT-6.1 Sol 发布进入名单。后端
- // `GET /backend-api/codex/models?client_version=1.2.0`（≥1.0.0 才返回非空名单）实测在列，
- // apply_patch_tool_type 仍为 freeform，efforts 声称到 ultra（按 260907 教训不采信，档位表维持 none..max）。
-  "gpt-6.1-sol",
-  // 261027 Red 账号 models 目录在列，responses 真请求 200；freeform 与 priority 同 Sol 路径。
-  "gpt-6.1-terra",
-])
+// 261118 Red 从逐型号白名单改成版本门槛：gpt major >= 6 全放行，5.x 及以下过滤。
+// 背景：6 Astra/Luna、6.1 Sol、6.1 Terra、6.2 已连续四次手抄这份名单；新模型约一个多月一次，
+// 哥哥拍板用门槛省掉每次补录（B 方案）。已知取舍：若后端对某个新 6.x 不支持，列表会显示但选中报
+// 400 —— 接受这个风险，真出现再针对该型号单独加排除。无版本号的 gpt-reserve / codex-auto-review
+// 仍过滤（与旧白名单一致）。
+const GPT_MAJOR_RE = /(?:^|\/)gpt-(\d+)(?:[.-]|$)/
+
+function isModelAllowed(apiId: string): boolean {
+  const major = GPT_MAJOR_RE.exec(apiId)?.[1]
+  return major !== undefined && Number(major) >= 6
+}
 
 // 261012 Red x-codex-turn-state 粘性路由令牌（对齐 Codex 官方 harness，codex-rs/core/src/client.rs:289）：
 // 服务器在 turn 首个响应头下发，同 turn 内后续请求原样回传，让同 turn 的多个 step 落到
@@ -356,7 +350,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
 
         return Object.fromEntries(
           Object.entries(provider.models)
-            .filter(([, model]) => ALLOWED_MODELS.has(model.api.id))
+            .filter(([, model]) => isModelAllowed(model.api.id))
             .map(([modelID, model]) => [
               modelID,
               {
