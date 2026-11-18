@@ -728,6 +728,99 @@ describe("session.request-evidence", () => {
     RequestEvidence.reset()
   })
 
+  // 261118 Red 字段归因（codex#62109）：数值只来自服务端，缺失与显式零分开，
+  // 剩余差额只报「未归因」，不自动记在工具名下。native 从 providerMetadata 读同一套。
+  test("separates top-level instruction misses from the rest of uncached input", async () => {
+    RequestEvidence.reset()
+    const observed: RequestEvidence.ProviderUsageObservation[] = []
+    const observer = RequestEvidence.create(context())
+    observer.providerUsage = (observation) => observed.push(observation)
+    const middleware = RequestEvidence.middleware(observer)
+    const consume = async (usage: unknown) => {
+      const stream = new ReadableStream<FixturePart>({
+        start(controller) {
+          controller.enqueue({ type: "finish", finishReason: "stop", usage })
+          controller.close()
+        },
+      })
+      const result = await middleware.wrapStream({
+        doStream: async () => ({ request: { body: JSON.stringify(chatBody()) }, stream }),
+      })
+      const reader = (result as { stream: ReadableStream<FixturePart> }).stream.getReader()
+      while (!(await reader.read()).done) {
+        // 261118 Red Consume the stream so the finish seam runs.
+      }
+      return observed.at(-1)
+    }
+
+    // codex#62109 第三轮：总输入 4,446、命中 2,944；顶层指令 1,222、命中 0。
+    const partial = await consume({
+      raw: {
+        input_tokens: 4_446,
+        input_tokens_details: { cached_tokens: 2_944, cache_write_tokens: 0 },
+        attribution: {
+          request_fields: {
+            instructions: { input_tokens: 1_222, cached_tokens: 0, cache_write_tokens: 0, output_tokens: 0 },
+          },
+        },
+      },
+    })
+    expect(partial).toMatchObject({
+      cachedTokens: "reported",
+      uncachedInputTokens: 1_502,
+      instructions: { inputTokens: 1_222, cachedTokens: 0, cacheWriteTokens: 0, missTokens: 1_222 },
+      unattributedInputTokens: 280,
+    })
+
+    // 同一 issue 的对照：指令 4,500 中命中 4,472，只剩 28 未命中——指令并非普遍不可缓存。
+    const mostlyCached = await consume({
+      raw: {
+        input_tokens: 4_510,
+        input_tokens_details: { cached_tokens: 4_480 },
+        attribution: { request_fields: { instructions: { input_tokens: 4_500, cached_tokens: 4_472 } } },
+      },
+    })
+    expect(mostlyCached).toMatchObject({
+      uncachedInputTokens: 30,
+      instructions: { missTokens: 28 },
+      unattributedInputTokens: 2,
+    })
+
+    // 没有归因时保持「未知」：不产出 0，也不产生未归因。
+    const noAttribution = await consume({
+      raw: { input_tokens: 4_446, input_tokens_details: { cached_tokens: 2_944 } },
+    })
+    expect(noAttribution?.uncachedInputTokens).toBe(1_502)
+    expect(noAttribution?.instructions).toBeUndefined()
+    expect(noAttribution?.unattributedInputTokens).toBeUndefined()
+
+    // native 路径：原始 usage 在 Usage.providerMetadata.openai。
+    const native = observer.event(
+      LLMEvent.stepFinish({
+        index: 0,
+        reason: "tool-calls",
+        usage: new Usage({
+          inputTokens: 4_446,
+          cacheReadInputTokens: 2_944,
+          providerMetadata: {
+            openai: {
+              input_tokens: 4_446,
+              input_tokens_details: { cached_tokens: 2_944 },
+              attribution: { request_fields: { instructions: { input_tokens: 1_222, cached_tokens: 0 } } },
+            },
+          },
+        }),
+      }),
+    )
+    expect(native).toMatchObject({
+      type: "usage",
+      uncachedInputTokens: 1_502,
+      instructions: { inputTokens: 1_222, missTokens: 1_222 },
+      unattributedInputTokens: 280,
+    })
+    RequestEvidence.reset()
+  })
+
   test("passes stream parts through untouched and propagates cancellation without buffering", async () => {
     RequestEvidence.reset()
     const observer = RequestEvidence.create(context())

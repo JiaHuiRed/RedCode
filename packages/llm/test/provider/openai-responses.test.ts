@@ -693,6 +693,40 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  // 261118 Red 部分端点按字段返回缓存归因（codex#62109）：schema 必须声明到叶子，
+  // 否则 Schema.Struct 默认丢弃未声明字段，native 诊断就永远读不到。
+  it.effect("keeps field-level usage attribution in provider metadata", () =>
+    Effect.gen(function* () {
+      const body = sseEvents({
+        type: "response.completed",
+        response: {
+          id: "resp_attr",
+          usage: {
+            input_tokens: 4_446,
+            output_tokens: 5,
+            total_tokens: 4_451,
+            input_tokens_details: { cached_tokens: 2_944, cache_write_tokens: 0 },
+            attribution: {
+              request_fields: {
+                instructions: { input_tokens: 1_222, cached_tokens: 0, cache_write_tokens: 0, output_tokens: 0 },
+              },
+            },
+          },
+        },
+      })
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+      expect(response.usage?.cacheReadInputTokens).toBe(2_944)
+      expect(response.usage?.providerMetadata?.openai).toMatchObject({
+        input_tokens_details: { cache_write_tokens: 0 },
+        attribution: {
+          request_fields: {
+            instructions: { input_tokens: 1_222, cached_tokens: 0, cache_write_tokens: 0 },
+          },
+        },
+      })
+    }),
+  )
+
   it.effect("parses reasoning summary stream fixtures", () =>
     Effect.gen(function* () {
       const body = sseEvents(

@@ -109,6 +109,10 @@ export type EventObservation =
       readonly type: "usage"
       readonly usageStatus: "reported" | "output-only-estimated" | "missing"
       readonly rawUsage?: Readonly<Record<string, number>>
+      // 261118 Red native 路径的同一套派生：原始 usage 在 Usage.providerMetadata.openai。
+      readonly uncachedInputTokens?: number
+      readonly instructions?: InstructionAttribution
+      readonly unattributedInputTokens?: number
       readonly cache: {
         readonly status: "reported" | "unknown"
         readonly cacheReadInputTokens?: number
@@ -138,7 +142,10 @@ export type Observer = {
 // 261012 Red finish 事件里原始 vendor usage 的白名单投影。@ai-sdk/openai 的 Responses
 // converter 用 `cached_tokens ?? 0` 把「字段缺失」与「显式 0」归一成同一个 0，下游
 // LLMAISDK.usage 再也分不开；只有归一化之前的原始 usage 能给出显式在场判定。
-// 原始对象本身从不入日志——只收下列有限数值标量（字段数上界 = 白名单长度 9）。
+// 原始对象本身从不入日志——只收下列有限数值标量（字段数上界 = 白名单长度 12）。
+// 261118 Red attribution 是 Codex OAuth 端点按字段返回的缓存归因（codex#62109）：
+// AI SDK 的 Responses usage schema 对未知键透传，orchestration_* 字段已证明这点。
+// 口径与验证步骤见 docs/notes/implemented/feature/2026-11-18-cache-attribution-diagnostics.md。
 const PROVIDER_USAGE_FIELDS = [
   "input_tokens",
   "output_tokens",
@@ -149,14 +156,32 @@ const PROVIDER_USAGE_FIELDS = [
   "input_tokens_details.orchestration_input_cached_tokens",
   "output_tokens_details.reasoning_tokens",
   "output_tokens_details.orchestration_output_tokens",
+  "attribution.request_fields.instructions.input_tokens",
+  "attribution.request_fields.instructions.cached_tokens",
+  "attribution.request_fields.instructions.cache_write_tokens",
 ] as const
 
 const CACHED_TOKENS_FIELD = "input_tokens_details.cached_tokens"
+const INSTRUCTION_INPUT_FIELD = "attribution.request_fields.instructions.input_tokens"
+const INSTRUCTION_CACHED_FIELD = "attribution.request_fields.instructions.cached_tokens"
+const INSTRUCTION_WRITE_FIELD = "attribution.request_fields.instructions.cache_write_tokens"
+
+export type InstructionAttribution = {
+  readonly inputTokens?: number
+  readonly cachedTokens?: number
+  readonly cacheWriteTokens?: number
+  readonly missTokens?: number
+}
 
 export type ProviderUsageObservation = {
   readonly requestID: string
   readonly cachedTokens: "reported" | "reported-zero" | "missing"
   readonly fields: Readonly<Record<string, number>>
+  // 261118 Red 缓存缺口诊断：本轮未从缓存读取的输入，以及服务端按字段给出的顶层指令
+  // 归因。字段缺失时键不出现（未知），显式 0 保留为 0；剩余差额不自动记在工具名下。
+  readonly uncachedInputTokens?: number
+  readonly instructions?: InstructionAttribution
+  readonly unattributedInputTokens?: number
 }
 
 export type TransportInput = {
@@ -455,20 +480,54 @@ function routeHashes(input: TransportInput): Pick<TransportObservation, "headerH
 }
 
 // 261012 Red finish part 的原始 vendor usage 投影：只走白名单路径、只收有限数值。
-function providerUsage(usage: unknown, requestID: string): ProviderUsageObservation {
-  const raw = isRecord(usage) ? usage.raw : undefined
-  const fields = PROVIDER_USAGE_FIELDS.reduce<Record<string, number>>((result, field) => {
+function providerFields(raw: unknown) {
+  return PROVIDER_USAGE_FIELDS.reduce<Record<string, number>>((result, field) => {
     const value = field
       .split(".")
       .reduce<unknown>((cursor, key) => (isRecord(cursor) ? cursor[key] : undefined), raw)
     if (typeof value === "number" && Number.isFinite(value)) result[field] = value
     return result
   }, {})
+}
+
+// 261118 Red 派生值只由数值算出：未读缓存 = input - cached；指令未命中 = 指令输入 -
+// 指令命中；剩余未归因 = 未读缓存 - 指令未命中。任一输入缺失时对应键不出现，
+// 显式 0 保留为 0，剩余差额不自动记在工具名下。
+function usageDerivation(fields: Readonly<Record<string, number>>) {
+  const input = fields["input_tokens"]
+  const cached = fields[CACHED_TOKENS_FIELD]
+  const instructionInput = fields[INSTRUCTION_INPUT_FIELD]
+  const instructionCached = fields[INSTRUCTION_CACHED_FIELD]
+  const instructionWrite = fields[INSTRUCTION_WRITE_FIELD]
+  const uncached = input !== undefined && cached !== undefined ? input - cached : undefined
+  const miss =
+    instructionInput !== undefined && instructionCached !== undefined
+      ? instructionInput - instructionCached
+      : undefined
+  const instructions =
+    instructionInput === undefined && instructionCached === undefined && instructionWrite === undefined
+      ? undefined
+      : {
+          ...(instructionInput === undefined ? {} : { inputTokens: instructionInput }),
+          ...(instructionCached === undefined ? {} : { cachedTokens: instructionCached }),
+          ...(instructionWrite === undefined ? {} : { cacheWriteTokens: instructionWrite }),
+          ...(miss === undefined ? {} : { missTokens: miss }),
+        }
+  return {
+    ...(uncached === undefined ? {} : { uncachedInputTokens: uncached }),
+    ...(instructions === undefined ? {} : { instructions }),
+    ...(uncached === undefined || miss === undefined ? {} : { unattributedInputTokens: uncached - miss }),
+  }
+}
+
+function providerUsage(usage: unknown, requestID: string): ProviderUsageObservation {
+  const fields = providerFields(isRecord(usage) ? usage.raw : undefined)
   const cached = fields[CACHED_TOKENS_FIELD]
   return {
     requestID,
     cachedTokens: cached === undefined ? "missing" : cached === 0 ? "reported-zero" : "reported",
     fields,
+    ...usageDerivation(fields),
   }
 }
 
@@ -673,12 +732,19 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
           ? "output-only-estimated"
           : "missing"
       const rawUsage = usageFields(event.usage)
+      // 261118 Red native 路径把原始 usage 放在 Usage.providerMetadata.openai，
+      // 与 AI SDK 的 usage.raw 共用同一套白名单投影与派生。
+      const providerRaw = isRecord(event.usage?.providerMetadata)
+        ? event.usage.providerMetadata["openai"]
+        : undefined
+      const derivation = usageDerivation(providerFields(providerRaw))
       const cacheReadInputTokens = event.usage?.cacheReadInputTokens
       const cacheWriteInputTokens = event.usage?.cacheWriteInputTokens
       const observation: EventObservation = {
         type: "usage",
         usageStatus,
         ...(rawUsage ? { rawUsage } : {}),
+        ...derivation,
         cache:
           cacheReadInputTokens === undefined && cacheWriteInputTokens === undefined
             ? { status: "unknown" }

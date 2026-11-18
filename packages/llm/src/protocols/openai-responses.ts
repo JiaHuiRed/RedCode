@@ -162,10 +162,32 @@ const encodeWebSocketMessage = Schema.encodeSync(Schema.fromJsonString(OpenAIRes
 
 const OpenAIResponsesUsage = Schema.Struct({
   input_tokens: Schema.optional(Schema.Number),
-  input_tokens_details: optionalNull(Schema.Struct({ cached_tokens: Schema.optional(Schema.Number) })),
+  input_tokens_details: optionalNull(
+    Schema.Struct({
+      cached_tokens: Schema.optional(Schema.Number),
+      cache_write_tokens: Schema.optional(Schema.Number),
+    }),
+  ),
   output_tokens: Schema.optional(Schema.Number),
   output_tokens_details: optionalNull(Schema.Struct({ reasoning_tokens: Schema.optional(Schema.Number) })),
   total_tokens: Schema.optional(Schema.Number),
+  // 261118 Red 部分端点按请求字段返回缓存归因（codex#62109）：diagnostics 从
+  // Usage.providerMetadata.openai 读取，只保留数值，不参与归一化也不外泄原文。
+  attribution: optionalNull(
+    Schema.Struct({
+      request_fields: optionalNull(
+        Schema.Struct({
+          instructions: optionalNull(
+            Schema.Struct({
+              input_tokens: Schema.optional(Schema.Number),
+              cached_tokens: Schema.optional(Schema.Number),
+              cache_write_tokens: Schema.optional(Schema.Number),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
 })
 type OpenAIResponsesUsage = Schema.Schema.Type<typeof OpenAIResponsesUsage>
 
