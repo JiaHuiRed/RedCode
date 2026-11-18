@@ -40,6 +40,7 @@ function harness(initial: CompanionInfo[] = [a, b]) {
     promptGate: undefined as Promise<void> | undefined,
     invalidSession: false,
     noModels: false,
+    lookupError: false,
   }
   const calls = {
     initialized: 0,
@@ -93,7 +94,10 @@ function harness(initial: CompanionInfo[] = [a, b]) {
           sessions.set(session.id, session)
           return session
         },
-        getSession: async (value) => sessions.get(value.id)!,
+        getSession: async (value) => {
+          if (state.lookupError) throw new Error("Connection lost")
+          return sessions.get(value.id)
+        },
         submit: async (session, messageID, text) => {
           calls.prompts.push({ companion: session.companionID!, sessionID: session.id, messageID, text })
           promptEntered.resolve()
@@ -129,7 +133,7 @@ function harness(initial: CompanionInfo[] = [a, b]) {
     state.selected = id
     state.epoch++
   }
-  return { state, calls, create, choose, promptEntered }
+  return { state, calls, create, choose, promptEntered, deleteSession: (id: string) => sessions.delete(id) }
 }
 
 describe("Chat home asynchronous submission", () => {
@@ -234,6 +238,52 @@ describe("Chat home asynchronous submission", () => {
     expect(h.calls.created).toEqual([a.id, b.id])
     expect(h.calls.prompts[2]).toEqual(failed)
     expect(h.state.drafts[a.id]).toBe("")
+  })
+
+  test("retrying a deleted session sends the retained draft in a new session for the same companion", async () => {
+    const h = harness()
+    h.state.fail.add(a.id)
+    const page = h.create()
+    await page.send()
+    const failed = h.calls.prompts[0]
+    expect(h.state.drafts[a.id]).toBe("A的草稿")
+    h.deleteSession(failed.sessionID)
+    h.state.fail.clear()
+
+    await page.send()
+    expect(h.calls.created).toEqual([a.id, a.id])
+    expect(h.calls.prompts[1]).toEqual({
+      companion: a.id,
+      sessionID: "session-2",
+      messageID: "message-2",
+      text: failed.text,
+    })
+    expect(h.calls.navigated).toEqual(["session-2"])
+    expect(h.state.drafts[a.id]).toBe("")
+    expect(h.state.drafts[b.id]).toBe("B的草稿")
+  })
+
+  test("a connection error looking up a prepared session does not create a replacement", async () => {
+    const h = harness()
+    h.state.fail.add(a.id)
+    const page = h.create()
+    await page.send()
+    const failed = h.calls.prompts[0]
+    h.state.lookupError = true
+    h.state.fail.clear()
+
+    await page.send()
+    expect(h.state.retries[a.id].error).toBe("Connection lost")
+    expect(h.state.drafts[a.id]).toBe("A的草稿")
+    expect(h.calls.created).toEqual([a.id])
+    expect(h.calls.prompts).toEqual([failed])
+    expect(h.calls.navigated).toEqual([])
+
+    h.state.lookupError = false
+    await page.send()
+    expect(h.calls.created).toEqual([a.id])
+    expect(h.calls.prompts).toEqual([failed, failed])
+    expect(h.calls.navigated).toEqual([failed.sessionID])
   })
 
   test("an optional introduction is a real message and preserves the typed task through failure and retry", async () => {

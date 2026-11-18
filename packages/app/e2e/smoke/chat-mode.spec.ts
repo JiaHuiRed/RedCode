@@ -3,7 +3,7 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { fixture } from "./session-timeline.fixture"
 import { mockRedCodeServer } from "../utils/mock-server"
 
-test("imported companion starts and resumes a bound Chat session without replacing Code identity", async ({ page }) => {
+test("imported companion retries a deleted first-chat session and resumes the replacement", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   const profile = {
@@ -24,8 +24,12 @@ test("imported companion starts and resumes a bound Chat session without replaci
     companionID: profile.id,
     soul: profile.soulID,
   }
+  const deletedSession = { ...boundSession, id: "ses_companion_deleted" }
   const sessions = [...fixture.sessions]
   let imported = false
+  let deleted = false
+  let acknowledged: { messageID: string; parts: { type: string; text: string }[] } | undefined
+  const promptSessions: string[] = []
   const imports: unknown[] = []
   const creates: unknown[] = []
   await mockRedCodeServer(page, { ...fixture, sessions, pageMessages: () => ({ items: [] }) })
@@ -41,6 +45,10 @@ test("imported companion starts and resumes a bound Chat session without replaci
       })
     if (route.request().method() === "OPTIONS") return reply({})
     if (url.pathname === "/companion" && route.request().method() === "GET") return reply(imported ? [profile] : [])
+    if (url.pathname === `/companion/${profile.id}`)
+      return reply({ profile, paths: { soul: "", identity: "", user: "", memory: "" } })
+    if (url.pathname === "/instructions") return reply({ sources: [] })
+    if (url.pathname === "/config/providers") return reply({ providers: fixture.provider.all })
     if (url.pathname === "/companion/import") {
       imports.push(route.request().postDataJSON())
       if (imports.length === 1) return reply({ message: "Archive not found" }, 400)
@@ -49,8 +57,23 @@ test("imported companion starts and resumes a bound Chat session without replaci
     }
     if (url.pathname === "/session" && route.request().method() === "POST") {
       creates.push({ ...route.request().postDataJSON(), directory: url.searchParams.get("directory") })
-      sessions.push(boundSession)
-      return reply(boundSession)
+      const session = creates.length === 1 ? deletedSession : boundSession
+      if (session === boundSession) sessions.push(session)
+      return reply(session)
+    }
+    if (url.pathname === `/session/${deletedSession.id}` && deleted) return reply({ message: "Session not found" }, 404)
+    if (url.pathname === `/session/${deletedSession.id}/prompt_async`) {
+      promptSessions.push(deletedSession.id)
+      return reply({ message: "Could not send the first message" }, 400)
+    }
+    if (url.pathname.startsWith(`/session/${deletedSession.id}/message/`)) return reply({}, 404)
+    if (url.pathname === `/session/${boundSession.id}/prompt_async`) {
+      promptSessions.push(boundSession.id)
+      acknowledged = route.request().postDataJSON()
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    }
+    if (acknowledged && url.pathname === `/session/${boundSession.id}/message/${acknowledged.messageID}`) {
+      return reply({ info: { id: acknowledged.messageID, role: "user" }, parts: acknowledged.parts })
     }
     if (url.pathname === "/soul")
       return reply([
@@ -64,18 +87,45 @@ test("imported companion starts and resumes a bound Chat session without replaci
   await expect(page.locator('[data-component="chat-home"] h1')).toHaveCSS("font-size", "20px")
   const mode = page.locator('[data-component="product-mode-switch"]')
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
-  const source = page.locator('[data-action="chat-import-source"]')
+  await page.getByRole("button", { name: "Companion settings" }).click()
+  await page.getByRole("button", { name: "Files & data", exact: true }).click()
+  await page
+    .locator(".settings-section")
+    .filter({ hasText: "Add an existing companion archive" })
+    .getByRole("button", { name: "Open", exact: true })
+    .click()
+  const importDialog = page.getByRole("dialog", { name: "Add an existing companion archive" })
+  const source = importDialog.getByLabel("Archive location")
+  const importArchive = importDialog.getByRole("button", { name: "Import archive" })
   await source.fill("/archives/old-home.zip")
-  await page.locator('[data-action="chat-import"]').click()
-  await expect(page.getByRole("alert")).toContainText("Archive not found")
+  await importArchive.click()
+  await expect(importDialog.getByRole("alert")).toContainText("Archive not found")
   await expect(source).toHaveValue("/archives/old-home.zip")
-  await page.locator('[data-action="chat-import"]').click()
-  await expect(page.getByRole("heading", { name: profile.name })).toBeVisible()
+  await importArchive.click()
+  await expect(importDialog.getByRole("status")).toContainText("Materials added")
+  await importDialog.getByRole("button", { name: "Close", exact: true }).click()
+  await expect(importDialog).toBeHidden()
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true })
+  await settings.getByRole("button", { name: "Close", exact: true }).click()
+  await expect(settings).toBeHidden()
+  await expect(page.locator('[data-component="chat-home"]').getByRole("heading", { name: profile.name })).toBeVisible()
   expect(imports).toEqual([{ source: "/archives/old-home.zip" }, { source: "/archives/old-home.zip" }])
 
-  await page.locator('[data-action="chat-start"]').click()
+  const home = page.locator('[data-component="chat-home"]')
+  const draft = home.locator('[data-action="chat-first-message"]')
+  await draft.fill("Hello, friend")
+  await home.getByRole("button", { name: "Send", exact: true }).click()
+  const failure = home.getByRole("alert")
+  await expect(failure).toContainText("Could not send the first message")
+  await expect(draft).toHaveValue("Hello, friend")
+  deleted = true
+  await failure.getByRole("button", { name: "Retry" }).click()
+  await expect.poll(() => acknowledged?.parts).toEqual([{ type: "text", text: "Hello, friend" }])
+  expect(errors).toEqual([])
   await expect(page).toHaveURL(new RegExp(`/session/${boundSession.id}$`))
-  expect(creates).toEqual([{ mode: "chat", companionID: profile.id, directory: profile.directory }])
+  const binding = { mode: "chat", companionID: profile.id, directory: profile.directory }
+  expect(creates).toEqual([binding, binding])
+  expect(promptSessions).toEqual([deletedSession.id, boundSession.id])
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
   await expect(page.locator('[data-action="prompt-soul"]')).toHaveCount(0)
 
@@ -83,14 +133,15 @@ test("imported companion starts and resumes a bound Chat session without replaci
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
   await page.keyboard.press("Control+Shift+s")
   await expect(page).toHaveURL(new RegExp(`/chat\\?companion=${profile.id}$`))
-  const recentChat = page.locator('[data-component="chat-home"]').getByRole("link", { name: boundSession.title })
+  await expect(draft).toHaveValue("")
+  const recentChat = home.getByRole("link", { name: boundSession.title })
   await expect(recentChat).toBeVisible()
   await recentChat.click()
   await expect(page).toHaveURL(new RegExp(`/${base64Encode(fixture.directory)}/session/${boundSession.id}$`))
   await mode.locator('[data-mode="code"]').click()
   await expect(page.locator('[data-component="home-dashboard"]')).toBeVisible()
   await expect(mode.locator('[data-mode="code"]')).toHaveAttribute("aria-current", "page")
-  expect(creates).toHaveLength(1)
+  expect(creates).toHaveLength(2)
   expect(errors).toEqual([])
 })
 

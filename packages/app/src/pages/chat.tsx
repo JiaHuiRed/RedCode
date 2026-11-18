@@ -172,9 +172,15 @@ export default function Chat() {
           { throwOnError: true },
         )
       ).data,
-    getSession: async (session) =>
-      (await sdk.client.session.get({ directory: session.directory, sessionID: session.id }, { throwOnError: true }))
-        .data,
+    getSession: async (session) => {
+      const result = await sdk.client.session.get(
+        { directory: session.directory, sessionID: session.id },
+        { throwOnError: false },
+      )
+      if (result.data) return result.data
+      if (result.response?.status === 404) return
+      throw result.error
+    },
     submit: (session, messageID, content) =>
       sendCompanionMessage({
         client: sdk.client,

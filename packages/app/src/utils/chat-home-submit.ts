@@ -59,7 +59,7 @@ type Dependencies = {
   prepare: (profile: CompanionInfo) => Promise<void>
   activate: (profile: CompanionInfo) => Promise<CompanionInfo>
   createSession: (profile: CompanionInfo) => Promise<Session>
-  getSession: (session: PreparedChat) => Promise<Session>
+  getSession: (session: PreparedChat) => Promise<Session | undefined>
   submit: (session: Session, messageID: string, text: string) => Promise<unknown>
   receivedProfile: (profile: CompanionInfo) => void
   selectInitialized: (id: string) => void
@@ -102,12 +102,14 @@ export function createChatHomeSubmit(input: Dependencies) {
         input.receivedProfile(profile)
       }
       const prepared = input.get(scope)?.prepared
-      const session = prepared ? await input.getSession(prepared) : await input.createSession(profile)
+      const existing = prepared ? await input.getSession(prepared) : undefined
+      if (prepared && !existing) input.set(scope, { prepared: undefined, messageID: "", submittedText: "" })
+      const session = existing ?? (await input.createSession(profile))
       if (session.mode !== "chat" || session.companionID !== profile.id || session.directory !== profile.directory) {
         input.set(scope, { prepared: undefined, messageID: "", submittedText: "" })
         throw new Error(input.invalidSession())
       }
-      if (!prepared)
+      if (!existing)
         input.set(scope, {
           prepared: { id: session.id, directory: session.directory, companionID: profile.id },
           messageID: "",
