@@ -3,7 +3,7 @@ import "./wordmark-v2.css"
 
 const WORD = [
   { text: "RED", color: "#e84057", treatment: "gradient" },
-  { text: "CODE", color: "currentColor", treatment: "outline" },
+  { text: "SPACE", color: "currentColor", treatment: "outline" },
 ] as const
 
 // 260828 cc 字标从一整块纯文字改成逐字母入场。
@@ -15,16 +15,17 @@ const WORD = [
 // 白光扫过 RED 那三个字母时是拿白色盖住红色，读起来就是「红字突然闪一下」，
 // 哥哥当场指出难看。常驻界面上的周期性闪动本来就很难做得不打扰，这个方向不对。
 //
-// 字距 0.35em 是它的识别度来源，不动；颜色分段（RED 红 / CODE 随当前色）同样不动 ——
-// 那是品牌本身，动效只是包装。
+// 261118 RedSpace 品牌迁移：欢迎页改为 REDSPACE；新字标比 REDCODE 多一个字母，
+// 字距从 0.35em 收到 0.26em，避免窄窗溢出。RED 实心渐变、SPACE 浅色空心描边，
+// 延续原版逐字母入场；动画只是包装，品牌与角色图标各自独立。
 //
 // 260915 Red 字面从「纯双色平涂」升级为「实心渐变 + 描边空心」的双重对比：
 // RED 用纵向渐变（猩红→品牌红→深红）加底部柔辉（drop-shadow，暗壁纸上把字托起来；
 // 不用 text-shadow——background-clip: text 下 text-shadow 会透出填充，字会糊）；
-// CODE 改透明填充 + currentColor 描边。描边用 -webkit-text-fill-color 而不是
+// CODE 原先改透明填充 + currentColor 描边；RedSpace 的 SPACE 继承这一效果。描边用 -webkit-text-fill-color 而不是
 // color: transparent 做镂空——text-stroke-color 的 currentColor 按 color 属性解析，
 // color 一旦 transparent 描边就跟着没了。宽度用 0.03em 随字号缩放（88px 下约 2.6px）。
-// 字距、字体、分段、逐字母入场全部不动。
+// 字体、分段着色与逐字母入场继续保留。
 //
 // `animated={false}` 给不需要动的场合留口子（当前只有新建会话页用它，全部开着）。
 export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { animated?: boolean }) {
@@ -46,6 +47,7 @@ export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { anim
           color: letter.color,
           "-webkit-text-stroke": "0.03em currentColor",
           "-webkit-text-fill-color": "transparent",
+          filter: "drop-shadow(0 0 0.055em rgba(255, 241, 248, 0.42)) drop-shadow(0 0 0.17em rgba(255, 147, 176, 0.23))",
         }
       : {
           color: letter.color,
@@ -53,7 +55,7 @@ export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { anim
           "-webkit-background-clip": "text",
           "background-clip": "text",
           "-webkit-text-fill-color": "transparent",
-          filter: "drop-shadow(0 0.07em 0.22em rgba(232, 64, 87, 0.35))",
+          filter: "drop-shadow(0 0 0.06em rgba(255, 80, 116, 0.55)) drop-shadow(0 0.07em 0.22em rgba(232, 64, 87, 0.35))",
         }
   return (
     <span
@@ -61,7 +63,8 @@ export function WordmarkV2(props: Pick<ComponentProps<"span">, "class"> & { anim
       style={{
         "font-family": "'Space Grotesk', sans-serif",
         "font-weight": 500,
-        "letter-spacing": "0.35em",
+        "letter-spacing": "0.26em",
+        "white-space": "nowrap",
         "text-transform": "uppercase",
         display: "inline-block",
       }}

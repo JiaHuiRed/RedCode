@@ -39,38 +39,8 @@ const frames = await Promise.all(
   [16, 24, 32, 48, 64, 128, 256].map(async (size) => ({ size, data: await png(tile, size) })),
 )
 const icon = ico(frames)
-const chunks = await Promise.all(
-  [
-    ["icp4", 16],
-    ["icp5", 32],
-    ["icp6", 64],
-    ["ic07", 128],
-    ["ic08", 256],
-    ["ic09", 512],
-    ["ic10", 1024],
-  ].map(async ([type, size]) => {
-    const data = await png(tile, size)
-    const header = Buffer.alloc(8)
-    header.write(type)
-    header.writeUInt32BE(data.length + 8, 4)
-    return Buffer.concat([header, data])
-  }),
-)
-const icnsHeader = Buffer.alloc(8)
-icnsHeader.write("icns")
-icnsHeader.writeUInt32BE(8 + chunks.reduce((n, x) => n + x.length, 0), 4)
-const icns = Buffer.concat([icnsHeader, ...chunks])
-for (const channel of ["dev", "beta", "prod"]) {
-  const dir = path.join(root, "packages/desktop/icons", channel)
-  for (const name of await fs.readdir(dir)) {
-    if (!name.endsWith(".png")) continue
-    const file = path.join(dir, name)
-    const meta = await sharp(file).metadata()
-    await fs.writeFile(file, await sharp(Buffer.from(tile)).resize(meta.width, meta.height).png().toBuffer())
-  }
-  await fs.writeFile(path.join(dir, "icon.ico"), icon)
-  await fs.writeFile(path.join(dir, "icon.icns"), icns)
-}
+// Desktop icons intentionally live outside the RedSpace web-brand pipeline.
+// Windows GUI uses Chi's multi-resolution mascot ICO; never overwrite it here.
 const web = path.join(root, "packages/app/public")
 await fs.writeFile(path.join(web, "favicon-redspace.ico"), icon)
 for (const [name, size, svg] of [
@@ -82,4 +52,4 @@ for (const [name, size, svg] of [
   await fs.writeFile(path.join(web, name), await png(svg, size))
 }
 await fs.writeFile(path.join(root, "packages/ui/src/assets/brand/redspace-app.svg"), tile)
-console.log("Generated RedSpace web and desktop icons (dev/beta/prod).")
+console.log("Generated RedSpace web icons (desktop mascot icons unchanged).")
