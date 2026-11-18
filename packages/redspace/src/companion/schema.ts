@@ -140,6 +140,7 @@ export class ReadResult extends Schema.Class<ReadResult>("CompanionReadResult")(
 }) {}
 
 export class RememberInput extends Schema.Class<RememberInput>("CompanionRememberInput")({
+  durable: Schema.optional(Schema.Boolean),
   id: Schema.String,
   text: Schema.String,
   source: Schema.optional(Schema.String),

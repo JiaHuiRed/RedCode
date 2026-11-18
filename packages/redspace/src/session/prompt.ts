@@ -74,6 +74,7 @@ import { makeShared } from "./prompt/shared"
 import { sessionSoul, sessionTitlePrefix } from "./soul"
 import * as Soul from "@/soul"
 import { Companion } from "@/companion/companion"
+import { companionContinuity } from "./companion-continuity"
 import { companionAgent, isCompanionChat } from "./companion"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
@@ -1421,6 +1422,7 @@ export const layer = Layer.effect(
     ) {
       const ctx = yield* InstanceState.context
       const slog = elog.with({ sessionID })
+      let personalRecall: { userID: MessageID; text?: string } | undefined
       let structured: unknown
       let step = 0
       // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
@@ -2410,7 +2412,18 @@ export const layer = Layer.effect(
           // so it doesn't mutate cached messages yet still reaches the model on step>1.
           // 260820 cc 提出来成变量：上下文快照要记的是**真正发出去的那一份**，包含下面
           // 这三条临时注入。留在参数位上就只能记 stabilizedMsgs，差的正是每轮变动的部分。
+          if (personalChat && personalRecall?.userID !== lastUser.id) {
+            const recalled = yield* companionContinuity({
+              companions, sessions, session: stepSettings.session, history: msgs, user: lastUser,
+              rules: Permission.merge(agent.permission, stepSettings.session.permission ?? []),
+              diary: !!sortedTools.companion_memory && lastUser.tools?.companion_memory !== false,
+              historyTool: !!sortedTools.session_query && lastUser.tools?.session_query !== false,
+            }).pipe(Effect.timeout("400 millis"), Effect.catch(() => Effect.succeed(undefined)))
+            personalRecall = { userID: lastUser.id, text: recalled }
+          }
           const requestTail: ModelMessage[] = [
+            ...(personalRecall?.userID === lastUser.id && personalRecall.text
+              ? [{ role: "user" as const, content: personalRecall.text }] : []),
             ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
             // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
             ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),

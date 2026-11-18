@@ -652,32 +652,32 @@ export const layer = Layer.effect(
           const key = digest(input.idempotencyKey ?? randomUUID())
           const entryPath = path.join(profile.directory, "..", "entries", `${key}.json`)
           const entry = {
-            path: diaryPath(profile.timezone, now),
+            path: input.durable ? "MEMORY.md" : diaryPath(profile.timezone, now),
             text,
             ...(input.source === undefined ? {} : { source: input.source }),
           }
           await fs.mkdir(path.dirname(entryPath), { recursive: true, mode: 0o700 })
           const existing = await readJSON(entryPath)
           const saved = existing === undefined ? entry : Schema.decodeUnknownSync(Entry)(existing)
-          if (saved.text !== text || saved.source !== input.source)
+          if (saved.text !== text || saved.source !== input.source || (saved.path === "MEMORY.md") !== !!input.durable)
             throw new CompanionConflict({ message: "This memory idempotency key already refers to a different entry." })
           if (existing === undefined) {
             const pending = `${entryPath}.${randomUUID()}.tmp`
             await fs.writeFile(pending, JSON.stringify(entry), { flag: "wx", mode: 0o600 })
             await AppFileSystem.renameWithRetry(pending, entryPath)
           }
-          if (!/^memory\/\d{4}-\d{2}-\d{2}\.md$/.test(saved.path))
+          if (saved.path !== "MEMORY.md" && !/^memory\/\d{4}-\d{2}-\d{2}\.md$/.test(saved.path))
             throw new CompanionInvalidInput({ message: "Stored memory entry has an invalid diary path." })
-          await fs.mkdir(path.join(profile.directory, "memory"), { recursive: true, mode: 0o700 })
-          const parent = await containedPath(profile.directory, path.join(profile.directory, "memory"))
-          const target = path.join(parent, path.basename(saved.path))
+          const target = path.join(profile.directory, saved.path)
+          await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
+          await containedPath(profile.directory, path.dirname(target))
           const stat = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return undefined
             throw error
           })
           if (stat && (!stat.isFile() || stat.size > Limits.diary))
             throw new CompanionInvalidInput({
-              message: "The diary must be a regular file of at most 4 MiB; symbolic links are not writable.",
+              message: "Personal memory must be a regular file of at most 4 MiB; symbolic links are not writable.",
             })
           if (stat) await containedPath(profile.directory, target)
           const marker = `<!-- companion-entry:${key} -->`
@@ -690,9 +690,17 @@ export const layer = Layer.effect(
             const addition = `\n\n${saved.source ? `Source: ${saved.source}\n\n` : ""}${saved.text}\n${marker}\n`
             if (current.byteLength + Buffer.byteLength(addition) > Limits.diary)
               throw new CompanionInvalidInput({
-                message: "Today's diary exceeds 4 MiB. The entry is preserved; consolidate the diary before retrying.",
+                message: "Personal memory exceeds 4 MiB. The entry is preserved; consolidate the file before retrying.",
               })
-            await fs.appendFile(target, addition, { mode: 0o600 })
+            if (input.durable) {
+              // 261118 Red Put the newest user correction inside the bounded startup excerpt.
+              // Imported Markdown can start with a BOM and YAML metadata which must remain at byte zero.
+              const metadata = /^(?:\uFEFF)?(?:---\r?\n[\s\S]*?^---[ \t]*(?:\r?\n|$))?/m.exec(Buffer.from(current).toString("utf8"))
+              const offset = Buffer.byteLength(metadata?.[0] ?? "")
+              await AppFileSystem.writeFileAtomic(
+                target, Buffer.concat([current.subarray(0, offset), Buffer.from(addition), current.subarray(offset)]), 0o600,
+              )
+            } else await fs.appendFile(target, addition, { mode: 0o600 })
           }
           return new RememberResult({ path: saved.path, created: existing === undefined })
         }),
