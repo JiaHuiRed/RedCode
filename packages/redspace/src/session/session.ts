@@ -1104,7 +1104,7 @@ export const layer: Layer.Layer<
       let soulInfo: SoulInfo | undefined
       if (!parent) {
         const excluded =
-          mode === "code" && input?.soul === undefined
+          mode === "code"
             ? new Set((yield* companionProfiles()).map((profile) => profile.soulID))
             : new Set<string>()
         const requested = boundSoul ?? input?.soul ?? (yield* soulSvc.defaultForClient(flags.client))

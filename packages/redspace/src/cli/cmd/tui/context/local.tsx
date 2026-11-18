@@ -142,13 +142,17 @@ export const {
         sdk.client.soul.list({ throwOnError: true }),
         sdk.client.soul.default({ client: "tui" }, { throwOnError: true }),
         sdk.client.soul.issues({ throwOnError: true }),
+        sdk.client.companion.list({ throwOnError: true }),
       ])
-        .then(([list, fallback, issues]) => {
-          setSouls(list.data)
-          setServerDefault(fallback.data)
+        .then(([list, fallback, issues, companions]) => {
+          const bound = new Set(companions.data.map((profile) => profile.soulID))
+          const eligible = list.data.filter((item) => !bound.has(item.id))
+          setSouls(eligible)
+          setServerDefault({ id: eligible.find((item) => item.id === fallback.data.id)?.id ?? eligible[0]?.id })
           setSoulState("ready", true)
           const saved = kv.get("tui.lastSoul")
-          if (typeof saved === "string" && !list.data.some((item) => item.id === saved)) {
+          if (typeof saved === "string" && bound.has(saved)) kv.set("tui.lastSoul", undefined)
+          else if (typeof saved === "string" && !list.data.some((item) => item.id === saved)) {
             toast.show({
               variant: "warning",
               message: `Saved Soul not found: ${saved}. Choose /soul to select one.`,

@@ -57,7 +57,7 @@ function withArchive<A, E, R>(body: (profile: Companion.Info, directory: string)
 }
 
 describe("session companion binding", () => {
-  it.live("does not use a Chat companion as the implicit Code Soul", () =>
+  it.live("excludes bound companions from both default and explicit Code selection", () =>
     withArchive((profile, directory) =>
       Effect.gen(function* () {
         const session = yield* Session.Service
@@ -68,9 +68,9 @@ describe("session companion binding", () => {
         expect(neutral.mode).toBe("code")
         expect(neutral.soul).toBeUndefined()
         expect(neutral.soulBodyHash).toBeUndefined()
-        const explicit = yield* session.create({ soul: profile.soulID })
-        expect(explicit.soul).toBe(profile.soulID)
-        for (const item of [code, neutral, explicit]) yield* session.remove(item.id)
+        const explicit = yield* session.create({ soul: profile.soulID }).pipe(Effect.flip)
+        expect(explicit._tag).toBe("InvalidSoul")
+        for (const item of [code, neutral]) yield* session.remove(item.id)
       }).pipe(provideInstance(directory)),
     ),
   )

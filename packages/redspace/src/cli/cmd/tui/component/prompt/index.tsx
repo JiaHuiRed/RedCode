@@ -1462,7 +1462,7 @@ export function Prompt(props: PromptProps) {
 
     let sessionID = props.sessionID
     if (isNewSession) {
-      if (!companionID() && !local.soul.saved() && !(await local.soul.refresh())) return false
+      if (!companionID() && !(await local.soul.refresh())) return false
       const res = await sdk.client.session.create({
         workspace: newSessionWorkspaceID,
         agent: submission.payload.agentName,
