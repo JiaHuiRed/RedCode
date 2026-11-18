@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import path from "node:path"
+import fs from "node:fs/promises"
 import { Companion } from "@/companion/companion"
 import { Session } from "@/session/session"
 import { Soul } from "@/soul"
@@ -56,6 +57,24 @@ function withArchive<A, E, R>(body: (profile: Companion.Info, directory: string)
 }
 
 describe("session companion binding", () => {
+  it.live("does not use a Chat companion as the implicit Code Soul", () =>
+    withArchive((profile, directory) =>
+      Effect.gen(function* () {
+        const session = yield* Session.Service
+        const code = yield* session.create()
+        expect(code.soul).toBe("coder")
+        yield* Effect.promise(() => fs.unlink(path.join(directory, "souls", "coder.md")))
+        const neutral = yield* session.create()
+        expect(neutral.mode).toBe("code")
+        expect(neutral.soul).toBeUndefined()
+        expect(neutral.soulBodyHash).toBeUndefined()
+        const explicit = yield* session.create({ soul: profile.soulID })
+        expect(explicit.soul).toBe(profile.soulID)
+        for (const item of [code, neutral, explicit]) yield* session.remove(item.id)
+      }).pipe(provideInstance(directory)),
+    ),
+  )
+
   it.live("persists Chat's archive and Soul through reads, child sessions and forks", () =>
     withArchive((profile) =>
       Effect.gen(function* () {

@@ -658,6 +658,174 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   return { prompt, run, sessions, chat }
 })
 
+it.live("native Chat starts before setup and refreshes saved USER across model caches", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const initialized = yield* companions.initialize()
+      expect(initialized.created).toBe(true)
+      expect(initialized.profile.needsSetup).toBe(true)
+      yield* ensureDir(path.join(initialized.profile.directory, ".git"))
+      const configuration = providerCfg(llm.url)
+      const other = { ...ref, modelID: ModelID.make("test-other") }
+      yield* writeConfig(initialized.profile.directory, {
+        ...configuration,
+        provider: {
+          test: {
+            ...configuration.provider.test,
+            models: {
+              ...configuration.provider.test.models,
+              "test-other": { ...cfg.provider.test.models["test-model"], id: "test-other" },
+            },
+          },
+        },
+      })
+
+      yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const chat = yield* sessions.create({ title: "First task", mode: "chat", companionID: initialized.profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+        yield* llm.text("1, 2, 3")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          parts: [{ type: "text", text: "Sort these numbers: 3, 1, 2." }],
+        })
+        const first = (yield* llm.inputs)[0]
+        expect(JSON.stringify(first)).toContain("Sort these numbers: 3, 1, 2.")
+        expect(JSON.stringify(first)).toContain(
+          "Respond helpfully to the user's messages. Do not assume personal details or a relationship that the user has not shared.",
+        )
+        expect(first.tools).toBeDefined()
+        expect(chat.soul).toBe(initialized.profile.soulID)
+        expect(JSON.stringify(first)).not.toContain("### Getting acquainted")
+
+        yield* llm.text("4")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          parts: [{ type: "text", text: "What follows three?" }],
+        })
+        const second = (yield* llm.inputs)[1]
+        expect((second.messages as unknown[])[0]).toEqual((first.messages as unknown[])[0])
+        expect(second.tools).toEqual(first.tools)
+        expect((yield* companions.get(initialized.profile.id))?.needsSetup).toBe(true)
+
+        yield* llm.text("Ready.")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: other,
+          parts: [{ type: "text", text: "What should you call me?" }],
+        })
+        const before = [first, (yield* llm.inputs)[2]]
+        const soul = PromptCaches.souls.get(chat.id)
+        const caches = [ref, other].map((model) =>
+          PromptCaches.system.get(chat.id)!.get(`${model.providerID}/${model.modelID}`)!,
+        )
+        const revisions = caches.map((cache) => cache.companionRevision)
+        const preferredName = "Preferred name: Rowan."
+        yield* companions.update(initialized.profile.id, { user: preferredName })
+
+        for (const [index, model] of [ref, other].entries()) {
+          yield* llm.text("Rowan.")
+          yield* prompt.prompt({
+            sessionID: chat.id,
+            model,
+            parts: [{ type: "text", text: "What should you call me now?" }],
+          })
+          const current = (yield* llm.inputs)[3 + index]
+          const priorSystem = (before[index].messages as { content: string }[])[0].content
+          const currentSystem = (current.messages as { content: string }[])[0].content
+          expect(priorSystem).not.toContain(preferredName)
+          expect(currentSystem).toContain(preferredName)
+          expect(currentSystem.replace(preferredName, "")).toBe(priorSystem)
+          expect(current.tools).toEqual(before[index].tools)
+          expect(PromptCaches.souls.get(chat.id)).toBe(soul)
+          expect(PromptCaches.system.get(chat.id)!.get(`${model.providerID}/${model.modelID}`)).toBe(caches[index])
+          expect(caches[index].companionRevision).not.toBe(revisions[index])
+        }
+
+        const named = "Call yourself Luna and call me Rowan. Remember that we chose a silver kite."
+        yield* llm.tool("companion_profile", { action: "update", name: "Luna", userName: "Rowan", sourceQuote: named })
+        yield* llm.tool("companion_memory", { action: "remember", text: "The user and Luna chose a silver kite." })
+        yield* llm.text("Saved the names and the silver kite.")
+        yield* prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text: named }] })
+        const namedProfile = yield* companions.details(initialized.profile.id)
+        expect(namedProfile.companionName).toBe("Luna")
+        expect(namedProfile.userName).toBe("Rowan")
+        expect(namedProfile.profile.introduction).toBe("available")
+        expect((yield* sessions.get(chat.id)).soulBodyHash).toBe(chat.soulBodyHash)
+        expect(PromptCaches.souls.get(chat.id)).toBe(soul)
+
+        yield* companions.update(initialized.profile.id, { introduction: "active" })
+        const secondCompanion = yield* companions.create({ requestID: "second-chat" })
+        yield* ensureDir(path.join(secondCompanion.profile.directory, ".git"))
+        yield* writeConfig(secondCompanion.profile.directory, configuration)
+        yield* Effect.gen(function* () {
+          const secondChat = yield* sessions.create({
+            title: "Another first task",
+            mode: "chat",
+            companionID: secondCompanion.profile.id,
+          })
+          yield* Effect.addFinalizer(() => sessions.remove(secondChat.id).pipe(Effect.orDie))
+          const secondNames = "Call yourself Sol and call me Casey. Remember that we chose a copper boat."
+          yield* llm.tool("companion_profile", {
+            action: "update",
+            name: "Sol",
+            userName: "Casey",
+            sourceQuote: secondNames,
+          })
+          yield* llm.tool("companion_memory", { action: "remember", text: "The user and Sol chose a copper boat." })
+          yield* llm.text("Saved the names and the copper boat.")
+          yield* prompt.prompt({ sessionID: secondChat.id, model: ref, parts: [{ type: "text", text: secondNames }] })
+          const secondWire = JSON.stringify((yield* llm.inputs).at(-1))
+          expect(secondWire).toContain("Conversation name: Sol")
+          expect(secondWire).toContain("Preferred name: Casey")
+          expect(secondWire).not.toContain("Luna")
+          expect(secondWire).not.toContain("Rowan")
+          expect(secondWire).not.toContain("silver kite")
+          expect(secondWire).not.toContain("### Getting acquainted")
+        }).pipe(provideInstance(secondCompanion.profile.directory))
+
+        yield* llm.text("We can keep getting acquainted when you want.")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: other,
+          parts: [{ type: "text", text: "Let's continue getting acquainted." }],
+        })
+        const activeWire = JSON.stringify((yield* llm.inputs).at(-1))
+        expect(activeWire).toContain("### Getting acquainted")
+        expect(activeWire).toContain("Conversation name: Luna")
+        expect(activeWire).toContain("Preferred name: Rowan")
+        expect(activeWire).not.toContain("Casey")
+        expect(activeWire).not.toContain("copper boat")
+        expect((yield* companions.search({ id: initialized.profile.id, query: "copper boat" })).results).toEqual([])
+        expect((yield* companions.search({ id: secondCompanion.profile.id, query: "silver kite" })).results).toEqual([])
+        expect(
+          (yield* companions.search({ id: initialized.profile.id, query: "silver kite" })).results.length,
+        ).toBeGreaterThan(0)
+        expect(
+          (yield* companions.search({ id: secondCompanion.profile.id, query: "copper boat" })).results.length,
+        ).toBeGreaterThan(0)
+
+        const pause = "Pause getting acquainted for now."
+        yield* llm.tool("companion_profile", { action: "pause", sourceQuote: pause })
+        yield* llm.text("We can continue later.")
+        yield* prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text: pause }] })
+        expect(JSON.stringify((yield* llm.inputs).at(-1))).not.toContain("### Getting acquainted")
+        expect((yield* companions.get(initialized.profile.id))?.introduction).toBe("paused")
+        expect(PromptCaches.souls.get(chat.id)).toBe(soul)
+      }).pipe(provideInstance(initialized.profile.directory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
+
 it.live("companion Chat recalls history, selectively saves a memory, and keeps Code separate", () =>
   Effect.gen(function* () {
     const directory = yield* tmpdirScoped()
@@ -677,17 +845,27 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
       const sessions = yield* Session.Service
       const prompt = yield* SessionPrompt.Service
       const pluginFile = path.join(directory, "engineering-memory-plugin.ts")
-      yield* writeText(pluginFile, `export default async () => ({
+      yield* writeText(
+        pluginFile,
+        `export default async () => ({
         promptModes: ["code"],
         "experimental.chat.system.transform": (_input, output) => { output.system.push("ENGINEERING_PLUGIN_SENTINEL") },
         "experimental.chat.messages.transform": (_input, output) => {
           const last = output.messages.at(-1)
           if (last?.info.role === "user") last.parts.find(p => p.type === "text").text += " ENGINEERING_RECALL_SENTINEL"
         },
-      })`)
+      })`,
+      )
       const skillRoot = path.join(directory, "shared-skills")
-      yield* writeText(path.join(skillRoot, "shared-helper/SKILL.md"), "---\nname: shared-helper\ndescription: Shared practical capability sentinel.\n---\nHelp with an ordinary task.")
-      const sharedConfig = { ...providerCfg(llm.url), plugin: [pathToFileURL(pluginFile).href], skills: { paths: [skillRoot] } }
+      yield* writeText(
+        path.join(skillRoot, "shared-helper/SKILL.md"),
+        "---\nname: shared-helper\ndescription: Shared practical capability sentinel.\n---\nHelp with an ordinary task.",
+      )
+      const sharedConfig = {
+        ...providerCfg(llm.url),
+        plugin: [pathToFileURL(pluginFile).href],
+        skills: { paths: [skillRoot] },
+      }
       yield* ensureDir(path.join(imported.profile.directory, ".git"))
       yield* writeConfig(imported.profile.directory, sharedConfig)
       yield* writeText(path.join(imported.profile.directory, ".redcode", "MEMORY.md"), "Engineering memory sentinel.")
@@ -756,7 +934,11 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         expect(recalledHistory.tools).toEqual((yield* llm.inputs)[4].tools)
         const child = yield* sessions.create({ parentID: chat.id })
         yield* llm.text("The practical task is done.")
-        yield* prompt.prompt({ sessionID: child.id, model: ref, parts: [{ type: "text", text: "Inspect the requested file." }] })
+        yield* prompt.prompt({
+          sessionID: child.id,
+          model: ref,
+          parts: [{ type: "text", text: "Inspect the requested file." }],
+        })
         const childWire = JSON.stringify((yield* llm.inputs)[6])
         expect(childWire).toContain("Mira identity sentinel")
         expect(childWire).not.toContain("Engineering memory sentinel")
@@ -831,10 +1013,14 @@ it.instance("sends the pinned Soul and scoped engineering memory through each ac
       : "---\nid: third\nname: Third\ndisplay_name: Partner\ncommit_prefix: ThirdOwner\n---\n\n# Third persona\n\nwire soul sentinel\n"
     yield* writeText(path.join(soulsDirectory, "third.md"), source)
     const agentsFile = process.env.REDCODE_AGENTS_ACCEPTANCE_FILE
-    yield* writeText(path.join(dir, "AGENTS.md"), agentsFile
-      ? yield* Effect.promise(() => Bun.file(agentsFile).text())
-      : "Use focused checks for this project.")
-    yield* writeText(path.join(dir, ".redcode/MEMORY.md"), "Engineering lesson sentinel: inspect the parser before changing it.")
+    yield* writeText(
+      path.join(dir, "AGENTS.md"),
+      agentsFile ? yield* Effect.promise(() => Bun.file(agentsFile).text()) : "Use focused checks for this project.",
+    )
+    yield* writeText(
+      path.join(dir, ".redcode/MEMORY.md"),
+      "Engineering lesson sentinel: inspect the parser before changing it.",
+    )
     yield* writeText(path.join(dir, "probe.txt"), "The requested file is available.")
     yield* Effect.gen(function* () {
       const registry = yield* Effect.gen(function* () {
@@ -1692,10 +1878,7 @@ it.instance("native preflight does not replace the last sent request with unsent
     yield* Effect.addFinalizer(() => Effect.sync(() => dropSession(chat.id)))
     // 261113 Red 夹具不能是周期性文本：流内 n-gram 检测现在会真的掐流（原夹具 500 次
     // 同一句话在 240 字符处就命中），本用例测的是 native preflight 的请求快照。
-    const earlier = Array.from(
-      { length: 500 },
-      (_, index) => `Earlier completed implementation ${index}.`,
-    ).join(" ")
+    const earlier = Array.from({ length: 500 }, (_, index) => `Earlier completed implementation ${index}.`).join(" ")
     yield* llm.text(earlier, { usage: { input: 100, output: 5 } })
     yield* prompt.prompt({
       sessionID: chat.id,
@@ -2642,9 +2825,7 @@ it.instance("user steering records the parent trace before the child model turn 
         const message = messages.find((item) =>
           item.parts.some((part) => part.type === "text" && part.metadata?.task_steer_record !== undefined),
         )
-        return message?.parts.find(
-          (part) => part.type === "text" && part.metadata?.task_steer_record !== undefined,
-        )
+        return message?.parts.find((part) => part.type === "text" && part.metadata?.task_steer_record !== undefined)
       }),
       "parent steering trace was not written while the child was running",
     )
@@ -2967,7 +3148,10 @@ it.instance("n-gram repetition stops the turn with a single request and a persis
     expect(result.info.role).toBe("assistant")
     if (result.info.role !== "assistant") return
     expect(result.info.error?.name).toBe("TextLoopStoppedError")
-    const text = result.parts.filter((part) => part.type === "text").map((part) => part.text).join("")
+    const text = result.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("")
     expect(text).toContain("[RedCode] 检测到模型输出在反复重复同一段内容")
     expect(text).not.toContain("multiple recovery attempts")
     expect(text).not.toContain(afterTrip)

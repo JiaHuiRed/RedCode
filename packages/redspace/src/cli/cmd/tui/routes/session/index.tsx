@@ -83,6 +83,7 @@ import * as Editor from "../../util/editor"
 import stripAnsi from "strip-ansi"
 import { filterCannedAgreement } from "@redcode-ai/core/util/canned-agreement"
 import { usePromptRef } from "../../context/prompt"
+import { CompanionIntroduction } from "../../component/companion-introduction"
 import { useExit } from "../../context/exit"
 import { Filesystem } from "@/util/filesystem"
 import { PermissionPrompt } from "./permission"
@@ -746,9 +747,7 @@ export function Session() {
         : undefined
     setResultView((prev) => !prev)
     toast.show({
-      message: resultView()
-        ? "结果阅读：已完成过程折叠为一行，点击过程行展开"
-        : "结果阅读：关闭，显示完整过程",
+      message: resultView() ? "结果阅读：已完成过程折叠为一行，点击过程行展开" : "结果阅读：关闭，显示完整过程",
       variant: "info",
       duration: 3000,
     })
@@ -1131,7 +1130,9 @@ export function Session() {
         const revert = session()?.revert?.messageID
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = revert ? messages().find((x) => x.id === revert) : undefined
-        const message = messages().findLast((x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && isUserTurn(x, sync.data.part[x.id]))
+        const message = messages().findLast(
+          (x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && isUserTurn(x, sync.data.part[x.id]),
+        )
         if (!message) return
         const parts = sync.data.part[message.id]
         const draft = parts.reduce(
@@ -1184,7 +1185,9 @@ export function Session() {
         if (!messageID) return
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = messages().find((x) => x.id === messageID)
-        const message = revertMsg ? messages().find((x) => isUserTurn(x, sync.data.part[x.id]) && cmpTime(x, revertMsg) > 0) : undefined
+        const message = revertMsg
+          ? messages().find((x) => isUserTurn(x, sync.data.part[x.id]) && cmpTime(x, revertMsg) > 0)
+          : undefined
         const failed = (error: unknown) =>
           toast.show({
             message: errorMessage(error),
@@ -1958,6 +1961,9 @@ export function Session() {
                 </For>
               </scrollbox>
               <box flexShrink={0}>
+                <Show when={session()?.mode === "chat" && !session()?.parentID}>
+                  <CompanionIntroduction id={session()?.companionID} />
+                </Show>
                 {/* 261109 Karina UX-02：输入框上方的实时工作状态台（根/子会话都可见） */}
                 <SessionActivityHud sessionID={route.sessionID} />
                 <CompactingIndicator sessionID={route.sessionID} />
@@ -2441,8 +2447,7 @@ export function AssistantMessage(props: {
   // 界面上读不出是谁在说。
   const showSignature = createMemo(
     () =>
-      props.showSignature !== false ||
-      props.parts.some((part) => part.type === "text" && part.text.trim().length > 0),
+      props.showSignature !== false || props.parts.some((part) => part.type === "text" && part.text.trim().length > 0),
   )
 
   // 261116 Red A06：结果阅读只折叠正常完成的过程；运行中、失败、待权限/待回答一律原样可见。
@@ -2477,7 +2482,12 @@ export function AssistantMessage(props: {
           }}
         >
           <text fg={theme.accent}>
-            {(local.soul.label(sync.session.get(props.message.sessionID)?.soul) ?? local.displayName.agent) + ": "}
+            {((() => {
+              const session = sync.session.get(props.message.sessionID)
+              return session?.mode === "chat"
+                ? local.companion.label(session.companionID, session.soul)
+                : local.soul.label(session?.soul)
+            })() ?? local.displayName.agent) + ": "}
           </text>
         </box>
       </Show>
@@ -2588,9 +2598,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const content = createMemo(() => {
     // OpenRouter encrypts some reasoning blocks; drop the placeholder.
     // 261115 Red 思考链与正文同口径：套话同样不展示。
-    return filterCannedAgreement(props.part.text)
-      .replace("[REDACTED]", "")
-      .trim()
+    return filterCannedAgreement(props.part.text).replace("[REDACTED]", "").trim()
   })
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.

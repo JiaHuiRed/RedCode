@@ -25,8 +25,10 @@ import {
 } from "./ipc"
 import {
   exportDebugLogs,
+  getLogDirectories,
   initCrashReporter,
   initLogging,
+  openLogDirectory,
   startNetLog,
   write as writeLog,
   writeCrashReport,
@@ -436,7 +438,7 @@ function confirmQuit() {
 function showTray() {
   const menu = Menu.buildFromTemplate([
     {
-        label: "显示 RedSpace",
+      label: "显示 RedSpace",
       click: () => {
         mainWindow?.show()
         mainWindow?.focus()
@@ -696,6 +698,8 @@ const main = Effect.gen(function* () {
     installUpdate: async () => installUpdate(killSidecar),
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
+    getLogDirectories: () => getLogDirectories(),
+    openLogDirectory: (kind) => openLogDirectory(kind),
     saveGuiDiagnostics: (payload) => writeGuiDiagnostics(payload),
     recordFatalRendererError: (error) => {
       // 260929 Red 渲染层 fatal 也落诊断报告（error boundary 捕到的顶部异常），不只是日志

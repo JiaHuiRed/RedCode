@@ -21,6 +21,12 @@ export type MobileGatewayStatus = {
   devices: MobileGatewayDevice[]
 }
 
+export type LogDirectories = {
+  desktop: string
+  currentRun: string
+  server: string[]
+}
+
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
 export type ServerReadyData = {
@@ -97,6 +103,7 @@ export type ElectronAPI = {
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
+  revealPath: (path: string) => Promise<void>
   // 261116 Red A05 桌面浏览器预览：文档经主进程回环 HTTP（随机 token）在默认浏览器打开
   openHtmlPreview: (document: string) => Promise<void>
   writeAttachment: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
@@ -120,6 +127,8 @@ export type ElectronAPI = {
   installUpdate: () => Promise<UpdateInstallResult>
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
+  getLogDirectories: () => Promise<LogDirectories>
+  openLogDirectory: (kind: "desktop" | "server") => Promise<void>
   saveGuiDiagnostics: (payload: string) => Promise<string | null>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   getMobileGatewayStatus: () => Promise<MobileGatewayStatus>

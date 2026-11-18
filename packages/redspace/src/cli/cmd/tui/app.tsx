@@ -31,6 +31,7 @@ import { ProjectProvider, useProject } from "@tui/context/project"
 import { ProjectNavigationProvider, useProjectNavigation, type ProjectScope } from "./context/project-navigation"
 import { DialogProjectSelect } from "./component/dialog-project-select"
 import { DialogCompanion } from "./component/dialog-companion"
+import { DialogCompanionIntroduction } from "./component/companion-introduction"
 import { latestCodeSession, latestCompanionSession } from "./companion"
 import { EditorContextProvider } from "@tui/context/editor"
 import { useEvent } from "@tui/context/event"
@@ -436,12 +437,22 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     const prefix = status?.type === "busy" ? "▶ " : ""
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle(`${prefix}RedCode`)
+      renderer.setTerminalTitle(
+        route.data.companionID
+          ? `${prefix}RedSpace | ${local.companion.label(route.data.companionID, undefined, route.data.companionName)}`
+          : `${prefix}RedCode`,
+      )
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
+      if (session?.mode === "chat") {
+        const name = local.companion.label(session.companionID, session.soul)
+        const title = SessionApi.isDefaultTitle(session.title) ? "" : ` | ${session.title.slice(0, 40)}`
+        renderer.setTerminalTitle(`${prefix}RedSpace | ${name}${title}`)
+        return
+      }
       if (!session || SessionApi.isDefaultTitle(session.title)) {
         renderer.setTerminalTitle(`${prefix}RedCode`)
         return
@@ -541,11 +552,31 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     [
       {
         name: "space.chat",
-        title: "Chat · 与伙伴继续聊天",
+        title: "Chat · 选择或新建伙伴",
         category: "Space",
         slashName: "chat",
         hidden: navigation?.enabled !== true,
         run: () => dialog.replace(() => <DialogCompanion />),
+      },
+      {
+        name: "space.introduce",
+        title: "Chat · 相识",
+        category: "Space",
+        slashName: "introduce",
+        hidden: !(route.data.type === "home"
+          ? route.data.companionID
+          : route.data.type === "session" && !sync.session.get(route.data.sessionID)?.parentID
+            ? sync.session.get(route.data.sessionID)?.companionID
+            : undefined),
+        run: () => {
+          const id =
+            route.data.type === "home"
+              ? route.data.companionID
+              : route.data.type === "session"
+                ? sync.session.get(route.data.sessionID)?.companionID
+                : undefined
+          if (id) dialog.replace(() => <DialogCompanionIntroduction id={id} prompt={() => promptRef.current} />)
+        },
       },
       {
         name: "space.code",
@@ -606,7 +637,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             type: "home",
             companionID,
             companionName: session
-              ? local.soul.label(session.soul)
+              ? local.companion.label(session.companionID, session.soul)
               : route.data.type === "home"
                 ? route.data.companionName
                 : undefined,
@@ -982,7 +1013,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       route.navigate({
         type: "home",
         companionID: evt.properties.info.companionID,
-        companionName: local.soul.label(evt.properties.info.soul),
+        companionName: local.companion.label(evt.properties.info.companionID, evt.properties.info.soul),
       })
       toast.show({
         variant: "info",

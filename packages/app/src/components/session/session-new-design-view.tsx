@@ -28,6 +28,7 @@ import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Button } from "@redcode-ai/ui/button"
 import { SoulAvatar } from "@/components/soul-avatar"
 import { isCodeSession } from "@/utils/product-mode"
+import { chooseCodeSoul } from "@/utils/code-soul"
 import { WordmarkV2 } from "@redcode-ai/ui/v2/components/wordmark-v2.jsx"
 import { readSessionDraft, sessionNextAction } from "./session-next-action"
 
@@ -63,10 +64,29 @@ export function NewSessionDesignView(props: {
     queryKey: ["soul", globalSDK.url, "list"],
     queryFn: async () => (await globalSDK.client.soul.list({ throwOnError: true })).data,
   }))
-  const effectiveSoulID = createMemo(
-    () => props.newSessionSoul?.() ?? settings.personalization.lastSoul() ?? undefined,
-  )
-  const currentSoul = createMemo(() => soulList.data?.find((soul) => soul.id === effectiveSoulID()))
+  const companionList = useQuery(() => ({
+    queryKey: ["companion", globalSDK.url, "list"],
+    queryFn: async () => (await globalSDK.client.companion.list({ throwOnError: true })).data,
+  }))
+  const defaultSoul = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "default", "desktop"],
+    queryFn: async () => (await globalSDK.client.soul.default({ client: "desktop" }, { throwOnError: true })).data,
+  }))
+  const codeSouls = createMemo(() => {
+    if (!companionList.data) return []
+    const bound = new Set(companionList.data.map((profile) => profile.soulID))
+    return (soulList.data ?? []).filter((soul) => !bound.has(soul.id))
+  })
+  const effectiveSoulID = createMemo(() => {
+    if (!companionList.data || !soulList.data) return undefined
+    return chooseCodeSoul({
+      saved: props.newSessionSoul?.() ?? settings.personalization.lastSoul(),
+      serverDefault: defaultSoul.data?.id,
+      souls: soulList.data,
+      companions: companionList.data,
+    })
+  })
+  const currentSoul = createMemo(() => codeSouls().find((soul) => soul.id === effectiveSoulID()))
 
   const projectRoot = createMemo(() => sync.project?.worktree ?? sdk.directory)
   const projects = createMemo(() => {
@@ -178,16 +198,14 @@ export function NewSessionDesignView(props: {
                       <DropdownMenu.GroupLabel class="text-12-medium text-text-weak">
                         {language.t("prompt.soul.title")}
                       </DropdownMenu.GroupLabel>
-                      <DropdownMenu.Item
-                        onSelect={() => props.onNewSessionSoulChange?.(undefined)}
-                      >
+                      <DropdownMenu.Item onSelect={() => props.onNewSessionSoulChange?.(undefined)}>
                         <DropdownMenu.ItemLabel>
                           <Show when={!props.newSessionSoul?.()}>✓ </Show>
                           {language.t("prompt.soul.followDefault")}
                         </DropdownMenu.ItemLabel>
                       </DropdownMenu.Item>
                       <DropdownMenu.Separator />
-                      <For each={soulList.data ?? []}>
+                      <For each={codeSouls()}>
                         {(soul) => (
                           <DropdownMenu.Item onSelect={() => props.onNewSessionSoulChange?.(soul.id)}>
                             <DropdownMenu.ItemLabel class="flex items-center gap-2">
@@ -246,11 +264,7 @@ export function NewSessionDesignView(props: {
             {/* 261116 Red B03：最近任务 =「继续已有任务」，与上方输入（开始新任务）分开。
                 只放轻量文本行，不加卡片；加载/为空时整块不渲染，保持字标与输入区的视觉中心。 */}
             <Show when={recentTasks().length > 0}>
-              <div
-                data-component="new-session-recent"
-                class="mt-3"
-                aria-label={language.t("session.new.recent.title")}
-              >
+              <div data-component="new-session-recent" class="mt-3" aria-label={language.t("session.new.recent.title")}>
                 <div class="flex min-w-0 items-baseline gap-2 px-2 pb-0.5">
                   <span class="shrink-0 text-sm [font-weight:530] text-v2-text-text-muted">
                     {language.t("session.new.recent.title")}
@@ -260,9 +274,7 @@ export function NewSessionDesignView(props: {
                   </span>
                 </div>
                 <div class="flex flex-col">
-                  <For each={recentTasks()}>
-                    {(session) => <RecentTaskRow session={session} onOpen={openRecent} />}
-                  </For>
+                  <For each={recentTasks()}>{(session) => <RecentTaskRow session={session} onOpen={openRecent} />}</For>
                 </div>
               </div>
             </Show>
@@ -307,10 +319,18 @@ function RecentTaskRow(props: { session: Session; onOpen: (session: Session, foc
       }
     }
     if (info?.kind === "error") {
-      return { label: language.t("session.action.viewError"), tone: "text-v2-state-fg-danger", dot: "bg-v2-state-fg-danger" }
+      return {
+        label: language.t("session.action.viewError"),
+        tone: "text-v2-state-fg-danger",
+        dot: "bg-v2-state-fg-danger",
+      }
     }
     if (info?.kind === "unseen") {
-      return { label: language.t("session.action.viewResult"), tone: "text-v2-state-fg-info", dot: "bg-v2-state-fg-info" }
+      return {
+        label: language.t("session.action.viewResult"),
+        tone: "text-v2-state-fg-info",
+        dot: "bg-v2-state-fg-info",
+      }
     }
     if (draft()) {
       return {

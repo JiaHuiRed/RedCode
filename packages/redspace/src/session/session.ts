@@ -621,8 +621,8 @@ export interface Interface {
     sessionID: SessionID
     messageID: MessageID
   }) => Effect.Effect<void, QueuedMessageConflict | NotFoundError>
- // 261031 Red 引导领取：loop 组装前把全部 pending_steer 转 steer（与编辑互斥走 queueLock）。
- readonly promotePendingSteer: (sessionID: SessionID) => Effect.Effect<MessageID | undefined>
+  // 261031 Red 引导领取：loop 组装前把全部 pending_steer 转 steer（与编辑互斥走 queueLock）。
+  readonly promotePendingSteer: (sessionID: SessionID) => Effect.Effect<MessageID | undefined>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
   readonly getPart: (input: {
@@ -840,11 +840,7 @@ export const layer: Layer.Layer<
         // 链从这条消息断开、后续全部不可达（steer 测试实测）。落库前把库里的
         // 指针合并回来；写者自己带的新值优先（分支改选走 appendBranch/selectVersion）。
         const stored = Database.use((db) =>
-          db
-            .select({ data: MessageTable.data })
-            .from(MessageTable)
-            .where(eq(MessageTable.id, msg.id))
-            .get(),
+          db.select({ data: MessageTable.data }).from(MessageTable).where(eq(MessageTable.id, msg.id)).get(),
         )
         if (stored) {
           const prev = stored.data as MessageV2.Info
@@ -862,22 +858,22 @@ export const layer: Layer.Layer<
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
-   // 261031 Red 待消费消息 = queued（排队）或 pending_steer（忙碌引导）——两者都允许
-   // 编辑/撤回/送达；steer 及之后的状态不可改，编辑明确冲突不悄悄改历史。
-   const queuedMessage = Effect.fn("Session.queuedMessage")(function* (input: {
-     sessionID: SessionID
-     messageID: MessageID
-   }) {
-     if (queuedReservations.get(input.sessionID) === input.messageID)
-       return yield* new QueuedMessageConflict({ messageID: input.messageID })
-     const message = yield* MessageV2.get(input)
-     if (
-       message.info.role !== "user" ||
-       (message.info.delivery !== "queued" && message.info.delivery !== "pending_steer")
-     )
-       return yield* new QueuedMessageConflict({ messageID: input.messageID })
-     return message
-   })
+    // 261031 Red 待消费消息 = queued（排队）或 pending_steer（忙碌引导）——两者都允许
+    // 编辑/撤回/送达；steer 及之后的状态不可改，编辑明确冲突不悄悄改历史。
+    const queuedMessage = Effect.fn("Session.queuedMessage")(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+    }) {
+      if (queuedReservations.get(input.sessionID) === input.messageID)
+        return yield* new QueuedMessageConflict({ messageID: input.messageID })
+      const message = yield* MessageV2.get(input)
+      if (
+        message.info.role !== "user" ||
+        (message.info.delivery !== "queued" && message.info.delivery !== "pending_steer")
+      )
+        return yield* new QueuedMessageConflict({ messageID: input.messageID })
+      return message
+    })
 
     // 261007 Red 领取只占用内存 reservation；只有收到真实模型响应后才写 delivered，
     // 进程中断会让持久 queued 状态留给下一次显式 loop。
@@ -991,46 +987,46 @@ export const layer: Layer.Layer<
       },
     )
 
-   // 261031 Red 引导领取：下一个模型请求组装前把该会话全部 pending_steer 转 steer。
-   // 与编辑/撤回共用 queueLock 串行——领取后普通编辑明确冲突（steer 不可改），
-   // 编辑先落盘则领取转发的是编辑后的文本。返回最后一条领取的消息 ID（无则 undefined）。
-   const promotePendingSteer: Interface["promotePendingSteer"] = Effect.fn("Session.promotePendingSteer")(
-     function* (sessionID) {
-       return yield* queueLock(sessionID).withPermits(1)(
-         Effect.gen(function* () {
-           const rows = Database.use((db) =>
-             db
-               .select()
-               .from(MessageTable)
-               .where(
-                 and(
-                   eq(MessageTable.session_id, sessionID),
-                   sql`json_extract(${MessageTable.data}, '$.delivery') = 'pending_steer'`,
-                 ),
-               )
-               .orderBy(MessageTable.time_created, MessageTable.id)
-               .all(),
-           )
-           let last: MessageID | undefined
-           for (const row of rows) {
-             const message = row.data as MessageV2.User
-             const messageID = MessageID.make(row.id)
-             // 261114 Red 同 claim：pending_steer 在领取边界接线
-             yield* appendLock(sessionID).withPermits(1)(
-               Effect.sync(() => wireToChainTail(sessionID, messageID, true)),
-             )
-             // 翻转前重读：上面的接线 json_set 了 parentID，陈旧副本整包重写会抹掉它
-             const fresh = yield* MessageV2.get({ sessionID, messageID }).pipe(Effect.orDie)
-             if (fresh.info.role !== "user") continue
-             yield* updateMessage({ ...fresh.info, delivery: "steer" })
-             last = messageID
-           }
-           if (last) log.info("steer.promoted", { sessionID, count: rows.length, messageID: last })
-           return last
-         }),
-       )
-     },
-   )
+    // 261031 Red 引导领取：下一个模型请求组装前把该会话全部 pending_steer 转 steer。
+    // 与编辑/撤回共用 queueLock 串行——领取后普通编辑明确冲突（steer 不可改），
+    // 编辑先落盘则领取转发的是编辑后的文本。返回最后一条领取的消息 ID（无则 undefined）。
+    const promotePendingSteer: Interface["promotePendingSteer"] = Effect.fn("Session.promotePendingSteer")(
+      function* (sessionID) {
+        return yield* queueLock(sessionID).withPermits(1)(
+          Effect.gen(function* () {
+            const rows = Database.use((db) =>
+              db
+                .select()
+                .from(MessageTable)
+                .where(
+                  and(
+                    eq(MessageTable.session_id, sessionID),
+                    sql`json_extract(${MessageTable.data}, '$.delivery') = 'pending_steer'`,
+                  ),
+                )
+                .orderBy(MessageTable.time_created, MessageTable.id)
+                .all(),
+            )
+            let last: MessageID | undefined
+            for (const row of rows) {
+              const message = row.data as MessageV2.User
+              const messageID = MessageID.make(row.id)
+              // 261114 Red 同 claim：pending_steer 在领取边界接线
+              yield* appendLock(sessionID).withPermits(1)(
+                Effect.sync(() => wireToChainTail(sessionID, messageID, true)),
+              )
+              // 翻转前重读：上面的接线 json_set 了 parentID，陈旧副本整包重写会抹掉它
+              const fresh = yield* MessageV2.get({ sessionID, messageID }).pipe(Effect.orDie)
+              if (fresh.info.role !== "user") continue
+              yield* updateMessage({ ...fresh.info, delivery: "steer" })
+              last = messageID
+            }
+            if (last) log.info("steer.promoted", { sessionID, count: rows.length, messageID: last })
+            return last
+          }),
+        )
+      },
+    )
 
     const updatePart = <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
@@ -1091,7 +1087,7 @@ export const layer: Layer.Layer<
       if (mode === "code" && companionID !== undefined)
         return yield* new InvalidCompanion({ companionID, message: "A companion can only be bound to a Chat session" })
       if (mode === "chat" && !companionID)
-        return yield* new InvalidCompanion({ message: "A Chat session requires an imported companion" })
+        return yield* new InvalidCompanion({ message: "A Chat session requires a companion" })
       const companion = mode === "chat" && !parent ? yield* resolveCompanion(companionID!) : undefined
       if (companion && path.relative(companion.directory, ctx.directory) !== "")
         return yield* new InvalidCompanion({ companionID, message: "Open Chat in the companion's personal workspace" })
@@ -1107,8 +1103,12 @@ export const layer: Layer.Layer<
       let soul = parent?.soul
       let soulInfo: SoulInfo | undefined
       if (!parent) {
+        const excluded =
+          mode === "code" && input?.soul === undefined
+            ? new Set((yield* companionProfiles()).map((profile) => profile.soulID))
+            : new Set<string>()
         const requested = boundSoul ?? input?.soul ?? (yield* soulSvc.defaultForClient(flags.client))
-        soulInfo = requested ? yield* soulSvc.get(requested) : undefined
+        soulInfo = requested && !excluded.has(requested) ? yield* soulSvc.get(requested) : undefined
         if (!soulInfo && companion)
           return yield* new InvalidCompanion({
             companionID,
@@ -1117,14 +1117,16 @@ export const layer: Layer.Layer<
         if (!soulInfo && input?.soul !== undefined)
           return yield* new InvalidSoul({ soul: input.soul, message: `Unknown or invalid soul: ${input.soul}` })
         if (!soulInfo) {
-          const first = (yield* soulSvc.list())[0]
+          const first = (yield* soulSvc.list()).find((candidate) => !excluded.has(candidate.id))
           soulInfo = first ? yield* soulSvc.get(first.id) : undefined
         }
         soul = soulInfo?.id
       }
       const soulBodyHash =
         parent?.soulBodyHash ??
-        (soulInfo && Buffer.byteLength(soulInfo.content, "utf8") <= MAX_SOUL_BYTES ? saveSoulVersion(soulInfo) : undefined)
+        (soulInfo && Buffer.byteLength(soulInfo.content, "utf8") <= MAX_SOUL_BYTES
+          ? saveSoulVersion(soulInfo)
+          : undefined)
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -1179,13 +1181,15 @@ export const layer: Layer.Layer<
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
         // 261114 Red 树字段不随 fork 带过去：msgs 已是可见路径（线性化），源会话的
         // 指针在 fork 里是悬空引用；fork 保持线性会话，首写时经 appendMessage 物化。
-        const cloned = yield* updateMessage((() => {
-          const info = { ...msg.info, sessionID: session.id, id: newID }
-          delete (info as { selectedChildID?: unknown }).selectedChildID
-          if (msg.info.role === "user") delete (info as { parentID?: unknown }).parentID
-          else if (parentID) (info as { parentID?: MessageID | undefined }).parentID = parentID
-          return info as MessageV2.Info
-        })())
+        const cloned = yield* updateMessage(
+          (() => {
+            const info = { ...msg.info, sessionID: session.id, id: newID }
+            delete (info as { selectedChildID?: unknown }).selectedChildID
+            if (msg.info.role === "user") delete (info as { parentID?: unknown }).parentID
+            else if (parentID) (info as { parentID?: MessageID | undefined }).parentID = parentID
+            return info as MessageV2.Info
+          })(),
+        )
 
         for (const part of msg.parts) {
           const p: MessageV2.Part = {
@@ -1327,18 +1331,13 @@ export const layer: Layer.Layer<
         if (!tail) return undefined
         const prev = probe[1]
         const tailEdgeWired =
-          prev === undefined ||
-          (prev.data as { selectedChildID?: MessageID }).selectedChildID === tail.id
+          prev === undefined || (prev.data as { selectedChildID?: MessageID }).selectedChildID === tail.id
         if (tailEdgeWired) {
           // 旧写入方损伤修复：appendMessage 曾先接线后落库，parentID 的 json_set
           // 打在尚未落库的行上（0 行生效），链尾 user 落库即缺树父。尾边在 ⇒
           // prev 就是链上前驱，只补这一行，不触发全量物化。
           const tailInfo = tail.data as MessageV2.Info
-          if (
-            prev &&
-            tailInfo.role === "user" &&
-            (tailInfo as { parentID?: MessageID }).parentID === undefined
-          ) {
+          if (prev && tailInfo.role === "user" && (tailInfo as { parentID?: MessageID }).parentID === undefined) {
             db.run(
               sql`UPDATE ${MessageTable} SET data = json_set(${MessageTable.data}, '$.parentID', ${prev.id}) WHERE ${MessageTable.id} = ${tail.id}`,
             )
@@ -1540,8 +1539,8 @@ export const layer: Layer.Layer<
       releaseQueuedMessage,
       deliverQueuedMessage,
       editQueuedMessage,
-     cancelQueuedMessage,
-     promotePendingSteer,
+      cancelQueuedMessage,
+      promotePendingSteer,
       removeMessage,
       removePart,
       updatePart,
@@ -1571,6 +1570,15 @@ const resolveCompanion = Effect.fn("Session.resolveCompanion")(function* (id: st
   ).pipe(Effect.mapError((error) => new InvalidCompanion({ companionID: id, message: error.message })))
   if (!profile) return yield* new InvalidCompanion({ companionID: id, message: `Unknown companion: ${id}` })
   return profile
+})
+
+const companionProfiles = Effect.fn("Session.companionProfiles")(function* () {
+  const available = yield* Effect.serviceOption(Companion.Service)
+  return yield* (
+    Option.isSome(available)
+      ? available.value.list()
+      : Companion.Service.use((service) => service.list()).pipe(Effect.provide(Companion.defaultLayer))
+  ).pipe(Effect.mapError((error) => new InvalidCompanion({ message: error.message })))
 })
 
 const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function* (

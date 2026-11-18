@@ -15,7 +15,11 @@ export type StashEntry = {
 
 const MAX_STASH_ENTRIES = 50
 
-export const { use: usePromptStash, provider: PromptStashProvider } = createSimpleContext({
+export const {
+  use: usePromptStash,
+  provider: PromptStashProvider,
+  context: promptStashContext,
+} = createSimpleContext({
   name: "PromptStash",
   init: () => {
     const stashPath = path.join(Global.Path.state, "prompt-stash.jsonl")

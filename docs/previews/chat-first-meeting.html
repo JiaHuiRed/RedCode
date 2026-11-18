@@ -1,0 +1,1408 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RedSpace · Chat 初次相识预览</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #eeedf2;
+        --surface: #ffffff;
+        --side: #f6f5f8;
+        --soft: #f4f2f8;
+        --text: #292633;
+        --muted: #827c8e;
+        --line: #e8e5ed;
+        --accent: #8160cb;
+        --accent-soft: #eee7fa;
+        --accent-text: #6e45b8;
+        --input: #ffffff;
+        --green: #3a8b70;
+        --shadow: 0 20px 80px #29233b15, 0 2px 6px #29233b08;
+      }
+      [data-theme="plum"] {
+        color-scheme: dark;
+        --canvas: #191420;
+        --surface: #251d32;
+        --side: #201829;
+        --soft: #2d243b;
+        --text: #f2ecfa;
+        --muted: #b2a4c4;
+        --line: #41354f;
+        --accent: #b598f1;
+        --accent-soft: #3e2d59;
+        --accent-text: #d5bfff;
+        --input: #2b2139;
+        --green: #8acdb1;
+        --shadow: 0 20px 80px #0004;
+      }
+      [data-theme="dark"] {
+        color-scheme: dark;
+        --canvas: #151519;
+        --surface: #202025;
+        --side: #1b1b20;
+        --soft: #28282f;
+        --text: #ececf2;
+        --muted: #a1a1b1;
+        --line: #37373f;
+        --accent: #b498ee;
+        --accent-soft: #393047;
+        --accent-text: #d1b8fb;
+        --input: #26262d;
+        --green: #8acdb1;
+        --shadow: 0 20px 80px #0004;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          14px/1.65 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      select:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 3px;
+      }
+      button,
+      input,
+      select {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+      button {
+        padding: 8px 14px;
+        line-height: 1.4;
+        transition:
+          background 0.12s,
+          border-color 0.12s;
+      }
+      button:hover:not(:disabled) {
+        background: var(--soft);
+        border-color: var(--muted);
+      }
+      button.primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: transparent;
+      }
+      [data-theme="plum"] button.primary,
+      [data-theme="dark"] button.primary {
+        color: #21182e;
+      }
+      button.primary:hover {
+        filter: brightness(1.06);
+        background: var(--accent);
+        border-color: transparent;
+      }
+      button.subtle {
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      button.icon-button {
+        padding: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      button.text-button {
+        background: none;
+        border: 0;
+        padding: 2px 0;
+        color: var(--accent-text);
+      }
+      .icon {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex-shrink: 0;
+      }
+      .review {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 26px 28px 32px;
+      }
+      .review-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 20px;
+      }
+      .review-header h1 {
+        font-size: 23px;
+        letter-spacing: -0.6px;
+        margin: 0 0 5px;
+        font-weight: 620;
+      }
+      .review-header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .eyebrow {
+        display: block;
+        color: var(--accent-text);
+        font-size: 10px;
+        letter-spacing: 2px;
+        font-weight: 650;
+        margin-bottom: 7px;
+      }
+      .review-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .review-controls select {
+        padding: 8px 10px;
+      }
+      .scenario-tabs {
+        padding: 4px;
+        display: flex;
+        gap: 4px;
+        border: 1px solid var(--line);
+        background: var(--side);
+        border-radius: 12px;
+      }
+      .scenario-tabs button {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 8px 12px;
+      }
+      .scenario-tabs button[aria-pressed="true"] {
+        color: var(--text);
+        background: var(--surface);
+        box-shadow: 0 1px 4px #0000000c;
+      }
+      .workspace {
+        height: min(780px, calc(100vh - 206px));
+        min-height: 600px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        background: var(--surface);
+        display: flex;
+        position: relative;
+      }
+      .rail {
+        width: 174px;
+        flex-shrink: 0;
+        padding: 22px 12px 12px;
+        background: var(--side);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+      }
+      .wordmark {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 650;
+        letter-spacing: -0.4px;
+        padding: 3px 10px 27px;
+        font-size: 17px;
+      }
+      .mark {
+        width: 23px;
+        height: 23px;
+        background: var(--accent);
+        border-radius: 7px 7px 7px 2px;
+        color: var(--surface);
+        display: grid;
+        place-items: center;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .nav-item {
+        display: flex;
+        gap: 11px;
+        align-items: center;
+        width: 100%;
+        margin: 3px 0;
+        padding: 10px 12px;
+        border: 0;
+        text-align: left;
+        background: transparent;
+        color: var(--muted);
+      }
+      .nav-item.active {
+        background: var(--accent-soft);
+        color: var(--accent-text);
+      }
+      .nav-spacer {
+        flex: 1;
+      }
+      .rail-caption {
+        padding: 7px 12px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .chat {
+        min-width: 0;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        padding: 20px 28px;
+        flex-shrink: 0;
+      }
+      .partner-switch {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+      }
+      .avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 13px;
+        display: grid;
+        place-items: center;
+        background: var(--accent-soft);
+        color: var(--accent-text);
+        font-size: 18px;
+        font-weight: 550;
+        flex-shrink: 0;
+      }
+      .avatar.big {
+        width: 54px;
+        height: 54px;
+        border-radius: 19px;
+        font-size: 25px;
+      }
+      .partner-switch select {
+        border: 0;
+        max-width: 180px;
+        font-weight: 600;
+        padding: 5px 8px 5px 0;
+        background: transparent;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .header-actions button {
+        font-size: 12px;
+        padding: 7px 10px;
+      }
+      .chat-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent) transparent;
+      }
+      .conversation {
+        width: 100%;
+        max-width: 740px;
+        margin: 0 auto;
+        padding: 12px 32px 20px;
+      }
+      .empty {
+        min-height: 292px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 26px 10px;
+        text-align: center;
+      }
+      .empty h2 {
+        font-size: 27px;
+        font-weight: 550;
+        letter-spacing: -0.7px;
+        margin: 18px 0 9px;
+      }
+      .empty p {
+        max-width: 350px;
+        margin: 0 0 23px;
+        color: var(--muted);
+      }
+      .empty-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .empty-actions button {
+        font-size: 13px;
+      }
+      .bubble-row {
+        display: flex;
+        gap: 13px;
+        margin: 17px 0;
+        align-items: flex-start;
+      }
+      .bubble-row.user {
+        justify-content: flex-end;
+      }
+      .bubble-row .avatar {
+        width: 30px;
+        height: 30px;
+        font-size: 14px;
+        border-radius: 10px;
+        margin-top: 3px;
+      }
+      .bubble {
+        padding: 8px 0;
+        max-width: 90%;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .bubble-row.user .bubble {
+        background: var(--soft);
+        padding: 12px 17px;
+        border-radius: 16px 16px 4px 16px;
+        max-width: 83%;
+      }
+      .bubble-name {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .saved {
+        font-size: 11px;
+        color: var(--green);
+        display: inline-flex;
+        gap: 5px;
+        align-items: center;
+        margin-top: 7px;
+      }
+      .saved .icon {
+        height: 13px;
+        width: 13px;
+      }
+      .invitation {
+        margin: 22px 0 8px 43px;
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        padding: 13px 16px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .invitation p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .invitation div {
+        display: flex;
+        gap: 7px;
+        flex-shrink: 0;
+      }
+      .invitation button {
+        font-size: 12px;
+        padding: 6px 9px;
+      }
+      .pause-line {
+        display: flex;
+        justify-content: center;
+        margin: 10px 0 0;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .pause-line button {
+        font-size: 11px;
+      }
+      .compose-area {
+        padding: 14px 32px 20px;
+        width: 100%;
+        max-width: 740px;
+        margin: 0 auto;
+      }
+      .composer {
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        box-shadow: 0 3px 12px #00000004;
+        padding: 13px;
+      }
+      .composer:focus-within {
+        border-color: var(--accent);
+      }
+      .composer textarea {
+        border: 0;
+        background: transparent;
+        resize: vertical;
+        min-height: 64px;
+        max-height: 180px;
+        width: 100%;
+        outline: none;
+        padding: 3px 4px;
+        line-height: 1.6;
+        font-size: 13px;
+      }
+      .composer textarea::placeholder {
+        color: var(--muted);
+      }
+      .composer textarea:focus-visible {
+        outline: none;
+      }
+      .compose-bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .compose-bottom span {
+        color: var(--muted);
+        font-size: 11px;
+        padding-left: 4px;
+      }
+      .compose-bottom button {
+        border-radius: 10px;
+        width: 32px;
+        height: 32px;
+        padding: 7px;
+      }
+      .compose-note {
+        text-align: center;
+        margin-top: 9px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .review-footer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: start;
+        gap: 24px;
+        margin-top: 17px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .review-footer p {
+        margin: 0;
+      }
+      .review-footer strong {
+        font-weight: 550;
+        color: var(--text);
+      }
+      .sample-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .sample-actions button {
+        font-size: 11px;
+        padding: 6px 9px;
+        background: transparent;
+      }
+      .sample-actions span {
+        padding: 5px 0;
+        font-size: 11px;
+      }
+      .overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        background: #15121c45;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 24px;
+        backdrop-filter: blur(4px);
+      }
+      .settings {
+        width: 790px;
+        max-width: 100%;
+        height: 590px;
+        max-height: 100%;
+        border-radius: 15px;
+        background: var(--surface);
+        display: flex;
+        box-shadow: 0 20px 70px #0003;
+        overflow: hidden;
+        border: 1px solid var(--line);
+      }
+      .settings-nav {
+        width: 176px;
+        flex-shrink: 0;
+        background: var(--side);
+        padding: 19px 12px;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+      }
+      .settings-nav h2 {
+        font-size: 16px;
+        padding-left: 11px;
+        margin: 0 0 20px;
+      }
+      .settings-nav .nav-item {
+        font-size: 12px;
+      }
+      .settings-content {
+        padding: 28px;
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent) transparent;
+      }
+      .settings-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 15px;
+        margin-bottom: 24px;
+      }
+      .settings-heading h2 {
+        font-size: 20px;
+        margin: 0 0 5px;
+        font-weight: 600;
+      }
+      .settings-heading p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .settings-heading .icon-button {
+        padding: 4px;
+        border: 0;
+        background: transparent;
+      }
+      .group {
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        overflow: hidden;
+        margin: 10px 0 23px;
+      }
+      .row {
+        padding: 15px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .row + .row {
+        border-top: 1px solid var(--line);
+      }
+      .row p {
+        margin: 0;
+        font-size: 12px;
+      }
+      .row small {
+        display: block;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 11px;
+        margin-top: 3px;
+      }
+      .row button {
+        font-size: 11px;
+        flex-shrink: 0;
+        padding: 6px 10px;
+      }
+      .row.with-avatar {
+        justify-content: flex-start;
+        gap: 12px;
+      }
+      .row.with-avatar > div:nth-child(2) {
+        flex: 1;
+        min-width: 0;
+      }
+      .row.with-avatar select {
+        max-width: 190px;
+        padding: 4px;
+        border: 0;
+        font-weight: 600;
+      }
+      .section-title {
+        font-size: 12px;
+        font-weight: 600;
+        margin: 17px 0 7px;
+      }
+      .count {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 400;
+        margin-left: 7px;
+      }
+      .limit {
+        margin: -13px 0 20px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .editor {
+        padding-top: 15px;
+        margin-top: 17px;
+        border-top: 1px solid var(--line);
+      }
+      .editor label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+      .editor input {
+        width: 100%;
+        padding: 9px 11px;
+        background: var(--input);
+      }
+      .editor textarea {
+        width: 100%;
+        min-height: 100px;
+        padding: 10px;
+        background: var(--input);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        resize: vertical;
+      }
+      .editor p {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .editor-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 7px;
+        margin-top: 12px;
+      }
+      .toast {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: calc(100% - 40px);
+        padding: 10px 16px;
+        z-index: 7;
+        border-radius: 10px;
+        background: var(--text);
+        color: var(--surface);
+        font-size: 12px;
+        box-shadow: var(--shadow);
+        text-align: center;
+      }
+      .empty-settings {
+        padding: 26px 12px;
+        text-align: center;
+      }
+      .empty-settings p {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      @media (max-width: 1000px) {
+        .review-header {
+          flex-direction: column;
+          gap: 13px;
+        }
+        .review-controls {
+          width: 100%;
+        }
+        .workspace {
+          height: 690px;
+          min-height: 580px;
+        }
+        .review-footer {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        .sample-actions {
+          justify-content: flex-start;
+        }
+        .rail {
+          width: 145px;
+        }
+        .chat-header {
+          padding: 18px 22px;
+        }
+      }
+      @media (max-width: 680px) {
+        .review {
+          padding: 18px 12px;
+        }
+        .review-header h1 {
+          font-size: 21px;
+        }
+        .review-header p {
+          font-size: 12px;
+        }
+        .rail {
+          width: 57px;
+          padding: 18px 5px 12px;
+        }
+        .wordmark {
+          padding: 2px 11px 25px;
+        }
+        .rail .wordmark > span:last-child,
+        .rail .nav-item > span,
+        .rail-caption {
+          display: none;
+        }
+        .rail .nav-item {
+          justify-content: center;
+          padding: 12px;
+        }
+        .workspace {
+          min-height: 620px;
+          border-radius: 13px;
+        }
+        .chat-header {
+          padding: 15px 16px;
+        }
+        .header-actions button {
+          padding: 7px;
+        }
+        .header-actions .settings-label {
+          display: none;
+        }
+        .partner-switch {
+          gap: 5px;
+        }
+        .partner-switch select {
+          max-width: 110px;
+          font-size: 12px;
+        }
+        .avatar {
+          width: 32px;
+          height: 32px;
+          font-size: 15px;
+          border-radius: 11px;
+        }
+        .conversation {
+          padding: 6px 18px 18px;
+        }
+        .empty {
+          min-height: 265px;
+          padding: 20px 0;
+        }
+        .empty h2 {
+          font-size: 23px;
+        }
+        .empty p {
+          font-size: 12px;
+        }
+        .compose-area {
+          padding: 10px 16px 15px;
+        }
+        .bubble {
+          font-size: 13px;
+        }
+        .invitation {
+          margin-left: 0;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .overlay {
+          padding: 10px;
+        }
+        .settings-nav {
+          display: none;
+        }
+        .settings-content {
+          padding: 22px 19px;
+        }
+        .scenario-tabs {
+          flex: 1;
+        }
+        .scenario-tabs button {
+          flex: 1;
+          font-size: 11px;
+          padding: 8px 7px;
+        }
+        .review-controls select {
+          font-size: 12px;
+        }
+        .row {
+          padding: 13px;
+          gap: 9px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg aria-hidden="true" style="display: none">
+      <symbol id="i-chat" viewBox="0 0 24 24">
+        <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-9l-5 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+        <path d="M7 9h10M7 13h6" />
+      </symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16" /></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 17h16" />
+        <circle cx="8" cy="7" r="3" fill="var(--side)" />
+        <circle cx="16" cy="17" r="3" fill="var(--side)" />
+      </symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z" />
+      </symbol>
+      <symbol id="i-user" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+      </symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path d="M3 6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+      </symbol>
+    </svg>
+    <div class="review">
+      <header class="review-header">
+        <div>
+          <span class="eyebrow">REDSPACE · CHAT</span>
+          <h1>从第一句话，慢慢认识</h1>
+          <p>可点击的流程预览。这里使用示例回复，不连接模型，也不读取你的资料。</p>
+        </div>
+        <div class="review-controls">
+          <div class="scenario-tabs" role="group" aria-label="体验场景">
+            <button data-scenario="new" aria-pressed="true">全新用户</button>
+            <button data-scenario="existing" aria-pressed="false">已有伙伴</button>
+            <button data-scenario="two" aria-pressed="false">两位伙伴</button>
+          </div>
+          <select id="theme" aria-label="预览主题">
+            <option value="light">浅色</option>
+            <option value="plum">紫夜</option>
+            <option value="dark">深色</option>
+          </select>
+        </div>
+      </header>
+      <div class="workspace">
+        <aside class="rail" aria-label="模式导航">
+          <div class="wordmark"><span class="mark">r</span><span>RedSpace</span></div>
+          <button class="nav-item active" data-action="chat">
+            <svg class="icon"><use href="#i-chat" /></svg><span>Chat</span>
+          </button>
+          <button class="nav-item" data-action="code">
+            <svg class="icon"><use href="#i-code" /></svg><span>Code</span>
+          </button>
+          <div class="nav-spacer"></div>
+          <button class="nav-item" data-action="settings">
+            <svg class="icon"><use href="#i-settings" /></svg><span>设置</span>
+          </button>
+          <span class="rail-caption">RedSpace</span>
+        </aside>
+        <main class="chat">
+          <header class="chat-header">
+            <div class="partner-switch">
+              <span class="avatar" id="header-avatar">✧</span
+              ><select id="partner-select" aria-label="当前聊天伙伴"></select>
+            </div>
+            <div class="header-actions">
+              <button class="subtle" data-action="new" id="new-button">＋ 新建伙伴</button
+              ><button class="subtle" data-action="settings" aria-label="聊天伙伴设置">
+                <span class="settings-label">伙伴设置</span
+                ><svg class="icon" style="vertical-align: middle"><use href="#i-settings" /></svg>
+              </button>
+            </div>
+          </header>
+          <div class="chat-body" id="chat-scroll">
+            <div class="conversation" id="conversation" aria-live="polite"></div>
+          </div>
+          <div class="compose-area">
+            <form class="composer" id="composer">
+              <textarea
+                id="message"
+                rows="2"
+                aria-label="消息"
+                placeholder="想聊什么，或需要帮忙的事，都可以从这里开始。"
+              ></textarea>
+              <div class="compose-bottom">
+                <span>Chat</span
+                ><button type="submit" class="primary" aria-label="发送消息">
+                  <svg class="icon"><use href="#i-send" /></svg>
+                </button>
+              </div>
+            </form>
+            <div class="compose-note" id="compose-note">称呼和个性，可以随时在聊天或设置中调整。</div>
+          </div>
+        </main>
+        <div class="overlay" id="settings-overlay" hidden>
+          <section class="settings" role="dialog" aria-modal="true" aria-label="设置">
+            <aside class="settings-nav">
+              <h2>设置</h2>
+              <button class="nav-item active" data-action="settings">
+                <svg class="icon"><use href="#i-chat" /></svg>聊天伙伴</button
+              ><button class="nav-item" data-action="code">
+                <svg class="icon"><use href="#i-code" /></svg>Code Soul</button
+              ><button class="nav-item" data-action="about">
+                <svg class="icon"><use href="#i-user" /></svg>通用</button
+              ><button class="nav-item" data-action="files">
+                <svg class="icon"><use href="#i-folder" /></svg>文件与数据
+              </button>
+              <div class="nav-spacer"></div>
+              <span class="rail-caption">RedSpace</span>
+            </aside>
+            <div class="settings-content" id="settings-content"></div>
+          </section>
+        </div>
+        <div class="toast" id="toast" role="status" hidden></div>
+      </div>
+      <footer class="review-footer">
+        <p id="scenario-caption">
+          <strong>全新用户：</strong>可以点「先认识一下」，也可以直接发送任务。名字与称呼都可以以后再定。
+        </p>
+        <div class="sample-actions" aria-label="示例消息">
+          <span>试试示例：</span><button data-action="sample-name">给伙伴取名</button
+          ><button data-action="sample-user">告诉 TA 我的称呼</button
+          ><button data-action="sample-task">先做一个任务</button><button data-action="reset">重置预览</button>
+        </div>
+      </footer>
+    </div>
+    <script>
+      const $ = (selector) => document.querySelector(selector)
+      const esc = (value) =>
+        String(value).replace(
+          /[&<>"']/g,
+          (letter) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[letter],
+        )
+      const icon = (name) => '<svg class="icon"><use href="#i-' + name + '"/></svg>'
+      let serial = 0
+      let toastTimer
+      let previousFocus
+      let state
+      function fresh(name = "", introduction = "available") {
+        return {
+          id: "preview-" + ++serial,
+          name,
+          userName: "",
+          soul: "",
+          introduction,
+          messages: [],
+          draft: "",
+          taskDone: false,
+        }
+      }
+      const current = () => state.partners.find((partner) => partner.id === state.selected)
+      const title = (partner) => partner?.name || "Chat"
+      const badge = (partner) => partner?.name?.slice(0, 1) || "✧"
+      function reset(scenario = state?.scenario || "new") {
+        const partners =
+          scenario === "new"
+            ? []
+            : scenario === "existing"
+              ? [fresh("秋秋", "complete")]
+              : [fresh("秋秋", "complete"), fresh()]
+        state = { scenario, partners, selected: partners.at(-1)?.id || "", draft: "", editing: "", settingsID: "" }
+        $("#settings-overlay").hidden = true
+        $("#toast").hidden = true
+        document
+          .querySelectorAll("[data-scenario]")
+          .forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.scenario === scenario)))
+        const captions = {
+          new: "<strong>全新用户：</strong>可以点「先认识一下」，也可以直接发送任务。名字与称呼都可以以后再定。",
+          existing:
+            "<strong>已有伙伴：</strong>日常 Chat 直接继续。点「新建伙伴」可走另一位伙伴的首次流程，各自保留聊天与输入。",
+          two: "<strong>两位伙伴：</strong>从顶部切换聊天对象，试试分别输入草稿。名额已满，设置中仍可修改各自的资料。",
+        }
+        $("#scenario-caption").innerHTML = captions[scenario]
+        render()
+      }
+      function notify(message) {
+        clearTimeout(toastTimer)
+        $("#toast").textContent = message
+        $("#toast").hidden = false
+        toastTimer = setTimeout(() => {
+          $("#toast").hidden = true
+        }, 3000)
+      }
+      function ensurePartner() {
+        if (current()) return current()
+        const partner = fresh()
+        partner.draft = state.draft
+        state.draft = ""
+        state.partners.push(partner)
+        state.selected = partner.id
+        return partner
+      }
+      function createPartner() {
+        if (state.partners.length >= 2) return notify("最多可以有两位伙伴。")
+        const partner = fresh()
+        if (!state.partners.length) {
+          partner.draft = state.draft
+          state.draft = ""
+        }
+        state.partners.push(partner)
+        state.selected = partner.id
+        closeSettings()
+        render()
+        $("#message").focus()
+      }
+      function selectPartner(id) {
+        if (!state.partners.some((partner) => partner.id === id)) return
+        state.selected = id
+        render()
+      }
+      function add(partner, role, text, saved = false) {
+        partner.messages.push({ role, text, saved })
+      }
+      function introduce() {
+        const partner = ensurePartner()
+        partner.introduction = "active"
+        add(partner, "user", "我们先认识一下吧。")
+        if (!partner.name) add(partner, "assistant", "你好。你想怎么称呼我？还没想好也没关系。")
+        else if (!partner.userName) add(partner, "assistant", "那我怎么称呼你？")
+        else
+          add(
+            partner,
+            "assistant",
+            "好，" + partner.userName + "。以后你叫我" + partner.name + "就好。今天想聊点什么？",
+          )
+        closeSettings()
+        render()
+        $("#message").focus()
+      }
+      function pause() {
+        const partner = current()
+        if (!partner) return
+        partner.introduction = "paused"
+        render()
+        notify("以后想聊的时候，可以从伙伴设置继续。")
+      }
+      function sample(kind) {
+        const partner = ensurePartner()
+        if (kind === "name") {
+          add(partner, "user", "你叫小禾吧。")
+          partner.name = "小禾"
+          add(
+            partner,
+            "assistant",
+            partner.introduction === "active" && !partner.userName
+              ? "好，那我就叫小禾。\n那我怎么称呼你？"
+              : "好，以后叫我小禾就好。",
+            true,
+          )
+        } else if (kind === "user") {
+          add(partner, "user", "你可以叫我阿宁。")
+          partner.userName = "阿宁"
+          add(
+            partner,
+            "assistant",
+            partner.introduction === "active" && !partner.name
+              ? "好，阿宁。\n你想怎么称呼我？也可以慢慢想。"
+              : "记住了，阿宁。",
+            true,
+          )
+        } else {
+          add(partner, "user", "帮我把这句话写得自然一点：已完成相关工作，请进行查看。")
+          add(
+            partner,
+            "assistant",
+            "可以写成：\n\n「已经处理好了，你方便时看看。」\n\n如果是工作邮件，也可以用：\n「相关工作已完成，方便时请查阅。」",
+          )
+          partner.taskDone = true
+        }
+        render()
+      }
+      function submit(event) {
+        event.preventDefault()
+        const text = $("#message").value.trim()
+        if (!text) return
+        const partner = ensurePartner()
+        partner.draft = ""
+        add(partner, "user", text)
+        add(
+          partner,
+          "assistant",
+          "这条消息会正常发给当前伙伴。\n\n此页是交互预览；你可以用下方的示例按钮体验称呼保存和任务先行的流程。实际回复由你选择的模型生成。",
+        )
+        partner.taskDone = true
+        render()
+      }
+      function render() {
+        const partner = current()
+        $("#header-avatar").textContent = badge(partner)
+        $("#partner-select").innerHTML = state.partners.length
+          ? state.partners
+              .map(
+                (item) =>
+                  '<option value="' +
+                  item.id +
+                  '"' +
+                  (item.id === state.selected ? " selected" : "") +
+                  ">" +
+                  esc(title(item)) +
+                  "</option>",
+              )
+              .join("")
+          : '<option value="">Chat</option>'
+        $("#partner-select").disabled = state.partners.length < 2
+        $("#new-button").disabled = state.partners.length >= 2
+        $("#new-button").title = state.partners.length >= 2 ? "最多可以有两位伙伴" : "新建伙伴"
+        $("#message").value = partner ? partner.draft : state.draft
+        $("#message").placeholder = partner?.name
+          ? "和" + partner.name + "说点什么…"
+          : "想聊什么，或需要帮忙的事，都可以从这里开始。"
+        const available = !partner || partner.introduction === "available"
+        let body = ""
+        if (!partner?.messages.length) {
+          const heading = available ? "从这里开始。" : "想聊点什么？"
+          const description = available
+            ? "想先认识一下，或直接聊，都可以。"
+            : partner.introduction === "paused"
+              ? "从你现在想说的话开始就好。"
+              : ""
+          body =
+            '<section class="empty"><span class="avatar big">' +
+            esc(badge(partner)) +
+            "</span><h2>" +
+            heading +
+            "</h2>" +
+            (description ? "<p>" + description + "</p>" : "") +
+            (available
+              ? '<div class="empty-actions"><button class="primary" data-action="intro">先认识一下</button><button class="subtle" data-action="focus">直接聊</button></div>'
+              : "") +
+            "</section>"
+        } else {
+          body = partner.messages
+            .map(
+              (message) =>
+                '<div class="bubble-row ' +
+                message.role +
+                '">' +
+                (message.role === "assistant" ? '<span class="avatar">' + esc(badge(partner)) + "</span>" : "") +
+                '<div class="bubble">' +
+                (message.role === "assistant" ? '<span class="bubble-name">' + esc(title(partner)) + "</span>" : "") +
+                esc(message.text) +
+                (message.saved ? '<br><span class="saved">' + icon("check") + "称呼已保存</span>" : "") +
+                "</div></div>",
+            )
+            .join("")
+          if (available && partner.taskDone)
+            body +=
+              '<aside class="invitation"><p>有空时，也可以聊聊我们怎么称呼彼此。</p><div><button data-action="intro">认识一下</button><button class="subtle" data-action="pause">以后再说</button></div></aside>'
+        }
+        if (partner?.introduction === "active")
+          body +=
+            '<div class="pause-line"><span>称呼可以慢慢想</span><button class="text-button" data-action="finish">就这样</button><button class="text-button" data-action="pause">先聊别的</button></div>'
+        $("#conversation").innerHTML = body
+        $("#compose-note").hidden = !!partner && partner.introduction === "complete"
+        if (!$("#settings-overlay").hidden) renderSettings()
+        $("#chat-scroll").scrollTop = $("#chat-scroll").scrollHeight
+      }
+      function openSettings() {
+        previousFocus = document.activeElement
+        state.settingsID = state.selected
+        state.editing = ""
+        $("#settings-overlay").hidden = false
+        renderSettings()
+        $("#settings-content [data-action='close-settings']").focus()
+      }
+      function closeSettings() {
+        const wasOpen = !$("#settings-overlay").hidden
+        $("#settings-overlay").hidden = true
+        state.editing = ""
+        if (wasOpen && previousFocus?.isConnected) previousFocus.focus()
+      }
+      function renderSettings() {
+        const partner = state.partners.find((item) => item.id === state.settingsID) || current()
+        const header =
+          '<header class="settings-heading"><div><h2>聊天伙伴</h2><p>彼此的称呼、个性和日常记忆。</p></div><button class="icon-button" data-action="close-settings" aria-label="关闭设置">' +
+          icon("close") +
+          "</button></header>"
+        if (!partner) {
+          $("#settings-content").innerHTML =
+            header +
+            '<div class="empty-settings"><span class="avatar big" style="margin: 0 auto">✧</span><h3>从一次聊天开始</h3><p>可以先聊聊，再慢慢确定彼此的称呼和个性。</p><button class="primary" data-action="new">新建伙伴</button></div>'
+          return
+        }
+        const profileRow =
+          '<div class="group"><div class="row with-avatar"><span class="avatar">' +
+          esc(badge(partner)) +
+          '</span><div><select id="settings-partner" aria-label="正在编辑的伙伴">' +
+          state.partners
+            .map(
+              (item) =>
+                '<option value="' +
+                item.id +
+                '"' +
+                (partner.id === item.id ? " selected" : "") +
+                ">" +
+                esc(title(item)) +
+                "</option>",
+            )
+            .join("") +
+          '</select><small>正在编辑这位伙伴的资料</small></div><button data-action="chat-with">去聊天</button></div></div>'
+        const status =
+          partner.introduction === "complete"
+            ? ""
+            : '<div class="group"><div class="row"><div><p>' +
+              (partner.introduction === "paused" ? "按自己的节奏认识" : "从称呼开始认识") +
+              '</p><small>可以在聊天中慢慢确定，也可以直接编辑。</small></div><button data-action="settings-intro">' +
+              (partner.introduction === "available" ? "认识一下" : "继续认识") +
+              "</button></div></div>"
+        const fields =
+          '<div class="section-title">彼此的称呼</div><div class="group"><div class="row"><div><p>伙伴的名字</p><small>' +
+          esc(partner.name || "还没有决定，也可以先叫 Chat") +
+          '</small></div><button data-action="edit-name">编辑</button></div><div class="row"><div><p>怎么称呼你</p><small>' +
+          esc(partner.userName || "可以在聊天中告诉 TA") +
+          '</small></div><button data-action="edit-userName">编辑</button></div></div><div class="section-title">个性与记忆</div><div class="group"><div class="row"><div><p>Soul</p><small>性格、表达方式，以及你希望保留的设定。</small></div><button data-action="edit-soul">编辑</button></div><div class="row"><div><p>记忆</p><small>在真实的交流中逐步积累。</small></div><button data-action="memories">查看</button></div></div>'
+        const manage =
+          '<div class="section-title">伙伴管理<span class="count">' +
+          state.partners.length +
+          ' / 2</span></div><div class="group"><div class="row"><div><p>新建伙伴</p><small>拥有各自的称呼、聊天与记忆。</small></div><button data-action="new"' +
+          (state.partners.length >= 2 ? " disabled" : "") +
+          ">新建伙伴</button></div></div>" +
+          (state.partners.length >= 2 ? '<p class="limit">最多可以有两位伙伴。</p>' : "")
+        let editor = ""
+        if (state.editing) {
+          const labels = { name: "伙伴的名字", userName: "怎么称呼你", soul: "Soul" }
+          editor =
+            '<form class="editor" id="profile-editor"><label for="profile-value">' +
+            labels[state.editing] +
+            "</label>" +
+            (state.editing === "soul"
+              ? '<textarea id="profile-value" placeholder="写下你想保留的个性与表达方式。">' +
+                esc(partner.soul) +
+                "</textarea>"
+              : '<input id="profile-value" autocomplete="off" maxlength="80" value="' +
+                esc(partner[state.editing]) +
+                '" placeholder="可以以后再定"/>') +
+            "<p>" +
+            (state.editing === "soul"
+              ? "此预览仅保留你在当前页面填写的内容。"
+              : "留空也可以正常聊天。保存后，聊天中会使用这个称呼。") +
+            '</p><div class="editor-buttons"><button type="button" data-action="cancel-edit">取消</button><button class="primary" type="submit">保存</button></div></form>'
+        }
+        $("#settings-content").innerHTML = header + profileRow + (state.editing ? editor : status + fields + manage)
+      }
+      document.addEventListener("click", (event) => {
+        const scenario = event.target.closest("[data-scenario]")
+        if (scenario) return reset(scenario.dataset.scenario)
+        const button = event.target.closest("[data-action]")
+        if (!button || button.disabled) return
+        const action = button.dataset.action
+        if (action === "intro") introduce()
+        if (action === "pause") pause()
+        if (action === "finish" && current()) {
+          current().introduction = "complete"
+          render()
+        }
+        if (action === "new") createPartner()
+        if (action === "focus") $("#message").focus()
+        if (action === "settings") openSettings()
+        if (action === "close-settings") closeSettings()
+        if (action === "sample-name") sample("name")
+        if (action === "sample-user") sample("user")
+        if (action === "sample-task") sample("task")
+        if (action === "reset") reset()
+        if (action === "chat") {
+          closeSettings()
+          $("#message").focus()
+        }
+        if (action === "chat-with" || action === "settings-intro") {
+          selectPartner(state.settingsID)
+          closeSettings()
+          if (action === "settings-intro") introduce()
+        }
+        if (action.startsWith("edit-")) {
+          state.editing = action.slice(5)
+          renderSettings()
+          $("#profile-value").focus()
+        }
+        if (action === "cancel-edit") {
+          state.editing = ""
+          renderSettings()
+        }
+        if (action === "memories") notify("这份预览没有预置私人记忆。记忆会随着实际聊天慢慢积累。")
+        if (["code", "about", "files"].includes(action))
+          notify("此预览集中展示 Chat 相识流程；完整设置请看之前的设置面板预览。")
+      })
+      document.addEventListener("change", (event) => {
+        if (event.target.id === "theme") document.documentElement.dataset.theme = event.target.value
+        if (event.target.id === "partner-select") selectPartner(event.target.value)
+        if (event.target.id === "settings-partner") {
+          state.settingsID = event.target.value
+          state.editing = ""
+          renderSettings()
+        }
+      })
+      $("#message").addEventListener("input", (event) => {
+        if (current()) current().draft = event.target.value
+        else state.draft = event.target.value
+      })
+      $("#composer").addEventListener("submit", submit)
+      $("#message").addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) submit(event)
+      })
+      document.addEventListener("submit", (event) => {
+        if (event.target.id !== "profile-editor") return
+        event.preventDefault()
+        const partner = state.partners.find((item) => item.id === state.settingsID) || current()
+        partner[state.editing] = $("#profile-value").value.trim()
+        state.editing = ""
+        render()
+        notify("已保存")
+      })
+      $("#settings-overlay").addEventListener("click", (event) => {
+        if (event.target.id === "settings-overlay") closeSettings()
+      })
+      document.addEventListener("keydown", (event) => {
+        if ($("#settings-overlay").hidden) return
+        if (event.key === "Escape") {
+          event.preventDefault()
+          closeSettings()
+          return
+        }
+        if (event.key !== "Tab") return
+        const focusable = [
+          ...$("#settings-overlay").querySelectorAll("button:not(:disabled), select:not(:disabled), input, textarea"),
+        ].filter((element) => !element.hidden)
+        const first = focusable[0]
+        const last = focusable.at(-1)
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last?.focus()
+        }
+        if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first?.focus()
+        }
+      })
+      reset("new")
+    </script>
+  </body>
+</html>

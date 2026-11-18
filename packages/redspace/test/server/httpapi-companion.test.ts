@@ -14,10 +14,15 @@ import { it } from "../lib/effect"
 void Log.init({ print: false })
 
 const created: string[] = []
-const request = Effect.fn("Test.companionRequest")(function* (url: string, directory: string, body?: unknown) {
+const request = Effect.fn("Test.companionRequest")(function* (
+  url: string,
+  directory: string,
+  body?: unknown,
+  method?: string,
+) {
   return yield* Effect.promise(async () =>
     Server.Default().app.request(url, {
-      method: body === undefined ? "GET" : "POST",
+      method: method ?? (body === undefined ? "GET" : "POST"),
       headers: { "content-type": "application/json", "x-redcode-directory": directory },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
@@ -59,6 +64,104 @@ afterEach(async () => {
 })
 
 describe("companion HTTP session boundary", () => {
+  it.live("creates at most two profiles and retries a request after both places are filled", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (value) => Effect.promise(() => value[Symbol.asyncDispose]()),
+      )
+      const first = yield* request("/companion", dir.path, { requestID: "http-first" })
+      expect(first.status).toBe(200)
+      const one = yield* json<Companion.InitializeResult>(first)
+      created.push(one.profile.id)
+      expect(one.profile.introduction).toBe("available")
+      const second = yield* request("/companion", dir.path, { requestID: "http-second" })
+      expect(second.status).toBe(200)
+      const two = yield* json<Companion.InitializeResult>(second)
+      created.push(two.profile.id)
+      expect((yield* request("/companion", dir.path, { requestID: "http-third" })).status).toBe(409)
+      const retry = yield* request("/companion", dir.path, { requestID: "http-first" })
+      expect(yield* json(retry)).toMatchObject({ created: false, profile: { id: one.profile.id } })
+      expect((yield* request("/companion", dir.path, { requestID: "bad request id" })).status).toBe(400)
+      const updated = yield* request(
+        `/companion/${one.profile.id}`,
+        dir.path,
+        { name: "Luna", userName: "Rowan", introduction: "active" },
+        "PATCH",
+      )
+      expect(updated.status).toBe(200)
+      expect(yield* json(updated)).toMatchObject({
+        companionName: "Luna",
+        userName: "Rowan",
+        profile: { introduction: "active" },
+        paths: { identity: path.join(one.profile.directory, "IDENTITY.md") },
+      })
+      expect(
+        (yield* request(`/companion/${one.profile.id}`, dir.path, { user: "notes", userName: "name" }, "PATCH")).status,
+      ).toBe(400)
+      const empty = yield* request(
+        `/companion/${one.profile.id}`,
+        dir.path,
+        { name: "", userName: "", introduction: "complete" },
+        "PATCH",
+      )
+      expect(yield* json(empty)).toMatchObject({
+        companionName: "",
+        userName: "",
+        profile: { name: "Chat", introduction: "complete" },
+      })
+      expect(yield* json(yield* request(`/companion/${two.profile.id}`, dir.path))).toMatchObject({
+        companionName: "",
+        userName: "",
+        profile: { introduction: "available" },
+      })
+    }),
+  )
+
+  it.live("initializes Chat, reads and updates settings, and preserves the original Soul", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (value) => Effect.promise(() => value[Symbol.asyncDispose]()),
+      )
+      const first = yield* request("/companion/initialize", dir.path, undefined, "POST")
+      expect(first.status).toBe(200)
+      const initialized = yield* json<Companion.InitializeResult>(first)
+      expect(initialized.created).toBe(true)
+      created.push(initialized.profile.id)
+      expect(initialized.profile.needsSetup).toBe(true)
+      const again = yield* request("/companion/initialize", dir.path, undefined, "POST")
+      expect(yield* json(again)).toMatchObject({ created: false, profile: { id: initialized.profile.id } })
+      const endpoint = `/companion/${initialized.profile.id}`
+      const read = yield* request(endpoint, dir.path)
+      expect(read.status).toBe(200)
+      const details = yield* json<Companion.Details>(read)
+      expect(details.paths.soul).toBe(path.join(Global.Path.home, ".redcode", "souls", `${initialized.profile.id}.md`))
+      const originalSoul = yield* Effect.promise(() => Bun.file(details.paths.soul).text())
+      const updated = yield* request(
+        endpoint,
+        dir.path,
+        { name: "自定义伙伴", user: "# 我的资料\n\n喜欢具体的例子。\n" },
+        "PATCH",
+      )
+      expect(updated.status).toBe(200)
+      expect(yield* json(updated)).toMatchObject({
+        profile: { name: "自定义伙伴", needsSetup: true, introduction: "available" },
+        user: "# 我的资料\n\n喜欢具体的例子。\n",
+      })
+      expect(yield* Effect.promise(() => Bun.file(details.paths.soul).text())).toBe(originalSoul)
+      expect((yield* request(endpoint, dir.path, { name: "bad\nname" }, "PATCH")).status).toBe(400)
+      expect((yield* request("/companion/no-such-profile", dir.path)).status).toBe(404)
+      expect((yield* request("/companion/no-such-profile", dir.path, {}, "PATCH")).status).toBe(404)
+      const chat = yield* request("/session", initialized.profile.directory, {
+        mode: "chat",
+        companionID: initialized.profile.id,
+      })
+      expect(chat.status).toBe(200)
+      expect(yield* json(chat)).toMatchObject({ mode: "chat", soul: initialized.profile.soulID })
+    }),
+  )
+
   it.live("imports and lists an existing identity, then persists its Chat binding and Soul", () =>
     Effect.gen(function* () {
       const imported = yield* archive()

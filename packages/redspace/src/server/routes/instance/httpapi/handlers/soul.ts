@@ -18,7 +18,15 @@ function toCreateInput(payload: {
   markdown?: string
 }): Soul.CreateInput | InvalidRequestError {
   if (payload.markdown !== undefined) {
-    const mixed = [payload.id, payload.name, payload.displayName, payload.commitPrefix, payload.avatar, payload.description, payload.content]
+    const mixed = [
+      payload.id,
+      payload.name,
+      payload.displayName,
+      payload.commitPrefix,
+      payload.avatar,
+      payload.description,
+      payload.content,
+    ]
     if (mixed.some((value) => value !== undefined))
       return new InvalidRequestError({
         message: "markdown cannot be combined with structured fields",
@@ -60,12 +68,37 @@ export const soulHandlers = HttpApiBuilder.group(InstanceHttpApi, "soul", (handl
         const input = toCreateInput(payload)
         if (input instanceof InvalidRequestError) return Effect.fail(input)
         return soul.create(input).pipe(
-          Effect.catchTag("SoulInvalidInput", (error) =>
-            new InvalidRequestError({ message: error.message, field: error.field }),
+          Effect.catchTag(
+            "SoulInvalidInput",
+            (error) => new InvalidRequestError({ message: error.message, field: error.field }),
           ),
-          Effect.catchTag("SoulConflict", (error) =>
-            new ConflictError({ message: error.message, resource: "soul" }),
+          Effect.catchTag("SoulConflict", (error) => new ConflictError({ message: error.message, resource: "soul" })),
+          Effect.catchTag("SoulIO", (error) => new UnknownError({ message: error.message })),
+        )
+      })
+      .handle("update", ({ params, payload }) => {
+        if (
+          payload.markdown !== undefined &&
+          Object.entries(payload).some(([key, value]) => key !== "markdown" && value !== undefined)
+        )
+          return Effect.fail(
+            new InvalidRequestError({
+              message: "markdown cannot be combined with structured fields",
+              field: "markdown",
+            }),
+          )
+        if (payload.markdown === undefined && payload.content === undefined)
+          return Effect.fail(
+            new InvalidRequestError({ message: "content is required unless markdown is provided", field: "content" }),
+          )
+        const input =
+          payload.markdown !== undefined ? { markdown: payload.markdown } : { ...payload, content: payload.content! }
+        return soul.update(params.id, input).pipe(
+          Effect.catchTag(
+            "SoulInvalidInput",
+            (error) => new InvalidRequestError({ message: error.message, field: error.field }),
           ),
+          Effect.catchTag("SoulNotFound", (error) => notFound(error.message)),
           Effect.catchTag("SoulIO", (error) => new UnknownError({ message: error.message })),
         )
       })

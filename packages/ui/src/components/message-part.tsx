@@ -74,6 +74,8 @@ import { attached, inline, kind } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { countTurnToolCalls } from "./turn-tool-count"
 import { copyText } from "../utils/clipboard"
+import { requestSpeech, speechErrorKey } from "../utils/speech"
+import { showToast } from "./toast"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
@@ -842,9 +844,7 @@ export function AssistantMessageDisplay(props: {
 function ContextToolRow(props: { part: ToolPart }) {
   const i18n = useI18n()
   const trigger = createMemo(() => contextToolTrigger(props.part, i18n))
-  const running = createMemo(
-    () => props.part.state.status === "pending" || props.part.state.status === "running",
-  )
+  const running = createMemo(() => props.part.state.status === "pending" || props.part.state.status === "running")
   const error = createMemo(() => props.part.state.status === "error")
   return (
     <div data-slot="context-tool-group-item" data-failed={error() || undefined}>
@@ -853,16 +853,17 @@ function ContextToolRow(props: { part: ToolPart }) {
           <div data-slot="basic-tool-tool-info">
             <div data-slot="basic-tool-tool-info-structured">
               <div data-slot="basic-tool-tool-info-main">
-                <span data-slot="basic-tool-tool-title" style={error() ? { color: "var(--syntax-critical)" } : undefined}>
+                <span
+                  data-slot="basic-tool-tool-title"
+                  style={error() ? { color: "var(--syntax-critical)" } : undefined}
+                >
                   <TextShimmer text={trigger().title} active={running()} />
                 </span>
                 <Show when={!running() && trigger().subtitle}>
                   <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
                 </Show>
                 <Show when={!running() && trigger().args?.length}>
-                  <For each={trigger().args}>
-                    {(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}
-                  </For>
+                  <For each={trigger().args}>{(arg) => <span data-slot="basic-tool-tool-arg">{arg}</span>}</For>
                 </Show>
               </div>
             </div>
@@ -982,7 +983,11 @@ export function ToolGroup(props: {
               <AnimatedCountList items={items()} fallback="" />
             </span>
             <Show when={failed() > 0}>
-              <span data-slot="context-tool-group-failed" class="shrink-0 font-normal" style={{ color: "var(--syntax-critical)" }}>
+              <span
+                data-slot="context-tool-group-failed"
+                class="shrink-0 font-normal"
+                style={{ color: "var(--syntax-critical)" }}
+              >
                 {i18n.t("ui.messagePart.group.failed", { count: failed() })}
               </span>
             </Show>
@@ -1032,7 +1037,8 @@ export function UserMessageDisplay(props: {
   const versions = createMemo(() => props.actions?.versions?.(props.message.id))
 
   const textPart = createMemo(
-    () => props.parts?.find((p) => p.type === "text" && (!p.synthetic || isTaskSteerRecord([p]))) as TextPart | undefined,
+    () =>
+      props.parts?.find((p) => p.type === "text" && (!p.synthetic || isTaskSteerRecord([p]))) as TextPart | undefined,
   )
 
   const text = createMemo(() => textPart()?.text || "")
@@ -1648,9 +1654,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
       model(),
       duration(),
-      toolCalls() === undefined
-        ? ""
-        : i18n.t("ui.message.toolCalls", { count: numfmt().format(toolCalls()!) }),
+      toolCalls() === undefined ? "" : i18n.t("ui.message.toolCalls", { count: numfmt().format(toolCalls()!) }),
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
     return items.filter((x) => !!x).join(" \u00B7 ")
@@ -1660,9 +1664,10 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const rawText = () => readPartText(data.store.part_text_accum_delta, part())
-  const text = () => props.message.role === "assistant" && !(props.message as AssistantMessage).summary
-    ? filterCannedAgreement(rawText())
-    : rawText()
+  const text = () =>
+    props.message.role === "assistant" && !(props.message as AssistantMessage).summary
+      ? filterCannedAgreement(rawText())
+      : rawText()
   // 261011 Red 压缩摘要默认折叠：summary=true 的 assistant 消息（压缩产物）此前与普通
   // 回复同构全量铺开，几百行文件清单直接糊满聊天区。对齐思考链折叠模式（260830）：
   // 收起为一行（标题+meta+chevron），点击展开全文。
@@ -1674,8 +1679,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   // 数据不全则整段隐藏。TUI 分割线只有时长，这里把收益也亮出来。
   const compactionStats = createMemo(() => {
     const record = (data.store.part?.[props.message.id] ?? []).find((item) => item?.type === "compaction") as
-      | { tokens_before?: number; tokens_after?: number }
-      | undefined
+      { tokens_before?: number; tokens_after?: number } | undefined
     const before = record?.tokens_before
     const after = record?.tokens_after
     if (typeof before !== "number" || typeof after !== "number") return ""
@@ -1695,9 +1699,10 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
-  const [ttsLoading, setTtsLoading] = createSignal(false)
-  const [ttsPlaying, setTtsPlaying] = createSignal(false)
-  let ttsAudio: HTMLAudioElement | null = null
+  const [tts, setTts] = createStore({ loading: false, playing: false })
+  let ttsAudio: HTMLAudioElement | undefined
+  let ttsUrl: string | undefined
+  let ttsRequest: AbortController | undefined
 
   const handleCopy = async () => {
     const content = text()
@@ -1708,79 +1713,88 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     }
   }
 
-  // TTS 朗读：调用 MiMo TTS API (mimo-v2.5-tts)
+  const stopTTS = () => {
+    ttsRequest?.abort()
+    ttsRequest = undefined
+    if (ttsAudio) {
+      ttsAudio.onended = null
+      ttsAudio.onerror = null
+      ttsAudio.pause()
+      ttsAudio.removeAttribute("src")
+      ttsAudio.load()
+      ttsAudio = undefined
+    }
+    if (ttsUrl) URL.revokeObjectURL(ttsUrl)
+    ttsUrl = undefined
+    setTts({ loading: false, playing: false })
+  }
+
+  onCleanup(stopTTS)
+  createEffect(() => {
+    if (!data.ttsConfig?.enabled) stopTTS()
+  })
+
+  const reportSpeechError = (error: unknown) =>
+    showToast({
+      variant: "error",
+      title: i18n.t("ui.speech.error.title"),
+      description: i18n.t(speechErrorKey(error)),
+    })
+
   const handleTTS = async () => {
-    if (ttsPlaying()) {
-      if (ttsAudio) {
-        ttsAudio.pause()
-        ttsAudio.currentTime = 0
-      }
-      setTtsPlaying(false)
-      setTtsLoading(false)
+    if (tts.playing || tts.loading) {
+      stopTTS()
       return
     }
-
-    const ttsConfig = data.ttsConfig
-    if (!ttsConfig?.enabled || !ttsConfig.apiKey) return
-
-    const content = text()
-    if (!content) return
-
-    setTtsLoading(true)
+    const config = data.ttsConfig
+    if (!config?.enabled) return
+    const request = new AbortController()
+    ttsRequest = request
+    setTts("loading", true)
     try {
-      const response = await fetch("https://api.xiaomimimo.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": ttsConfig.apiKey,
-        },
-        body: JSON.stringify({
-          model: "mimo-v2.5-tts",
-          messages: [
-            { role: "user", content: "" },
-            { role: "assistant", content: content.slice(0, 5000) },
-          ],
-          audio: { format: "wav", voice: ttsConfig.voice || "冰糖" },
-        }),
+      const blob = await requestSpeech({
+        apiKey: config.apiKey,
+        voice: config.voice,
+        text: text(),
+        signal: request.signal,
       })
-
-      if (!response.ok) throw new Error("TTS request failed")
-
-      const json = (await response.json()) as { choices: { message: { audio: { data: string } } }[] }
-      const audioData = json.choices?.[0]?.message?.audio?.data
-      if (!audioData) throw new Error("No audio data in response")
-
-      const bytes = atob(audioData)
-      const buffer = new Uint8Array(bytes.length)
-      for (let i = 0; i < bytes.length; i++) buffer[i] = bytes.charCodeAt(i)
-      const blob = new Blob([buffer], { type: "audio/wav" })
-      const url = URL.createObjectURL(blob)
-      ttsAudio = new Audio(url)
-      ttsAudio.onended = () => {
-        setTtsPlaying(false)
-        URL.revokeObjectURL(url)
+      if (request.signal.aborted || ttsRequest !== request) return
+      ttsUrl = URL.createObjectURL(blob)
+      const audio = new Audio(ttsUrl)
+      ttsAudio = audio
+      audio.onended = () => {
+        if (ttsAudio === audio) stopTTS()
       }
-      ttsAudio.onerror = () => {
-        setTtsPlaying(false)
-        URL.revokeObjectURL(url)
+      audio.onerror = () => {
+        if (ttsAudio !== audio) return
+        stopTTS()
+        reportSpeechError(new Error("playback"))
       }
-      await ttsAudio.play()
-      setTtsPlaying(true)
-    } catch {
-      setTtsPlaying(false)
+      await audio.play()
+      if (request.signal.aborted || ttsRequest !== request) return
+      setTts("playing", true)
+    } catch (error) {
+      if (request.signal.aborted || ttsRequest !== request) return
+      stopTTS()
+      reportSpeechError(error)
     } finally {
-      setTtsLoading(false)
+      if (ttsRequest === request) setTts("loading", false)
     }
   }
+
+  const speechLabel = () =>
+    i18n.t(tts.loading ? "ui.speech.preparing" : tts.playing ? "ui.message.stopReadAloud" : "ui.message.readAloud")
 
   const showTTS = createMemo(() => showCopy() && props.message.role === "assistant" && !!data.ttsConfig?.enabled)
 
   return (
     <Show when={text()}>
-      <Show when={isCompactionSummary()} fallback={
-      <div data-component="text-part" data-timeline-part-id={part().id}>
-        <div data-slot="text-part-body">
-          {/* 260822 cc 这里原本是 <Show when={streaming()} fallback={<Markdown …/>}>，
+      <Show
+        when={isCompactionSummary()}
+        fallback={
+          <div data-component="text-part" data-timeline-part-id={part().id}>
+            <div data-slot="text-part-body">
+              {/* 260822 cc 这里原本是 <Show when={streaming()} fallback={<Markdown …/>}>，
               而 PacedMarkdown 在 streaming=false 时本就直接 setMdText(全文) 并渲染
               <Markdown … streaming={false}/>，与 fallback 那支输出**完全相同**。
               于是那个 Show 唯一的作用，是在流式结束（time.completed 落库）的一瞬间
@@ -1788,83 +1802,82 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
               （实测一个推理块 191~247 个节点）连同 Shiki 高亮全部重来一遍。
               诊断探针抓到过：[reasoning-part] −[markdown]×191 +[markdown]。
               直接常挂 PacedMarkdown，同一个实例跨过这次翻转，DOM 一个节点都不动。 */}
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </div>
-        <Show when={showCopy()}>
-          <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
-            <Tooltip
-              value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
-              placement="top"
-              gutter={4}
-            >
-              <IconButton
-                icon={copied() ? "check" : "copy"}
-                size="normal"
-                variant="ghost"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCopy}
-                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
-              />
-            </Tooltip>
-            <Show when={showTTS()}>
-              <Tooltip
-                value={ttsPlaying() ? i18n.t("ui.message.stopReadAloud") : i18n.t("ui.message.readAloud")}
-                placement="top"
-                gutter={4}
-              >
-                <IconButton
-                  icon={ttsPlaying() ? "volume" : "volume"}
-                  size="normal"
-                  variant="ghost"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleTTS}
-                  aria-label={ttsPlaying() ? i18n.t("ui.message.stopReadAloud") : i18n.t("ui.message.readAloud")}
-                />
-              </Tooltip>
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+            </div>
+            <Show when={showCopy()}>
+              <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+                <Tooltip
+                  value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                  placement="top"
+                  gutter={4}
+                >
+                  <IconButton
+                    icon={copied() ? "check" : "copy"}
+                    size="normal"
+                    variant="ghost"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={handleCopy}
+                    aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
+                  />
+                </Tooltip>
+                <Show when={showTTS()}>
+                  <Tooltip value={speechLabel()} placement="top" gutter={4}>
+                    <IconButton
+                      icon={tts.playing || tts.loading ? "stop" : "volume"}
+                      size="normal"
+                      variant="ghost"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleTTS}
+                      aria-label={speechLabel()}
+                      aria-busy={tts.loading}
+                      aria-pressed={tts.playing || tts.loading}
+                    />
+                  </Tooltip>
+                </Show>
+                <Show when={meta()}>
+                  <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
+                    {meta()}
+                  </span>
+                </Show>
+              </div>
+            </Show>
+          </div>
+        }
+      >
+        {/* 261011 Red 折叠态：单行「已压缩 + token 收益 + 模型 + 耗时」，点开正文。
+          meta 与正文渲染复用 text-part 既有 memo，数据缺哪段就隐藏哪段。 */}
+        <div data-component="compaction-summary" data-timeline-part-id={part().id}>
+          <button
+            data-slot="compaction-summary-toggle"
+            type="button"
+            aria-expanded={summaryExpanded()}
+            onClick={() => setSummaryExpanded((prev) => !prev)}
+          >
+            <span data-slot="compaction-summary-state" class="text-12-medium">
+              {i18n.t("ui.messagePart.compaction")}
+            </span>
+            <Show when={compactionStats()}>
+              <span data-slot="compaction-summary-stats" class="text-12-regular tabular-nums">
+                {compactionStats()}
+              </span>
             </Show>
             <Show when={meta()}>
-              <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
+              <span data-slot="compaction-summary-meta" class="truncate text-12-regular">
                 {meta()}
               </span>
             </Show>
-          </div>
-        </Show>
-      </div>
-      }>
-      {/* 261011 Red 折叠态：单行「已压缩 + token 收益 + 模型 + 耗时」，点开正文。
-          meta 与正文渲染复用 text-part 既有 memo，数据缺哪段就隐藏哪段。 */}
-      <div data-component="compaction-summary" data-timeline-part-id={part().id}>
-        <button
-          data-slot="compaction-summary-toggle"
-          type="button"
-          aria-expanded={summaryExpanded()}
-          onClick={() => setSummaryExpanded((prev) => !prev)}
-        >
-          <span data-slot="compaction-summary-state" class="text-12-medium">
-            {i18n.t("ui.messagePart.compaction")}
-          </span>
-          <Show when={compactionStats()}>
-            <span data-slot="compaction-summary-stats" class="text-12-regular tabular-nums">
-              {compactionStats()}
-            </span>
+            <Icon
+              name="chevron-down"
+              size="small"
+              classList={{ "compaction-summary-chevron": true, "is-open": summaryExpanded() }}
+            />
+          </button>
+          <Show when={summaryExpanded()}>
+            <div data-slot="compaction-summary-body">
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+            </div>
           </Show>
-          <Show when={meta()}>
-            <span data-slot="compaction-summary-meta" class="truncate text-12-regular">
-              {meta()}
-            </span>
-          </Show>
-          <Icon
-            name="chevron-down"
-            size="small"
-            classList={{ "compaction-summary-chevron": true, "is-open": summaryExpanded() }}
-          />
-        </button>
-        <Show when={summaryExpanded()}>
-          <div data-slot="compaction-summary-body">
-            <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-          </div>
-        </Show>
-      </div>
+        </div>
       </Show>
     </Show>
   )
@@ -2348,14 +2361,14 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={i18n.t("ui.tool.shell")} active={pending()} />
               </span>
-             {/* 261031 Red 运行中显示命令原文（subtitle 单行截断），长命令不再黑箱等待；
+              {/* 261031 Red 运行中显示命令原文（subtitle 单行截断），长命令不再黑箱等待；
                  完成后仍切回 description 动画形态。 */}
-             <Show when={pending() && cmd()}>
-               <span data-slot="basic-tool-tool-subtitle">{cmd()}</span>
-             </Show>
-             <Show when={!pending() && props.input.description}>
-               <ShellSubmessage text={props.input.description} animate={sawPending} />
-             </Show>
+              <Show when={pending() && cmd()}>
+                <span data-slot="basic-tool-tool-subtitle">{cmd()}</span>
+              </Show>
+              <Show when={!pending() && props.input.description}>
+                <ShellSubmessage text={props.input.description} animate={sawPending} />
+              </Show>
             </div>
           </div>
         }

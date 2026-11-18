@@ -109,7 +109,7 @@ export const resolveStartupCompanion = Effect.fn("Tui.resolveStartupCompanion")(
   const profile = yield* service.get(id)
   if (!profile)
     return yield* Effect.fail(
-      new Error(`Companion "${id}" was not found. Import it with redcode companion import first.`),
+      new Error(`Companion "${id}" was not found. Use redcode companion list or redcode companion create.`),
     )
   return profile
 }, Effect.provide(Companion.defaultLayer))
@@ -152,7 +152,7 @@ export const TuiThreadCommand = cmd({
       })
       .option("companion", {
         type: "string",
-        describe: "open Chat with an imported companion",
+        describe: "open Chat with a companion",
       }),
   handler: async (args) => {
     // Keep ENABLE_PROCESSED_INPUT cleared even if other code flips it.

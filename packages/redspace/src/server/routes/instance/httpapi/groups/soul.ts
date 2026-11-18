@@ -47,6 +47,16 @@ const CreatePayload = Schema.Struct({
   markdown: Schema.optional(Schema.String),
 })
 
+const UpdatePayload = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  displayName: Schema.optional(Schema.String),
+  commitPrefix: Schema.optional(Schema.String),
+  avatar: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  content: Schema.optional(Schema.String),
+  markdown: Schema.optional(Schema.String),
+})
+
 export const SoulApi = HttpApi.make("soul").add(
   HttpApiGroup.make("soul")
     .add(
@@ -99,6 +109,19 @@ export const SoulApi = HttpApi.make("soul").add(
           summary: "Create a Soul",
           description:
             "Create a Soul in the global registry without overwriting existing files. Send either structured metadata plus content, or a complete Markdown document whose YAML frontmatter and body are validated by the registry parser. Creation never changes the current session or the default Soul.",
+        }),
+      ),
+      HttpApiEndpoint.put("update", "/soul/:id", {
+        params: { id: Schema.String },
+        payload: UpdatePayload,
+        success: described(Details, "Updated Soul details from its existing registry file"),
+        error: [ApiNotFoundError, InvalidRequestError, UnknownError],
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "soul.update",
+          summary: "Update a Soul",
+          description:
+            "Update the existing registry file without changing its identity or any saved session snapshot. Send content and optional metadata (omitted metadata is preserved), or a complete Markdown document with the same id.",
         }),
       ),
     )

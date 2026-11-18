@@ -1,16 +1,14 @@
 import { Button } from "@redcode-ai/ui/button"
+import { Dialog } from "@redcode-ai/ui/dialog"
 import { TextField } from "@redcode-ai/ui/text-field"
 import { Markdown } from "@redcode-ai/ui/markdown"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { useNavigate, useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, createSignal, For, on, Show, type Component } from "solid-js"
+import { batch, createEffect, createMemo, For, on, Show, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
-import { createMediaQuery } from "@solid-primitives/media"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
-import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useSettings } from "@/context/settings"
 import { persisted } from "@/utils/persist"
@@ -18,9 +16,8 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import { SoulAvatar } from "./soul-avatar"
 import { SoulAvatarPicker } from "./soul-avatar-picker"
+import { SettingsSoulEditor, SettingsSourceActions } from "./settings-soul-editor"
 
-// POST /soul（operationId soul.create）接受两种 JSON body：结构化字段，或 { markdown } 整份 Soul 文件。
-// SDK 由服务端路由生成；这里按现有 SDK 的扁平 body 参数模式调用，不在浏览器里重复解析 YAML。
 export type SoulCreateInput =
   | { markdown: string }
   | {
@@ -32,13 +29,9 @@ export type SoulCreateInput =
       description?: string
       content: string
     }
-
 export type SoulCreated = { id: string; name?: string; displayName?: string }
-
-// 与服务端 soul/schema 的 ID_PATTERN 一致：小写、数字、- 与 _。
 const SOUL_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
 
-// HTTP 错误体是 JSON 对象而非 Error 实例（hey-api 直接 throw 解析结果），按边界提取可读文案。
 function errorMessage(error: unknown): string | undefined {
   if (error instanceof Error) return error.message
   if (typeof error === "string") return error
@@ -54,33 +47,19 @@ export const SettingsPersonalization: Component = () => {
   const language = useLanguage()
   const settings = useSettings()
   const sdk = useGlobalSDK()
-  const platform = usePlatform()
-  const server = useServer()
   const sync = useServerSync()
   const params = useParams()
-  const queryClient = useQueryClient()
-  // 261114 Red UX-02：新建区默认收起；默认 Soul 压成紧凑摘要，让阵容回到首屏。
-  // 261114 Red UX-04：detailOpen 是窄布局的详情抽屉开关（宽布局常驻右栏）。
-  const [view, setView] = createStore({
-    selectedId: "",
-    search: "",
-    createOpen: false,
-    feedback: "",
-    error: "",
-    detailOpen: false,
-  })
-  // 261114 Red UX-04：记住上次所看的 Soul，下次打开优先选中。
-  const [lastViewed, setLastViewed] = createStore({ value: "" })
-  persisted("settings.personalization.lastViewed", [lastViewed, setLastViewed])
-
   const dialog = useDialog()
   const navigate = useNavigate()
-  const isWide = createMediaQuery("(min-width: 1024px)")
-  let scrollRef: HTMLDivElement | undefined
-
+  const queryClient = useQueryClient()
+  const [view, setView] = createStore({ selectedId: "", search: "", detail: false, feedback: "" })
   const souls = useQuery(() => ({
     queryKey: ["soul", sdk.url, "list"],
     queryFn: async () => (await sdk.client.soul.list({ throwOnError: true })).data,
+  }))
+  const companions = useQuery(() => ({
+    queryKey: ["companion", sdk.url, "list"],
+    queryFn: async () => (await sdk.client.companion.list({ throwOnError: true })).data,
   }))
   const issues = useQuery(() => ({
     queryKey: ["soul", sdk.url, "issues"],
@@ -90,133 +69,83 @@ export const SettingsPersonalization: Component = () => {
     queryKey: ["soul", sdk.url, "default", "desktop"],
     queryFn: async () => (await sdk.client.soul.default({ client: "desktop" }, { throwOnError: true })).data,
   }))
-
-  const saved = () => settings.personalization.lastSoul()
-  const effectiveDefaultId = () => (saved() ? saved() : serverDefault.data?.id)
-  const soulsList = () => souls.data ?? []
+  const boundIDs = createMemo(() => new Set(companions.data?.map((profile) => profile.soulID) ?? []))
+  const soulsList = createMemo(() =>
+    companions.data ? (souls.data ?? []).filter((soul) => !boundIDs().has(soul.id)) : [],
+  )
+  const effectiveDefaultId = () => settings.personalization.lastSoul() || serverDefault.data?.id
+  const boundDefault = () => !!effectiveDefaultId() && boundIDs().has(effectiveDefaultId()!)
   const defaultSoul = createMemo(() => soulsList().find((soul) => soul.id === effectiveDefaultId()))
   const selected = createMemo(() => soulsList().find((soul) => soul.id === view.selectedId))
   const filtered = createMemo(() => {
     const query = view.search.trim().toLocaleLowerCase()
-    if (!query) return soulsList()
-    return soulsList().filter((soul) =>
-      [soul.displayName, soul.name, soul.id, soul.description, soul.commitPrefix]
-        .some((value) => value?.toLocaleLowerCase().includes(query)),
-    )
+    return query
+      ? soulsList().filter((soul) =>
+          [soul.displayName, soul.name, soul.id, soul.description, soul.commitPrefix].some((value) =>
+            value?.toLocaleLowerCase().includes(query),
+          ),
+        )
+      : soulsList()
   })
-
   const detail = useQuery(() => ({
     queryKey: ["soul", sdk.url, "detail", view.selectedId],
-    enabled: !!view.selectedId,
+    enabled: view.detail && !!selected(),
     queryFn: async () => (await sdk.client.soul.get({ id: view.selectedId }, { throwOnError: true })).data,
   }))
-
   const directory = createMemo(() => (params.dir ? decode64(params.dir) : undefined))
-  const sessionSoulId = createMemo(() => {
-    const id = params.id
+  const codeDirectory = createMemo(() => {
     const dir = directory()
-    if (!id || !dir) return undefined
-    return sync.child(dir, { bootstrap: false })[0].session.find((session) => session.id === id)?.soul
+    if (!dir || !companions.data || companions.data.some((profile) => profile.directory === dir)) return undefined
+    return dir
   })
-  const currentSessionKnown = createMemo(() => {
-    const id = params.id
+  const currentSession = createMemo(() => {
     const dir = directory()
-    if (!id || !dir) return false
-    return !!sync.peek(dir, { bootstrap: false })[0].session.find((session) => session.id === id)
+    if (!dir || !params.id) return undefined
+    const session = sync.peek(dir, { bootstrap: false })[0].session.find((item) => item.id === params.id)
+    return session?.mode === "chat" ? undefined : session
   })
-
-  // 261114 Red UX-04：首次进入优先选默认或上次所看的 Soul（列表就绪后一次性）。
-  createEffect(
-    on(
-      () => souls.data,
-      (data) => {
-        if (!data || data.length === 0) return
-        if (view.selectedId && data.some((soul) => soul.id === view.selectedId)) return
-        const candidate =
-          [lastViewed.value, effectiveDefaultId()].find((id) => id && data.some((soul) => soul.id === id)) ??
-          data[0]?.id
-        if (candidate) setView({ selectedId: candidate, feedback: "", error: "" })
-      },
-    ),
-  )
-
-  // 窄布局抽屉打开时回到内容顶部，抽屉（absolute inset-0）才在视口内。
-  createEffect(
-    on(
-      () => view.detailOpen,
-      (open) => {
-        if (open && scrollRef) scrollRef.scrollTop = 0
-      },
-    ),
-  )
-
-  const selectSoul = (id: string, options?: { openDetail?: boolean }) => {
-    setView({ selectedId: id, feedback: "", error: "" })
-    setLastViewed("value", id)
-    if (options?.openDetail && !isWide()) setView("detailOpen", true)
+  const selectSoul = (id: string) => {
+    setView({ selectedId: id, detail: true, feedback: "" })
   }
-
-  // 261114 Red UX-04：以此 Soul 新建——带 soul 意图进新会话页（UX-03 的快选器消费），
-  // 关闭设置弹层；仅本地项目目录可导航，全局首页入口没有目标目录。
   const startWithSoul = (id: string) => {
-    const dir = directory()
-    if (!dir) return
+    const dir = codeDirectory()
+    if (!dir || boundIDs().has(id)) return
     dialog.close()
     navigate(`/${base64Encode(dir)}/session?soul=${encodeURIComponent(id)}`)
   }
   const setDefault = (id: string) => {
+    if (boundIDs().has(id)) return
     settings.personalization.setLastSoul(id)
     setView("feedback", language.t("settings.personalization.saved"))
-    setView("error", "")
   }
-  const useServerDefault = () => {
-    settings.personalization.setLastSoul("")
-    setView("feedback", language.t("settings.personalization.saved"))
-    setView("error", "")
-  }
-  const sourceFor = (field: keyof NonNullable<typeof detail.data>["sources"]) => detail.data?.sources[field] ?? "absent"
-  const sourceLabel = (field: keyof NonNullable<typeof detail.data>["sources"]) =>
-    language.t(
-      sourceFor(field) === "frontmatter"
-        ? "settings.personalization.sourceFrontmatter"
-        : sourceFor(field) === "absent"
-          ? "settings.personalization.sourceAbsent"
-          : "settings.personalization.sourceFallback",
-    )
-  const openSource = () => {
-    const path = detail.data?.path
-    if (!path || platform.platform !== "desktop" || !platform.openPath || !server.isLocal()) return
-    void platform.openPath(path).catch((error: unknown) => {
-      setView("error", error instanceof Error ? error.message : String(error))
-    })
-  }
-  const copySource = () => {
-    const path = detail.data?.path
-    if (!path || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return
-    void navigator.clipboard.writeText(path).then(
-      () => setView("feedback", language.t("settings.personalization.pathCopied")),
-      (error: unknown) => setView("error", error instanceof Error ? error.message : String(error)),
-    )
-  }
-
   const createSoul = async (input: SoulCreateInput) => {
     const created = (await sdk.client.soul.create(input, { throwOnError: true })).data
-    // 新 Soul 写盘后先刷新注册表再选中并收起创建区；默认 Soul 与当前会话绑定都不动。
-    await souls.refetch()
+    queryClient.setQueryData<typeof souls.data>(["soul", sdk.url, "list"], (current) => [
+      ...(current ?? []).filter((soul) => soul.id !== created.id),
+      created,
+    ])
+    void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "list"] })
     void issues.refetch()
-    setView({ selectedId: created.id, search: "", createOpen: false, error: "", feedback: "" })
     void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "detail", created.id] })
+    selectSoul(created.id)
+    dialog.close()
     return created
   }
-
-  // 261115 Red UX-13 从现有 Soul 复制：预填创建表单（fields 模式），生成独立 ID
-  // （-copy 后缀，撞号时用户可改），原 Soul 不被覆盖。正文编辑需要写入接口，
-  // 本批不携带——复制用的是 detail 里已读到的字段。
-  const [seed, setSeed] = createSignal<SoulCreateSeed | undefined>()
+  const openCreate = (seed?: SoulCreateSeed) =>
+    dialog.push(() => (
+      <Dialog
+        class="settings-editor-dialog"
+        size="large"
+        title={language.t("settings.soulCode.new")}
+        description={language.t("settings.personalization.create.description")}
+      >
+        <SoulCreateForm create={createSoul} seed={seed} />
+      </Dialog>
+    ))
   const copySoul = () => {
     const data = detail.data
     if (!data) return
-    setSeed({
+    openCreate({
       id: `${data.id}-copy`,
       name: data.name,
       displayName: data.displayName,
@@ -225,357 +154,253 @@ export const SettingsPersonalization: Component = () => {
       description: data.description,
       content: data.content,
     })
-    setView("createOpen", true)
   }
-
   return (
-    <div
-      ref={scrollRef}
-      class="relative flex h-full flex-col overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10"
-    >
-      <header class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex max-w-[1000px] flex-col gap-1 pt-6 pb-8">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.personalization.title")}</h2>
-          <p class="text-14-regular text-text-weak">{language.t("settings.personalization.description")}</p>
-        </div>
-      </header>
-
-      <main class="flex max-w-[1000px] flex-col gap-6">
-        <section class="flex flex-col gap-3 rounded-lg border border-border-weak-base bg-surface-base p-4">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.defaultSoul")}</h3>
-              <p class="mt-1 text-12-regular text-text-weak">{language.t("settings.personalization.defaultSoulDescription")}</p>
-            </div>
-            <span class="rounded-full bg-surface-raised-base px-2 py-1 text-12-medium text-text-weak">
-              {language.t("settings.personalization.defaultBadge")}
-            </span>
-          </div>
-          <Show when={souls.isPending || serverDefault.isPending}>
-            <p aria-live="polite" class="text-14-regular text-text-weak">{language.t("common.loading")}</p>
-          </Show>
-          <Show when={souls.isError || serverDefault.isError}>
-            <div class="flex flex-wrap items-center gap-2" role="alert">
-              <p class="text-14-regular text-text-danger-base">
-                {souls.error instanceof Error
-                  ? souls.error.message
-                  : serverDefault.error instanceof Error
-                    ? serverDefault.error.message
-                    : language.t("common.requestFailed")}
-              </p>
-              <Button size="small" variant="secondary" onClick={() => { void souls.refetch(); void serverDefault.refetch() }}>
-                {language.t("common.retry")}
-              </Button>
-            </div>
-          </Show>
-          <Show when={defaultSoul()} fallback={
-            <p class="text-14-regular text-text-weak">
-              {language.t("settings.personalization.noDefault")}
-            </p>
-          }>
-            {(soul) => (
-              <div class="flex flex-wrap items-center gap-3">
-                <SoulAvatar soul={soul()} />
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-14-medium text-text-strong">
-                    {soul().displayName || soul().name}
-                    <span class="ml-1 font-normal text-12-regular text-text-weak">{soul().name}</span>
-                  </p>
-                  <Show when={soul().description}>
-                    <p class="truncate text-12-regular text-text-weak">{soul().description}</p>
-                  </Show>
-                </div>
-                <Button size="small" variant="secondary" onClick={() => selectSoul(soul().id)}>
-                  {language.t("settings.personalization.viewDetails")}
-                </Button>
+    <div class="settings-page-body" data-component="settings-code-soul">
+      <Show
+        when={view.detail && selected()}
+        fallback={
+          <>
+            <header class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="settings-page-title">{language.t("settings.soulCode.title")}</h2>
+                <p class="settings-page-description">{language.t("settings.soulCode.description")}</p>
               </div>
-            )}
-          </Show>
-          <Show when={saved()}>
-            <div>
-              <Button size="small" variant="secondary" onClick={useServerDefault}>
-                {language.t("settings.personalization.useServerDefault")}
+              <Button variant="primary" onClick={() => openCreate()}>
+                {language.t("settings.soulCode.new")}
               </Button>
-            </div>
-          </Show>
-          <Show when={saved() && souls.data && !soulsList().some((soul) => soul.id === saved())}>
-            <p role="alert" class="text-14-regular text-text-danger-base">
-              {language.t("settings.personalization.staleSoul", { id: saved() })}
-            </p>
-          </Show>
-          <Show
-            when={
-              currentSessionKnown() &&
-              sessionSoulId() &&
-              souls.data &&
-              !soulsList().some((soul) => soul.id === sessionSoulId())
-            }
-          >
-            <p role="alert" class="text-14-regular text-text-danger-base">
-              {language.t("settings.personalization.missingCurrentSoul", { id: sessionSoulId() ?? "" })}
-            </p>
-          </Show>
-          <p aria-live="polite" class="text-12-regular text-text-success-base">{view.feedback}</p>
-        </section>
-
-        <section
-          aria-label={language.t("settings.personalization.create.title")}
-          class="flex flex-col gap-4 rounded-lg border border-border-weak-base bg-surface-base p-4"
-        >
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex flex-col gap-1">
-              <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.create.title")}</h3>
-              <p class="text-12-regular text-text-weak">{language.t("settings.personalization.create.description")}</p>
-            </div>
-            <Button
-              type="button"
-              size="small"
-              variant="secondary"
-              aria-expanded={view.createOpen}
-              aria-controls="soul-create-body"
-              onClick={() => setView("createOpen", !view.createOpen)}
-            >
-              {language.t(
-                view.createOpen
-                  ? "settings.personalization.create.collapse"
-                  : "settings.personalization.create.expand",
-              )}
-            </Button>
-          </div>
-          {/* 收起用 hidden 不用 Show：不卸载 SoulCreateForm，草稿在收起后保留。 */}
-          <div id="soul-create-body" classList={{ hidden: !view.createOpen }} aria-hidden={!view.createOpen}>
-            {/* 261115 Red UX-13：seed = 复制现有 Soul 的预填；onStart = 创建成功后立即用它开新会话。 */}
-            <SoulCreateForm create={createSoul} seed={seed()} onStart={startWithSoul} />
-          </div>
-        </section>
-
-        {/* 261114 Red UX-04：宽布局阵容与详情各自滚动（固定高），窄布局详情为可返回抽屉。 */}
-        <div class="grid min-h-0 grid-cols-1 gap-4 lg:h-[560px] lg:grid-cols-[minmax(240px,0.85fr)_minmax(0,1.5fr)]">
-          <section
-            aria-label={language.t("settings.personalization.roster")}
-            class="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1"
-          >
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.roster")}</h3>
-              <span class="text-12-regular text-text-weak">{soulsList().length}</span>
-            </div>
-            <TextField
-              value={view.search}
-              onChange={(value) => setView("search", value)}
-              placeholder={language.t("settings.personalization.search")}
-              aria-label={language.t("settings.personalization.search")}
-            />
-            <Show when={souls.isPending}>
-              <p aria-live="polite" class="text-14-regular text-text-weak">{language.t("common.loading")}</p>
-            </Show>
-            <Show when={souls.data && soulsList().length === 0}>
-              <p class="rounded-lg border border-border-weak-base p-4 text-14-regular text-text-weak">
-                {language.t("settings.personalization.empty")}
-              </p>
-            </Show>
-            <Show when={souls.data && soulsList().length > 0 && filtered().length === 0}>
-              <p class="rounded-lg border border-border-weak-base p-4 text-14-regular text-text-weak">
-                {language.t("settings.personalization.noResults")}
-              </p>
-            </Show>
-            <ul class="flex flex-col gap-2">
-              <For each={filtered()}>
+            </header>
+            <section class="flex flex-col gap-4 rounded-xl border border-border-weak-base bg-surface-base p-5">
+              <div>
+                <h3 class="text-14-medium text-text-strong">{language.t("settings.soulCode.default")}</h3>
+                <p class="mt-1 text-12-regular text-text-weak">{language.t("settings.soulCode.defaultDescription")}</p>
+              </div>
+              <Show when={defaultSoul()}>
                 {(soul) => (
-                  <li>
+                  <div class="flex items-center gap-3">
+                    <SoulAvatar soul={soul()} />
+                    <div class="min-w-0 flex-1">
+                      <p class="text-14-medium text-text-strong">{soul().displayName || soul().name}</p>
+                      <p class="text-12-regular text-text-weak">{soul().description}</p>
+                    </div>
+                    <Button variant="secondary" size="small" onClick={() => selectSoul(soul().id)}>
+                      {language.t("settings.personalization.viewDetails")}
+                    </Button>
+                  </div>
+                )}
+              </Show>
+              <Show when={boundDefault()}>
+                <p role="status" class="text-13-regular text-text-weak">
+                  {language.t("settings.soulCode.boundDefault")}
+                </p>
+              </Show>
+              <Show when={!defaultSoul() && !boundDefault() && !souls.isPending && !serverDefault.isPending}>
+                <p class="text-13-regular text-text-weak">{language.t("settings.personalization.noDefault")}</p>
+              </Show>
+              <Show when={settings.personalization.lastSoul()}>
+                <div>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    disabled={!!serverDefault.data?.id && boundIDs().has(serverDefault.data.id)}
+                    onClick={() => {
+                      settings.personalization.setLastSoul("")
+                      setView("feedback", language.t("settings.personalization.saved"))
+                    }}
+                  >
+                    {language.t("settings.personalization.useServerDefault")}
+                  </Button>
+                </div>
+              </Show>
+            </section>
+            <section class="flex flex-col gap-4">
+              <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.roster")}</h3>
+              <TextField
+                value={view.search}
+                onChange={(value) => setView("search", value)}
+                placeholder={language.t("settings.personalization.search")}
+                aria-label={language.t("settings.personalization.search")}
+              />
+              <Show when={companions.isPending || souls.isPending}>
+                <p role="status" class="text-13-regular text-text-weak">
+                  {language.t("common.loading")}
+                </p>
+              </Show>
+              <Show when={companions.data && souls.data && !filtered().length}>
+                <p class="text-13-regular text-text-weak">
+                  {language.t(
+                    soulsList().length ? "settings.personalization.noResults" : "settings.personalization.empty",
+                  )}
+                </p>
+              </Show>
+              <div class="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+                <For each={filtered()}>
+                  {(soul) => (
                     <button
                       type="button"
-                      aria-label={language.t("settings.personalization.selectSoul", { name: soul.displayName || soul.name })}
-                      aria-pressed={view.selectedId === soul.id}
-                      onClick={() => selectSoul(soul.id, { openDetail: true })}
-                      class={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-surface-raised-base focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus ${
-                        view.selectedId === soul.id ? "border-border-focus bg-surface-raised-base" : "border-border-weak-base"
-                      }`}
+                      class="flex items-start gap-3 rounded-xl border border-border-weak-base bg-surface-base p-4 text-left transition-colors hover:bg-surface-raised-base focus-visible:outline-2 focus-visible:outline-border-focus"
+                      onClick={() => selectSoul(soul.id)}
+                      aria-label={language.t("settings.personalization.selectSoul", {
+                        name: soul.displayName || soul.name,
+                      })}
                     >
                       <SoulAvatar soul={soul} />
-                      <span class="min-w-0 flex-1">
-                        <span class="flex flex-wrap items-center gap-2">
-                          <span class="text-14-medium text-text-strong">{soul.displayName || soul.name}</span>
+                      <div class="min-w-0 flex-1">
+                        <p class="flex flex-wrap items-center gap-2 text-14-medium text-text-strong">
+                          {soul.displayName || soul.name}
                           <Show when={soul.id === effectiveDefaultId()}>
-                            <span class="rounded-full bg-surface-raised-base px-2 py-0.5 text-12-regular text-text-weak">
+                            <span class="rounded-md bg-surface-raised-base px-2 py-0.5 text-12-regular text-text-weak">
                               {language.t("settings.personalization.defaultBadge")}
                             </span>
                           </Show>
-                          <Show when={currentSessionKnown() && soul.id === sessionSoulId()}>
-                            <span class="rounded-full bg-surface-raised-base px-2 py-0.5 text-12-regular text-text-weak">
-                              {language.t("settings.personalization.currentSessionBadge")}
-                            </span>
-                          </Show>
-                        </span>
-                        <span class="mt-1 block truncate text-12-regular text-text-weak">{soul.description || soul.name}</span>
-                        <Show when={soul.commitPrefix}><span class="mt-1 block text-12-regular text-text-weak">{soul.commitPrefix}</span></Show>
-                      </span>
+                        </p>
+                        <p class="mt-1 break-words text-12-regular text-text-weak">{soul.description || soul.name}</p>
+                      </div>
                     </button>
-                  </li>
+                  )}
+                </For>
+              </div>
+              <p class="text-12-regular text-text-weak">{language.t("settings.soulCode.chatSeparate")}</p>
+            </section>
+          </>
+        }
+      >
+        {(soul) => (
+          <>
+            <Button size="small" variant="ghost" onClick={() => setView("detail", false)}>
+              {language.t("settings.soulCode.back")}
+            </Button>
+            <header class="flex flex-wrap items-center gap-4">
+              <SoulAvatar soul={soul()} size="large" />
+              <div class="min-w-0 flex-1">
+                <h2 class="settings-page-title">{soul().displayName || soul().name}</h2>
+                <p class="settings-page-description">{soul().description || soul().name}</p>
+              </div>
+              <Show when={codeDirectory()}>
+                <Button variant="primary" onClick={() => startWithSoul(soul().id)}>
+                  {language.t("settings.soulCode.start")}
+                </Button>
+              </Show>
+            </header>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={soul().id === effectiveDefaultId()}
+                onClick={() => setDefault(soul().id)}
+              >
+                {language.t(
+                  soul().id === effectiveDefaultId()
+                    ? "settings.personalization.defaultBadge"
+                    : "settings.personalization.setDefault",
                 )}
-              </For>
-            </ul>
-          </section>
-
-          <section
-            aria-label={language.t("settings.personalization.details")}
-            classList={{
-              "min-w-0 flex-col gap-4 overflow-y-auto rounded-lg border border-border-weak-base bg-surface-base p-4 lg:min-h-0": true,
-              // 261114 Red UX-04：窄布局为可返回的抽屉（覆盖整个设置页），宽布局常驻右栏。
-              "absolute inset-0 z-20 lg:static lg:inset-auto lg:z-auto": view.detailOpen,
-              "hidden lg:flex": !view.detailOpen,
-            }}
-          >
-            <Show when={selected()} fallback={<p class="text-14-regular text-text-weak">{language.t("settings.personalization.chooseSoul")}</p>}>
-              {(soul) => (
-                <div class="flex flex-col gap-4">
-                  <div class="flex flex-wrap items-start gap-3">
-                    <SoulAvatar soul={soul()} />
-                    <div class="min-w-0 flex-1">
-                      <h3 class="text-16-medium text-text-strong">{soul().displayName || soul().name}</h3>
-                      <Show when={soul().description}>
-                        <p class="mt-0.5 text-12-regular text-text-weak">{soul().description}</p>
-                      </Show>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <Show when={directory()}>
-                        <Button size="small" variant="secondary" onClick={() => startWithSoul(soul().id)}>
-                          {language.t("settings.personalization.startWithSoul")}
-                        </Button>
-                      </Show>
-                      <Show when={detail.data}>
-                        <Button size="small" variant="secondary" onClick={copySoul}>
-                          {language.t("settings.personalization.copySoul")}
-                        </Button>
-                      </Show>
-                      <Show when={soul().id !== effectiveDefaultId()}>
-                        <Button size="small" variant="secondary" onClick={() => setDefault(soul().id)}>
-                          {language.t("settings.personalization.setDefault")}
-                        </Button>
-                      </Show>
-                      <Show when={view.detailOpen}>
-                        <Button
-                          size="small"
-                          variant="ghost"
-                          class="lg:hidden"
-                          onClick={() => setView("detailOpen", false)}
-                        >
-                          {language.t("settings.personalization.backToRoster")}
-                        </Button>
-                      </Show>
-                    </div>
+              </Button>
+              <Button variant="ghost" disabled={!detail.data} onClick={copySoul}>
+                {language.t("settings.personalization.copySoul")}
+              </Button>
+            </div>
+            <Show when={detail.data}>
+              {(data) => (
+                <section class="flex flex-col gap-4 rounded-xl border border-border-weak-base bg-surface-base p-5">
+                  <div class="flex items-center justify-between gap-4">
+                    <h3 class="text-14-medium text-text-strong">{language.t("settings.soulCode.body")}</h3>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        const id = data().id
+                        dialog.push(() => <SettingsSoulEditor id={id} metadata />)
+                      }}
+                    >
+                      {language.t("common.edit")}
+                    </Button>
                   </div>
-                  <Show when={currentSessionKnown() && sessionSoulId() === soul().id}>
-                    <p class="rounded-md bg-surface-raised-base p-2 text-12-regular text-text-weak">
-                      {language.t("settings.personalization.currentSessionNotice")}
-                    </p>
-                  </Show>
-                  <Show when={currentSessionKnown() && !sessionSoulId()}>
-                    <p class="rounded-md bg-surface-raised-base p-2 text-12-regular text-text-weak">
-                      {language.t("settings.personalization.currentSessionNoSoul")}
-                    </p>
-                  </Show>
-                  <Show when={currentSessionKnown() && sessionSoulId() && sessionSoulId() !== soul().id}>
-                    <p class="rounded-md bg-surface-raised-base p-2 text-12-regular text-text-weak">
-                      {language.t("settings.personalization.otherCurrentSession", { id: sessionSoulId() ?? "" })}
-                    </p>
-                  </Show>
-                  <Show when={soul().id} keyed>
-                    {(id) => <SoulAvatarPicker soul={{ ...soul(), id }} />}
-                  </Show>
-                  <Show when={detail.isPending}>
-                    <p aria-live="polite" class="text-14-regular text-text-weak">{language.t("common.loading")}</p>
-                  </Show>
-                  <Show when={detail.isError}>
-                    <div role="alert" class="flex flex-wrap items-center gap-2">
-                      <p class="text-14-regular text-text-danger-base">
-                        {detail.error instanceof Error ? detail.error.message : language.t("common.requestFailed")}
-                      </p>
-                      <Button size="small" variant="secondary" onClick={() => void detail.refetch()}>{language.t("common.retry")}</Button>
-                    </div>
-                  </Show>
-                  <Show when={detail.data}>
-                    {(data) => (
-                      <>
-                        {/* 261114 Red UX-04：正文以可读 Markdown 优先，工程字段与原文收进高级信息。 */}
-                        <Show when={data().content}>
-                          <section class="flex flex-col gap-2">
-                            <h4 class="text-14-medium text-text-strong">{language.t("settings.personalization.body")}</h4>
-                            <div class="max-h-[420px] overflow-y-auto rounded-md bg-surface-raised-base p-3">
-                              <Markdown text={data().content} cacheKey={`soul:${data().id}:body`} />
-                            </div>
-                          </section>
-                        </Show>
-                        <details class="rounded-md bg-surface-raised-base p-2">
-                          <summary class="cursor-pointer select-none text-12-medium text-text-weak">
-                            {language.t("settings.personalization.advancedInfo")}
-                          </summary>
-                          <div class="mt-2 flex flex-col gap-2">
-                            <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              <DetailField label="id" value={data().id} source={sourceLabel("id")} />
-                              <DetailField label="name" value={data().name} source={sourceLabel("name")} />
-                              <DetailField label="displayName" value={data().displayName} source={sourceLabel("displayName")} />
-                              <DetailField label="commitPrefix" value={data().commitPrefix} source={sourceLabel("commitPrefix")} />
-                              <DetailField label="avatar" value={data().avatar} source={sourceLabel("avatar")} />
-                              <DetailField label="description" value={data().description} source={sourceLabel("description")} />
-                            </dl>
-                            <Show when={data().path}>
-                              <div class="flex flex-wrap items-center gap-2">
-                                <code class="min-w-0 flex-1 break-all text-12-regular text-text-weak">{data().path}</code>
-                                <Show when={typeof navigator !== "undefined" && !!navigator.clipboard?.writeText}>
-                                  <Button size="small" variant="secondary" onClick={copySource}>{language.t("settings.personalization.copyPath")}</Button>
-                                </Show>
-                                <Show when={platform.platform === "desktop" && !!platform.openPath && server.isLocal()}>
-                                  <Button size="small" variant="secondary" onClick={openSource}>{language.t("settings.personalization.openPath")}</Button>
-                                </Show>
-                              </div>
-                            </Show>
-                            <pre class="max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-base p-3 font-mono text-12-regular text-text-weak">{data().content}</pre>
+                  <p class="text-12-regular text-text-weak">{language.t("settings.editor.later")}</p>
+                  <SettingsSourceActions path={data().path} onRefresh={() => detail.refetch({ throwOnError: true })} />
+                  <div class="min-w-0 break-words py-2">
+                    <Markdown text={data().content} cacheKey={`soul:${data().id}:${data().content}`} />
+                  </div>
+                  <SoulAvatarPicker soul={data()} />
+                  <details class="rounded-lg border border-border-weak-base p-4">
+                    <summary class="cursor-pointer text-13-medium text-text-weak">
+                      {language.t("settings.personalization.advancedInfo")}
+                    </summary>
+                    <dl class="mt-3 grid gap-3 sm:grid-cols-2">
+                      <For each={["id", "name", "displayName", "commitPrefix", "avatar", "description"] as const}>
+                        {(field) => (
+                          <div class="min-w-0">
+                            <dt class="text-12-medium text-text-weak">{field}</dt>
+                            <dd class="mt-1 break-all text-13-regular text-text-strong">{data()[field] || "—"}</dd>
                           </div>
-                        </details>
-                      </>
-                    )}
-                  </Show>
-                  <p aria-live="polite" role={view.error ? "alert" : undefined} class="text-12-regular text-text-danger-base">{view.error}</p>
-                </div>
+                        )}
+                      </For>
+                    </dl>
+                  </details>
+                </section>
               )}
             </Show>
-          </section>
+            <Show when={detail.isPending}>
+              <p role="status" class="text-13-regular text-text-weak">
+                {language.t("common.loading")}
+              </p>
+            </Show>
+            <Show when={currentSession()?.soul === soul().id}>
+              <p class="mt-4 text-12-regular text-text-weak">
+                {language.t("settings.personalization.currentSessionNotice")}
+              </p>
+            </Show>
+          </>
+        )}
+      </Show>
+      <Show when={view.feedback}>
+        <p role="status" class="mt-4 text-13-regular text-text-success-base">
+          {view.feedback}
+        </p>
+      </Show>
+      <Show when={souls.error || companions.error || serverDefault.error || detail.error}>
+        <div role="alert" class="mt-4 flex flex-wrap items-center gap-3 text-13-regular text-text-on-critical-base">
+          <p>
+            {errorMessage(souls.error || companions.error || serverDefault.error || detail.error) ??
+              language.t("common.requestFailed")}
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void souls.refetch()
+              void companions.refetch()
+              void serverDefault.refetch()
+              if (selected()) void detail.refetch()
+            }}
+          >
+            {language.t("common.retry")}
+          </Button>
         </div>
-
-        <Show when={issues.isPending}>
-          <p aria-live="polite" class="text-14-regular text-text-weak">{language.t("settings.personalization.issuesLoading")}</p>
-        </Show>
-        <Show when={issues.isError}>
-          <div role="alert" class="flex flex-wrap items-center gap-2">
-            <p class="text-14-regular text-text-danger-base">{issues.error instanceof Error ? issues.error.message : language.t("common.requestFailed")}</p>
-            <Button size="small" variant="secondary" onClick={() => void issues.refetch()}>{language.t("common.retry")}</Button>
-          </div>
-        </Show>
-        <Show when={issues.data?.length}>
-          <section aria-label={language.t("settings.personalization.registryIssues")} class="flex flex-col gap-2">
-            <h3 class="text-14-medium text-text-strong">{language.t("settings.personalization.registryIssues")}</h3>
-            <ul class="flex flex-col gap-1">
-              <For each={issues.data}>
-                {(issue) => (
-                  <li role="alert" class="text-14-regular text-text-danger-base">
-                    <code>{issue.path}</code>: {issue.message}
-                  </li>
-                )}
-              </For>
-            </ul>
-          </section>
-        </Show>
-      </main>
+      </Show>
+      <Show when={issues.data?.length}>
+        <details class="mt-6 rounded-lg border border-border-weak-base p-4">
+          <summary class="cursor-pointer text-13-medium text-text-weak">
+            {language.t("settings.soulCode.registryIssues")}
+          </summary>
+          <ul class="mt-3 space-y-2">
+            <For each={issues.data}>
+              {(issue) => (
+                <li class="break-all text-12-regular text-text-on-critical-base">
+                  <code>{issue.path}</code>: {issue.message}
+                </li>
+              )}
+            </For>
+          </ul>
+        </details>
+      </Show>
+      <Show when={issues.error}>
+        <div class="mt-4 text-12-regular text-text-on-critical-base">
+          <p role="alert">{errorMessage(issues.error) ?? language.t("common.requestFailed")}</p>
+          <Button variant="ghost" size="small" onClick={() => void issues.refetch()}>
+            {language.t("common.retry")}
+          </Button>
+        </div>
+      </Show>
     </div>
   )
 }
-
-const DetailField: Component<{ label: string; value?: string; source: string }> = (props) => (
-  <div class="min-w-0 rounded-md bg-surface-raised-base p-2">
-    <dt class="text-12-medium text-text-weak">{props.label} · {props.source}</dt>
-    <dd class="mt-1 break-words text-14-regular text-text-strong">{props.value || "—"}</dd>
-  </div>
-)
 
 // 261115 Red UX-13 复制预填：从现有 Soul 带字段进创建表单。
 export type SoulCreateSeed = {
@@ -884,7 +709,7 @@ export const SoulCreateForm: Component<{
         </Show>
       </div>
       <Show when={state.error}>
-        <p data-testid="soul-create-error" role="alert" class="text-12-regular text-text-danger-base">
+        <p data-testid="soul-create-error" role="alert" class="text-12-regular text-text-on-critical-base">
           {state.error}
         </p>
       </Show>

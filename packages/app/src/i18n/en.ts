@@ -1,3 +1,7 @@
+import { settingsModern } from "./settings-modern"
+import { settingsCompanion } from "./settings-companion"
+import { settingsDesktop } from "./settings-desktop"
+
 export const dict = {
   "mode.navigation": "Chat and Code",
   "chat.title": "Pick up where you left off.",
@@ -7,7 +11,7 @@ export const dict = {
   "chat.profile.description":
     "Start a new conversation or return to an earlier one. The same companion archive stays with you.",
   "chat.profile.choose": "Choose a companion",
-  "chat.profile.missing": "This companion profile no longer exists. Choose another profile or import one below.",
+  "chat.profile.missing": "This companion is unavailable. Choose an available companion to continue.",
   "chat.start": "Start a conversation",
   "chat.opening": "Opening…",
   "chat.recent": "Your conversations",
@@ -232,7 +236,8 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API key",
   "provider.custom.field.apiKey.description": "Optional. Leave empty if you manage auth via headers.",
   "provider.custom.save.shadowed.title": "Config file API key overrides the saved one",
-  "provider.custom.save.shadowed.description": "{provider} still has an API key in the config file; the engine prefers it. Remove the apiKey from the config file and rely on the saved key.",
+  "provider.custom.save.shadowed.description":
+    "{provider} still has an API key in the config file; the engine prefers it. Remove the apiKey from the config file and rely on the saved key.",
   "provider.custom.models.label": "Models",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -370,7 +375,8 @@ export const dict = {
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.archiveNeedsDesktop.title": "Archives require the desktop app",
-  "prompt.toast.archiveNeedsDesktop.description": "Archives cannot be written to disk from the browser — use the RedCode desktop app.",
+  "prompt.toast.archiveNeedsDesktop.description":
+    "Archives cannot be written to disk from the browser — use the RedCode desktop app.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",
@@ -407,8 +413,10 @@ export const dict = {
   "prompt.agent.keepModel": "Keep current model ({{model}})",
   "dialog.background.unseen": "New result",
   "prompt.background.unseen": "{{count}} to review",
-  "dialog.background.result.recycled": "The result has been recycled (finished jobs are kept for 30 minutes) — open the session for the full output.",
-  "dialog.background.result.truncated": "Showing the last {{shown}} of {{total}} characters — open the session for the full output.",
+  "dialog.background.result.recycled":
+    "The result has been recycled (finished jobs are kept for 30 minutes) — open the session for the full output.",
+  "dialog.background.result.truncated":
+    "Showing the last {{shown}} of {{total}} characters — open the session for the full output.",
   "dialog.background.result.quoteTruncated": "quote truncated; full output in the background task",
   "dialog.background.result.quote": "Insert into draft",
   "dialog.background.result.quoted": "Result inserted into the draft",
@@ -443,7 +451,7 @@ export const dict = {
   "dialog.background.stop.action": "Stop",
   "dialog.background.stop.title": "Stop background activity",
   "dialog.background.stop.description":
-    "Stops \"{{title}}\" immediately. Jobs stop together with their nested sub-tasks; terminals close the whole process tree.",
+    'Stops "{{title}}" immediately. Jobs stop together with their nested sub-tasks; terminals close the whole process tree.',
   "dialog.background.stop.confirm": "Stop",
   "dialog.background.stop.notConfirmed": "Terminal not terminated",
   "dialog.background.stop.notConfirmed.description":
@@ -474,7 +482,7 @@ export const dict = {
   "app.server.otherServers": "Other servers",
 
   "dialog.server.title": "Servers",
-  "dialog.server.description": "Switch which RedCode server this app connects to.",
+  "dialog.server.description": "Switch which RedSpace server this app connects to.",
   "dialog.confirm.removeServer.title": "Remove server",
   "dialog.confirm.removeServer.description": "Remove {{server}} from the server list? This cannot be undone.",
   "dialog.confirm.removeProject.title": "Remove project",
@@ -632,7 +640,7 @@ export const dict = {
   "toast.project.reloadFailed.title": "Failed to reload {{project}}",
 
   "toast.update.title": "Update available",
-  "toast.update.description": "A new version of RedCode ({{version}}) is now available to install.",
+  "toast.update.description": "A new version of RedSpace ({{version}}) is now available to install.",
   "toast.update.action.installRestart": "Install and restart",
   "toast.update.action.notYet": "Not yet",
 
@@ -983,7 +991,8 @@ export const dict = {
   "file.view.htmlHint": "Scripts run only after opening. The isolated preview does not load relative local resources.",
   "task.steer.title": "Add guidance",
   "task.steer.parent": "Parent task: {{id}}",
-  "task.steer.hint": "Sent at the next safe step, not an immediate interrupt. New user guidance takes priority on conflicts; task permissions still apply.",
+  "task.steer.hint":
+    "Sent at the next safe step, not an immediate interrupt. New user guidance takes priority on conflicts; task permissions still apply.",
   "task.steer.tooLong": "Guidance must be at most 16,384 UTF-8 bytes. Shorten it before sending.",
   "task.steer.ended": "This task is not accepting guidance. Your draft is preserved; sending will not restart it.",
   "task.steer.queued": "Queued. Not yet sent to the model.",
@@ -1012,7 +1021,8 @@ export const dict = {
   "settings.updates.toast.disabled.description": "Development or unpackaged builds do not check for updates.",
   "settings.updates.action.downloading": "Downloading...",
   "settings.updates.toast.downloadFailed.title": "Update Download Failed",
-  "settings.updates.toast.downloadFailed.description": "The download did not finish. Try again, or export logs for diagnosis.",
+  "settings.updates.toast.downloadFailed.description":
+    "The download did not finish. Try again, or export logs for diagnosis.",
   "settings.updates.toast.downloaded.title": "Update Downloaded",
   "settings.updates.toast.downloaded.description": "The app will restart to finish installing.",
   "common.dismiss": "Dismiss",
@@ -1089,7 +1099,7 @@ export const dict = {
   "debugBar.mem.tipUnavailable": "Used JS heap vs heap limit. Chromium only.",
   "debugBar.mem.tip": "Used JS heap vs heap limit. {{used}} of {{limit}}.",
 
-  "app.name.desktop": "RedCode Desktop",
+  "app.name.desktop": "RedSpace",
 
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
@@ -1140,11 +1150,12 @@ export const dict = {
   "settings.mobileGateway.qrDescription":
     "Scan with the Android companion. The QR includes the Gateway address, one-time code, and certificate pin.",
   "settings.mobileGateway.qrPreparing": "Preparing pairing QR…",
-  "settings.mobileGateway.qrAlt": "RedCode mobile pairing QR code",
+  "settings.mobileGateway.qrAlt": "RedSpace mobile pairing QR code",
   "settings.mobileGateway.url": "Gateway address",
   "settings.mobileGateway.urlDescription": "Included in the QR; use this value only for manual pairing.",
   "settings.mobileGateway.code": "Pairing code",
-  "settings.mobileGateway.codeDescription": "Each code pairs one device and expires after five minutes. Generate a new code for another device.",
+  "settings.mobileGateway.codeDescription":
+    "Each code pairs one device and expires after five minutes. Generate a new code for another device.",
   "settings.mobileGateway.expires": "Expires at {{time}}",
   "settings.mobileGateway.fingerprint": "TLS certificate fingerprint",
   "settings.mobileGateway.fingerprintDescription":
@@ -1154,7 +1165,8 @@ export const dict = {
   "settings.mobileGateway.noDevices": "No devices paired yet",
   "settings.mobileGateway.revoke": "Revoke",
   "settings.mobileGateway.refreshCode": "Generate new pairing code",
-  "settings.mobileGateway.refreshCodeDescription": "Invalidates the previous code without disconnecting paired devices.",
+  "settings.mobileGateway.refreshCodeDescription":
+    "Invalidates the previous code without disconnecting paired devices.",
   "settings.mobileGateway.refreshDevices": "Refresh device list",
   "settings.mobileGateway.refreshDevicesDescription": "Refresh after a phone or tablet finishes pairing.",
   "settings.mobileGateway.stopDescription": "Closes the listener and immediately invalidates every device token.",
@@ -1173,7 +1185,7 @@ export const dict = {
   "settings.general.tts.voice.description": "Choose the voice used for read-aloud",
 
   "settings.general.row.language.title": "Language",
-  "settings.general.row.language.description": "Change the display language for RedCode",
+  "settings.general.row.language.description": "Change the display language for RedSpace",
   "settings.general.row.shell.title": "Terminal Shell",
   "settings.general.row.shell.description":
     "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
@@ -1186,9 +1198,9 @@ export const dict = {
   "settings.general.row.verificationNotice.option.always": "Every changed turn",
   "settings.general.row.verificationNotice.option.off": "Never",
   "settings.general.row.colorScheme.title": "Color scheme",
-  "settings.general.row.colorScheme.description": "Choose whether RedCode follows the system, light, or dark theme",
+  "settings.general.row.colorScheme.description": "Choose whether RedSpace follows the system, light, or dark theme",
   "settings.general.row.theme.title": "Theme",
-  "settings.general.row.theme.description": "Customise how RedCode is themed.",
+  "settings.general.row.theme.description": "Customise how RedSpace is themed.",
   "settings.general.row.font.title": "Code Font",
   "settings.general.row.font.description": "Customise the font used in code blocks",
   "settings.general.row.font.undefined": "Default (System)",
@@ -1211,7 +1223,6 @@ export const dict = {
     "Show Chi: stroke her head or belly with the pointer, or drag to reposition. You can turn her back on here anytime",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
-
 
   "settings.general.row.releaseNotes.title": "Release notes",
   "settings.general.row.releaseNotes.description": "Show What's New popups after updates",
@@ -1237,13 +1248,13 @@ export const dict = {
     "Custom avatar for assistant messages. Applies only to sessions without a bound Soul — those use their own avatar.",
 
   "settings.updates.row.startup.title": "Check for updates on startup",
-  "settings.updates.row.startup.description": "Automatically check for updates when RedCode launches",
+  "settings.updates.row.startup.description": "Automatically check for updates when RedSpace launches",
   "settings.updates.row.check.title": "Check for updates",
   "settings.updates.row.check.description": "Manually check for updates and install if available",
   "settings.updates.action.checkNow": "Check now",
   "settings.updates.action.checking": "Checking...",
   "settings.updates.toast.latest.title": "You're up to date",
-  "settings.updates.toast.latest.description": "You're running the latest version of RedCode.",
+  "settings.updates.toast.latest.description": "You're running the latest version of RedSpace.",
   "sound.option.none": "None",
   "sound.option.alert01": "Alert 01",
   "sound.option.alert02": "Alert 02",
@@ -1361,18 +1372,23 @@ export const dict = {
   "settings.personalization.useServerDefault": "Use server default",
   "settings.personalization.noDefault": "No default Soul is configured.",
   "settings.personalization.saved": "Saved for future new sessions. The current session keeps its Soul.",
-  "settings.personalization.currentSessionNotice": "This Soul is pinned to the current session. Changing the default does not affect it.",
-  "settings.personalization.currentSessionNoSoul": "The current session has no Soul pinned; the default is not its active Soul.",
-  "settings.personalization.otherCurrentSession": "The current session is pinned to {{id}}; changing the default does not affect it.",
+  "settings.personalization.currentSessionNotice":
+    "This Soul is pinned to the current session. Changing the default does not affect it.",
+  "settings.personalization.currentSessionNoSoul":
+    "The current session has no Soul pinned; the default is not its active Soul.",
+  "settings.personalization.otherCurrentSession":
+    "The current session is pinned to {{id}}; changing the default does not affect it.",
   "settings.personalization.sourceFrontmatter": "frontmatter",
   "settings.personalization.sourceFallback": "fallback",
   "settings.personalization.sourceAbsent": "not set",
   "settings.personalization.avatarTitle": "Chat avatar",
   "settings.personalization.chooseAvatar": "Choose local image",
   "settings.personalization.removeAvatar": "Remove image",
-  "settings.personalization.avatarDescription": "Saved locally for this Soul only. PNG, JPEG or WebP, up to 5 MiB and 4096 px; cropped to a square. No Soul files are changed.",
+  "settings.personalization.avatarDescription":
+    "Saved locally for this Soul only. PNG, JPEG or WebP, up to 5 MiB and 4096 px; cropped to a square. No Soul files are changed.",
   "settings.personalization.avatarSaved": "Avatar updated for this Soul.",
-  "settings.personalization.avatarFailed": "Could not use this image. Choose a valid PNG, JPEG or WebP under 5 MiB, 4096 px and 16 megapixels.",
+  "settings.personalization.avatarFailed":
+    "Could not use this image. Choose a valid PNG, JPEG or WebP under 5 MiB, 4096 px and 16 megapixels.",
   "settings.personalization.body": "Read-only prompt body",
   "settings.personalization.startWithSoul": "New session with this Soul",
   "settings.personalization.backToRoster": "Back to roster",
@@ -1453,8 +1469,9 @@ export const dict = {
   "settings.mcp.tools.mode.list": "Only listed tools",
   "settings.mcp.tools.mode.none": "No tools",
   "settings.mcp.form.tools.names": "Tool names (comma separated)",
-  "settings.mcp.toast.commandInvalid": "Could not parse the command. Use a JSON array when a path contains spaces, e.g. [\"python\", \"C:\\\\My Tools\\\\server.py\"].",
-  "settings.mcp.toast.toolsRequired": "List at least one tool, or pick \"No tools\" to block every tool.",
+  "settings.mcp.toast.commandInvalid":
+    'Could not parse the command. Use a JSON array when a path contains spaces, e.g. ["python", "C:\\\\My Tools\\\\server.py"].',
+  "settings.mcp.toast.toolsRequired": 'List at least one tool, or pick "No tools" to block every tool.',
   "settings.mcp.tools.count": "{{count}} tools",
   "settings.mcp.toast.saveFailed": "Failed to save MCP config",
   "settings.mcp.toast.toggleFailed": "Failed to toggle MCP connection",
@@ -1536,4 +1553,7 @@ export const dict = {
   "workspace.reset.archived.one": "1 session will be archived.",
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
+  ...settingsModern.en,
+  ...settingsCompanion.en,
+  ...settingsDesktop.en,
 }

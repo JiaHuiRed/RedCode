@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test"
 import type { Session } from "@redcode-ai/sdk/v2"
 import path from "node:path"
-import { latestCodeSession, latestCompanionSession, sessionsForMode } from "../../../src/cli/cmd/tui/companion"
+import {
+  companionLabel,
+  latestCodeSession,
+  latestCompanionSession,
+  sessionsForMode,
+} from "../../../src/cli/cmd/tui/companion"
 
 const directory = path.join(process.cwd(), "personal")
 const session = (id: string, updated: number, fields: Partial<Session> = {}): Session => ({
@@ -15,6 +20,12 @@ const session = (id: string, updated: number, fields: Partial<Session> = {}): Se
   companionID: "mira",
   time: { created: 1, updated },
   ...fields,
+})
+
+test("Chat display names follow the profile while unloaded profiles retain Soul fallbacks", () => {
+  expect(companionLabel({ name: "New name" }, "Frozen Soul", "partner-id")).toBe("New name")
+  expect(companionLabel(undefined, "Frozen Soul", "partner-id")).toBe("Frozen Soul")
+  expect(companionLabel(undefined, undefined, "partner-id")).toBe("partner-id")
 })
 
 test("Code continuation includes legacy sessions and excludes Chat, archived and child sessions", () => {

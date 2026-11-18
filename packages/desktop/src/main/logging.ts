@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
+import { openPathChecked } from "./path-actions"
+import type { LogDirectories } from "../preload/types"
 import {
   captureResourceSnapshot,
   collectEvent2004,
@@ -88,9 +90,7 @@ export function writeCrashReport(headline: string, detail: Record<string, unknow
       JSON.stringify(detail, null, 2),
       "```",
       "",
-      ...CRASH_LOG_SCOPES.map(
-        (scope) => `## ${scope}.log\n\n\`\`\`\n${tailFile(join(run, `${scope}.log`))}\n\`\`\``,
-      ),
+      ...CRASH_LOG_SCOPES.map((scope) => `## ${scope}.log\n\n\`\`\`\n${tailFile(join(run, `${scope}.log`))}\n\`\`\``),
     ].join("\n")
     const path = join(dir, `crash-${stamp()}.md`)
     writeFileSync(path, content)
@@ -185,6 +185,21 @@ export async function exportDebugLogs() {
       await startNetLog().catch((error) => write("network", "failed to restart net log", { error }))
     }
   }
+}
+
+export function getLogDirectories(): LogDirectories {
+  return {
+    desktop: root,
+    currentRun: run,
+    server: getServerLogRoots().filter((dir) => existsSync(dir)),
+  }
+}
+
+export async function openLogDirectory(kind: "desktop" | "server") {
+  const directories = getLogDirectories()
+  const target = kind === "desktop" ? directories.desktop : directories.server[0]
+  if (!target) throw new Error("The log directory is not available yet")
+  await openPathChecked(target, (path) => shell.openPath(path))
 }
 
 // 261011 Red B0（GUI 稳定性审计 §11）：GUI 侧诊断导出载荷写入当前 run 目录——
@@ -293,7 +308,10 @@ function getServerLogRoots() {
 
 async function writeZip(
   output: string,
-  sources: { entries: { name: string; path?: string; data?: Buffer }[]; status: { included: number; skipped: Record<string, number> } }[],
+  sources: {
+    entries: { name: string; path?: string; data?: Buffer }[]
+    status: { included: number; skipped: Record<string, number> }
+  }[],
   manifestData: () => Buffer,
 ) {
   const writer = new ZipWriter(new BlobWriter("application/zip"))
@@ -302,10 +320,10 @@ async function writeZip(
   let writtenBytes = 0
   for (const source of sources) {
     for (const entry of source.entries) {
-     // 261015 Red readEntrySafely 自己记账（included-- + skipped 原因），外层不再兜一层
-     // catch——重复递减会让 manifest 的计数比真实条目少。
-     const data = await readEntrySafely(entry, source.status)
-     if (!data) continue
+      // 261015 Red readEntrySafely 自己记账（included-- + skipped 原因），外层不再兜一层
+      // catch——重复递减会让 manifest 的计数比真实条目少。
+      const data = await readEntrySafely(entry, source.status)
+      if (!data) continue
       if (
         data.byteLength > MAX_EXPORT_FILE_SIZE ||
         writtenFiles >= MAX_EXPORT_FILES ||

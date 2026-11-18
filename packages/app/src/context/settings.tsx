@@ -33,7 +33,6 @@ export interface UserProfile {
 export interface Settings {
   general: {
     releaseNotes: boolean
-    followup: "queue" | "steer"
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
@@ -96,7 +95,7 @@ const defaultMedia: SettingsMedia = {
 export function readSoulAvatar(media: Pick<SettingsMedia, "soulAvatars">, id: string | undefined) {
   // 261008 Red 即使键不存在也要读取它以建立 Solid 订阅，Object.hasOwn 本身不追踪新增键。
   const image = id ? media.soulAvatars?.[id] : undefined
-  return id && Object.hasOwn(media.soulAvatars ?? {}, id) ? image ?? "" : ""
+  return id && Object.hasOwn(media.soulAvatars ?? {}, id) ? (image ?? "") : ""
 }
 
 const MEDIA_KEYS = ["chatBackground", "homeBackground", "userAvatar", "assistantAvatar"] as const
@@ -182,7 +181,6 @@ export function terminalFontFamily(font: string | undefined) {
 const defaultSettings: Settings = {
   general: {
     releaseNotes: true,
-    followup: "steer",
     // 260830 Red 思考链对齐 TUI hide 模式：默认显示折叠行（可点击展开），不再默认隐藏
     showReasoningSummaries: true,
     shellToolPartsExpanded: false,
@@ -293,11 +291,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       root.style.setProperty("--font-size-x-large", px(20))
     })
 
-    createEffect(() => {
-      if (store.general?.followup !== "queue") return
-      setStore("general", "followup", "steer")
-    })
-
     return {
       ready,
       get current() {
@@ -307,13 +300,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
           setStore("general", "releaseNotes", value)
-        },
-        followup: withFallback(
-          () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
-          defaultSettings.general.followup,
-        ),
-        setFollowup(value: "queue" | "steer") {
-          setStore("general", "followup", value === "queue" ? "steer" : value)
         },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,

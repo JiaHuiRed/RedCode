@@ -6,6 +6,7 @@ import { Select } from "@redcode-ai/ui/select"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { mobilePairingPayload } from "./mobile-pairing-payload"
 import { SettingsList, SettingsRow } from "./settings-list"
 
@@ -15,6 +16,8 @@ export const SettingsMobileCompanion: Component<{
 }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
+  const server = useServer()
+  const localServer = createMemo(() => server.current?.type === "sidecar" && server.current.variant === "base")
   const [store, setStore] = createStore({
     status: null as Awaited<ReturnType<NonNullable<typeof platform.getMobileGatewayStatus>>> | null,
     host: "127.0.0.1",
@@ -64,7 +67,7 @@ export const SettingsMobileCompanion: Component<{
     const startMobileGateway = platform.startMobileGateway
     const directory = props.directory
     const sessionID = props.sessionID
-    if (!startMobileGateway || !directory || !sessionID) return
+    if (!startMobileGateway || !directory || !sessionID || !localServer()) return
     act(() => startMobileGateway(store.host, directory, sessionID))
   }
 
@@ -122,6 +125,14 @@ export const SettingsMobileCompanion: Component<{
         <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.mobileGateway.title")}</h3>
         <p class="text-12-regular text-text-weak pb-2">{language.t("settings.mobileGateway.description")}</p>
         <p class="text-12-regular text-text-weak pb-2">{language.t("settings.mobileGateway.networkWarning")}</p>
+        <Show when={!localServer()}>
+          <p
+            role="status"
+            class="mb-3 rounded-lg border border-border-weak-base bg-surface-raised-base p-3 text-12-regular text-text-weak"
+          >
+            {language.t(running() ? "settings.desktop.mobile.localRunning" : "settings.desktop.mobile.localRequired")}
+          </p>
+        </Show>
 
         <SettingsList>
           <Show when={!running()}>
@@ -139,7 +150,7 @@ export const SettingsMobileCompanion: Component<{
                 size="small"
                 triggerVariant="settings"
                 triggerStyle={{ "min-width": "220px" }}
-                disabled={store.busy || hostOptions().length === 0}
+                disabled={store.busy || !localServer() || hostOptions().length === 0}
               />
             </SettingsRow>
             <SettingsRow
@@ -153,7 +164,7 @@ export const SettingsMobileCompanion: Component<{
               <Button
                 size="small"
                 variant="secondary"
-                disabled={store.busy || !props.directory || !props.sessionID || !store.host}
+                disabled={store.busy || !localServer() || !props.directory || !props.sessionID || !store.host}
                 onClick={start}
               >
                 {language.t("settings.mobileGateway.start")}
@@ -170,7 +181,11 @@ export const SettingsMobileCompanion: Component<{
                 >
                   <Show
                     when={store.qr}
-                    fallback={<span class="text-12-regular text-text-weak">{language.t("settings.mobileGateway.qrPreparing")}</span>}
+                    fallback={
+                      <span class="text-12-regular text-text-weak">
+                        {language.t("settings.mobileGateway.qrPreparing")}
+                      </span>
+                    }
                   >
                     {(qr) => (
                       <img
@@ -215,17 +230,16 @@ export const SettingsMobileCompanion: Component<{
                   <div class="flex flex-col gap-2">
                     <Show
                       when={devices().length > 0}
-                      fallback={<span class="text-12-regular text-text-weak">{language.t("settings.mobileGateway.noDevices")}</span>}
+                      fallback={
+                        <span class="text-12-regular text-text-weak">
+                          {language.t("settings.mobileGateway.noDevices")}
+                        </span>
+                      }
                     >
                       {devices().map((device) => (
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-12-regular text-text-strong">{device.name}</span>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            disabled={store.busy}
-                            onClick={() => revoke(device.id)}
-                          >
+                          <Button size="small" variant="ghost" disabled={store.busy} onClick={() => revoke(device.id)}>
                             {language.t("settings.mobileGateway.revoke")}
                           </Button>
                         </div>

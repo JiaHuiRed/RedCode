@@ -5,6 +5,7 @@ import { useI18n } from "../context/i18n"
 import { copyText } from "../utils/clipboard"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
+import { useFormField } from "./form-field"
 
 export interface TextFieldProps
   extends
@@ -34,6 +35,7 @@ export interface TextFieldProps
 }
 
 export function TextField(props: TextFieldProps) {
+  const field = useFormField()
   const i18n = useI18n()
   const [local, others] = splitProps(props, [
     "name",
@@ -105,9 +107,24 @@ export function TextField(props: TextFieldProps) {
       <div data-slot="input-wrapper">
         <Show
           when={local.multiline}
-          fallback={<Kobalte.Input {...others} data-slot="input-input" class={local.class} />}
+          fallback={
+            <Kobalte.Input
+              aria-labelledby={!local.label && !props["aria-label"] ? field?.label : undefined}
+              aria-describedby={field?.description}
+              {...others}
+              data-slot="input-input"
+              class={local.class}
+            />
+          }
         >
-          <Kobalte.TextArea {...others} autoResize data-slot="input-input" class={local.class} />
+          <Kobalte.TextArea
+            aria-labelledby={!local.label && !props["aria-label"] ? field?.label : undefined}
+            aria-describedby={field?.description}
+            {...others}
+            autoResize
+            data-slot="input-input"
+            class={local.class}
+          />
         </Show>
         <Show when={local.copyable}>
           <Tooltip value={label()} placement="top" gutter={4} forceOpen={copied()} skipDelayDuration={0}>

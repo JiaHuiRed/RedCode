@@ -1,3 +1,7 @@
+import { Switch } from "@redcode-ai/ui/switch"
+import { useParams } from "@solidjs/router"
+import { usePermission } from "@/context/permission"
+import { decode64 } from "@/utils/base64"
 import { Select } from "@redcode-ai/ui/select"
 import { showToast } from "@redcode-ai/ui/toast"
 import { type Component, createMemo, Show } from "solid-js"
@@ -34,6 +38,33 @@ const TOOLS = [
 export const SettingsPermissions: Component = () => {
   const language = useLanguage()
   const globalSync = useServerSync()
+  const params = useParams()
+  const permission = usePermission()
+  const dir = createMemo(() => decode64(params.dir))
+  const accepting = createMemo(() => {
+    const value = dir()
+    if (!value) return false
+    if (!params.id) return permission.isAutoAcceptingDirectory(value)
+    return permission.isAutoAccepting(params.id, value)
+  })
+
+  const toggleAccept = (checked: boolean) => {
+    const value = dir()
+    if (!value) return
+
+    if (!params.id) {
+      if (permission.isAutoAcceptingDirectory(value) === checked) return
+      permission.toggleAutoAcceptDirectory(value)
+      return
+    }
+
+    if (checked) {
+      permission.enableAutoAccept(params.id, value)
+      return
+    }
+
+    permission.disableAutoAccept(params.id, value)
+  }
 
   const rules = createMemo<Record<string, unknown>>(() => {
     const value = globalSync.data.config.permission
@@ -92,15 +123,28 @@ export const SettingsPermissions: Component = () => {
   )
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.permissions.title")}</h2>
+    <div class="settings-page-body">
+      <div class="settings-page-heading">
+        <div class="flex flex-col gap-1">
+          <h2 class="settings-page-title">{language.t("settings.permissions.title")}</h2>
           <p class="text-12-regular text-text-weak">{language.t("settings.permissions.description")}</p>
         </div>
       </div>
 
-      <div class="flex flex-col gap-8 max-w-[720px]">
+      <SettingsList>
+        {" "}
+        <SettingsRow
+          title={language.t("command.permissions.autoaccept.enable")}
+          description={language.t(
+            dir() ? "settings.modern.autoaccept.description" : "settings.modern.autoaccept.unavailable",
+          )}
+        >
+          <div data-action="settings-auto-accept-permissions">
+            <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
+          </div>
+        </SettingsRow>
+      </SettingsList>
+      <div class="flex flex-col gap-8">
         <div class="flex flex-col gap-1" data-component="settings-permission-tools">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.permissions.section.tools")}</h3>
           <SettingsList>

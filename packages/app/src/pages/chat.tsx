@@ -1,30 +1,54 @@
-import { createMemo, For, Show } from "solid-js"
+import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import type { CompanionInfo, Session } from "@redcode-ai/sdk/v2/client"
 import { Button } from "@redcode-ai/ui/button"
 import { Spinner } from "@redcode-ai/ui/spinner"
+import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { SoulAvatar } from "@/components/soul-avatar"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
-import { useServer } from "@/context/server"
+import { useCompanionWorkspace } from "@/context/companion-workspace"
 import { companionSessions } from "@/utils/product-mode"
 import { errorMessage } from "@/utils/session-helpers"
+import { Identifier } from "@/utils/id"
+import { recordCompanionMessageAccepted } from "@/utils/companion-onboarding"
+import { createChatHomeSubmit } from "@/utils/chat-home-submit"
+import { requireCompanionModel, sendCompanionMessage } from "@/utils/chat-send-ack"
+import { introductionState, selectCompanion, upsertCompanion } from "@/utils/companion-workspace"
 
 export default function Chat() {
   const sdk = useGlobalSDK()
   const sync = useServerSync()
   const language = useLanguage()
-  const platform = usePlatform()
-  const server = useServer()
   const navigate = useNavigate()
+  const dialog = useDialog()
+  const workspace = useCompanionWorkspace()
   const [search, setSearch] = useSearchParams<{ companion?: string }>()
   const queryClient = useQueryClient()
-  const [state, setState] = createStore({ source: "", importing: false, opening: false, error: "" })
+  const [state, setState] = createStore({
+    creating: false,
+    createError: "",
+    changingIntroduction: false,
+  })
+  let mounted = true
+  let navigationEpoch = 0
+  onCleanup(() => {
+    mounted = false
+  })
+  createEffect(
+    on(
+      () => search.companion,
+      () => {
+        navigationEpoch++
+      },
+      { defer: true },
+    ),
+  )
   const profileKey = () => ["companion", sdk.url, "list"] as const
   const profiles = useQuery(() => ({
     queryKey: profileKey(),
@@ -34,14 +58,45 @@ export default function Chat() {
     queryKey: ["soul", sdk.url, "list"],
     queryFn: async () => (await sdk.client.soul.list({ throwOnError: true })).data,
   }))
-  // 0.19.1 审计 F-01：显式指定但找不到时不能回退到第一个档案——那会把用户选择的
-  // 身份静默换成另一个真实 Companion，并带着错误 ID 创建会话。只在未指定时才取默认。
-  const profile = createMemo(() => {
-    const requested = search.companion
-    if (requested === undefined) return profiles.data?.[0]
-    return profiles.data?.find((item) => item.id === requested)
+  const requestedID = () => search.companion ?? (workspace.selected() || undefined)
+  const profile = createMemo(() =>
+    workspace.ready() ? selectCompanion(profiles.data ?? [], search.companion, workspace.selected()) : undefined,
+  )
+  const draftKey = () => profile()?.id ?? requestedID() ?? "default"
+  const text = () => workspace.draft(draftKey())
+  const submission = () => workspace.submission(draftKey())
+  const submissionError = () =>
+    submission()?.error ||
+    (!submission()?.sending && submission()?.messageID ? language.t("chat.companion.pendingRetry") : "")
+  const initializing = () => !!workspace.submission("default")?.sending
+  const ready = () => workspace.ready() && !profiles.isPending && !profiles.error
+  const missing = () => ready() && requestedID() !== undefined && !profile()
+  const atCapacity = () => (profiles.data?.length ?? 0) >= 2
+  const introduction = () => (profile() ? introductionState(profile()!) : "available")
+  const updateProfile = (value: CompanionInfo) =>
+    queryClient.setQueryData<CompanionInfo[]>(profileKey(), (current) => upsertCompanion(current, value))
+  createEffect(() => {
+    const first = profiles.data?.[0]
+    if (!first || !workspace.ready()) return
+    if (workspace.drafts().default) workspace.assignDraft(first.id)
+    const selected = profile()
+    if (selected && workspace.selected() !== selected.id) workspace.select(selected.id)
   })
-  const soul = createMemo(() => souls.data?.find((item) => item.id === profile()?.soulID))
+  const choose = (id: string) => {
+    navigationEpoch++
+    setSearch({ companion: id })
+    workspace.select(id)
+  }
+  const soul = createMemo(() => {
+    const selected = profile()
+    if (!selected) return
+    return {
+      ...souls.data?.find((item) => item.id === selected.soulID),
+      id: selected.soulID,
+      name: selected.name,
+      displayName: selected.name,
+    }
+  })
   const sessions = useQuery(() => ({
     queryKey: ["companion", sdk.url, profile()?.id, "sessions"],
     enabled: !!profile(),
@@ -49,277 +104,324 @@ export default function Chat() {
     queryFn: async () => {
       const selected = profile()
       if (!selected) return []
-      const result = await sdk.client.session.list(
+      const { data } = await sdk.client.session.list(
         { directory: selected.directory, roots: true },
         { throwOnError: true },
       )
-      return companionSessions(result.data, selected.id)
+      return companionSessions(data, selected.id)
     },
   }))
-
-  async function importArchive() {
-    if (state.importing || !state.source.trim()) return
-    setState({ importing: true, error: "" })
+  const openSettings = (tab: "chat" | "providers" | "models" = "chat") =>
+    void import("@/components/dialog-settings").then((module) =>
+      dialog.show(() => <module.DialogSettings initialTab={tab} />),
+    )
+  const createCompanion = async () => {
+    if (!ready() || state.creating || initializing()) return
+    const requestID = workspace.requestID()
+    const epoch = ++navigationEpoch
+    setState({ creating: true, createError: "" })
     try {
-      const { data } = await sdk.client.companion.import(
-        { companionImportInput: { source: state.source.trim() } },
+      const { data } = await sdk.client.companion.create(
+        { companionCreateInput: { requestID } },
         { throwOnError: true },
       )
-      queryClient.setQueryData<typeof profiles.data>(profileKey(), (current) => [
-        ...(current ?? []).filter((item) => item.id !== data.profile.id),
-        data.profile,
-      ])
+      updateProfile(data.profile)
+      workspace.finishRequest(requestID)
       void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "list"] })
-      setSearch({ companion: data.profile.id })
-      setState("source", "")
+      if (mounted && epoch === navigationEpoch) choose(data.profile.id)
     } catch (error) {
-      setState("error", errorMessage(error, language.t("common.requestFailed")))
+      setState("createError", errorMessage(error, language.t("common.requestFailed")))
     } finally {
-      setState("importing", false)
+      setState("creating", false)
     }
   }
-
-  async function pickSource(kind: "directory" | "zip") {
-    setState("error", "")
-    try {
-      const result =
-        kind === "directory"
-          ? await platform.openDirectoryPickerDialog?.({ title: language.t("chat.import.folder") })
-          : await platform.openFilePickerDialog?.({ title: language.t("chat.import.zip"), extensions: ["zip"] })
-      const source = Array.isArray(result) ? result[0] : result
-      if (source) setState("source", source)
-    } catch (error) {
-      setState("error", errorMessage(error, language.t("common.requestFailed")))
-    }
+  const seedSession = (session: Session) => {
+    const [, setStore] = sync.child(session.directory, { bootstrap: false })
+    setStore(
+      "session",
+      produce((list) => {
+        const match = Binary.search(list, session.id, (item) => item.id)
+        if (match.found) list[match.index] = session
+        else list.splice(match.index, 0, session)
+      }),
+    )
   }
-
-  async function startChat() {
-    const selected = profile()
-    if (!selected || state.opening) return
-    setState({ opening: true, error: "" })
-    try {
-      const { data } = await sdk.client.session.create(
-        {
-          directory: selected.directory,
-          mode: "chat",
-          companionID: selected.id,
-        },
+  const send = createChatHomeSubmit({
+    ready: () => !!ready() && !missing() && !state.creating,
+    profile,
+    text,
+    currentID: () => profile()?.id,
+    epoch: () => navigationEpoch,
+    mounted: () => mounted,
+    get: workspace.submission,
+    set: workspace.setSubmission,
+    initialize: async () => (await sdk.client.companion.initialize({ throwOnError: true })).data.profile,
+    prepare: (selected) => requireCompanionModel(sdk.client, selected.directory, language.t("chat.companion.noModels")),
+    activate: async (selected) => {
+      const { data } = await sdk.client.companion.update(
+        { id: selected.id, companionUpdateInput: { introduction: "active" } },
         { throwOnError: true },
       )
-      // Seed the real response before navigation so the titlebar sees the bound
-      // Chat mode immediately, even before the directory's first fetch finishes.
-      const [, setStore] = sync.child(data.directory, { bootstrap: false })
-      setStore(
-        "session",
-        produce((list) => {
-          const match = Binary.search(list, data.id, (item) => item.id)
-          if (match.found) list[match.index] = data
-          else list.splice(match.index, 0, data)
-        }),
+      queryClient.setQueryData(["companion", sdk.url, "detail", selected.id], data)
+      return data.profile
+    },
+    createSession: async (selected) =>
+      (
+        await sdk.client.session.create(
+          { directory: selected.directory, mode: "chat", companionID: selected.id },
+          { throwOnError: true },
+        )
+      ).data,
+    getSession: async (session) =>
+      (await sdk.client.session.get({ directory: session.directory, sessionID: session.id }, { throwOnError: true }))
+        .data,
+    submit: (session, messageID, content) =>
+      sendCompanionMessage({
+        client: sdk.client,
+        listen: sdk.event.on,
+        session,
+        messageID,
+        text: content,
+        timeoutMessage: language.t("chat.companion.unconfirmed"),
+      }),
+    receivedProfile: (selected) => {
+      updateProfile(selected)
+      void queryClient.invalidateQueries({ queryKey: ["soul", sdk.url, "list"] })
+    },
+    selectInitialized: workspace.select,
+    assignDraft: workspace.assignDraft,
+    clearDraft: workspace.clearDraft,
+    accepted: (session) => {
+      seedSession(session)
+      recordCompanionMessageAccepted(queryClient, sdk.url, session)
+      void queryClient.invalidateQueries({ queryKey: ["companion", sdk.url, session.companionID, "sessions"] })
+    },
+    navigate: (session) => navigate(`/${base64Encode(session.directory)}/session/${session.id}`),
+    introductionText: (selected) =>
+      language.t(
+        !selected || introductionState(selected) === "available"
+          ? "chat.introduction.message"
+          : "chat.introduction.resumeMessage",
+      ),
+    nextMessageID: () => Identifier.ascending("message"),
+    error: (error) => errorMessage(error, language.t("common.requestFailed")),
+    invalidSession: () => language.t("chat.companion.sessionMismatch"),
+  })
+  const setIntroduction = async (introduction: "paused" | "complete") => {
+    const selected = profile()
+    if (!selected || state.changingIntroduction) return
+    setState("changingIntroduction", true)
+    try {
+      const { data } = await sdk.client.companion.update(
+        { id: selected.id, companionUpdateInput: { introduction } },
+        { throwOnError: true },
       )
-      navigate(`/${base64Encode(data.directory)}/session/${data.id}`)
+      updateProfile(data.profile)
     } catch (error) {
-      setState("error", errorMessage(error, language.t("common.requestFailed")))
+      workspace.setSubmission(selected.id, { error: errorMessage(error, language.t("common.requestFailed")) })
     } finally {
-      setState("opening", false)
+      setState("changingIntroduction", false)
     }
   }
-
   return (
     <div data-component="chat-home" class="size-full overflow-y-auto">
-      <div class="mx-auto flex w-full max-w-[960px] flex-col gap-8 px-6 py-10 md:px-10 md:py-14">
-        <header class="space-y-3">
-          <p class="text-12-medium text-text-weaker">RedSpace · Chat</p>
-          <h1 class="text-20-medium text-text-strong">{language.t("chat.title")}</h1>
-          <p class="max-w-[600px] text-14-regular text-text-weak">{language.t("chat.description")}</p>
+      <div class="mx-auto flex min-h-full w-full max-w-[900px] flex-col gap-7 px-5 py-8 sm:px-10 sm:py-12">
+        <header class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex min-w-0 items-center gap-3">
+            <Show when={profile()} fallback={<h1 class="text-20-medium text-text-strong">Chat</h1>}>
+              {(selected) => (
+                <>
+                  <SoulAvatar id={selected().soulID} soul={soul()} />
+                  <h1 class="truncate text-20-medium text-text-strong">{selected().name}</h1>
+                </>
+              )}
+            </Show>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Show when={profiles.data?.length}>
+              <select
+                aria-label={language.t("settings.companion.choose")}
+                class="max-w-48 rounded-lg border border-border-base bg-background-base px-3 py-2 text-13-regular"
+                value={profile()?.id ?? ""}
+                onChange={(event) => choose(event.currentTarget.value)}
+              >
+                <Show when={!profile()}>
+                  <option value="" disabled>
+                    {language.t("settings.companion.choose")}
+                  </option>
+                </Show>
+                <For each={profiles.data}>{(item) => <option value={item.id}>{item.name}</option>}</For>
+              </select>
+            </Show>
+            <Button
+              variant="secondary"
+              disabled={!ready() || state.creating || atCapacity() || initializing()}
+              onClick={() => void createCompanion()}
+            >
+              {language.t(state.creating ? "chat.companion.creating" : "chat.companion.new")}
+            </Button>
+            <Button variant="ghost" onClick={() => openSettings()}>
+              {language.t("chat.native.settings")}
+            </Button>
+          </div>
         </header>
-
-        <Show when={state.error || profiles.error}>
+        <Show when={atCapacity()}>
+          <p class="text-12-regular text-text-weak">{language.t("chat.companion.limit")}</p>
+        </Show>
+        <Show when={state.createError}>
+          <div role="alert" class="flex flex-wrap items-center gap-3 text-13-regular text-text-on-critical-base">
+            <p>{state.createError}</p>
+            <Button variant="secondary" disabled={state.creating} onClick={() => void createCompanion()}>
+              {language.t("common.retry")}
+            </Button>
+          </div>
+        </Show>
+        <Show when={submissionError() || profiles.error}>
           <div
             role="alert"
-            class="flex items-center justify-between gap-4 rounded-lg border border-border-critical-base bg-surface-critical-weak p-4 text-13-regular text-text-strong"
+            class="flex flex-col gap-3 rounded-xl border border-border-critical-base bg-surface-critical-weak p-4 text-13-regular text-text-strong"
           >
-            <span>{state.error || errorMessage(profiles.error, language.t("common.requestFailed"))}</span>
-            <Show when={profiles.error}>
-              <Button variant="secondary" onClick={() => void profiles.refetch()}>
+            <p>{submissionError() || errorMessage(profiles.error, language.t("common.requestFailed"))}</p>
+            <div class="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={submission()?.sending}
+                onClick={() => (profiles.error ? void profiles.refetch() : void send(submission()?.kind))}
+              >
                 {language.t("common.retry")}
+              </Button>
+              <Button variant="ghost" onClick={() => openSettings("providers")}>
+                {language.t("chat.companion.providers")}
+              </Button>
+              <Button variant="ghost" onClick={() => openSettings("models")}>
+                {language.t("chat.companion.models")}
+              </Button>
+            </div>
+          </div>
+        </Show>
+        <Show when={missing()}>
+          <p role="alert" class="text-13-regular text-text-weak">
+            {language.t("chat.profile.missing")}
+          </p>
+        </Show>
+        <Show when={ready() && !missing() && introduction() === "available"}>
+          <section class="flex flex-col items-center gap-3 py-6 text-center sm:py-10">
+            <h2 class="text-20-medium text-text-strong">{language.t("chat.introduction.title")}</h2>
+            <p class="text-14-regular text-text-weak">{language.t("chat.introduction.description")}</p>
+            <Button
+              variant="secondary"
+              disabled={submission()?.sending || state.creating || initializing()}
+              onClick={() => void send("introduction")}
+            >
+              {language.t("chat.introduction.start")}
+            </Button>
+          </section>
+        </Show>
+        <Show when={ready() && profile() && (introduction() === "active" || introduction() === "paused")}>
+          <div class="flex flex-wrap items-center gap-3 text-13-regular text-text-weak">
+            <span>{language.t("chat.introduction.optional")}</span>
+            <Button variant="secondary" disabled={submission()?.sending} onClick={() => void send("introduction")}>
+              {language.t("chat.introduction.resume")}
+            </Button>
+            <Show when={introduction() === "active"}>
+              <Button
+                variant="ghost"
+                disabled={state.changingIntroduction || submission()?.sending}
+                onClick={() => void setIntroduction("paused")}
+              >
+                {language.t("chat.introduction.pause")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={state.changingIntroduction || submission()?.sending}
+                onClick={() => void setIntroduction("complete")}
+              >
+                {language.t("chat.introduction.finish")}
               </Button>
             </Show>
           </div>
         </Show>
-
-        <Show when={!profiles.isPending} fallback={<Spinner class="size-6" />}>
-          <Show when={!profile() && search.companion !== undefined}>
-            <div
-              role="alert"
-              class="flex items-center justify-between gap-4 rounded-lg border border-border-critical-base bg-surface-critical-weak p-4 text-13-regular text-text-strong"
-            >
-              <span>{language.t("chat.profile.missing")}</span>
-              <Button variant="secondary" onClick={() => setSearch({ companion: undefined }, { replace: true })}>
-                {language.t("chat.profile.choose")}
-              </Button>
-            </div>
-          </Show>
-          <Show when={profile()} keyed>
-            {(selected) => (
-              <section class="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label={selected.name}>
-                <div class="flex flex-col gap-5 rounded-xl border border-border-weak-base bg-background-weak p-6">
-                  <div class="flex items-center gap-4">
-                    <SoulAvatar id={selected.soulID} soul={soul()} size="large" />
-                    <div class="min-w-0">
-                      <h2 class="truncate text-16-medium text-text-strong">{selected.name}</h2>
-                      <p class="mt-1 text-12-regular text-text-weaker">
-                        {language.t("chat.profile.files", { count: selected.files })}
-                      </p>
-                    </div>
-                  </div>
-                  <p class="text-14-regular text-text-weak">{language.t("chat.profile.description")}</p>
-                  <Button
-                    data-action="chat-start"
-                    variant="primary"
-                    disabled={state.opening}
-                    onClick={() => void startChat()}
-                  >
-                    {state.opening ? language.t("chat.opening") : language.t("chat.start")}
-                  </Button>
-                  <Show when={selected.warnings.length}>
-                    <details class="text-12-regular text-text-weak">
-                      <summary class="cursor-pointer">{language.t("chat.import.notes")}</summary>
-                      <ul class="mt-2 list-disc space-y-2 pl-4">
-                        <For each={selected.warnings}>{(warning) => <li>{warning}</li>}</For>
-                      </ul>
-                    </details>
-                  </Show>
-                  <Show when={(profiles.data?.length ?? 0) > 1}>
-                    <div
-                      class="flex flex-wrap gap-2 border-t border-border-weak-base pt-4"
-                      aria-label={language.t("chat.profile.choose")}
-                    >
-                      <For each={profiles.data}>
-                        {(item) => (
-                          <Button
-                            variant={item.id === selected.id ? "secondary" : "ghost"}
-                            onClick={() => setSearch({ companion: item.id })}
-                          >
-                            {item.name}
-                          </Button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-                <div class="min-w-0 py-1">
-                  <h2 class="mb-4 text-14-medium text-text-strong">{language.t("chat.recent")}</h2>
-                  <Show when={!sessions.isPending} fallback={<Spinner class="size-5" />}>
-                    <Show
-                      when={!sessions.error}
-                      fallback={
-                        <div role="alert" class="space-y-3 text-13-regular text-text-weak">
-                          <p>{errorMessage(sessions.error, language.t("common.requestFailed"))}</p>
-                          <Button variant="secondary" onClick={() => void sessions.refetch()}>
-                            {language.t("common.retry")}
-                          </Button>
-                        </div>
-                      }
-                    >
-                      <Show
-                        when={sessions.data?.length}
-                        fallback={<p class="text-13-regular text-text-weaker">{language.t("chat.recent.empty")}</p>}
-                      >
-                        <ul class="space-y-1">
-                          <For each={sessions.data}>
-                            {(session) => (
-                              <li>
-                                <a
-                                  href={`/${base64Encode(session.directory)}/session/${session.id}`}
-                                  class="flex flex-col gap-1 rounded-lg px-3 py-3 hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-focus"
-                                >
-                                  <span class="truncate text-14-medium text-text-strong">{session.title}</span>
-                                  <time
-                                    class="text-12-regular text-text-weaker"
-                                    dateTime={new Date(session.time.updated ?? session.time.created).toISOString()}
-                                  >
-                                    {new Intl.DateTimeFormat(language.locale(), {
-                                      dateStyle: "medium",
-                                      timeStyle: "short",
-                                    }).format(session.time.updated ?? session.time.created)}
-                                  </time>
-                                </a>
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                      </Show>
-                    </Show>
-                  </Show>
-                </div>
-              </section>
-            )}
-          </Show>
-        </Show>
-
-        <details open={!profile()} class="rounded-xl border border-border-weak-base p-6">
-          <summary class="cursor-pointer text-14-medium text-text-strong">{language.t("chat.import.title")}</summary>
-          <form
-            class="mt-4 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void importArchive()
+        <form
+          class="flex flex-col gap-3 rounded-2xl border border-border-weak-base bg-surface-base p-4 shadow-sm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void send()
+          }}
+        >
+          <textarea
+            data-action="chat-first-message"
+            aria-label={language.t("chat.native.placeholder")}
+            placeholder={language.t("chat.native.placeholder")}
+            value={text()}
+            class="min-h-28 w-full resize-y border-0 bg-transparent px-1 py-2 text-14-regular leading-relaxed text-text-strong outline-none"
+            disabled={submission()?.sending || !ready() || missing()}
+            onInput={(event) => workspace.setDraft(draftKey(), event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+                event.preventDefault()
+                void send()
+              }
             }}
-          >
-            <p class="text-13-regular text-text-weak">{language.t("chat.import.description")}</p>
-            <div class="space-y-2">
-              <label for="companion-source" class="block text-12-medium text-text-weak">
-                {language.t("chat.import.source")}
-              </label>
-              <input
-                id="companion-source"
-                data-action="chat-import-source"
-                class="h-10 w-full rounded-md border border-border-base bg-background-base px-3 text-13-regular text-text-strong focus:outline-2 focus:outline-border-focus"
-                value={state.source}
-                onInput={(event) => setState("source", event.currentTarget.value)}
-                placeholder={language.t("chat.import.placeholder")}
-                disabled={state.importing}
-                autocomplete="off"
-                spellcheck={false}
-                required
-              />
-              <Show when={!server.isLocal()}>
-                <p class="text-12-regular text-text-weaker">{language.t("chat.import.remote")}</p>
-              </Show>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Show when={server.isLocal() && platform.openDirectoryPickerDialog}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={state.importing}
-                  onClick={() => void pickSource("directory")}
-                >
-                  {language.t("chat.import.folder")}
-                </Button>
-              </Show>
-              <Show when={server.isLocal() && platform.openFilePickerDialog}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={state.importing}
-                  onClick={() => void pickSource("zip")}
-                >
-                  {language.t("chat.import.zip")}
-                </Button>
-              </Show>
-              <Button
-                data-action="chat-import"
-                type="submit"
-                variant="primary"
-                disabled={state.importing || !state.source.trim()}
+          />
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-12-regular text-text-weak">{profile()?.name ?? "Chat"}</span>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={
+                submission()?.sending || !text().trim() || !ready() || missing() || state.creating || initializing()
+              }
+            >
+              {language.t(submission()?.sending ? "chat.opening" : "chat.native.send")}
+            </Button>
+          </div>
+        </form>
+        <Show when={profile()}>
+          <section class="mt-2 flex flex-col gap-3">
+            <h2 class="text-14-medium text-text-strong">{language.t("chat.recent")}</h2>
+            <Show when={!sessions.isPending} fallback={<Spinner class="size-5" />}>
+              <Show
+                when={!sessions.error}
+                fallback={
+                  <div role="alert" class="flex flex-wrap items-center gap-3 text-13-regular text-text-weak">
+                    <p>{errorMessage(sessions.error, language.t("common.requestFailed"))}</p>
+                    <Button variant="secondary" onClick={() => void sessions.refetch()}>
+                      {language.t("common.retry")}
+                    </Button>
+                  </div>
+                }
               >
-                {state.importing ? language.t("chat.import.busy") : language.t("chat.import.action")}
-              </Button>
-            </div>
-          </form>
-        </details>
+                <Show
+                  when={sessions.data?.length}
+                  fallback={<p class="text-13-regular text-text-weak">{language.t("chat.recent.empty")}</p>}
+                >
+                  <ul class="flex flex-col gap-1">
+                    <For each={sessions.data?.slice(0, 12)}>
+                      {(session) => (
+                        <li>
+                          <a
+                            href={`/${base64Encode(session.directory)}/session/${session.id}`}
+                            class="flex items-center justify-between gap-3 rounded-xl px-3 py-3 hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-focus"
+                          >
+                            <span class="min-w-0 truncate text-14-medium text-text-strong">{session.title}</span>
+                            <time
+                              class="shrink-0 text-12-regular text-text-weak"
+                              dateTime={new Date(session.time.updated ?? session.time.created).toISOString()}
+                            >
+                              {new Intl.DateTimeFormat(language.locale(), { dateStyle: "medium" }).format(
+                                session.time.updated ?? session.time.created,
+                              )}
+                            </time>
+                          </a>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
+            </Show>
+          </section>
+        </Show>
       </div>
     </div>
   )

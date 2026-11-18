@@ -4140,12 +4140,44 @@ export type CompanionInfo = {
   files: number | "Infinity" | "-Infinity" | "NaN"
   warnings: Array<string>
   timezone: string
+  needsSetup?: boolean
+  introduction?: "available" | "active" | "paused" | "complete"
 }
 
 export type CompanionImportInput = {
   source: string
   id?: string
   name?: string
+}
+
+export type CompanionDetails = {
+  profile: CompanionInfo
+  user: string
+  companionName: string
+  userName: string
+  paths: {
+    directory: string
+    user: string
+    identity: string
+    memory: string
+    soul: string
+  }
+}
+
+export type CompanionUpdateInput = {
+  name?: string
+  user?: string
+  userName?: string
+  introduction?: "available" | "active" | "paused" | "complete"
+}
+
+export type CompanionInitializeResult = {
+  profile: CompanionInfo
+  created: boolean
+}
+
+export type CompanionCreateInput = {
+  requestID?: string
 }
 
 export type SessionBusyError = {
@@ -9296,6 +9328,66 @@ export type SoulGetResponses = {
 
 export type SoulGetResponse = SoulGetResponses[keyof SoulGetResponses]
 
+export type SoulUpdateData = {
+  body?: {
+    name?: string
+    displayName?: string
+    commitPrefix?: string
+    avatar?: string
+    description?: string
+    content?: string
+    markdown?: string
+  }
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/soul/{id}"
+}
+
+export type SoulUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type SoulUpdateError = SoulUpdateErrors[keyof SoulUpdateErrors]
+
+export type SoulUpdateResponses = {
+  /**
+   * Updated Soul details from its existing registry file
+   */
+  200: {
+    id: string
+    name: string
+    displayName: string
+    commitPrefix: string
+    avatar?: string
+    description?: string
+    path: string
+    content: string
+    sources: {
+      id: "frontmatter" | "fallback" | "absent"
+      name: "frontmatter" | "fallback" | "absent"
+      displayName: "frontmatter" | "fallback" | "absent"
+      commitPrefix: "frontmatter" | "fallback" | "absent"
+      avatar: "frontmatter" | "fallback" | "absent"
+      description: "frontmatter" | "fallback" | "absent"
+    }
+  }
+}
+
+export type SoulUpdateResponse = SoulUpdateResponses[keyof SoulUpdateResponses]
+
 export type SoulIssuesData = {
   body?: never
   path?: never
@@ -9375,12 +9467,164 @@ export type CompanionListError = CompanionListErrors[keyof CompanionListErrors]
 
 export type CompanionListResponses = {
   /**
-   * Imported companion profiles without private memory content
+   * Companion profiles without private memory content
    */
   200: Array<CompanionInfo>
 }
 
 export type CompanionListResponse = CompanionListResponses[keyof CompanionListResponses]
+
+export type CompanionCreateData = {
+  body?: CompanionCreateInput
+  path?: never
+  query?: never
+  url: "/companion"
+}
+
+export type CompanionCreateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionCreateError = CompanionCreateErrors[keyof CompanionCreateErrors]
+
+export type CompanionCreateResponses = {
+  /**
+   * CompanionInitializeResult
+   */
+  200: CompanionInitializeResult
+}
+
+export type CompanionCreateResponse = CompanionCreateResponses[keyof CompanionCreateResponses]
+
+export type CompanionInitializeData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/companion/initialize"
+}
+
+export type CompanionInitializeErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionInitializeError = CompanionInitializeErrors[keyof CompanionInitializeErrors]
+
+export type CompanionInitializeResponses = {
+  /**
+   * CompanionInitializeResult
+   */
+  200: CompanionInitializeResult
+}
+
+export type CompanionInitializeResponse = CompanionInitializeResponses[keyof CompanionInitializeResponses]
+
+export type CompanionGetData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/companion/{id}"
+}
+
+export type CompanionGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionGetError = CompanionGetErrors[keyof CompanionGetErrors]
+
+export type CompanionGetResponses = {
+  /**
+   * CompanionDetails
+   */
+  200: CompanionDetails
+}
+
+export type CompanionGetResponse = CompanionGetResponses[keyof CompanionGetResponses]
+
+export type CompanionUpdateData = {
+  body?: CompanionUpdateInput
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/companion/{id}"
+}
+
+export type CompanionUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+  /**
+   * UnknownError
+   */
+  500: UnknownError1
+}
+
+export type CompanionUpdateError = CompanionUpdateErrors[keyof CompanionUpdateErrors]
+
+export type CompanionUpdateResponses = {
+  /**
+   * CompanionDetails
+   */
+  200: CompanionDetails
+}
+
+export type CompanionUpdateResponse = CompanionUpdateResponses[keyof CompanionUpdateResponses]
 
 export type CompanionImportData = {
   body?: CompanionImportInput

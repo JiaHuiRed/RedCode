@@ -1,3 +1,4 @@
+import { SettingsGeneral } from "./settings-general"
 import { Button } from "@redcode-ai/ui/button"
 import { Select } from "@redcode-ai/ui/select"
 import { showToast } from "@redcode-ai/ui/toast"
@@ -31,6 +32,22 @@ export const SettingsAgents: Component = () => {
   const globalSDK = useGlobalSDK()
   const queryClient = useQueryClient()
   const models = useModels()
+  const [defaults, setDefaults] = createStore({ saving: false })
+  const saveDefault = async (name: string) => {
+    if (defaults.saving) return
+    setDefaults("saving", true)
+    try {
+      await globalSync.updateConfig({ default_agent: name })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setDefaults("saving", false)
+    }
+  }
 
   // 260829 Red 智能体列表按目录取（项目 agent/ 目录能自定义），设置面板写的是全局配置，
   // 所以这里用不带目录的全局查询——拿到的是内建工种 + 全局配置里的角色。
@@ -190,15 +207,35 @@ export const SettingsAgents: Component = () => {
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.agents.title")}</h2>
-          <span class="text-14-regular text-text-weak">{language.t("settings.agents.description")}</span>
+    <div class="settings-page-body">
+      <div class="settings-page-heading">
+        <div class="flex flex-col gap-1">
+          <h2 class="settings-page-title">{language.t("settings.agents.title")}</h2>
+          <span class="text-14-regular text-text-weak">{language.t("settings.modern.agents.description")}</span>
         </div>
       </div>
 
-      <div class="flex flex-col gap-8 max-w-[720px]">
+      <Show when={list().length}>
+        <SettingsList>
+          <SettingsRow
+            title={language.t("settings.modern.defaultAgent.title")}
+            description={language.t("settings.modern.defaultAgent.description")}
+          >
+            <Select
+              options={list().filter((agent) => !agent.hidden && agent.mode !== "subagent")}
+              current={list().find((agent) => agent.name === globalSync.data.config.default_agent) ?? primary()[0]}
+              value={(agent) => agent.name}
+              label={(agent) => agent.displayName ?? agent.name}
+              disabled={defaults.saving}
+              onSelect={(agent) => agent && void saveDefault(agent.name)}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+            />
+          </SettingsRow>
+        </SettingsList>
+      </Show>
+      <div class="flex flex-col gap-8">
         {/* 261002 Red 查询挂掉时别再静默空白：pending 给文案，error 给原始信息 + 重试入口。
             重试能自愈的前提是 loadAgentsQuery 放开了 refetchOnMount，两处要一起在。 */}
         <Show when={agents.isPending}>
@@ -206,7 +243,7 @@ export const SettingsAgents: Component = () => {
         </Show>
         <Show when={agents.isError}>
           <div class="flex flex-col items-start gap-2">
-            <p class="text-14-regular text-text-danger-base">
+            <p class="text-14-regular text-text-on-critical-base">
               {agents.error instanceof Error ? agents.error.message : language.t("common.requestFailed")}
             </p>
             <Button size="small" variant="secondary" onClick={() => void agents.refetch()}>
@@ -225,6 +262,7 @@ export const SettingsAgents: Component = () => {
           )}
         </For>
       </div>
+      <SettingsGeneral section="tools" />
     </div>
   )
 }

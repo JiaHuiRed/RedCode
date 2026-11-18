@@ -1,12 +1,18 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import * as solidJsRouter from "@solidjs/router"
+import * as solidQuery from "@tanstack/solid-query"
+import { companionAcceptedKey } from "@/utils/companion-onboarding"
 import type { Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
+const queryClient = new solidQuery.QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
+let availableSouls = [{ id: "karina" }, { id: "yuqi" }]
+let companionProfiles: Array<{ soulID: string }> = []
 const createdClients: string[] = []
 const createdSessions: string[] = []
 const createInputs: Array<{ soul?: string }> = []
+const createModes: Array<string | undefined> = []
 const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
@@ -22,7 +28,10 @@ const optimisticSeeded: boolean[] = []
 const sentPrompts: Array<{ sessionID: string; delivery?: "queue" | "steer" }> = []
 const sentPromptFiles: string[] = []
 const defaultClients: string[] = []
-const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
+const storedSessions: Record<
+  string,
+  Array<{ id: string; title?: string; mode?: "code" | "chat"; companionID?: string }>
+> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
@@ -49,15 +58,18 @@ const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const clientFor = (directory: string) => {
   createdClients.push(directory)
   return {
+    companion: { list: async () => ({ data: companionProfiles }) },
     soul: {
+      list: async () => ({ data: availableSouls }),
       default: async (input: { client: "tui" | "desktop" }) => {
         defaultClients.push(input.client)
         return { data: { id: "yuqi" } }
       },
     },
     session: {
-      create: async (input?: { soul?: string }) => {
+      create: async (input?: { soul?: string; mode?: string }) => {
         createdSessions.push(directory)
+        createModes.push(input?.mode)
         createInputs.push(input?.soul ? { soul: input.soul } : {})
         if (createFails) throw new Error("synthetic create failure")
         return {
@@ -97,6 +109,7 @@ const clientFor = (directory: string) => {
 
 beforeAll(async () => {
   const rootClient = clientFor("/repo/main")
+  mock.module("@tanstack/solid-query", () => ({ ...solidQuery, useQueryClient: () => queryClient }))
 
   // 261013 Red 不再手工枚举导出面（261003 漏 useLocation、261012 复发）；
   // factory 的 original 实参是 undefined，必须静态 import 真模块展开。
@@ -229,11 +242,21 @@ beforeAll(async () => {
             if (args[0] !== "session") return
             const next = args[1]
             if (typeof next === "function") {
-              storedSessions[directory] = next(storedSessions[directory]) as Array<{ id: string; title?: string }>
+              storedSessions[directory] = next(storedSessions[directory]) as Array<{
+                id: string
+                title?: string
+                mode?: "code" | "chat"
+                companionID?: string
+              }>
               return
             }
             if (Array.isArray(next)) {
-              storedSessions[directory] = next as Array<{ id: string; title?: string }>
+              storedSessions[directory] = next as Array<{
+                id: string
+                title?: string
+                mode?: "code" | "chat"
+                companionID?: string
+              }>
             }
           },
         ]
@@ -258,9 +281,13 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
+  queryClient.clear()
+  availableSouls = [{ id: "karina" }, { id: "yuqi" }]
+  companionProfiles = []
   createdClients.length = 0
   createdSessions.length = 0
   createInputs.length = 0
+  createModes.length = 0
   enabledAutoAccept.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
@@ -856,5 +883,58 @@ describe("prompt submit worktree selection", () => {
       { dir: "/repo/main", id: "session-1" },
     ])
     expect(submit.sendError()).toBeFalsy()
+  })
+})
+
+describe("Chat and Code identity submission boundaries", () => {
+  const subject = (info?: { id: string; mode?: "chat" | "code"; companionID?: string }) =>
+    createPromptSubmit({
+      info: () => info,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      lastSoul: () => lastSoul,
+    })
+  const send = async (submit: ReturnType<typeof subject>) => {
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  test("passes an eligible Code default to session creation instead of a saved Chat Soul", async () => {
+    lastSoul = "partner"
+    availableSouls = [{ id: "partner" }, { id: "yuqi" }]
+    companionProfiles = [{ soulID: "partner" }]
+    await send(subject())
+    expect(createInputs).toEqual([{ soul: "yuqi" }])
+    expect(createModes).toEqual(["code"])
+    expect(lastSoul).toBe("partner")
+  })
+  test("omits Soul when the only registered identity belongs to Chat", async () => {
+    lastSoul = "partner"
+    availableSouls = [{ id: "partner" }]
+    companionProfiles = [{ soulID: "partner" }]
+    await send(subject())
+    expect(createInputs).toEqual([{}])
+    expect(createModes).toEqual(["code"])
+  })
+  test("a failed Chat send cannot show onboarding until its real retry succeeds", async () => {
+    params = { id: "chat-session", dir: "/repo/main" }
+    const submit = subject({ id: "chat-session", mode: "chat", companionID: "native-partner" })
+    promptFails = true
+    await send(submit)
+    const key = companionAcceptedKey("http://localhost:4096", "native-partner")
+    expect(queryClient.getQueryData(key)).toBeUndefined()
+    promptFails = false
+    submit.retryFailedSubmit()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(queryClient.getQueryData<boolean>(key) === true).toBe(true)
   })
 })

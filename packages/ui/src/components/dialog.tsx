@@ -1,5 +1,15 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
-import { ComponentProps, JSXElement, Match, onCleanup, onMount, ParentProps, Show, Switch, createSignal } from "solid-js"
+import {
+  ComponentProps,
+  JSXElement,
+  Match,
+  onCleanup,
+  onMount,
+  ParentProps,
+  Show,
+  Switch,
+  createSignal,
+} from "solid-js"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 
@@ -37,11 +47,12 @@ export function Dialog(props: DialogProps) {
   const minHeight = () => props.minHeight ?? 420
 
   const [custom, setCustom] = createSignal<DialogSize>(props.dialogSize ?? {})
+  let container: HTMLDivElement | undefined
   const maximized = () => custom().maximized === true
   const hasCustomSize = () => custom().width !== undefined || custom().height !== undefined
 
-  const clampWidth = (width: number) => Math.max(minWidth(), Math.min(width, window.innerWidth - MARGIN * 2))
-  const clampHeight = (height: number) => Math.max(minHeight(), Math.min(height, window.innerHeight - MARGIN * 2))
+  const clampWidth = (width: number) => Math.min(window.innerWidth - MARGIN * 2, Math.max(minWidth(), width))
+  const clampHeight = (height: number) => Math.min(window.innerHeight - MARGIN * 2, Math.max(minHeight(), height))
 
   const apply = (next: DialogSize) => {
     setCustom(next)
@@ -68,8 +79,9 @@ export function Dialog(props: DialogProps) {
     event.preventDefault()
     const startX = event.clientX
     const startY = event.clientY
-    const startWidth = custom().width ?? window.innerWidth - MARGIN * 2
-    const startHeight = custom().height ?? window.innerHeight - MARGIN * 2
+    const bounds = container?.getBoundingClientRect()
+    const startWidth = bounds?.width ?? custom().width ?? window.innerWidth - MARGIN * 2
+    const startHeight = bounds?.height ?? custom().height ?? window.innerHeight - MARGIN * 2
     const move = (moveEvent: PointerEvent) => {
       apply({
         width: clampWidth(startWidth + (moveEvent.clientX - startX)),
@@ -104,7 +116,7 @@ export function Dialog(props: DialogProps) {
       data-resizable={props.resizable ? true : undefined}
       data-maximized={maximized() ? true : undefined}
     >
-      <div data-slot="dialog-container" style={containerStyle()}>
+      <div ref={container} data-slot="dialog-container" style={containerStyle()}>
         <Kobalte.Content
           data-slot="dialog-content"
           data-no-header={!props.title && !props.action && !props.resizable ? "" : undefined}

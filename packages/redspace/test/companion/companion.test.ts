@@ -48,6 +48,214 @@ function setup(body: (value: Fixture) => Effect.Effect<void, unknown, Companion.
 
 describe("companion archive", () => {
   it.live(
+    "creates two companions, retries one request without consuming another place, and keeps initialize idempotent",
+    setup(() =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const first = yield* service.create({ requestID: "first-request" })
+        const second = yield* service.create({ requestID: "second-request" })
+        expect(first.created).toBe(true)
+        expect(second.created).toBe(true)
+        expect(first.profile.introduction).toBe("available")
+        const retry = yield* service.create({ requestID: "first-request" })
+        expect(retry.profile.id).toBe(first.profile.id)
+        expect(retry.created).toBe(false)
+        expect((yield* service.create({ requestID: "third-request" }).pipe(Effect.flip))._tag).toBe("CompanionConflict")
+        expect((yield* service.create({ requestID: "invalid request" }).pipe(Effect.flip))._tag).toBe(
+          "CompanionInvalidInput",
+        )
+        expect((yield* service.initialize()).profile.id).toBe(first.profile.id)
+        expect(yield* service.list()).toHaveLength(2)
+      }),
+    ),
+  )
+
+  it.live(
+    "shares the roster lock between separate native and import service instances",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        yield* service.create({ requestID: "first" })
+        const other = yield* Companion.Service.pipe(Effect.provide(Companion.defaultLayer))
+        const results = yield* Effect.all(
+          [
+            service.create({ requestID: "second" }).pipe(Effect.exit),
+            other.importArchive({ source: value.source, id: "maple" }).pipe(Effect.exit),
+          ],
+          { concurrency: "unbounded" },
+        )
+        expect(results.filter((result) => result._tag === "Success")).toHaveLength(1)
+        expect(results.filter((result) => result._tag === "Failure")).toHaveLength(1)
+        expect(yield* service.list()).toHaveLength(2)
+      }),
+    ),
+  )
+
+  it.live(
+    "reuses an existing import at capacity and preserves a legacy roster larger than two",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        yield* service.importArchive({ source: value.source, id: "maple" })
+        const native = yield* service.create({ requestID: "native" })
+        expect((yield* service.importArchive({ source: value.source, id: "maple" })).imported).toBe(false)
+        const legacy = {
+          ...native.profile,
+          id: "legacy",
+          soulID: "legacy",
+          name: "Legacy",
+          introduction: undefined,
+          needsSetup: undefined,
+        }
+        yield* (yield* Soul.Service).create({ id: "legacy", name: "Legacy", content: "An existing identity." })
+        yield* Effect.promise(async () => {
+          await fs.mkdir(path.join(value.root, "legacy/workspace"), { recursive: true })
+          await fs.writeFile(
+            path.join(value.root, "legacy/profile.json"),
+            JSON.stringify({ profile: legacy, digest: "legacy" }),
+          )
+        })
+        expect(yield* service.list()).toHaveLength(3)
+        expect((yield* service.create().pipe(Effect.flip))._tag).toBe("CompanionConflict")
+        expect((yield* service.initialize()).created).toBe(false)
+        const edited = yield* service.update("legacy", { userName: "Friend" })
+        expect(edited.userName).toBe("Friend")
+        expect(Companion.introductionOf(edited.profile)).toBe("complete")
+        expect(yield* service.list()).toHaveLength(3)
+      }),
+    ),
+  )
+
+  it.live(
+    "keeps names optional, preserves unmanaged notes, and changes introduction only when explicitly requested",
+    setup(() =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const created = yield* service.create()
+        const user = "# Existing user notes\r\nDo not rewrite me.\r\n"
+        const identity = "# Existing identity\nKeep the original body.\n"
+        const before = yield* service.details(created.profile.id)
+        yield* Effect.promise(async () => {
+          await fs.writeFile(before.paths.user, user)
+          await fs.writeFile(before.paths.identity, identity)
+        })
+        const changed = yield* service.update(created.profile.id, { name: "Luna", userName: "Rowan" })
+        expect(changed.companionName).toBe("Luna")
+        expect(changed.userName).toBe("Rowan")
+        expect(changed.user.endsWith(user)).toBe(true)
+        expect((yield* Effect.promise(() => fs.readFile(changed.paths.identity, "utf8"))).endsWith(identity)).toBe(true)
+        expect(changed.profile.introduction).toBe("available")
+        expect((yield* service.bootstrap(created.profile.id)).text).not.toContain("### Getting acquainted")
+        const initialRevision = yield* service.contextRevision(created.profile.id)
+        yield* service.update(created.profile.id, { introduction: "active" })
+        expect(yield* service.contextRevision(created.profile.id)).not.toBe(initialRevision)
+        expect((yield* service.bootstrap(created.profile.id)).text).toContain("### Getting acquainted")
+        yield* service.update(created.profile.id, { introduction: "paused" })
+        expect((yield* service.bootstrap(created.profile.id)).text).not.toContain("### Getting acquainted")
+        const cleared = yield* service.update(created.profile.id, { name: "", userName: "", introduction: "complete" })
+        expect(cleared.profile.name).toBe("Chat")
+        expect(cleared.profile.needsSetup).toBe(false)
+        expect(cleared.companionName).toBe("")
+        expect(cleared.userName).toBe("")
+        expect(cleared.user).toBe(user)
+        expect(yield* Effect.promise(() => fs.readFile(cleared.paths.identity, "utf8"))).toBe(identity)
+        expect((yield* (yield* Soul.Service).get(created.profile.soulID))?.name).toBe("Chat")
+        expect((yield* service.update(created.profile.id, { user, userName: "Other" }).pipe(Effect.flip))._tag).toBe(
+          "CompanionInvalidInput",
+        )
+      }),
+    ),
+  )
+
+  it.live(
+    "initializes one neutral companion across concurrent calls and returns the real Soul path",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const results = yield* Effect.all([service.initialize(), service.initialize()], { concurrency: "unbounded" })
+        expect(results.filter((result) => result.created)).toHaveLength(1)
+        expect(results[0].profile.id).toBe(results[1].profile.id)
+        expect(yield* service.list()).toHaveLength(1)
+        const detail = yield* service.details(results[0].profile.id)
+        expect(detail.profile.needsSetup).toBe(true)
+        expect(detail.user).toBe("")
+        expect(detail.paths.soul).toBe(path.join(value.souls, `${detail.profile.soulID}.md`))
+        expect(detail.paths.soul).not.toBe(path.join(detail.profile.directory, "SOUL.md"))
+        expect((yield* (yield* Soul.Service).get(detail.profile.soulID))?.content).toContain(
+          "Do not assume personal details",
+        )
+      }),
+    ),
+  )
+
+  it.live(
+    "uses an existing companion without changing its identity or memories",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+        const before = yield* Effect.promise(() => fs.readFile(path.join(value.root, "maple/profile.json"), "utf8"))
+        const result = yield* service.initialize()
+        expect(result).toEqual(new Companion.InitializeResult({ profile: imported.profile, created: false }))
+        expect(result.profile.needsSetup).toBeUndefined()
+        expect(yield* Effect.promise(() => fs.readFile(path.join(value.root, "maple/profile.json"), "utf8"))).toBe(
+          before,
+        )
+      }),
+    ),
+  )
+
+  it.live(
+    "edits bounded user notes verbatim while preserving memories, registry Soul and archive sources",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const imported = yield* service.importArchive({ source: value.source, id: "maple" })
+        const user = "# 关于我\n\n称呼：小红\n保留原来的换行。\n"
+        const updated = yield* service.update("maple", { name: "枫", user })
+        expect(updated.profile.name).toBe("枫")
+        expect(updated.profile.needsSetup).toBe(false)
+        expect(updated.user).toBe(user)
+        expect(yield* Effect.promise(() => fs.readFile(updated.paths.memory, "utf8"))).toBe(
+          fixture["workspace/MEMORY.md"],
+        )
+        expect(yield* Effect.promise(() => fs.readFile(path.join(imported.profile.directory, "SOUL.md"), "utf8"))).toBe(
+          fixture["workspace/SOUL.md"],
+        )
+        expect((yield* (yield* Soul.Service).get("maple"))?.name).toBe("Maple")
+        const invalid = yield* service
+          .update("maple", { name: "Changed", user: "x".repeat(Companion.Limits.profile + 1) })
+          .pipe(Effect.flip)
+        expect(invalid._tag).toBe("CompanionInvalidInput")
+        expect((yield* service.details("maple")).profile.name).toBe("枫")
+        expect((yield* service.details("maple")).user).toBe(user)
+        expect((yield* service.update("maple", {})).user).toBe(user)
+      }),
+    ),
+  )
+
+  it.live(
+    "rejects user-note symlinks without changing the target",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const result = yield* service.initialize()
+        const user = path.join(result.profile.directory, "USER.md")
+        const outside = path.join(value.source, "outside.md")
+        yield* Effect.promise(async () => {
+          await fs.writeFile(outside, "outside")
+          await fs.unlink(user)
+          await fs.symlink(outside, user)
+        })
+        expect((yield* service.update(result.profile.id, { user: "replacement" }).pipe(Effect.flip))._tag).toBe(
+          "CompanionInvalidInput",
+        )
+        expect(yield* Effect.promise(() => fs.readFile(outside, "utf8"))).toBe("outside")
+      }),
+    ),
+  )
+
+  it.live(
     "anchors long Chinese and emoji search hits to readable UTF-8 byte positions",
     setup((value) =>
       Effect.gen(function* () {
@@ -707,7 +915,9 @@ describe("companion archive", () => {
           expect(serialized).not.toContain(secret)
         // profile.json persists the census for later audit.
         const stored = yield* Effect.promise(() =>
-          Bun.file(path.join(value.root, "maple", "profile.json")).text().then(JSON.parse),
+          Bun.file(path.join(value.root, "maple", "profile.json"))
+            .text()
+            .then(JSON.parse),
         )
         expect(stored.coverage.final.humanTurns).toBe(1)
       }),

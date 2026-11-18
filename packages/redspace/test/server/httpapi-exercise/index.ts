@@ -24,6 +24,7 @@ import { Effect } from "effect"
 import { OpenApi } from "effect/http-api"
 import { TestLLMServer } from "../../lib/llm-server"
 import { ContextSnapshot } from "../../../src/session/context-snapshot"
+import { Companion } from "../../../src/companion/companion"
 import { MessageID } from "../../../src/session/schema"
 import os from "os"
 import path from "path"
@@ -49,6 +50,16 @@ function cursor(input: Record<string, unknown>) {
 }
 
 const scenarios: Scenario[] = [
+  http.protected
+    .post("/companion", "companion.create")
+    .mutating()
+    .at((ctx) => ({ path: "/companion", headers: ctx.headers(), body: { requestID: "http-exercise-create" } }))
+    .json(200, (body) => {
+      object(body)
+      object(body.profile)
+      boolean(body.created)
+      check(body.profile.introduction === "available", "a new companion can get acquainted later")
+    }),
   http.protected
     .get("/global/health", "global.health")
     .global()
@@ -138,16 +149,14 @@ const scenarios: Scenario[] = [
   // 261108 Red 0.17.0 新增的诊断接口：路由与 SDK 一致性测试都进来了，唯独 exerciser
   // 漏了场景，Windows Nightly 的 coverage 门禁报 missing。只钉响应形状（只读观测面，
   // 空目录下 sources 通常为空），预算淘汰/来源优先级/字节数的行为由 instruction.test.ts 覆盖。
-  http.protected
-    .get("/instructions", "app.instructions")
-    .json(200, (body) => {
-      object(body)
-      array(body.sources)
-      check(typeof body.totalBytes === "number", "instructions inventory should include total bytes")
-      object(body.budget)
-      check(typeof body.budget.maxSourceBytes === "number", "budget should include per-source cap")
-      check(typeof body.budget.maxTotalBytes === "number", "budget should include total cap")
-    }),
+  http.protected.get("/instructions", "app.instructions").json(200, (body) => {
+    object(body)
+    array(body.sources)
+    check(typeof body.totalBytes === "number", "instructions inventory should include total bytes")
+    object(body.budget)
+    check(typeof body.budget.maxSourceBytes === "number", "budget should include per-source cap")
+    check(typeof body.budget.maxTotalBytes === "number", "budget should include total cap")
+  }),
   http.protected.get("/lsp", "lsp.status").json(200, array),
   http.protected.get("/formatter", "formatter.status").json(200, array),
   http.protected.get("/config", "config.get").json(200, undefined, "status"),
@@ -908,6 +917,52 @@ const scenarios: Scenario[] = [
     )
   }),
   http.protected
+    .post("/companion/initialize", "companion.initialize")
+    .mutating()
+    .json(200, (body) => {
+      object(body)
+      object(body.profile)
+      boolean(body.created)
+      check(typeof body.profile.id === "string", "initialization returns a companion identity")
+      check(body.profile.soulID === body.profile.id, "the companion retains its own Soul")
+    }),
+  http.protected
+    .get("/companion/{id}", "companion.get")
+    .seeded(() =>
+      Companion.Service.use((service) => service.initialize()).pipe(
+        Effect.provide(Companion.defaultLayer),
+        Effect.orDie,
+      ),
+    )
+    .at((ctx) => ({ path: route("/companion/{id}", { id: ctx.state.profile.id }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      object(body.profile)
+      object(body.paths)
+      check(typeof body.user === "string", "settings include user notes")
+      check(typeof body.paths.soul === "string", "settings return the actual registry path")
+    }),
+  http.protected
+    .patch("/companion/{id}", "companion.update")
+    .mutating()
+    .seeded(() =>
+      Companion.Service.use((service) => service.initialize()).pipe(
+        Effect.provide(Companion.defaultLayer),
+        Effect.orDie,
+      ),
+    )
+    .at((ctx) => ({
+      path: route("/companion/{id}", { id: ctx.state.profile.id }),
+      headers: ctx.headers(),
+      body: { user: "Use concrete examples." },
+    }))
+    .json(200, (body) => {
+      object(body)
+      object(body.profile)
+      check(body.user === "Use concrete examples.", "user notes are saved verbatim")
+      check(body.profile.introduction === "available", "saving notes does not complete the optional introduction")
+    }),
+  http.protected
     .post("/companion/import", "companion.import")
     .mutating()
     .seeded(() =>
@@ -1050,6 +1105,34 @@ const scenarios: Scenario[] = [
         )
       },
       "status",
+    ),
+  http.protected
+    .put("/soul/{id}", "soul.update")
+    .mutating()
+    .seeded(() =>
+      Effect.promise(async () => {
+        const fs = await import("node:fs/promises")
+        const directory = path.join(exerciseConfigDirectory, "souls")
+        await fs.mkdir(directory, { recursive: true })
+        const file = path.join(directory, "httpapi-update-alias.md")
+        await Bun.write(file, "---\nid: httpapi-update\nname: Preserved Name\n---\n\nOriginal body\n")
+        return file
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/soul/{id}", { id: "httpapi-update" }),
+      headers: ctx.headers(),
+      body: { content: "Updated body" },
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.name === "Preserved Name", "omitted metadata is preserved")
+        check(body.path === ctx.state, "update writes the registered filename")
+        check(body.content === "Updated body", "updated body is returned")
+        const source = yield* Effect.promise(() => Bun.file(ctx.state).text())
+        check(source.includes("Updated body"), "update persists to the real source file")
+      }),
     ),
   http.protected.get("/soul/issues", "soul.issues").json(200, (body) => array(body)),
   http.protected

@@ -49,6 +49,7 @@ function service(initial?: Info) {
     details: () => Effect.die(new Error("Session tests must not read GUI Soul details")),
     defaultForClient: () => Effect.succeed(defaultID),
     create: () => Effect.die(new Error("Session tests must not create Souls")),
+    update: () => Effect.die(new Error("Session tests must not update Souls")),
     get: (id) => {
       return Effect.succeed(id === current?.id ? current : undefined)
     },
@@ -153,10 +154,15 @@ describe("session.soul", () => {
       const test = yield* TestInstance
       const file = path.join(test.directory, "karina.md")
       yield* Effect.promise(() =>
-        Bun.write(file, "---\nid: karina\nname: V1\ndisplay_name: Name V1\ncommit_prefix: CommitV1\n---\n\nOriginal body V1"),
+        Bun.write(
+          file,
+          "---\nid: karina\nname: V1\ndisplay_name: Name V1\ncommit_prefix: CommitV1\n---\n\nOriginal body V1",
+        ),
       )
       const service = yield* SessionNs.Service
-      const parent = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      const parent = yield* service
+        .create({ soul: "karina" })
+        .pipe(Effect.provideService(Soul.directory, test.directory))
       expect(parent.soulBodyHash).toBeTruthy()
       // 261017 Red 按本次创建的 hash 查，不能用无 where 的 .get()：测试库是进程级共享的，
       // 前面任何创建过 soul session 的文件都会往这张表写行，.get() 可能拿到别人的记录。
@@ -166,7 +172,10 @@ describe("session.soul", () => {
       expect(stored?.body).toContain("Original body V1")
 
       yield* Effect.promise(() =>
-        Bun.write(file, "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2"),
+        Bun.write(
+          file,
+          "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2",
+        ),
       )
       PromptCaches.souls.delete(parent.id)
       const souls = yield* Soul.Service
@@ -185,30 +194,29 @@ describe("session.soul", () => {
       expect(wrongHint.prompt).toBe(restored.prompt)
 
       const next = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
-      yield* Effect.promise(() =>
-        Bun.write(file, "---\nid: karina\nname: V2 metadata\n---\n\nOriginal body V2"),
-      )
-      const metadataOnly = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      yield* Effect.promise(() => Bun.write(file, "---\nid: karina\nname: V2 metadata\n---\n\nOriginal body V2"))
+      const metadataOnly = yield* service
+        .create({ soul: "karina" })
+        .pipe(Effect.provideService(Soul.directory, test.directory))
       expect(metadataOnly.soulBodyHash).not.toBe(next.soulBodyHash)
       yield* Effect.promise(() =>
-        Bun.write(file, "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2"),
+        Bun.write(
+          file,
+          "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2",
+        ),
       )
-      const duplicate = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      const duplicate = yield* service
+        .create({ soul: "karina" })
+        .pipe(Effect.provideService(Soul.directory, test.directory))
       expect(next.soulBodyHash).not.toBe(parent.soulBodyHash)
       expect(duplicate.soulBodyHash).toBe(next.soulBodyHash)
       expect(
-        Database.use((db) =>
-          db
-            .select()
-            .from(SoulVersionTable)
-            .where(eq(SoulVersionTable.hash, parent.soulBodyHash!))
-            .get()?.body,
+        Database.use(
+          (db) => db.select().from(SoulVersionTable).where(eq(SoulVersionTable.hash, parent.soulBodyHash!)).get()?.body,
         ),
       ).toContain("Original body V1")
       yield* Effect.sync(() =>
-        Database.use((db) =>
-          db.delete(SoulVersionTable).where(eq(SoulVersionTable.hash, parent.soulBodyHash!)).run(),
-        ),
+        Database.use((db) => db.delete(SoulVersionTable).where(eq(SoulVersionTable.hash, parent.soulBodyHash!)).run()),
       )
       PromptCaches.souls.delete(parent.id)
       const fallback = yield* sessionSoul(parent.id, parent.soul, souls).pipe(
@@ -217,7 +225,11 @@ describe("session.soul", () => {
       expect(fallback.prompt).toContain("Original body V2")
       expect(
         Database.use((db) =>
-          db.select({ soul_body_hash: SessionTable.soul_body_hash }).from(SessionTable).where(eq(SessionTable.id, parent.id)).get(),
+          db
+            .select({ soul_body_hash: SessionTable.soul_body_hash })
+            .from(SessionTable)
+            .where(eq(SessionTable.id, parent.id))
+            .get(),
         )?.soul_body_hash,
       ).toBe(parent.soulBodyHash)
 

@@ -1,3 +1,7 @@
+import { settingsModern } from "./settings-modern"
+import { settingsCompanion } from "./settings-companion"
+import { settingsDesktop } from "./settings-desktop"
+
 export const dict = {
   "mode.navigation": "Chat と Code",
   "chat.title": "ここで、話の続きを。",
@@ -5,8 +9,7 @@ export const dict = {
   "chat.profile.files": "アーカイブファイル {{count}} 件",
   "chat.profile.description": "新しい会話を始めたり、以前の会話を続けたりできます。同じアーカイブを引き継ぎます。",
   "chat.profile.choose": "パートナーを選択",
-  "chat.profile.missing":
-    "このパートナーのプロフィールは見つかりません。別のプロフィールを選択するか、下でアーカイブを読み込んでください。",
+  "chat.profile.missing": "このパートナーが見つかりません。利用可能なパートナーを選択してください。",
   "chat.start": "会話を始める",
   "chat.opening": "開いています…",
   "chat.recent": "これまでの会話",
@@ -208,7 +211,8 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "APIキー",
   "provider.custom.field.apiKey.description": "オプション。ヘッダーで認証を管理する場合は空のままにしてください。",
   "provider.custom.save.shadowed.title": "設定ファイルのAPIキーが保存したキーを上書きします",
-  "provider.custom.save.shadowed.description": "{provider} のAPIキーは設定ファイルに残っており、エンジンは設定ファイル側を優先します。設定ファイルのapiKeyを削除してください。",
+  "provider.custom.save.shadowed.description":
+    "{provider} のAPIキーは設定ファイルに残っており、エンジンは設定ファイル側を優先します。設定ファイルのapiKeyを削除してください。",
   "provider.custom.models.label": "モデル",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -335,7 +339,8 @@ export const dict = {
   "prompt.toast.pasteUnsupported.title": "サポートされていない添付ファイル",
   "prompt.toast.pasteUnsupported.description": "画像、PDF、またはテキストファイルのみ添付できます。",
   "prompt.toast.archiveNeedsDesktop.title": "圧縮ファイルはデスクトップ版で送信してください",
-  "prompt.toast.archiveNeedsDesktop.description": "ブラウザからはディスクに書き込めないため、RedCode デスクトップ版をご利用ください。",
+  "prompt.toast.archiveNeedsDesktop.description":
+    "ブラウザからはディスクに書き込めないため、RedCode デスクトップ版をご利用ください。",
   "prompt.toast.modelAgentRequired.title": "エージェントとモデルを選択",
   "prompt.toast.modelAgentRequired.description": "プロンプトを送信する前にエージェントとモデルを選択してください。",
   "prompt.toast.worktreeCreateFailed.title": "ワークツリーの作成に失敗しました",
@@ -387,8 +392,7 @@ export const dict = {
   "session.search.placeholder": "このセッションの履歴を検索…",
   "session.search.action": "検索",
   "session.search.searching": "検索中…",
-  "session.search.empty":
-    "スキャン済みの範囲に一致はありません。「さらに検索」で古い履歴も調べられます。",
+  "session.search.empty": "スキャン済みの範囲に一致はありません。「さらに検索」で古い履歴も調べられます。",
   "session.search.more": "さらに検索",
   "session.search.scanned": "{{count}} 件スキャン済み",
   "session.search.backToOutline": "ターン一覧に戻る",
@@ -427,11 +431,12 @@ export const dict = {
   "dialog.directory.search.placeholder": "フォルダを検索",
   "dialog.directory.empty": "フォルダが見つかりません",
   "dialog.server.title": "サーバー",
-  "dialog.server.description": "このアプリが接続するRedCodeサーバーを切り替えます。",
+  "dialog.server.description": "このアプリが接続するRedSpaceサーバーを切り替えます。",
   "dialog.confirm.removeServer.title": "サーバーを削除",
   "dialog.confirm.removeServer.description": "{{server}} をサーバー一覧から削除しますか？この操作は元に戻せません。",
   "dialog.confirm.removeProject.title": "プロジェクトを削除",
-  "dialog.confirm.removeProject.description": "{{project}} をプロジェクト一覧から削除しますか？この操作は元に戻せません。",
+  "dialog.confirm.removeProject.description":
+    "{{project}} をプロジェクト一覧から削除しますか？この操作は元に戻せません。",
   "dialog.server.search.placeholder": "サーバーを検索",
   "dialog.server.empty": "サーバーはまだありません",
   "dialog.server.add.title": "サーバーを追加",
@@ -552,7 +557,7 @@ export const dict = {
   "toast.session.unshare.failed.description": "セッションの共有解除中にエラーが発生しました",
   "toast.session.listFailed.title": "{{project}}のセッション読み込みに失敗しました",
   "toast.update.title": "アップデートが利用可能です",
-  "toast.update.description": "RedCodeの新しいバージョン ({{version}}) がインストール可能です。",
+  "toast.update.description": "RedSpaceの新しいバージョン ({{version}}) がインストール可能です。",
   "toast.update.action.installRestart": "インストールして再起動",
   "toast.update.action.notYet": "今はしない",
   "error.page.title": "問題が発生しました",
@@ -761,11 +766,14 @@ export const dict = {
   "file.view.reading": "閲覧",
   "file.view.source": "ソース",
   "file.view.browser": "ブラウザーで開く",
-  "file.view.previewUnavailable": "このクライアントはブラウザープレビューを開けません。デスクトップクライアントを更新してください。",
-  "file.view.htmlHint": "開いた後だけスクリプトを実行します。隔離プレビューではローカルの相対リソースを読み込みません。",
+  "file.view.previewUnavailable":
+    "このクライアントはブラウザープレビューを開けません。デスクトップクライアントを更新してください。",
+  "file.view.htmlHint":
+    "開いた後だけスクリプトを実行します。隔離プレビューではローカルの相対リソースを読み込みません。",
   "task.steer.title": "指示を追加",
   "task.steer.parent": "親タスク：{{id}}",
-  "task.steer.hint": "次の安全な実行地点で配信します。即時中断ではありません。競合時は新しいユーザー指示を優先し、タスクの権限は維持します。",
+  "task.steer.hint":
+    "次の安全な実行地点で配信します。即時中断ではありません。競合時は新しいユーザー指示を優先し、タスクの権限は維持します。",
   "task.steer.tooLong": "追加指示は UTF-8 で最大 16,384 バイトです。短くしてから送信してください。",
   "task.steer.ended": "このタスクは追加指示を受け付けていません。下書きを保持し、タスクを再開しません。",
   "task.steer.queued": "待機中です。モデルにはまだ配信されていません。",
@@ -791,10 +799,12 @@ export const dict = {
   "settings.updates.toast.failed.title": "アップデートの確認に失敗しました",
   "settings.updates.toast.failed.description": "ネットワーク接続を確認して再試行してください。",
   "settings.updates.toast.disabled.title": "このビルドではアップデートできません",
-  "settings.updates.toast.disabled.description": "開発ビルドまたは未パッケージの RedCode はアップデートを確認しません。",
+  "settings.updates.toast.disabled.description":
+    "開発ビルドまたは未パッケージの RedSpace はアップデートを確認しません。",
   "settings.updates.action.downloading": "ダウンロード中...",
   "settings.updates.toast.downloadFailed.title": "アップデートのダウンロードに失敗しました",
-  "settings.updates.toast.downloadFailed.description": "ダウンロードが完了しませんでした。再試行するか、診断用にログをエクスポートしてください。",
+  "settings.updates.toast.downloadFailed.description":
+    "ダウンロードが完了しませんでした。再試行するか、診断用にログをエクスポートしてください。",
   "settings.updates.toast.downloaded.title": "アップデートをダウンロードしました",
   "settings.updates.toast.downloaded.description": "インストール完了のためアプリを再起動します。",
   "common.dismiss": "閉じる",
@@ -822,7 +832,7 @@ export const dict = {
   "sidebar.project.recentSessions": "最近のセッション",
   "sidebar.project.viewAllSessions": "すべてのセッションを表示",
   "sidebar.project.clearNotifications": "通知をクリア",
-  "app.name.desktop": "RedCode Desktop",
+  "app.name.desktop": "RedSpace",
   "settings.section.desktop": "デスクトップ",
   "settings.section.server": "サーバー",
   "settings.tab.general": "一般",
@@ -854,29 +864,36 @@ export const dict = {
   "session.activity.locateFailed": "失敗したツールを表示",
   "session.activity.locatePermission": "承認フォームにフォーカス",
   "settings.search.noResults": "一致する設定はありません",
-  "settings.mobileGateway.description": "証明書フィンガープリントを固定した暗号化接続で、このワークスペースのセッションをスマートフォンやタブレットから続行します。RedCode 終了時に Gateway も停止します。",
-  "settings.mobileGateway.networkWarning": "信頼できるプライベートネットワークのみ選択してください。RedCode はファイアウォール規則を変更しません。パブリックネットワークでは有効にしないでください。",
+  "settings.mobileGateway.description":
+    "証明書フィンガープリントを固定した暗号化接続で、このワークスペースのセッションをスマートフォンやタブレットから続行します。RedSpace 終了時に Gateway も停止します。",
+  "settings.mobileGateway.networkWarning":
+    "信頼できるプライベートネットワークのみ選択してください。RedSpace はファイアウォール規則を変更しません。パブリックネットワークでは有効にしないでください。",
   "settings.mobileGateway.host": "ネットワークインターフェース",
-  "settings.mobileGateway.hostDescription": "ループバックまたはプライベート IPv4 インターフェースのみにバインドします。",
+  "settings.mobileGateway.hostDescription":
+    "ループバックまたはプライベート IPv4 インターフェースのみにバインドします。",
   "settings.mobileGateway.start": "モバイル連携を有効化",
   "settings.mobileGateway.stop": "連携を停止して全デバイスを失効",
-  "settings.mobileGateway.sessionScope": "ペアリングしたデバイスは、このワークスペースのセッション閲覧、メッセージ送信、実行中タスクの中止ができます。権限の承認はこの PC で行います。",
-  "settings.mobileGateway.sessionRequired": "モバイル連携を有効にする前に、ワークスペース内のセッションを開いてください。",
+  "settings.mobileGateway.sessionScope":
+    "ペアリングしたデバイスは、このワークスペースのセッション閲覧、メッセージ送信、実行中タスクの中止ができます。権限の承認はこの PC で行います。",
+  "settings.mobileGateway.sessionRequired":
+    "モバイル連携を有効にする前に、ワークスペース内のセッションを開いてください。",
   "settings.mobileGateway.qrTitle": "QR コードで Android デバイスをペアリング",
   "settings.mobileGateway.qrDescription":
     "Android 連携アプリでスキャンします。Gateway アドレス、一回限りのコード、証明書ピンが含まれます。",
   "settings.mobileGateway.qrPreparing": "ペアリング用 QR コードを生成しています…",
-  "settings.mobileGateway.qrAlt": "RedCode モバイルペアリング QR コード",
+  "settings.mobileGateway.qrAlt": "RedSpace モバイルペアリング QR コード",
   "settings.mobileGateway.url": "Gateway アドレス",
   "settings.mobileGateway.urlDescription": "QR コードに含まれています。手動ペアリング時のみ入力してください。",
   "settings.mobileGateway.code": "ペアリングコード",
-  "settings.mobileGateway.codeDescription": "コードは 1 台のみペアリングでき、5 分で失効します。別のデバイスには新しいコードを発行してください。",
+  "settings.mobileGateway.codeDescription":
+    "コードは 1 台のみペアリングでき、5 分で失効します。別のデバイスには新しいコードを発行してください。",
   "settings.mobileGateway.expires": "有効期限 {{time}}",
   "settings.mobileGateway.fingerprint": "TLS 証明書フィンガープリント",
   "settings.mobileGateway.fingerprintDescription":
     "QR コードに完全な SHA-256 フィンガープリントが含まれ、証明書ピンとして使われます。手動設定時のみ入力してください。",
   "settings.mobileGateway.devices": "ペアリング済みデバイス",
-  "settings.mobileGateway.devicesDescription": "失効すると、そのデバイスのアクティブなイベントストリームも直ちに閉じます。",
+  "settings.mobileGateway.devicesDescription":
+    "失効すると、そのデバイスのアクティブなイベントストリームも直ちに閉じます。",
   "settings.mobileGateway.noDevices": "ペアリング済みデバイスはありません",
   "settings.mobileGateway.revoke": "失効",
   "settings.mobileGateway.refreshCode": "新しいペアリングコードを生成",
@@ -889,11 +906,11 @@ export const dict = {
   "settings.mobileGateway.deviceNotFound": "デバイスはすでに失効しているか、ペアリングされていません",
   "settings.mobileGateway.permissionOnDesktop": "権限の確認と応答はこの PC で行ってください。",
   "settings.general.row.language.title": "言語",
-  "settings.general.row.language.description": "RedCodeの表示言語を変更します",
+  "settings.general.row.language.description": "RedSpaceの表示言語を変更します",
   "settings.general.row.colorScheme.title": "配色",
-  "settings.general.row.colorScheme.description": "RedCodeがシステム、ライト、またはダークテーマに従うかを選択します",
+  "settings.general.row.colorScheme.description": "RedSpaceがシステム、ライト、またはダークテーマに従うかを選択します",
   "settings.general.row.theme.title": "テーマ",
-  "settings.general.row.theme.description": "RedCodeのテーマをカスタマイズします。",
+  "settings.general.row.theme.description": "RedSpaceのテーマをカスタマイズします。",
   "settings.general.row.font.title": "コードフォント",
   "settings.general.row.font.description": "コードブロックで使用するフォントをカスタマイズします",
   "settings.general.row.font.undefined": "デフォルト（システム）",
@@ -921,8 +938,7 @@ export const dict = {
   "settings.general.row.chatBackground.description":
     "チャットウィンドウの背後に表示される画像（すべてのチャットに適用）",
   "settings.general.row.wallpaperDim.title": "壁紙の減光",
-  "settings.general.row.wallpaperDim.description":
-    "明るい画像や複雑な画像でも本文が読みやすいよう、壁紙を暗くします",
+  "settings.general.row.wallpaperDim.description": "明るい画像や複雑な画像でも本文が読みやすいよう、壁紙を暗くします",
   "settings.general.row.homeBackground.title": "ホーム背景",
   "settings.general.row.homeBackground.description":
     "ホーム / セッションなし画面の背後に表示される画像（チャット背景とは独立）",
@@ -938,13 +954,13 @@ export const dict = {
   "settings.general.row.assistantAvatar.description":
     "アシスタントメッセージに表示されるカスタムアバター。Soul がバインドされていないセッションにのみ適用されます。バインドされているセッションはそれぞれのアバターを使用します。",
   "settings.updates.row.startup.title": "起動時にアップデートを確認",
-  "settings.updates.row.startup.description": "RedCode の起動時に自動でアップデートを確認します",
+  "settings.updates.row.startup.description": "RedSpace の起動時に自動でアップデートを確認します",
   "settings.updates.row.check.title": "アップデートを確認",
   "settings.updates.row.check.description": "手動でアップデートを確認し、利用可能ならインストールします",
   "settings.updates.action.checkNow": "今すぐ確認",
   "settings.updates.action.checking": "確認中...",
   "settings.updates.toast.latest.title": "最新です",
-  "settings.updates.toast.latest.description": "RedCode は最新バージョンです。",
+  "settings.updates.toast.latest.description": "RedSpace は最新バージョンです。",
   "sound.option.none": "なし",
   "sound.option.alert01": "アラート 01",
   "sound.option.alert02": "アラート 02",
@@ -1045,7 +1061,8 @@ export const dict = {
   "settings.personalization.currentSessionBadge": "現在のセッション",
   "settings.personalization.roster": "Soul 一覧",
   "settings.personalization.search": "Soul を検索",
-  "settings.personalization.empty": "利用可能な Soul がありません。下のレジストリの問題を確認するか、Soul ファイルを復元してください。",
+  "settings.personalization.empty":
+    "利用可能な Soul がありません。下のレジストリの問題を確認するか、Soul ファイルを復元してください。",
   "settings.personalization.noResults": "検索に一致する Soul はありません。",
   "settings.personalization.details": "Soul の詳細",
   "settings.personalization.chooseSoul": "Soul を選択して読み取り専用の詳細を表示します。",
@@ -1055,18 +1072,23 @@ export const dict = {
   "settings.personalization.useServerDefault": "サーバーのデフォルトを使用",
   "settings.personalization.noDefault": "デフォルト Soul が設定されていません。",
   "settings.personalization.saved": "今後の新しいセッション用に保存しました。現在のセッションの Soul は変わりません。",
-  "settings.personalization.currentSessionNotice": "この Soul は現在のセッションに固定されています。デフォルトを変更しても影響しません。",
-  "settings.personalization.currentSessionNoSoul": "現在のセッションに Soul は固定されていません。デフォルトが現在の Soul になるわけではありません。",
-  "settings.personalization.otherCurrentSession": "現在のセッションは {{id}} に固定されています。デフォルトを変更しても影響しません。",
+  "settings.personalization.currentSessionNotice":
+    "この Soul は現在のセッションに固定されています。デフォルトを変更しても影響しません。",
+  "settings.personalization.currentSessionNoSoul":
+    "現在のセッションに Soul は固定されていません。デフォルトが現在の Soul になるわけではありません。",
+  "settings.personalization.otherCurrentSession":
+    "現在のセッションは {{id}} に固定されています。デフォルトを変更しても影響しません。",
   "settings.personalization.sourceFrontmatter": "frontmatter",
   "settings.personalization.sourceFallback": "fallback",
   "settings.personalization.sourceAbsent": "未設定",
   "settings.personalization.avatarTitle": "チャットのアバター",
   "settings.personalization.chooseAvatar": "ローカル画像を選択",
   "settings.personalization.removeAvatar": "画像を削除",
-  "settings.personalization.avatarDescription": "この Soul 専用としてローカルに保存します。PNG、JPEG、WebP、最大 5 MiB・4096 px。正方形に切り抜き、Soul ファイルは変更しません。",
+  "settings.personalization.avatarDescription":
+    "この Soul 専用としてローカルに保存します。PNG、JPEG、WebP、最大 5 MiB・4096 px。正方形に切り抜き、Soul ファイルは変更しません。",
   "settings.personalization.avatarSaved": "この Soul のアバターを更新しました。",
-  "settings.personalization.avatarFailed": "画像を使用できません。5 MiB・4096 px・1600 万画素以内の有効な PNG、JPEG、WebP を選択してください。",
+  "settings.personalization.avatarFailed":
+    "画像を使用できません。5 MiB・4096 px・1600 万画素以内の有効な PNG、JPEG、WebP を選択してください。",
   "settings.personalization.body": "読み取り専用の本文",
   "settings.personalization.startWithSoul": "このSoulで新規セッション",
   "settings.personalization.backToRoster": "一覧に戻る",
@@ -1104,7 +1126,8 @@ export const dict = {
   "settings.personalization.create.fieldsSubmit": "Soul を作成",
   "settings.personalization.create.submitting": "作成中…",
   "settings.personalization.create.idRequired": "ID を入力してください。",
-  "settings.personalization.create.idInvalid": "小文字の英字、数字、-、_ のみを使用し、英字または数字で始めてください。",
+  "settings.personalization.create.idInvalid":
+    "小文字の英字、数字、-、_ のみを使用し、英字または数字で始めてください。",
   "settings.personalization.create.nameRequired": "名前を入力してください。",
   "settings.personalization.create.contentRequired": "Markdown 本文を入力してください。",
   "settings.personalization.create.markdownRequired": "先に完全な Soul Markdown を貼り付けてください。",
@@ -1147,8 +1170,10 @@ export const dict = {
   "settings.mcp.tools.mode.list": "指定したツールのみ",
   "settings.mcp.tools.mode.none": "すべてブロック",
   "settings.mcp.form.tools.names": "ツール名（カンマ区切り）",
-  "settings.mcp.toast.commandInvalid": "起動コマンドを解析できません。空白を含むパスは JSON 配列で入力してください。例: [\"python\", \"C:\\\\My Tools\\\\server.py\"]",
-  "settings.mcp.toast.toolsRequired": "許可リストには 1 つ以上のツール名が必要です。全ブロックは「すべてブロック」を選んでください。",
+  "settings.mcp.toast.commandInvalid":
+    '起動コマンドを解析できません。空白を含むパスは JSON 配列で入力してください。例: ["python", "C:\\\\My Tools\\\\server.py"]',
+  "settings.mcp.toast.toolsRequired":
+    "許可リストには 1 つ以上のツール名が必要です。全ブロックは「すべてブロック」を選んでください。",
   "settings.mcp.tools.count": "{{count}} 個のツール",
   "settings.mcp.toast.saveFailed": "MCP 設定の保存に失敗しました",
   "settings.mcp.toast.toggleFailed": "MCP 接続の切り替えに失敗しました",
@@ -1449,4 +1474,7 @@ export const dict = {
   "settings.general.row.verificationNotice.option.off": "表示しない",
   "settings.general.row.pinchZoom.title": "ピンチズーム",
   "settings.general.row.pinchZoom.description": "トラックパッドのピンチと Ctrl+スクロールでのズームを許可",
+  ...settingsModern.ja,
+  ...settingsCompanion.ja,
+  ...settingsDesktop.ja,
 }

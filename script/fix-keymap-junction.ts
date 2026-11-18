@@ -55,9 +55,9 @@ function detectTargetInstance(): string | undefined {
       // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
       solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
     } catch {}
-   // 260930 Karina 去掉 [0]!：script/ 第一次进类型检查，noUncheckedIndexedAccess 是
-   // false，这个断言本来就是多余的（此前没有 tsconfig 覆盖，规则看不见它）。
-   all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0], solidReal })
+    // 260930 Karina 去掉 [0]!：script/ 第一次进类型检查，noUncheckedIndexedAccess 是
+    // false，这个断言本来就是多余的（此前没有 tsconfig 覆盖，规则看不见它）。
+    all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0], solidReal })
   }
   if (!all.length) {
     console.log("[fix-keymap] no keymap instance under .bun — nothing to fix, skip")
@@ -76,7 +76,7 @@ function detectTargetInstance(): string | undefined {
     let anchor: string | undefined
     for (const p of [
       join(ROOT, "node_modules", "solid-js"),
-      join(ROOT, "packages", "opencode", "node_modules", "solid-js"),
+      join(ROOT, "packages", "redspace", "node_modules", "solid-js"),
     ]) {
       try {
         const real = realpathSync(p)

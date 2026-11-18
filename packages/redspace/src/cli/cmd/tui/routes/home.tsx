@@ -16,6 +16,7 @@ import { useLocal } from "../context/local"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { useEditorContext } from "@tui/context/editor"
 import { useProjectNavigation } from "@tui/context/project-navigation"
+import { CompanionIntroduction } from "../component/companion-introduction"
 
 let once = false
 
@@ -135,7 +136,7 @@ export function Home() {
           <text>
             {route.companionID ? "Chat · " : "Code · Soul: "}
             {route.companionID
-              ? (route.companionName ?? route.companionID)
+              ? local.companion.label(route.companionID, undefined, route.companionName)
               : (local.soul.label(local.soul.saved() ?? local.soul.default()) ??
                 local.soul.saved() ??
                 local.soul.default() ??
@@ -146,6 +147,7 @@ export function Home() {
               : ""}
           </text>
         </box>
+        <CompanionIntroduction id={route.companionID} />
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>
           <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
             <TuiPluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>

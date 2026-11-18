@@ -5,6 +5,7 @@ import { Tag } from "@redcode-ai/ui/tag"
 import { showToast } from "@redcode-ai/ui/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Component, For, Show } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -12,6 +13,7 @@ import { DialogConnectProvider } from "./dialog-connect-provider"
 import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogCustomProvider } from "./dialog-custom-provider"
 import { SettingsList } from "./settings-list"
+import { disconnectSettingsProvider, ProviderRefreshError } from "./settings-provider-actions"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
@@ -33,6 +35,10 @@ export const SettingsProviders: Component = () => {
   const globalSDK = useGlobalSDK()
   const globalSync = useServerSync()
   const providers = useProviders()
+  const [store, setStore] = createStore({
+    busy: {} as Record<string, boolean>,
+    errors: {} as Record<string, string>,
+  })
   // popular() 列的是「推荐但还没连」的厂商，只有全量目录里有。
   globalSync.wantProviderCatalog()
 
@@ -92,59 +98,59 @@ export const SettingsProviders: Component = () => {
   // 于是 toast 报成功、供应商照旧留在列表。配置声明过的一律按停用处理。
   const isConfigDeclared = (providerID: string) => !!globalSync.data.config.provider?.[providerID]
 
-  const disableProvider = async (providerID: string, name: string) => {
+  const disableProvider = async (providerID: string) => {
     // 261031 Red disabled_providers 在服务端是整体替换的数组键：store 里的快照可能是
     // 项目级合并结果或尚未就绪，拿它当基线写回去会抹掉已有的停用项，先读服务端最新值。
-    const current = await globalSDK.client.global.config
-      .get()
-      .then((x) => x.data?.disabled_providers ?? [])
-      .catch(() => globalSync.data.config.disabled_providers ?? [])
-    const before = globalSync.data.config.disabled_providers ?? []
+    const current = await globalSDK.client.global.config.get().then((x) => x.data?.disabled_providers ?? [])
     const next = current.includes(providerID) ? current : [...current, providerID]
-    globalSync.set("config", "disabled_providers", next)
-
-    await globalSync
-      .updateConfig({ disabled_providers: next })
-      .then(() => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
-          description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
-        })
-      })
-      .catch((err: unknown) => {
-        globalSync.set("config", "disabled_providers", before)
-        const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      })
+    await globalSync.updateConfig({ disabled_providers: next })
   }
 
   const disconnect = async (providerID: string, name: string) => {
     // 261031 Red auth.remove 对没有凭据的供应商同样返回成功（幂等），所以它不再是
     // 「是否真的断开」的判据：配置声明过的必须写 disabled_providers 才会从列表消失；
     // 纯凭据型（auth.json / 环境变量以外）删完还要 dispose 让实例重建才会刷新。
-    await globalSDK.client.auth.remove({ providerID }).catch(() => undefined)
-    if (isConfigDeclared(providerID)) return disableProvider(providerID, name)
-
-    await globalSDK.client.global.dispose().catch(() => undefined)
-    showToast({
-      variant: "success",
-      icon: "circle-check",
-      title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
-      description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
-    })
+    if (store.busy[providerID]) return
+    setStore("busy", providerID, true)
+    setStore("errors", providerID, "")
+    try {
+      await disconnectSettingsProvider({
+        configured: isConfigDeclared(providerID),
+        disable: () => disableProvider(providerID),
+        removeCredentials: () => globalSDK.client.auth.remove({ providerID }),
+        refresh: () => globalSDK.client.global.dispose(),
+      })
+      globalSync.refreshGlobal()
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
+        description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
+      })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const message =
+        error instanceof ProviderRefreshError
+          ? `${language.t("settings.desktop.providers.refreshFailed")} ${detail}`
+          : detail
+      setStore("errors", providerID, message)
+      showToast({
+        variant: "error",
+        title: language.t("settings.desktop.providers.disconnectFailed", { provider: name }),
+        description: message,
+      })
+    } finally {
+      setStore("busy", providerID, false)
+    }
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.providers.title")}</h2>
-        </div>
-      </div>
+    <div class="settings-page-body">
+      <header>
+        <h2 class="settings-page-title">{language.t("settings.providers.title")}</h2>
+      </header>
 
-      <div class="flex flex-col gap-8 max-w-[720px]">
+      <div class="flex flex-col gap-8">
         <div class="flex flex-col gap-1" data-component="connected-providers-section">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.providers.section.connected")}</h3>
           <SettingsList>
@@ -159,15 +165,22 @@ export const SettingsProviders: Component = () => {
               <For each={connected()}>
                 {(item) => (
                   <div class="group flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
-                    <div class="flex items-center gap-3 min-w-0">
-                      <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
-                      <span class="text-14-medium text-text-strong truncate">{item.name}</span>
-                      <Tag>{type(item)}</Tag>
+                    <div class="flex min-w-0 flex-1 flex-col gap-2">
+                      <div class="flex flex-wrap items-center gap-3 min-w-0">
+                        <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
+                        <span class="text-14-medium text-text-strong truncate">{item.name}</span>
+                        <Tag>{type(item)}</Tag>
+                      </div>
+                      <Show when={store.errors[item.id]}>
+                        <p role="alert" class="break-words text-12-regular text-text-on-critical-base">
+                          {store.errors[item.id]}
+                        </p>
+                      </Show>
                     </div>
                     <Show
                       when={canDisconnect(item)}
                       fallback={
-                        <span class="text-14-regular text-text-base opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-200 pr-3 cursor-default">
+                        <span class="text-12-regular text-text-weak pr-3">
                           {language.t("settings.providers.connected.environmentDescription")}
                         </span>
                       }
@@ -177,16 +190,24 @@ export const SettingsProviders: Component = () => {
                           <Button
                             size="large"
                             variant="secondary"
+                            disabled={store.busy[item.id]}
                             onClick={() =>
                               // 261114 Red UX-08：push 进弹窗栈，编辑完回到服务商列表原位置
-                            dialog.push(() => <DialogCustomProvider back="close" editProviderID={item.id} />)
+                              dialog.push(() => <DialogCustomProvider back="close" editProviderID={item.id} />)
                             }
                           >
                             {language.t("common.edit")}
                           </Button>
                         </Show>
-                        <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
-                          {language.t("common.disconnect")}
+                        <Button
+                          size="large"
+                          variant="ghost"
+                          disabled={store.busy[item.id]}
+                          onClick={() => void disconnect(item.id, item.name)}
+                        >
+                          {language.t(
+                            store.busy[item.id] ? "settings.desktop.providers.disconnecting" : "common.disconnect",
+                          )}
                         </Button>
                       </div>
                     </Show>

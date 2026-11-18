@@ -1,6 +1,7 @@
 import { Switch as Kobalte } from "@kobalte/core/switch"
 import { Show, splitProps } from "solid-js"
 import type { ComponentProps, ParentProps } from "solid-js"
+import { useFormField } from "./form-field"
 
 export interface SwitchProps extends ParentProps<ComponentProps<typeof Kobalte>> {
   hideLabel?: boolean
@@ -8,10 +9,18 @@ export interface SwitchProps extends ParentProps<ComponentProps<typeof Kobalte>>
 }
 
 export function Switch(props: SwitchProps) {
+  const field = useFormField()
   const [local, others] = splitProps(props, ["children", "class", "hideLabel", "description"])
   return (
     <Kobalte {...others} class={local.class} data-component="switch">
-      <Kobalte.Input data-slot="switch-input" />
+      <Kobalte.Input
+        data-slot="switch-input"
+        aria-labelledby={
+          !local.children && !props["aria-label"] ? (props["aria-labelledby"] ?? field?.label) : undefined
+        }
+        aria-describedby={props["aria-describedby"] ?? field?.description}
+        aria-label={props["aria-label"]}
+      />
       <Show when={local.children}>
         <Kobalte.Label data-slot="switch-label" classList={{ "sr-only": local.hideLabel }}>
           {local.children}

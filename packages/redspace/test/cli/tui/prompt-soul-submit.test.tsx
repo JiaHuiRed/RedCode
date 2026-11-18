@@ -289,3 +289,16 @@ test("Chat creates an explicitly bound session before sending its first message"
     prompt.app.renderer.destroy()
   }
 })
+
+test("an introduction explicitly returns a shell composer to a normal Chat message", async () => {
+  const prompt = await mountPrompt("mira")
+  try {
+    prompt.ref.set({ input: "echo unfinished", parts: [], mode: "shell" })
+    prompt.ref.set({ input: "我们先认识一下吧。", parts: [], mode: "normal" })
+    expect(await prompt.ref.submit()).toBe(true)
+    expect(prompt.requests[1]?.pathname).toBe("/session/ses_companion_prompt/prompt_async")
+    expect(prompt.requests.some((request) => request.pathname.endsWith("/shell"))).toBe(false)
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})

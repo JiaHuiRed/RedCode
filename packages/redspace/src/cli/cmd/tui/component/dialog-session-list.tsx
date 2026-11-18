@@ -113,7 +113,7 @@ export function DialogSessionList() {
             route.navigate({
               type: "home",
               companionID: info?.companionID,
-              companionName: local.soul.label(info?.soul),
+              companionName: local.companion.label(info?.companionID, info?.soul),
             })
           }
           return true
@@ -230,7 +230,7 @@ export function DialogSessionList() {
 
   return (
     <DialogSelect
-      title={companionID() ? "Chat · 会话" : "Code · 会话"}
+      title={companionID() ? `Chat · ${local.companion.label(companionID())} · 会话` : "Code · 会话"}
       options={options()}
       skipFilter={true}
       current={currentSessionID()}

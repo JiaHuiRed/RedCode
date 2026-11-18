@@ -308,8 +308,7 @@ export const Info = Schema.Struct({
   verification: Schema.optional(
     Schema.Struct({
       enabled: Schema.optional(Schema.Boolean).annotate({
-        description:
-          "Run a delivery verification report at the end of a turn that changed files (default: true)",
+        description: "Run a delivery verification report at the end of a turn that changed files (default: true)",
       }),
       notice: Schema.optional(Schema.Literals(["failure", "always", "off"])).annotate({
         description:
@@ -520,7 +519,9 @@ function globalConfigFile() {
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
-  if (!isRecord(patch)) {
+  // MCP 表单中的字典是完整值：{} 清空，移除一行不能被深合并恢复。
+  const mcpDictionary = path.length === 3 && path[0] === "mcp" && ["environment", "headers"].includes(path[2])
+  if (!isRecord(patch) || mcpDictionary) {
     const edits = modify(input, path, patch, {
       formattingOptions: {
         insertSpaces: true,
@@ -545,6 +546,7 @@ function writableGlobal(info: Info) {
   const patched: Info = { ...next }
   // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
   if ("shell" in patched && patched.shell === "") patched.shell = undefined
+  if ("model" in patched && patched.model === "") patched.model = undefined
   if (patched.agent) {
     const agent: Record<string, ConfigAgent.Info | undefined> = {}
     for (const [name, value] of Object.entries(patched.agent)) agent[name] = writableAgent(value)
@@ -553,6 +555,22 @@ function writableGlobal(info: Info) {
     patched.agent = agent as Info["agent"]
   }
   if (patched.permission) patched.permission = writablePermission(patched.permission)
+  if (patched.mcp) {
+    patched.mcp = Object.fromEntries(
+      Object.entries(patched.mcp).map(([name, value]) => {
+        if (!("type" in value)) return [name, value]
+        const entry: Record<string, unknown> = { ...value }
+        // 完整定义与仅 enabled 覆盖分开：表单省略以下字段表示恢复默认。
+        for (const key of ["tools", "cwd", "timeout"]) if (!(key in entry)) entry[key] = undefined
+        const incompatible =
+          value.type === "local"
+            ? ["url", "headers", "oauth"]
+            : ["command", "cwd", "environment", "startup", "disabledTools"]
+        for (const key of incompatible) entry[key] = undefined
+        return [name, entry]
+      }),
+    ) as Info["mcp"]
+  }
   return patched
 }
 
@@ -575,7 +593,6 @@ function writablePermission(value: Info["permission"]) {
   if (blank && Object.values(patched).every((rule) => rule === undefined)) return undefined
   return blank ? (patched as Info["permission"]) : value
 }
-
 
 // 260829 Red GUI「智能体」面板用空串 / "default" 表达「回到默认」——HTTP 请求体会把 undefined
 // 丢掉，删键只能由服务端在落盘前翻译。model 的空串与「未配置」同义，prompt.ts 丢弃不在模型
@@ -1142,25 +1159,19 @@ export const layer = Layer.effect(
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
         const merged = mergeDeep(writable(existing), patch)
+        // JSON 与 JSONC 使用相同的字典替换语义，其余未编辑高级字段仍保留。
+        for (const [name, value] of Object.entries(patch.mcp ?? {})) {
+          const entry = merged.mcp?.[name]
+          if (!isRecord(entry)) continue
+          const dictionary: Record<string, unknown> = entry
+          for (const key of ["environment", "headers"])
+            if (key in value) dictionary[key] = (value as Record<string, unknown>)[key]
+        }
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileStringAtomic(file, serialized).pipe(Effect.orDie)
         next = merged
       } else {
-        // 261031 Red MCP 条目的 tools 按「整条替换」处理：不写 tools 表示开放全部，
-        // 但 patchJsonc 是深合并，不带这个键会保留旧白名单——「全部开放」就表达不出来，
-        // GUI 把白名单清空保存也会被读回旧规则。只清 tools，表单没展示的字段
-        // （environment、disabledTools、headers…）原样保留，避免保存一次就删掉手写配置。
-        if (isRecord(patch.mcp)) {
-          const current = ConfigParse.jsonc(before, file)
-          const prior = isRecord(current) && isRecord(current.mcp) ? current.mcp : undefined
-          if (prior) {
-            for (const [name, value] of Object.entries(patch.mcp)) {
-              if (!isRecord(value) || !isRecord(prior[name])) continue
-              if (!("tools" in value) && "tools" in prior[name]) (value as Record<string, unknown>).tools = undefined
-            }
-          }
-        }
         const updated = patchJsonc(before, patch)
         next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
         changed = updated !== before

@@ -14,6 +14,7 @@ type SystemCache = {
   env: string[]
   instructions: string[]
   companion?: string
+  companionRevision?: string
   // 260904 cc MCP 服务器自报的用途说明块。与上面几项同样按会话缓存——MCP 是后台连接的，
   // 不缓存的话这段会在会话中途出现，把前缀缓存打掉。没有服务器提供说明时为 undefined。
   mcpGuide: string | undefined

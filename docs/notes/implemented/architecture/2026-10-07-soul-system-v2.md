@@ -88,3 +88,7 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 - 验证：`test/soul/soul.test.ts` + `test/session/soul.test.ts` 46 pass；`test/server/httpapi-soul.test.ts` 6 pass；opencode 与 app typecheck 通过；`check:openapi-drift` 通过。GUI 视觉验收未做。
 
 模型可见四问：① 人格正文、提示词、工具 schema/输出均未改。② 固定前缀 token 增量为零。③ 前缀逐字节不变，无 KV cache 失效。④ 无新增模型注入项；新建的 Soul 只影响之后的新会话。
+
+## 261118：设置中的显式编辑
+
+在保留既有会话冻结版本的前提下，设置增加 `PUT /soul/:id` 实际文件编辑；Chat 伙伴与 Code 默认身份独立管理。用户当前选定的聊天称呼另存于 IDENTITY / USER 受管段，允许覆盖旧的显示标签，不改写 Soul 的人格、关系或冻结正文。此为对上文 V1A / 只创建边界及名称来源的有意扩展，当前范围、路径约束和模型可见四问见 [设置现代化](../feature/2026-11-18-settings-modernization.md)。

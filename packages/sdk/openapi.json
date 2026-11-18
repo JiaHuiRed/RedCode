@@ -10005,6 +10005,163 @@
             "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.get({\n  ...\n})"
           }
         ]
+      },
+      "put": {
+        "tags": ["soul"],
+        "operationId": "soul.update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated Soul details from its existing registry file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "commitPrefix": {
+                      "type": "string"
+                    },
+                    "avatar": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "name": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "commitPrefix": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "avatar": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "description": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        }
+                      },
+                      "required": ["id", "name", "displayName", "commitPrefix", "avatar", "description"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["id", "name", "displayName", "commitPrefix", "path", "content", "sources"],
+                  "additionalProperties": false,
+                  "description": "Updated Soul details from its existing registry file"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Update the existing registry file without changing its identity or any saved session snapshot. Send content and optional metadata (omitted metadata is preserved), or a complete Markdown document with the same id.",
+        "summary": "Update a Soul",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "commitPrefix": {
+                    "type": "string"
+                  },
+                  "avatar": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "markdown": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.update({\n  ...\n})"
+          }
+        ]
       }
     },
     "/soul/issues": {
@@ -10118,7 +10275,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Imported companion profiles without private memory content",
+            "description": "Companion profiles without private memory content",
             "content": {
               "application/json": {
                 "schema": {
@@ -10126,7 +10283,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CompanionInfo"
                   },
-                  "description": "Imported companion profiles without private memory content"
+                  "description": "Companion profiles without private memory content"
                 }
               }
             }
@@ -10158,6 +10315,306 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["companion"],
+        "operationId": "companion.create",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "CompanionInitializeResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionInitializeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a neutral companion, up to two in total. Supply a stable requestID to safely retry a request without using another place. Existing profiles are never replaced.",
+        "summary": "Create a companion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanionCreateInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/companion/initialize": {
+      "post": {
+        "tags": ["companion"],
+        "operationId": "companion.initialize",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "CompanionInitializeResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionInitializeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the existing companion, or create a neutral companion and private workspace if none exists. Repeated calls reuse the same profile.",
+        "summary": "Initialize Chat",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.initialize({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/companion/{id}": {
+      "get": {
+        "tags": ["companion"],
+        "operationId": "companion.get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CompanionDetails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read companion profile, user notes and the actual registry Soul path.",
+        "summary": "Get companion settings",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.get({\n  ...\n})"
+          }
+        ]
+      },
+      "patch": {
+        "tags": ["companion"],
+        "operationId": "companion.update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CompanionDetails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanionDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError1"
+                }
+              }
+            }
+          }
+        },
+        "description": "Update current conversation names, user notes or introduction state without replacing memories or the bound Soul. Names may remain unset. userName changes only the managed preferred-name field; it cannot be combined with a complete user document. State changes only when explicitly supplied.",
+        "summary": "Update companion settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanionUpdateInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.companion.update({\n  ...\n})"
           }
         ]
       }
@@ -25478,6 +25935,13 @@
           },
           "timezone": {
             "type": "string"
+          },
+          "needsSetup": {
+            "type": "boolean"
+          },
+          "introduction": {
+            "type": "string",
+            "enum": ["available", "active", "paused", "complete"]
           }
         },
         "required": ["id", "name", "soulID", "directory", "createdAt", "files", "warnings", "timezone"],
@@ -25497,6 +25961,88 @@
           }
         },
         "required": ["source"],
+        "additionalProperties": false
+      },
+      "CompanionDetails": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/CompanionInfo"
+          },
+          "user": {
+            "type": "string"
+          },
+          "companionName": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              },
+              "user": {
+                "type": "string"
+              },
+              "identity": {
+                "type": "string"
+              },
+              "memory": {
+                "type": "string"
+              },
+              "soul": {
+                "type": "string"
+              }
+            },
+            "required": ["directory", "user", "identity", "memory", "soul"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["profile", "user", "companionName", "userName", "paths"],
+        "additionalProperties": false
+      },
+      "CompanionUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          },
+          "userName": {
+            "type": "string"
+          },
+          "introduction": {
+            "type": "string",
+            "enum": ["available", "active", "paused", "complete"]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompanionInitializeResult": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/CompanionInfo"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": ["profile", "created"],
+        "additionalProperties": false
+      },
+      "CompanionCreateInput": {
+        "type": "object",
+        "properties": {
+          "requestID": {
+            "type": "string"
+          }
+        },
         "additionalProperties": false
       },
       "SessionBusyError": {

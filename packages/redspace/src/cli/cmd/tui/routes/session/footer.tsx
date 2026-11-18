@@ -78,7 +78,7 @@ export function Footer() {
     <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0}>
       <text fg={theme.textMuted}>
         {session()?.mode === "chat"
-          ? `Chat · ${local.soul.label(session()?.soul) ?? session()?.companionID} · `
+          ? `Chat · ${local.companion.label(session()?.companionID, session()?.soul)} · `
           : "Code · "}
         {directory()}
       </text>

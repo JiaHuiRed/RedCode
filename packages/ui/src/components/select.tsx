@@ -3,6 +3,7 @@ import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from
 import { pipe, groupBy, entries, map } from "remeda"
 import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
+import { useFormField } from "./form-field"
 
 export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
   placeholder?: string
@@ -27,6 +28,7 @@ const GROUP_CHILDREN = "__selectGroupItems"
 type SelectGroup<T> = { category: string; __selectGroupItems: T[] }
 
 export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
+  const field = useFormField()
   const [local, others] = splitProps(props, [
     "class",
     "classList",
@@ -155,6 +157,8 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       }}
     >
       <Kobalte.Trigger
+        aria-labelledby={local.triggerProps?.["aria-label"] ? undefined : field?.label}
+        aria-describedby={field?.description}
         {...local.triggerProps}
         disabled={props.disabled}
         data-slot="select-select-trigger"

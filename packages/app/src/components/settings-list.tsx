@@ -1,7 +1,8 @@
-import { type Component, type JSX } from "solid-js"
+import { createUniqueId, type Component, type JSX } from "solid-js"
+import { FormField } from "@redcode-ai/ui/form-field"
 
 export const SettingsList: Component<{ children: JSX.Element }> = (props) => {
-  return <div class="bg-surface-base px-4 rounded-lg">{props.children}</div>
+  return <div class="settings-list">{props.children}</div>
 }
 
 interface SettingsRowProps {
@@ -13,13 +14,20 @@ interface SettingsRowProps {
 // 260829 Red 从 settings-general.tsx 移到这里：智能体设置面板要用同一行布局，
 // 行结构（标题 + 说明 + 右侧控件）不该被一个面板私有。
 export const SettingsRow: Component<SettingsRowProps> = (props) => {
+  const id = createUniqueId()
   return (
-    <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
-      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span class="text-14-medium text-text-strong">{props.title}</span>
-        <span class="text-12-regular text-text-weak">{props.description}</span>
+    <FormField label={`${id}-label`} description={`${id}-description`}>
+      <div class="settings-row">
+        <div class="settings-row-copy">
+          <span id={`${id}-label`} class="settings-row-title">
+            {props.title}
+          </span>
+          <span id={`${id}-description`} class="settings-row-description">
+            {props.description}
+          </span>
+        </div>
+        <div class="settings-row-control">{props.children}</div>
       </div>
-      <div class="flex w-full justify-end sm:w-auto sm:shrink-0">{props.children}</div>
-    </div>
+    </FormField>
   )
 }

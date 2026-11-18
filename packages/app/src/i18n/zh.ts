@@ -1,3 +1,7 @@
+import { settingsModern } from "./settings-modern"
+import { settingsCompanion } from "./settings-companion"
+import { settingsDesktop } from "./settings-desktop"
+
 import { dict as en } from "./en"
 
 type Keys = keyof typeof en
@@ -9,7 +13,7 @@ export const dict = {
   "chat.profile.files": "{{count}} 份档案文件",
   "chat.profile.description": "可以开始新的聊天，也可以接着以前的对话。同一份档案会一直跟着她。",
   "chat.profile.choose": "选择伙伴",
-  "chat.profile.missing": "这份伙伴档案不存在或已迁移。可以重新选择，或在下方导入档案。",
+  "chat.profile.missing": "暂时无法找到这位伙伴，请重新选择可用的伙伴。",
   "chat.start": "开始聊天",
   "chat.opening": "正在打开…",
   "chat.recent": "你们的对话",
@@ -252,7 +256,8 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API 密钥",
   "provider.custom.field.apiKey.description": "可选。如果你通过请求头管理认证，可留空。",
   "provider.custom.save.shadowed.title": "配置文件中的 API Key 会覆盖刚保存的",
-  "provider.custom.save.shadowed.description": "{provider} 在配置文件里仍有 API Key，引擎会优先用配置那份。建议删除配置文件里的 apiKey，改用这里保存的。",
+  "provider.custom.save.shadowed.description":
+    "{provider} 在配置文件里仍有 API Key，引擎会优先用配置那份。建议删除配置文件里的 apiKey，改用这里保存的。",
   "provider.custom.models.label": "模型",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -450,8 +455,7 @@ export const dict = {
   "dialog.background.status.orphaned": "未正常结束",
   "dialog.background.stop.action": "终止",
   "dialog.background.stop.title": "终止后台活动",
-  "dialog.background.stop.description":
-    "「{{title}}」会立即停止。任务连同嵌套子任务一起中断，终端会关闭整棵进程树。",
+  "dialog.background.stop.description": "「{{title}}」会立即停止。任务连同嵌套子任务一起中断，终端会关闭整棵进程树。",
   "dialog.background.stop.confirm": "终止",
   "dialog.background.stop.notConfirmed": "终端未确认终止",
   "dialog.background.stop.notConfirmed.description": "进程可能仍在运行，登记已保留。请刷新后重试。",
@@ -478,7 +482,7 @@ export const dict = {
   "dialog.directory.empty": "未找到文件夹",
 
   "dialog.server.title": "服务器",
-  "dialog.server.description": "切换此应用连接的 RedCode 服务器。",
+  "dialog.server.description": "切换此应用连接的 RedSpace 服务器。",
   "dialog.confirm.removeServer.title": "移除服务器",
   "dialog.confirm.removeServer.description": "确定从服务器列表移除 {{server}} 吗？此操作无法撤销。",
   "dialog.confirm.removeProject.title": "移除项目",
@@ -609,7 +613,7 @@ export const dict = {
   "toast.session.unshare.failed.description": "取消分享会话时发生错误",
   "toast.session.listFailed.title": "无法加载 {{project}} 的会话",
   "toast.update.title": "有可用更新",
-  "toast.update.description": "RedCode 有新版本 ({{version}}) 可安装。",
+  "toast.update.description": "RedSpace 有新版本 ({{version}}) 可安装。",
   "toast.update.action.installRestart": "安装并重启",
   "toast.update.action.notYet": "稍后",
 
@@ -658,8 +662,7 @@ export const dict = {
   "notification.loopDetected.stopped.title": "重复输出已停止",
   "notification.loopDetected.stopped.description":
     "{{sessionTitle}}（{{projectName}}）出现重复输出（{{type}}），本轮已停止",
-  "notification.loopDetected.stopped.errorDescription":
-    "{{sessionTitle}}（{{projectName}}）检测到重复输出，本轮已停止",
+  "notification.loopDetected.stopped.errorDescription": "{{sessionTitle}}（{{projectName}}）检测到重复输出，本轮已停止",
   "notification.compacted.title": "上下文已压缩",
   "notification.compacted.description": "从 {{before}} 压缩到 {{after}}",
   "notification.permission.title": "需要权限",
@@ -942,7 +945,7 @@ export const dict = {
   "settings.updates.toast.failed.title": "更新检查失败",
   "settings.updates.toast.failed.description": "请检查网络连接后重试。",
   "settings.updates.toast.disabled.title": "此构建不提供更新",
-  "settings.updates.toast.disabled.description": "开发构建或未打包的 RedCode 不检查更新。",
+  "settings.updates.toast.disabled.description": "开发构建或未打包的 RedSpace 不检查更新。",
   "settings.updates.action.downloading": "下载中...",
   "settings.updates.toast.downloadFailed.title": "更新下载失败",
   "settings.updates.toast.downloadFailed.description": "下载未完成，请重试或导出日志排查。",
@@ -975,7 +978,7 @@ export const dict = {
   "sidebar.project.viewAllSessions": "查看全部会话",
   "sidebar.project.clearNotifications": "清除通知",
 
-  "app.name.desktop": "RedCode Desktop",
+  "app.name.desktop": "RedSpace",
 
   "settings.section.desktop": "桌面",
   "settings.section.server": "服务器",
@@ -998,7 +1001,6 @@ export const dict = {
   "settings.diagnostics.exported.file": "诊断文件已下载",
   "settings.diagnostics.export.failed": "导出失败",
 
-
   "settings.general.section.appearance": "外观",
   "settings.general.section.notifications": "系统通知",
   "settings.general.section.updates": "更新",
@@ -1014,22 +1016,26 @@ export const dict = {
   "session.activity.locateFailed": "定位失败的工具",
   "session.activity.locatePermission": "聚焦授权请求",
   "settings.search.noResults": "无匹配设置",
-  "settings.mobileGateway.description": "通过证书指纹固定的加密连接，让手机或 Pad 接力此工作区中的会话；RedCode 退出时 Gateway 会关闭。",
-  "settings.mobileGateway.networkWarning": "仅选择可信私人网络。RedCode 不会修改防火墙规则；不要在公共网络上启用。",
+  "settings.mobileGateway.description":
+    "通过证书指纹固定的加密连接，让手机或 Pad 接力此工作区中的会话；RedSpace 退出时 Gateway 会关闭。",
+  "settings.mobileGateway.networkWarning": "仅选择可信私人网络。RedSpace 不会修改防火墙规则；不要在公共网络上启用。",
   "settings.mobileGateway.host": "网络接口",
   "settings.mobileGateway.hostDescription": "仅绑定回环地址或私人 IPv4 网卡。",
   "settings.mobileGateway.start": "开启移动接力",
   "settings.mobileGateway.stop": "停止接力并撤销所有设备",
-  "settings.mobileGateway.sessionScope": "配对设备可以浏览此工作区中的会话、发送消息和中止运行；权限批准仍需在这台电脑上完成。",
+  "settings.mobileGateway.sessionScope":
+    "配对设备可以浏览此工作区中的会话、发送消息和中止运行；权限批准仍需在这台电脑上完成。",
   "settings.mobileGateway.sessionRequired": "请先打开工作区中的一个会话，再开启移动接力。",
   "settings.mobileGateway.qrTitle": "扫描二维码配对 Android 设备",
-  "settings.mobileGateway.qrDescription": "使用 Android 接力应用扫码，二维码包含 Gateway 地址、一次性配对码和证书指纹。",
+  "settings.mobileGateway.qrDescription":
+    "使用 Android 接力应用扫码，二维码包含 Gateway 地址、一次性配对码和证书指纹。",
   "settings.mobileGateway.qrPreparing": "正在生成配对二维码…",
-  "settings.mobileGateway.qrAlt": "RedCode 移动接力配对二维码",
+  "settings.mobileGateway.qrAlt": "RedSpace 移动接力配对二维码",
   "settings.mobileGateway.url": "Gateway 地址",
   "settings.mobileGateway.urlDescription": "地址已包含在二维码中；仅手动配对时需要输入。",
   "settings.mobileGateway.code": "临时配对码",
-  "settings.mobileGateway.codeDescription": "每个配对码只能配对一台设备，并在 5 分钟后过期；添加其他设备时请重新生成配对码。",
+  "settings.mobileGateway.codeDescription":
+    "每个配对码只能配对一台设备，并在 5 分钟后过期；添加其他设备时请重新生成配对码。",
   "settings.mobileGateway.expires": "有效至 {{time}}",
   "settings.mobileGateway.fingerprint": "TLS 证书指纹",
   "settings.mobileGateway.fingerprintDescription": "二维码包含完整 SHA-256 指纹并用于证书固定；仅手动配对时才需输入。",
@@ -1056,11 +1062,11 @@ export const dict = {
   "settings.general.tts.voice.description": "选择朗读使用的音色",
 
   "settings.general.row.language.title": "语言",
-  "settings.general.row.language.description": "更改 RedCode 的显示语言",
+  "settings.general.row.language.description": "更改 RedSpace 的显示语言",
   "settings.general.row.colorScheme.title": "配色方案",
-  "settings.general.row.colorScheme.description": "选择 RedCode 跟随系统、浅色或深色主题",
+  "settings.general.row.colorScheme.description": "选择 RedSpace 跟随系统、浅色或深色主题",
   "settings.general.row.theme.title": "主题",
-  "settings.general.row.theme.description": "自定义 RedCode 的主题。",
+  "settings.general.row.theme.description": "自定义 RedSpace 的主题。",
   "settings.general.row.font.title": "代码字体",
   "settings.general.row.font.description": "自定义代码块使用的字体",
   "settings.general.row.font.undefined": "默认（系统）",
@@ -1077,7 +1083,8 @@ export const dict = {
   "settings.general.row.editToolPartsExpanded.title": "展开编辑工具部分",
   "settings.general.row.editToolPartsExpanded.description": "默认在时间线中展开 edit、write 和 patch 工具部分",
   "settings.general.row.petEnabled.title": "显示桌宠",
-  "settings.general.row.petEnabled.description": "显示赤：移动鼠标摸摸头或肚子，按住拖动可挪位置。关闭后可在这里重新打开",
+  "settings.general.row.petEnabled.description":
+    "显示赤：移动鼠标摸摸头或肚子，按住拖动可挪位置。关闭后可在这里重新打开",
   "settings.general.row.releaseNotes.title": "发行说明",
   "settings.general.row.releaseNotes.description": "更新后显示“新功能”弹窗",
 
@@ -1100,13 +1107,13 @@ export const dict = {
     "助手消息使用的自定义头像。仅对未绑定 Soul 的会话生效——已绑定的会话使用各自的头像。",
 
   "settings.updates.row.startup.title": "启动时检查更新",
-  "settings.updates.row.startup.description": "在 RedCode 启动时自动检查更新",
+  "settings.updates.row.startup.description": "在 RedSpace 启动时自动检查更新",
   "settings.updates.row.check.title": "检查更新",
   "settings.updates.row.check.description": "手动检查更新并在有更新时安装",
   "settings.updates.action.checkNow": "立即检查",
   "settings.updates.action.checking": "正在检查...",
   "settings.updates.toast.latest.title": "已是最新版本",
-  "settings.updates.toast.latest.description": "你正在使用最新版本的 RedCode。",
+  "settings.updates.toast.latest.description": "你正在使用最新版本的 RedSpace。",
 
   "sound.option.none": "无",
   "sound.option.alert01": "警报 01",
@@ -1228,9 +1235,11 @@ export const dict = {
   "settings.personalization.avatarTitle": "聊天头像",
   "settings.personalization.chooseAvatar": "选择本地图片",
   "settings.personalization.removeAvatar": "移除图片",
-  "settings.personalization.avatarDescription": "仅在本机为此 Soul 保存。支持 PNG、JPEG、WebP，最大 5 MiB、4096 px，自动裁为方形；不修改 Soul 文件。",
+  "settings.personalization.avatarDescription":
+    "仅在本机为此 Soul 保存。支持 PNG、JPEG、WebP，最大 5 MiB、4096 px，自动裁为方形；不修改 Soul 文件。",
   "settings.personalization.avatarSaved": "此 Soul 的头像已更新。",
-  "settings.personalization.avatarFailed": "无法使用这张图片。请选择有效的 PNG、JPEG 或 WebP，大小不超过 5 MiB、4096 px 和 1600 万像素。",
+  "settings.personalization.avatarFailed":
+    "无法使用这张图片。请选择有效的 PNG、JPEG 或 WebP，大小不超过 5 MiB、4096 px 和 1600 万像素。",
   "settings.personalization.body": "只读正文预览",
   "settings.personalization.startWithSoul": "以此 Soul 新建",
   "settings.personalization.backToRoster": "返回阵容",
@@ -1308,7 +1317,8 @@ export const dict = {
   "settings.mcp.tools.mode.list": "仅以下工具",
   "settings.mcp.tools.mode.none": "全部屏蔽",
   "settings.mcp.form.tools.names": "工具名（逗号分隔）",
-  "settings.mcp.toast.commandInvalid": "启动命令解析失败：含空格的路径请用 JSON 数组填写，例如 [\"python\", \"C:\\\\My Tools\\\\server.py\"]",
+  "settings.mcp.toast.commandInvalid":
+    '启动命令解析失败：含空格的路径请用 JSON 数组填写，例如 ["python", "C:\\\\My Tools\\\\server.py"]',
   "settings.mcp.toast.toolsRequired": "白名单至少填一个工具名；要屏蔽全部请选择「全部屏蔽」",
   "settings.mcp.tools.count": "{{count}} 个工具",
   "settings.mcp.toast.saveFailed": "保存 MCP 配置失败",
@@ -1496,4 +1506,7 @@ export const dict = {
   "settings.general.row.pinchZoom.description": "允许触控板捏合和 Ctrl+滚轮手势进行缩放",
   "sidebar.empty.title": "无已打开项目",
   "session.review.noUncommittedChanges": "暂无未提交变更",
+  ...settingsModern.zh,
+  ...settingsCompanion.zh,
+  ...settingsDesktop.zh,
 } satisfies Partial<Record<Keys, string>>

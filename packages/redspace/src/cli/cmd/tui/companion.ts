@@ -1,5 +1,9 @@
-import type { Session } from "@redcode-ai/sdk/v2"
+import type { CompanionInfo, Session } from "@redcode-ai/sdk/v2"
 import { sameDirectory } from "./validate-session"
+
+export function companionLabel(profile: Pick<CompanionInfo, "name"> | undefined, soul?: string, fallback?: string) {
+  return profile?.name || soul || fallback
+}
 
 // 261117 Red 模式切换只改导航；恢复和快捷槽按持久身份筛选，详见 docs/notes/implemented/architecture/2026-11-17-redspace-companion-chat.md。
 export function sessionsForMode(sessions: Session[], companionID?: string) {

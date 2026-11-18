@@ -1,3 +1,6 @@
+import { useQueryClient } from "@tanstack/solid-query"
+import { recordCompanionMessageAccepted } from "@/utils/companion-onboarding"
+import { chooseCodeSoul } from "@/utils/code-soul"
 import type { Message, Session } from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode } from "@redcode-ai/core/util/encode"
@@ -204,7 +207,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 }
 
 type PromptSubmitInput = {
-  info: Accessor<{ id: string } | undefined>
+  info: Accessor<Pick<Session, "id" | "mode" | "companionID"> | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
   autoAccept: Accessor<boolean>
@@ -244,6 +247,7 @@ type CommentItem = {
 // 输入框。A 失败期间用户写下的 B 留在原处，重试从这份快照取 A 的草稿/上下文/模型/
 // 交付方式，并复用同一条 messageID 走服务端幂等去重。
 export type FailedSubmission = {
+  session?: Pick<Session, "mode" | "companionID">
   scope: Scope
   draft: FollowupDraft
   messageID: string
@@ -258,6 +262,7 @@ export type FailedSubmission = {
 }
 
 export function createPromptSubmit(input: PromptSubmitInput) {
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   const sdk = useSDK()
   const sync = useSync()
@@ -503,13 +508,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       if (!session && isNewSession) {
         // 260909 Red 会话创建窗口（局域网可到秒级）二次 Enter 会并发建出两个会话。
         // 排队补消息的语义不受影响——锁只在 needsSessionCreate 时成立。
-        const soul = input.lastSoul?.()
-        const created = await (
-          soul
-            ? Promise.resolve(soul)
-            : client.soul.default({ client: "desktop" }, { throwOnError: true }).then((x) => x.data.id)
-        )
-          .then((soul) => client.session.create({ soul }))
+        const created = await Promise.all([
+          queryClient.fetchQuery({
+            queryKey: ["soul", sdk.url, "list"],
+            queryFn: async () => (await client.soul.list({ throwOnError: true })).data,
+          }),
+          queryClient.fetchQuery({
+            queryKey: ["companion", sdk.url, "list"],
+            queryFn: async () => (await client.companion.list({ throwOnError: true })).data,
+          }),
+          client.soul.default({ client: "desktop" }, { throwOnError: true }).then((result) => result.data.id),
+        ])
+          .then(([souls, companions, serverDefault]) =>
+            chooseCodeSoul({ saved: input.lastSoul?.(), serverDefault, souls, companions }),
+          )
+          .then((soul) => client.session.create({ mode: "code", soul }))
           .then((x) => x.data ?? undefined)
           .catch((err) => {
             showToast({
@@ -755,6 +768,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
       .then((sent) => {
         if (!sent) return
+        recordCompanionMessageAccepted(queryClient, sdk.url, session)
         input.onDeliveryReset?.()
         // 261115 Red RX-01 新提交成功后旧失败记录即失效，一并清掉，不留隐形重试入口。
         setFailedSubmission(null)
@@ -773,6 +787,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         // 261115 Red RX-01 失败操作留快照：重试绑原提交（草稿/上下文/模型/交付方式/
         // messageID），不再让横幅 Retry 读到用户后来写的新草稿。
         setFailedSubmission({
+          session: { mode: session.mode, companionID: session.companionID },
           scope,
           draft,
           messageID,
@@ -807,6 +822,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
       .then((sent) => {
         if (!sent) return
+        if (failed.session) recordCompanionMessageAccepted(queryClient, sdk.url, failed.session)
         input.onDeliveryReset?.()
         // 编辑器仍原样保留着失败稿（restoreInput 恢复的 A 且未被继续编辑）时，按正常
         // 提交后状态清空该 scope；编辑器是用户后来写的内容（B）一律不动。

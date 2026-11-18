@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdir, writeFile } from "node:fs/promises"
+import { access, mkdir, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path"
 import { BrowserWindow, Notification, app, dialog, ipcMain as electronIpcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -15,6 +15,7 @@ import type {
   WslConfig,
   MobileGatewayStartInfo,
   MobileGatewayStatus,
+  LogDirectories,
 } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { isTrustedRendererUrl } from "./renderer-url"
@@ -23,6 +24,7 @@ import { closeBrowserPreview, openHtmlPreview } from "./browser-preview"
 import type { UpdateCheckResult, UpdateInstallResult } from "./updater"
 import type { SidecarState } from "./sidecar-supervisor"
 import { getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
+import { openPathChecked } from "./path-actions"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -55,6 +57,8 @@ type Deps = {
   installUpdate: () => Promise<UpdateInstallResult> | UpdateInstallResult
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
+  getLogDirectories: () => LogDirectories
+  openLogDirectory: (kind: "desktop" | "server") => Promise<void>
   saveGuiDiagnostics: (payload: string) => string | undefined
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
   getMobileGatewayStatus: () => MobileGatewayStatus
@@ -119,6 +123,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
+  ipcMain.handle("get-log-directories", () => deps.getLogDirectories())
+  ipcMain.handle("open-log-directory", (_event: IpcMainInvokeEvent, kind: "desktop" | "server") => {
+    if (kind !== "desktop" && kind !== "server") throw new Error("Unknown log directory")
+    return deps.openLogDirectory(kind)
+  })
   ipcMain.handle("save-gui-diagnostics", (_event: IpcMainInvokeEvent, payload: string) => {
     // 261106 Red 4MB 顶：诊断串写日志文件，无上限会让渲染层异常把日志卷撑爆
     const size = Buffer.byteLength(payload, "utf8")
@@ -222,13 +231,18 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
+    if (!app) return openPathChecked(path, (target) => shell.openPath(target))
     await new Promise<void>((resolve, reject) => {
       const [cmd, args] =
         process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
       // 261106 Red 子进程超时不变量：无 timeout 时目标应用拉不起来会让这条 IPC 永久 pending
       execFile(cmd, args, { timeout: 10_000 }, (err) => (err ? reject(err) : resolve()))
     })
+  })
+
+  ipcMain.handle("reveal-path", async (_event: IpcMainInvokeEvent, path: string) => {
+    await access(path)
+    shell.showItemInFolder(path)
   })
 
   // 260907 ZCode read-clipboard-image 已删：Electron 44 移除主进程 clipboard.readImage
@@ -241,9 +255,7 @@ export function registerIpcHandlers(deps: Deps) {
     async (_event: IpcMainInvokeEvent, sessionDir: string, filename: string, data: Uint8Array) => {
       // 261106 Red 50MB 顶（与剪贴板大图同量级）：无上限的 Uint8Array 可把内存/磁盘打穿
       if (data.byteLength > MAX_ATTACHMENT_BYTES)
-        throw new Error(
-          `Attachment too large: ${data.byteLength} bytes exceeds the ${MAX_ATTACHMENT_BYTES} limit`,
-        )
+        throw new Error(`Attachment too large: ${data.byteLength} bytes exceeds the ${MAX_ATTACHMENT_BYTES} limit`)
       const dir = resolve(sessionDir, ".attachments")
       await mkdir(dir, { recursive: true })
       const filepath = resolve(dir, filename)

@@ -403,6 +403,21 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+for (const name of ["redcode.json", "redcode.jsonc"] as const)
+  it.effect(`clears the global default model in ${name}`, () =>
+    withGlobalConfig({ config: { model: "test/model", shell: "bash" }, name }, ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ model: "" })
+        const file = path.join(dir, name)
+        const written = yield* AppFileSystem.use.readFileString(file)
+        const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(written, file), file)
+        expect(parsed.model).toBeUndefined()
+        expect(parsed.shell).toBe("bash")
+        expect(written).not.toContain('"model"')
+      }),
+    ),
+  )
+
 // 260829 Red GUI「智能体」面板：面板只能用字符串把显式配置改回默认（请求体会丢掉 undefined），
 // 由 updateGlobal 在落盘前把空串 / "default" 翻译成删键。
 it.effect("writes agent model and variant into global jsonc", () =>
@@ -480,31 +495,78 @@ it.effect("writes permission rules and drops a tool set back to inherit", () =>
   ),
 )
 
-
 // 261031 Red MCP 面板的白名单三态：不写 tools = 开放全部，但 patchJsonc 是深合并，
 // 不显式清掉就会保留旧白名单（GUI 清空保存后又被读回旧规则）；tools: [] 是「屏蔽全部」，
 // 必须原样落盘，不能被当成「没写」删掉。
-it.effect("mcp entry without tools clears the previous allowlist", () =>
-  withGlobalConfig(
-    {
-      config: { mcp: { probe: { type: "local", command: ["echo"], tools: ["a", "b"] } } },
-      name: "redcode.jsonc",
-    },
-    ({ dir }) =>
-      Effect.gen(function* () {
-        const file = path.join(dir, "redcode.jsonc")
+for (const name of ["redcode.json", "redcode.jsonc"] as const)
+  it.effect(`MCP definition resets and dictionary replacement work in ${name}`, () =>
+    withGlobalConfig(
+      {
+        config: {
+          mcp: {
+            probe: {
+              type: "local",
+              command: ["echo"],
+              tools: ["a", "b"],
+              cwd: "/old",
+              timeout: 5000,
+              environment: { KEEP: "original" },
+              startup: "lazy",
+              disabledTools: ["hidden"],
+              retry: "none",
+            },
+          },
+        },
+        name,
+      },
+      ({ dir }) =>
+        Effect.gen(function* () {
+          const file = path.join(dir, name)
+          const read = () =>
+            AppFileSystem.use.readFileString(file).pipe(Effect.map((text) => ConfigParse.jsonc(text, file)))
 
-        yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"] } } })
-        const cleared = yield* AppFileSystem.use.readFileString(file)
-        expect(cleared).not.toContain('"tools"')
-        expect(cleared).toContain('"probe"')
+          yield* Config.use.updateGlobal({ mcp: { probe: { enabled: false } } })
+          expect(yield* read()).toMatchObject({
+            mcp: { probe: { tools: ["a", "b"], cwd: "/old", timeout: 5000, environment: { KEEP: "original" } } },
+          })
 
-        yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"], tools: [] } } })
-        const blocked = yield* AppFileSystem.use.readFileString(file)
-        expect(blocked).toContain('"tools"')
-      }),
-  ),
-)
+          yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"] } } })
+          const cleared = yield* AppFileSystem.use.readFileString(file)
+          expect(cleared).not.toContain('"tools"')
+          expect(cleared).not.toContain('"cwd"')
+          expect(cleared).not.toContain('"timeout"')
+          expect(yield* read()).toMatchObject({
+            mcp: {
+              probe: { environment: { KEEP: "original" }, startup: "lazy", disabledTools: ["hidden"], retry: "none" },
+            },
+          })
+
+          yield* Config.use.updateGlobal({
+            mcp: { probe: { type: "local", command: ["echo"], tools: [], environment: {} } },
+          })
+          expect(yield* read()).toMatchObject({ mcp: { probe: { tools: [], environment: {} } } })
+          expect(yield* AppFileSystem.use.readFileString(file)).not.toContain("KEEP")
+
+          yield* Config.use.updateGlobal({
+            mcp: {
+              probe: { type: "remote", url: "https://example.test/mcp", headers: { "X-Test": "one" }, oauth: false },
+            },
+          })
+          const remote = yield* AppFileSystem.use.readFileString(file)
+          for (const key of ["command", "cwd", "environment", "startup", "disabledTools"])
+            expect(remote).not.toContain(`"${key}"`)
+          yield* Config.use.updateGlobal({
+            mcp: { probe: { type: "remote", url: "https://example.test/mcp", headers: {} } },
+          })
+          expect(yield* read()).toMatchObject({ mcp: { probe: { headers: {}, oauth: false, retry: "none" } } })
+          expect(yield* AppFileSystem.use.readFileString(file)).not.toContain("X-Test")
+
+          yield* Config.use.updateGlobal({ mcp: { probe: { type: "local", command: ["echo"] } } })
+          const local = yield* AppFileSystem.use.readFileString(file)
+          for (const key of ["url", "headers", "oauth"]) expect(local).not.toContain(`"${key}"`)
+        }),
+    ),
+  )
 
 it.instance(
   "loads formatter boolean config",

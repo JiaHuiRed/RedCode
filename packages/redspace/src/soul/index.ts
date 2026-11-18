@@ -4,6 +4,7 @@
 // 设计与实现记录：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md、
 // docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md。
 import { Global } from "@redcode-ai/core/global"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Context, Effect, Layer, Schema } from "effect"
 import fs from "node:fs"
 import path from "node:path"
@@ -38,6 +39,7 @@ export type CreateMarkdownInput = {
 }
 
 export type CreateInput = CreateStructuredInput | CreateMarkdownInput
+export type UpdateInput = (Omit<CreateStructuredInput, "id" | "name"> & { name?: string }) | CreateMarkdownInput
 
 // 261113 Red 创建失败分三类：无效输入（400）、ID/文件冲突（409）、落盘失败（IO），由 HTTP 层映射。
 export class SoulInvalidInput extends Schema.TaggedError<SoulInvalidInput>()("SoulInvalidInput", {
@@ -54,6 +56,10 @@ export class SoulIO extends Schema.TaggedError<SoulIO>()("SoulIO", {
   message: Schema.String,
 }) {}
 
+export class SoulNotFound extends Schema.TaggedError<SoulNotFound>()("SoulNotFound", {
+  message: Schema.String,
+}) {}
+
 // 目录走 Context.Reference（包规范：配置路径可测）：测试用 Layer.succeed 覆盖。
 export const directory = Context.Reference<string>("opencode/Soul.directory", {
   defaultValue: () => path.join(Global.Path.home, ".redcode", "souls"),
@@ -66,6 +72,7 @@ export interface Interface {
   readonly details: (id: string) => Effect.Effect<Details | undefined>
   readonly defaultForClient: (client: string) => Effect.Effect<string>
   readonly create: (input: CreateInput) => Effect.Effect<Summary, SoulInvalidInput | SoulConflict | SoulIO>
+  readonly update: (id: string, input: UpdateInput) => Effect.Effect<Details, SoulInvalidInput | SoulNotFound | SoulIO>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Soul") {}
@@ -135,7 +142,27 @@ export const layer = Layer.effect(
       return prepared.summary
     })
 
-    return Service.of({ list, issues, get, details, defaultForClient, create })
+    const update = Effect.fn("Soul.update")(function* (id: string, input: UpdateInput) {
+      const current = yield* details(id)
+      if (!current) return yield* new SoulNotFound({ message: `Soul "${id}" not found` })
+      const prepared = prepareCreate("markdown" in input ? input : { ...current, ...input })
+      if (prepared instanceof SoulInvalidInput) return yield* prepared
+      if (prepared.id !== id) return yield* invalid("an existing Soul id cannot be changed", "id")
+      // 261118 Red 更新实际注册表文件，不写伙伴工作区里的来源副本；会话版本表不变。
+      yield* Effect.tryPromise({
+        try: async () => {
+          const stat = fs.lstatSync(current.path)
+          if (!stat.isFile()) throw new Error("Soul source must be a regular file")
+          await AppFileSystem.writeFileAtomic(current.path, prepared.markdown, stat.mode & 0o777)
+        },
+        catch: (error) => new SoulIO({ message: `could not update Soul "${id}": ${errorMessage(error)}` }),
+      })
+      const saved = yield* details(id)
+      if (!saved) return yield* new SoulIO({ message: `Updated Soul "${id}" could not be read` })
+      return saved
+    })
+
+    return Service.of({ list, issues, get, details, defaultForClient, create, update })
   }),
 )
 
@@ -379,7 +406,9 @@ function optionalSingleLine(value: string | undefined, field: string): string | 
 // 判定与 config/markdown.ts 共用一份实现（agent / command / skill 的配置解析走同一处）。
 
 // 创建与 registry 共用同一套解析/校验：粘贴的 Markdown 必须能被 registry 原样识别。
-function validateDocument(raw: string):
+function validateDocument(
+  raw: string,
+):
   | { kind: "valid"; metadata: FileMetadata; content: string }
   | { kind: "legacy"; content: string }
   | { kind: "invalid"; message: string } {
@@ -429,8 +458,7 @@ function isMetadata(data: unknown): data is FileMetadata {
     )
   )
     return false
-  if (typeof value.description === "string" && /[\r\n]/.test(value.description.trim()))
-    return false
+  if (typeof value.description === "string" && /[\r\n]/.test(value.description.trim())) return false
   return (
     typeof value.id === "string" &&
     typeof value.name === "string" &&

@@ -354,8 +354,7 @@ export const layer = Layer.effect(
       const patches = turnParts.filter((part): part is MessageV2.PatchPart => part.type === "patch")
       const fromTools = turnParts
         .filter(
-          (part): part is MessageV2.ToolPart =>
-            part.type === "tool" && (part.tool === "edit" || part.tool === "write"),
+          (part): part is MessageV2.ToolPart => part.type === "tool" && (part.tool === "edit" || part.tool === "write"),
         )
         .flatMap((part) => {
           if (part.state.status !== "completed") return []
@@ -365,7 +364,11 @@ export const layer = Layer.effect(
           return rel ? [rel] : []
         })
       const changed = [
-        ...new Set([...patches.flatMap((part) => part.files), ...fromTools].map(relative).filter((file): file is string => Boolean(file))),
+        ...new Set(
+          [...patches.flatMap((part) => part.files), ...fromTools]
+            .map(relative)
+            .filter((file): file is string => Boolean(file)),
+        ),
       ]
       if (changed.length === 0) return
       const agent = yield* agents.get(input.user.agent)
@@ -2080,6 +2083,12 @@ export const layer = Layer.effect(
           // Key uses the same stable string as toUIMessages' differentModel check (`providerID/model.id`).
           const modelKey = `${model.providerID}/${model.id}`
           const cachedSystem = _caches.system.get(sessionID)?.get(modelKey)
+          // Only an explicit profile save refreshes personal context. Each model bucket checks
+          // its own revision; instructions, tools and the pinned Soul remain cached.
+          const companionRevision = personalChat
+            ? yield* companions.contextRevision(stepSettings.session.companionID!).pipe(Effect.orDie)
+            : undefined
+          const refreshCompanion = personalChat && cachedSystem?.companionRevision !== companionRevision
           // 261029 Red 冷组装（重启续接 / 进程内缓存被回收后首轮）时读一次磁盘 pin，
           // 供本轮 tools 与 mcpGuide 恢复上一进程钉住的内容；cachedSystem 命中时短路。
           // 命名避开下方 msgPin 循环的计数器 pinned。
@@ -2129,7 +2138,7 @@ export const layer = Layer.effect(
                 : mcpGuideText(),
             MessageV2.toModelMessagesEffect(visibleMsgs, model, mediaOptions),
             sessionSoul(sessionID, soulID, souls),
-            cachedSystem
+            cachedSystem && !refreshCompanion
               ? Effect.succeed(cachedSystem.companion)
               : personalChat
                 ? companions.bootstrap(stepSettings.session.companionID!).pipe(
@@ -2139,7 +2148,16 @@ export const layer = Layer.effect(
                 : Effect.succeed(undefined),
           ])
           if (!cachedSystem) {
-            const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide, companion }
+            const systemCache = {
+              sessionID,
+              modelKey,
+              skills,
+              env,
+              instructions,
+              mcpGuide,
+              companion,
+              companionRevision,
+            }
             const sessionSystem = _caches.system.get(sessionID)
             if (sessionSystem) sessionSystem.set(modelKey, systemCache)
             else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
@@ -2147,6 +2165,9 @@ export const layer = Layer.effect(
             // 恢复同一份内容——否则 MCP 服务器升级后续接重建会拿到新版定义，供应商逐字节
             // 比对失败，续接首请求全价重建（261029 实测 321k token 全冷，见 prompt-pin.ts）。
             PromptPin.save({ sessionID, tools: _caches.tools.get(sessionID)!.defs, mcpGuide })
+          } else if (refreshCompanion) {
+            cachedSystem.companion = companion
+            cachedSystem.companionRevision = companionRevision
           }
           // 261117 Red F-07：本轮有新钉住的消息就把快照落盘。写在 mcpGuide 可用的位置，
           // 避免用 undefined 覆盖文件里已有的 MCP guide。tools 缓存缺失时跳过（下轮冷组装补写）。

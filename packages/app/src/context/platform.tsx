@@ -43,6 +43,12 @@ export type MobileGatewayStatus = {
   devices: MobileGatewayDevice[]
 }
 
+export type LogDirectories = {
+  desktop: string
+  currentRun: string
+  server: string[]
+}
+
 export type Platform = {
   /** Platform discriminator */
   platform: PlatformName
@@ -63,6 +69,9 @@ export type Platform = {
 
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>
+
+  /** Reveal a local file in the system file manager (desktop only) */
+  revealPath?(path: string): Promise<void>
 
   /** Restart the app  */
   restart(): Promise<void>
@@ -139,6 +148,10 @@ export type Platform = {
 
   /** Export collected diagnostic logs (desktop only) */
   exportDebugLogs?(): Promise<string>
+
+  /** Actual log locations on this desktop host, independent of the selected server */
+  getLogDirectories?(): Promise<LogDirectories>
+  openLogDirectory?(kind: "desktop" | "server"): Promise<void>
 
   /** Persist the sanitized GUI diagnostics payload into the current log directory so the next debug-log export includes it (desktop only) */
   saveGuiDiagnostics?(payload: string): Promise<string | null>

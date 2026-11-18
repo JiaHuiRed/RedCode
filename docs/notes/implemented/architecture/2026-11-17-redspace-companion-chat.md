@@ -12,6 +12,8 @@ RedCode 的 Soul 定义会话身份，工程记忆维护开发经验；OpenClaw 
 
 ## 决策
 
+261118 设置重构扩展：Chat 支持直接初始化、最多两位伙伴的新建与可选相识，已有资料的导入移至文件维护；伙伴资料和 Soul 增加编辑入口。USER、受管称呼或相识状态显式保存会按 revision 刷新后续调用的个人上下文，各模型桶分别更新，Soul 正文仍冻结。当前产品入口与缓存边界见 [设置现代化](../feature/2026-11-18-settings-modernization.md)，下表保留首批实现背景。
+
 后续补齐见 [同伴限定的会话原文召回](../feature/2026-11-17-companion-session-recall.md) 与 [旧聊天导入及记忆分页](../feature/2026-11-17-companion-transcript-import.md)。下文「原始 JSONL 不在首批」描述首批边界；现在可重新导入同一来源，追加可识别的旧聊天文本并保留已有日记。
 
 ### 1. 产品模式属于会话，UI 只导航

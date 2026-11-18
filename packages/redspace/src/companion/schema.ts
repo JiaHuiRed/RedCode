@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+export const Introduction = Schema.Literals(["available", "active", "paused", "complete"])
+
 export class Info extends Schema.Class<Info>("CompanionInfo")({
   id: Schema.String,
   name: Schema.String,
@@ -9,6 +11,42 @@ export class Info extends Schema.Class<Info>("CompanionInfo")({
   files: Schema.Number,
   warnings: Schema.Array(Schema.String),
   timezone: Schema.String,
+  needsSetup: Schema.optional(Schema.Boolean),
+  introduction: Schema.optional(Introduction),
+}) {}
+
+export function introductionOf(profile: Pick<Info, "introduction" | "needsSetup">) {
+  return profile.introduction ?? (profile.needsSetup ? "available" : "complete")
+}
+
+export class CreateInput extends Schema.Class<CreateInput>("CompanionCreateInput")({
+  requestID: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]{1,128}$/))),
+}) {}
+
+export class InitializeResult extends Schema.Class<InitializeResult>("CompanionInitializeResult")({
+  profile: Info,
+  created: Schema.Boolean,
+}) {}
+
+export class Details extends Schema.Class<Details>("CompanionDetails")({
+  profile: Info,
+  user: Schema.String,
+  companionName: Schema.String,
+  userName: Schema.String,
+  paths: Schema.Struct({
+    directory: Schema.String,
+    user: Schema.String,
+    identity: Schema.String,
+    memory: Schema.String,
+    soul: Schema.String,
+  }),
+}) {}
+
+export class UpdateInput extends Schema.Class<UpdateInput>("CompanionUpdateInput")({
+  name: Schema.optional(Schema.String),
+  user: Schema.optional(Schema.String),
+  userName: Schema.optional(Schema.String),
+  introduction: Schema.optional(Introduction),
 }) {}
 
 export class ImportInput extends Schema.Class<ImportInput>("CompanionImportInput")({
@@ -133,6 +171,7 @@ export class CompanionIO extends Schema.TaggedError<CompanionIO>()("CompanionIO"
 export type Error = CompanionInvalidInput | CompanionConflict | CompanionNotFound | CompanionIO
 
 export const Limits = {
+  companions: 2,
   archive: 512 * 1024 * 1024,
   importBytes: 64 * 1024 * 1024,
   importFiles: 4096,
@@ -141,6 +180,7 @@ export const Limits = {
   bootstrap: 32 * 1024,
   longTerm: 24 * 1024,
   identity: 1024,
+  profile: 16 * 1024,
   recent: 3 * 1024,
   read: 16 * 1024,
   search: 8 * 1024,

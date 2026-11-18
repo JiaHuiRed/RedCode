@@ -1,6 +1,8 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, on, onCleanup } from "solid-js"
+import { useRenderer } from "@opentui/solid"
+import type { CompanionInfo } from "@redcode-ai/sdk/v2"
 import { useSync } from "@tui/context/sync"
 import { useTheme } from "@tui/context/theme"
 import { useRoute } from "@tui/context/route"
@@ -15,10 +17,11 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 import { Locale } from "@/util/locale"
+import { errorMessage } from "@/util/error"
 import { useKV } from "./kv"
 import { resolveNewSessionSoul } from "../soul"
 import { useProjectNavigation } from "./project-navigation"
-import { sessionsForMode } from "../companion"
+import { companionLabel, sessionsForMode } from "../companion"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -195,6 +198,76 @@ export const {
         return item?.displayName ?? item?.name ?? id
       },
     }
+
+    const companion = iife(() => {
+      const route = useRoute()
+      const renderer = useRenderer()
+      const [state, setState] = createStore({ profiles: [] as CompanionInfo[], ready: false, error: "" })
+      let revision = 0
+      const currentID = createMemo(() =>
+        route.data.type === "home"
+          ? route.data.companionID
+          : route.data.type === "session"
+            ? sync.session.get(route.data.sessionID)?.companionID
+            : undefined,
+      )
+      const refresh = async () => {
+        const attempt = ++revision
+        return sdk.client.companion.list({ throwOnError: true }).then(
+          ({ data }) => {
+            if (attempt === revision) setState({ profiles: data, ready: true, error: "" })
+            return true
+          },
+          (error) => {
+            if (attempt === revision) setState({ ready: true, error: errorMessage(error) })
+            return false
+          },
+        )
+      }
+      createEffect(
+        on(currentID, (id) => {
+          if (id) void refresh()
+        }),
+      )
+      const off = useEvent().on("message.part.updated", (event) => {
+        const part = event.properties.part
+        if (part.type !== "tool" || part.tool !== "companion_profile" || part.state.status !== "completed") return
+        const session = sync.session.get(part.sessionID)
+        if (session?.mode === "chat" && !session.parentID && session.companionID === currentID()) void refresh()
+      })
+      const focus = () => {
+        if (currentID()) void refresh()
+      }
+      renderer.on("focus", focus)
+      onCleanup(() => {
+        revision++
+        off()
+        renderer.off("focus", focus)
+      })
+      return {
+        list: () => state.profiles,
+        ready: () => state.ready,
+        error: () => state.error,
+        refresh,
+        get: (id?: string) => state.profiles.find((profile) => profile.id === id),
+        remember(profile: CompanionInfo) {
+          revision++
+          setState("profiles", (profiles) =>
+            profiles.some((item) => item.id === profile.id)
+              ? profiles.map((item) => (item.id === profile.id ? profile : item))
+              : [...profiles, profile],
+          )
+          setState({ ready: true, error: "" })
+        },
+        label(id?: string, soulID?: string, fallback?: string) {
+          return companionLabel(
+            state.profiles.find((profile) => profile.id === id),
+            soul.label(soulID),
+            fallback ?? id,
+          )
+        },
+      }
+    })
 
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
@@ -618,6 +691,7 @@ export const {
       session,
       displayName,
       soul,
+      companion,
     }
     return result
   },

@@ -27,11 +27,21 @@ import type {
   BackgroundSteerResponses,
   CommandListErrors,
   CommandListResponses,
+  CompanionCreateErrors,
+  CompanionCreateInput,
+  CompanionCreateResponses,
+  CompanionGetErrors,
+  CompanionGetResponses,
   CompanionImportErrors,
   CompanionImportInput,
   CompanionImportResponses,
+  CompanionInitializeErrors,
+  CompanionInitializeResponses,
   CompanionListErrors,
   CompanionListResponses,
+  CompanionUpdateErrors,
+  CompanionUpdateInput,
+  CompanionUpdateResponses,
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
@@ -268,6 +278,8 @@ import type {
   SoulIssuesResponses,
   SoulListErrors,
   SoulListResponses,
+  SoulUpdateErrors,
+  SoulUpdateResponses,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -4909,6 +4921,53 @@ export class Soul extends HeyApiClient {
   }
 
   /**
+   * Update a Soul
+   *
+   * Update the existing registry file without changing its identity or any saved session snapshot. Send content and optional metadata (omitted metadata is preserved), or a complete Markdown document with the same id.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      name?: string
+      displayName?: string
+      commitPrefix?: string
+      avatar?: string
+      description?: string
+      content?: string
+      markdown?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "body", key: "name" },
+            { in: "body", key: "displayName" },
+            { in: "body", key: "commitPrefix" },
+            { in: "body", key: "avatar" },
+            { in: "body", key: "description" },
+            { in: "body", key: "content" },
+            { in: "body", key: "markdown" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<SoulUpdateResponses, SoulUpdateErrors, ThrowOnError>({
+      url: "/soul/{id}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
    * List Soul configuration issues
    *
    * List invalid or unreadable Soul files so configuration errors remain visible.
@@ -4950,6 +5009,95 @@ export class Companion extends HeyApiClient {
     return (options?.client ?? this.client).get<CompanionListResponses, CompanionListErrors, ThrowOnError>({
       url: "/companion",
       ...options,
+    })
+  }
+
+  /**
+   * Create a companion
+   *
+   * Create a neutral companion, up to two in total. Supply a stable requestID to safely retry a request without using another place. Existing profiles are never replaced.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      companionCreateInput?: CompanionCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "companionCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<CompanionCreateResponses, CompanionCreateErrors, ThrowOnError>({
+      url: "/companion",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Initialize Chat
+   *
+   * Return the existing companion, or create a neutral companion and private workspace if none exists. Repeated calls reuse the same profile.
+   */
+  public initialize<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<CompanionInitializeResponses, CompanionInitializeErrors, ThrowOnError>(
+      { url: "/companion/initialize", ...options },
+    )
+  }
+
+  /**
+   * Get companion settings
+   *
+   * Read companion profile, user notes and the actual registry Soul path.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).get<CompanionGetResponses, CompanionGetErrors, ThrowOnError>({
+      url: "/companion/{id}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update companion settings
+   *
+   * Update current conversation names, user notes or introduction state without replacing memories or the bound Soul. Names may remain unset. userName changes only the managed preferred-name field; it cannot be combined with a complete user document. State changes only when explicitly supplied.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      companionUpdateInput?: CompanionUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { key: "companionUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<CompanionUpdateResponses, CompanionUpdateErrors, ThrowOnError>({
+      url: "/companion/{id}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

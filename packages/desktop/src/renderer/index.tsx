@@ -99,6 +99,11 @@ const createPlatform = (): Platform => {
     return window.api.wslPath("~", "windows").catch(() => undefined)
   }
 
+  const nativePath = async (path: string) => {
+    if (os !== "windows" || !path.startsWith("/") || !(await isWslEnabled())) return path
+    return window.api.wslPath(path, "windows")
+  }
+
   const handleWslPicker = async <T extends string | string[]>(result: T | null): Promise<T | null> => {
     if (!result || !(await isWslEnabled())) return result
     if (Array.isArray(result)) {
@@ -200,17 +205,11 @@ const createPlatform = (): Platform => {
     async openPath(path: string, app?: string) {
       if (os === "windows") {
         const resolvedApp = app ? await window.api.resolveAppPath(app).catch(() => null) : null
-        const resolvedPath = await (async () => {
-          if (await isWslEnabled()) {
-            const converted = await window.api.wslPath(path, "windows").catch(() => null)
-            if (converted) return converted
-          }
-          return path
-        })()
-        return window.api.openPath(resolvedPath, resolvedApp ?? undefined)
+        return window.api.openPath(await nativePath(path), resolvedApp ?? undefined)
       }
       return window.api.openPath(path, app)
     },
+    revealPath: async (path) => window.api.revealPath(await nativePath(path)),
 
     back() {
       window.history.back()
@@ -233,6 +232,8 @@ const createPlatform = (): Platform => {
     },
 
     exportDebugLogs: () => window.api.exportDebugLogs(),
+    getLogDirectories: () => window.api.getLogDirectories(),
+    openLogDirectory: (kind) => window.api.openLogDirectory(kind),
 
     saveGuiDiagnostics: (payload) => window.api.saveGuiDiagnostics(payload),
 

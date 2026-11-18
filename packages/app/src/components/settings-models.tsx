@@ -1,3 +1,8 @@
+import { Select } from "@redcode-ai/ui/select"
+import { showToast } from "@redcode-ai/ui/toast"
+import { createMemo } from "solid-js"
+import { createStore } from "solid-js/store"
+import { useServerSync } from "@/context/server-sync"
 import { useFilteredList } from "@redcode-ai/ui/hooks"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { Switch } from "@redcode-ai/ui/switch"
@@ -8,7 +13,7 @@ import { type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { popularProviders } from "@/hooks/use-providers"
-import { SettingsList } from "./settings-list"
+import { SettingsList, SettingsRow } from "./settings-list"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
@@ -34,6 +39,36 @@ const ListEmptyState: Component<{ message: string; filter: string }> = (props) =
 export const SettingsModels: Component = () => {
   const language = useLanguage()
   const models = useModels()
+  const sync = useServerSync()
+  const [state, setState] = createStore({ saving: false })
+  const automatic = "__automatic__"
+  const defaultOptions = createMemo(() => {
+    const options = [
+      { key: automatic, label: language.t("settings.modern.defaultModel.auto"), group: language.t("common.default") },
+      ...models
+        .list()
+        .map((model) => ({ key: `${model.provider.id}/${model.id}`, label: model.name, group: model.provider.name })),
+    ]
+    const current = sync.data.config.model
+    if (current && !options.some((option) => option.key === current))
+      options.push({ key: current, label: current, group: language.t("common.default") })
+    return options
+  })
+  const saveDefault = async (key: string) => {
+    if (state.saving) return
+    setState("saving", true)
+    try {
+      await sync.updateConfig({ model: key === automatic ? "" : key })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("saving", false)
+    }
+  }
 
   const list = useFilteredList<ModelItem>({
     items: (_filter) => models.list(),
@@ -58,32 +93,64 @@ export const SettingsModels: Component = () => {
   })
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[720px]">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.models.title")}</h2>
-          <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
-            <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
-            <TextField
-              variant="ghost"
-              type="text"
-              value={list.filter()}
-              onChange={list.onInput}
-              placeholder={language.t("dialog.model.search.placeholder")}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              class="flex-1"
-            />
-            <Show when={list.filter()}>
-              <IconButton icon="circle-x" variant="ghost" onClick={list.clear} />
-            </Show>
-          </div>
+    <div class="settings-page-body">
+      <header class="settings-page-heading">
+        <div>
+          <h2 class="settings-page-title">{language.t("settings.models.title")}</h2>
+          <p class="settings-page-description">{language.t("settings.modern.models.description")}</p>
         </div>
-      </div>
+      </header>
+      <SettingsList>
+        <SettingsRow
+          title={language.t("settings.modern.defaultModel.title")}
+          description={language.t("settings.modern.defaultModel.description")}
+        >
+          <Select
+            options={defaultOptions()}
+            current={defaultOptions().find((option) => option.key === (sync.data.config.model || automatic))}
+            value={(option) => option.key}
+            label={(option) => option.label}
+            groupBy={(option) => option.group}
+            disabled={state.saving}
+            onSelect={(option) => option && void saveDefault(option.key)}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
+        </SettingsRow>
+      </SettingsList>
+      <section class="settings-section">
+        <div>
+          <h3 class="settings-section-title">{language.t("settings.modern.models.visibility")}</h3>
+          <p class="settings-page-description">{language.t("settings.modern.models.visibility.description")}</p>
+        </div>
+        <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
+          <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
+          <TextField
+            variant="ghost"
+            type="text"
+            value={list.filter()}
+            onChange={list.onInput}
+            aria-label={language.t("dialog.model.search.placeholder")}
+            placeholder={language.t("dialog.model.search.placeholder")}
+            spellcheck={false}
+            autocorrect="off"
+            autocomplete="off"
+            autocapitalize="off"
+            class="flex-1"
+          />
+          <Show when={list.filter()}>
+            <IconButton
+              icon="circle-x"
+              variant="ghost"
+              aria-label={language.t("settings.modern.clearSearch")}
+              onClick={list.clear}
+            />
+          </Show>
+        </div>
+      </section>
 
-      <div class="flex flex-col gap-8 max-w-[720px]">
+      <div class="flex flex-col gap-8">
         <Show
           when={!list.grouped.loading}
           fallback={

@@ -75,6 +75,7 @@ import { RunCodeSdk } from "./run-code-sdk"
 import { ToolJsonSchema } from "./json-schema"
 import { SessionQueryTool } from "./session-query"
 import { CompanionMemoryTool } from "./companion-memory"
+import { CompanionProfileTool } from "./companion-profile"
 import { Companion } from "@/companion/companion"
 import { and, eq, sql } from "drizzle-orm"
 
@@ -89,6 +90,7 @@ const log = Log.create({ service: "tool.registry" })
 // 配置缺省时兜底，权限 deny 过滤先于本集合，激活不越权。
 // 261026 Red 激活按 sessionID 隔离，并从 search_tools 成功 part 懒恢复；决策见 docs/notes/implemented/feature/2026-10-26-search-tools-gated-activation.md。
 const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "external-directory"])
+const COMPANION_TOOLS = new Set<string>([CompanionMemoryTool.id, CompanionProfileTool.id])
 
 // 261026 Red 插件声明式 view 的序列化上限（字节）。超过就整块丢弃，客户端退回 output 文本。
 const PluginViewLimit = 8 * 1024
@@ -177,9 +179,9 @@ export const layer = Layer.effect(
     const writetool = yield* WriteTool
     const edit = yield* EditTool
     const greptool = yield* GrepTool
-  const astGreptool = yield* AstGrepTool
-  const gittool = yield* GitTool
-  const githubtool = yield* GitHubTool
+    const astGreptool = yield* AstGrepTool
+    const gittool = yield* GitTool
+    const githubtool = yield* GitHubTool
     const envtool = yield* EnvTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
@@ -190,6 +192,7 @@ export const layer = Layer.effect(
     const contextRestore = yield* ContextRestoreTool
     const sessionQuery = yield* SessionQueryTool
     const companionMemory = yield* CompanionMemoryTool
+    const companionProfile = yield* CompanionProfileTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -239,11 +242,14 @@ export const layer = Layer.effect(
                 // 261026 Red 插件声明式 view 走 metadata，不新增 schema。它是模型可见面前的自定义
                 // JSON，必须有硬上限：超限整块丢弃并记日志，避免任意插件把大对象写进 part 表。
                 const view = typeof result === "string" ? undefined : result.view
-                const metadata = boundedPluginMetadata({
-                  ...update.metadata,
-                  ...(typeof result === "string" ? {} : result.metadata),
-                  ...(view !== undefined ? { view } : {}),
-                }, id)
+                const metadata = boundedPluginMetadata(
+                  {
+                    ...update.metadata,
+                    ...(typeof result === "string" ? {} : result.metadata),
+                    ...(view !== undefined ? { view } : {}),
+                  },
+                  id,
+                )
                 // 261112 Red 插件图片与 MCP 同属外部来源：标记 untrusted，processor
                 // 跳过 image.normalize 的 CPU 解码。决策：
                 // docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
@@ -364,6 +370,7 @@ export const layer = Layer.effect(
           context_restore: Tool.init(contextRestore),
           session_query: Tool.init(sessionQuery),
           companion_memory: Tool.init(companionMemory),
+          companion_profile: Tool.init(companionProfile),
         })
 
         // 260606 Red search helper extracted — avoid closure-capturing all()
@@ -380,7 +387,7 @@ export const layer = Layer.effect(
         const searchToolsDef: Tool.Def = {
           id: "search_tools",
           description:
-            "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task. Gated tools (registered but hidden from your tool list) appear marked [gated]; activate one by calling again with {\"enable\": \"<id>\"} — it joins your tool list on the next request.",
+            'Search for available tools by name or description. Use this when you don\'t know the exact tool name or want to discover tools for a specific task. Gated tools (registered but hidden from your tool list) appear marked [gated]; activate one by calling again with {"enable": "<id>"} — it joins your tool list on the next request.',
           parameters: Schema.Struct({
             query: Schema.String.annotate({ description: "Search keywords to find relevant tools" }),
             enable: Schema.optional(
@@ -393,7 +400,7 @@ export const layer = Layer.effect(
             Effect.gen(function* () {
               const s = yield* InstanceState.get(state)
               const all = ([...s.builtin, ...s.custom] as Tool.Def[]).filter(
-                (tool) => tool.id !== CompanionMemoryTool.id || hasCompanionMemory(ctx.sessionID),
+                (tool) => !COMPANION_TOOLS.has(tool.id) || hasCompanionMemory(ctx.sessionID),
               )
               // 261026 Red gated 工具激活出口：只收 GATED_TOOLS 成员；权限/配置过滤仍发生在
               // tools()，激活集合放行不了被 deny 的工具。输出有界（单行确认，不回显 schema）。
@@ -472,6 +479,7 @@ export const layer = Layer.effect(
             ...(nativeEnabled ? [tool.context_read, tool.context_search, tool.context_restore] : []),
             tool.session_query,
             tool.companion_memory,
+            tool.companion_profile,
           ],
           task: tool.task,
           read: tool.read,
@@ -569,7 +577,7 @@ export const layer = Layer.effect(
       // write/edit/apply_patch 合并走 "edit" 键）剔除；带 pattern 例外的
       // （如 bash 全禁但放行 "git *"）保留给执行期 ctx.ask 逐次把关。
       const companionMemoryAvailable = hasCompanionMemory(input.sessionID)
-      const candidates = (yield* all()).filter((tool) => tool.id !== CompanionMemoryTool.id || companionMemoryAvailable)
+      const candidates = (yield* all()).filter((tool) => !COMPANION_TOOLS.has(tool.id) || companionMemoryAvailable)
       const deniedTools = Permission.disabled(
         candidates.map((tool) => tool.id),
         input.agent.permission ?? [],
@@ -589,10 +597,7 @@ export const layer = Layer.effect(
         // 表达「不改文件」的唯一方式。与 shell 的差别也在这条：shell 的破坏性命令还有
         // destructive 检查兜着，程序内的写盘连一个信号都没有。
         // 注意这不是沙箱——它只保证受限角色看不到这个工具，程序本身仍以同等 OS 权限运行。
-        if (
-          tool.id === RunCodeTool.id &&
-          Permission.evaluate("edit", "*", input.agent.permission).action === "deny"
-        )
+        if (tool.id === RunCodeTool.id && Permission.evaluate("edit", "*", input.agent.permission).action === "deny")
           return false
 
         const explicit = modelTools?.[tool.id]

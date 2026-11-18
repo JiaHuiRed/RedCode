@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, createResource, createSignal, onMount, type JSX } from "solid-js"
+import { Component, Show, createMemo, createResource, createSignal, onMount, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@redcode-ai/ui/button"
 import { Avatar } from "@redcode-ai/ui/avatar"
@@ -7,11 +7,11 @@ import { Select } from "@redcode-ai/ui/select"
 import { Switch } from "@redcode-ai/ui/switch"
 import { TextField } from "@redcode-ai/ui/text-field"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
+import { requestSpeech, SPEECH_VOICES, speechErrorKey } from "@redcode-ai/ui/speech"
 import { useTheme, type ColorScheme } from "@redcode-ai/ui/theme/context"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
-import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -97,10 +97,12 @@ const playDemoSound = (id: string | undefined) => {
   }, 100)
 }
 
-export const SettingsGeneral: Component = () => {
+export type GeneralSettingsSection = "general" | "appearance" | "sound" | "devices" | "updates" | "tools"
+
+export const SettingsGeneral: Component<{ section?: GeneralSettingsSection }> = (props) => {
+  const section = () => props.section ?? "general"
   const theme = useTheme()
   const language = useLanguage()
-  const permission = usePermission()
   const platform = usePlatform()
   const params = useParams()
   const settings = useSettings()
@@ -110,40 +112,25 @@ export const SettingsGeneral: Component = () => {
     // 261116 Red 更新状态单列：检查中/禁用/无新版/有新版/失败 不能都塌缩成「已是最新版」
     updateStatus: "idle" as "idle" | "disabled" | "up-to-date" | "available" | "failed",
     updateVersion: undefined as string | undefined,
+    speech: "idle" as "idle" | "loading" | "playing",
+    savingConfig: false,
+    threshold: undefined as string | undefined,
     installing: false,
     installError: undefined as string | undefined,
   })
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const dir = createMemo(() => decode64(params.dir))
-  const accepting = createMemo(() => {
-    const value = dir()
-    if (!value) return false
-    if (!params.id) return permission.isAutoAcceptingDirectory(value)
-    return permission.isAutoAccepting(params.id, value)
-  })
-
-  const toggleAccept = (checked: boolean) => {
-    const value = dir()
-    if (!value) return
-
-    if (!params.id) {
-      if (permission.isAutoAcceptingDirectory(value) === checked) return
-      permission.toggleAutoAcceptDirectory(value)
-      return
-    }
-
-    if (checked) {
-      permission.enableAutoAccept(params.id, value)
-      return
-    }
-
-    permission.disableAutoAccept(params.id, value)
-  }
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const exportLogs = () => {
-    void platform.exportDebugLogs?.().catch(() => undefined)
+    void platform.exportDebugLogs?.().catch((error: unknown) => {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    })
   }
 
   const updateFailureActions = (retry: () => void) => {
@@ -267,7 +254,9 @@ export const SettingsGeneral: Component = () => {
                 }
               : {
                   title: language.t("settings.updates.toast.latest.title"),
-                  description: language.t("settings.updates.toast.latest.description", { version: platform.version ?? "" }),
+                  description: language.t("settings.updates.toast.latest.description", {
+                    version: platform.version ?? "",
+                  }),
                 },
           )
           return
@@ -303,24 +292,21 @@ export const SettingsGeneral: Component = () => {
   const globalSync = useServerSync()
   const globalSdk = useGlobalSDK()
 
-  const [shells] = createResource(
-    () =>
-      globalSdk.client.pty
-        .shells()
-        .then((res) => res.data ?? [])
-        .catch(() => [] as ShellOption[]),
+  const [shells, { refetch: refetchShells }] = createResource(
+    () => section() === "tools",
+    () => globalSdk.client.pty.shells().then((res) => res.data ?? []),
     { initialValue: [] as ShellOption[] },
   )
 
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
-    () => (desktop() && platform.getPinchZoomEnabled ? true : false),
+    () => (section() === "appearance" && desktop() && platform.getPinchZoomEnabled ? true : false),
     () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
     { initialValue: false },
   )
 
   // 260829 Red 字体输入配 datalist 候选：枚举本机字体，等宽的那份只给代码/终端用
   const [fonts] = createResource(
-    () => (desktop() && platform.listFonts ? true : false),
+    () => (section() === "appearance" && desktop() && platform.listFonts ? true : false),
     () =>
       Promise.resolve(platform.listFonts?.() ?? [])
         .then(splitFontWidths)
@@ -331,6 +317,23 @@ export const SettingsGeneral: Component = () => {
   onMount(() => {
     void theme.loadThemes()
   })
+
+  const saveConfig = async (patch: Parameters<typeof globalSync.updateConfig>[0]) => {
+    if (store.savingConfig) return
+    setStore("savingConfig", true)
+    try {
+      await globalSync.updateConfig(patch)
+      return true
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setStore("savingConfig", false)
+    }
+  }
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   const currentShell = createMemo(() => globalSync.data.config.shell ?? "")
@@ -343,7 +346,7 @@ export const SettingsGeneral: Component = () => {
   ])
 
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
-    const list = shells.latest
+    const list = shells.error ? [] : shells.latest
     const current = globalSync.data.config.shell
 
     const nameCounts = new Map<string, number>()
@@ -377,7 +380,14 @@ export const SettingsGeneral: Component = () => {
     setPinchZoom(checked)
     const update = platform.setPinchZoomEnabled?.(checked)
     if (!update) return
-    void update.catch(() => setPinchZoom(!checked))
+    void update.catch((error: unknown) => {
+      setPinchZoom(!checked)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    })
   }
 
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
@@ -453,66 +463,6 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
-          title={language.t("command.permissions.autoaccept.enable")}
-          description={language.t("toast.permissions.autoaccept.on.description")}
-        >
-          <div data-action="settings-auto-accept-permissions">
-            <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.shell.title")}
-          description={language.t("settings.general.row.shell.description")}
-        >
-          <Select
-            data-action="settings-shell"
-            options={shellOptions()}
-            current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
-            value={(o) => o.id}
-            label={(o) => o.label}
-            onSelect={(option) => {
-              if (!option) return
-              if (option.value === currentShell()) return
-              globalSync.updateConfig({ shell: option.value })
-            }}
-            variant="secondary"
-            size="small"
-            triggerVariant="settings"
-            triggerStyle={{ "min-width": "180px" }}
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.verificationNotice.title")}
-          description={language.t("settings.general.row.verificationNotice.description")}
-        >
-          <Select
-            data-action="settings-verification-notice"
-            options={noticeOptions()}
-            current={noticeOptions().find((o) => o.value === currentNotice()) ?? noticeOptions()[0]}
-            value={(o) => o.value}
-            label={(o) => o.label}
-            onSelect={(option) => {
-              if (!option || option.value === currentNotice()) return
-              // 261110 Red 展开保留 enabled/timeout_ms 等同级键，PATCH 走服务端 mergeDeep 部分合并
-              globalSync.updateConfig({
-                verification: { ...globalSync.data.config.verification, notice: option.value },
-              }).catch((err: unknown) => {
-                showToast({
-                  title: language.t("common.requestFailed"),
-                  description: err instanceof Error ? err.message : String(err),
-                })
-              })
-            }}
-            variant="secondary"
-            size="small"
-            triggerVariant="settings"
-            triggerStyle={{ "min-width": "180px" }}
-          />
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.general.row.reasoningSummaries.title")}
           description={language.t("settings.general.row.reasoningSummaries.description")}
         >
@@ -549,6 +499,16 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
+          title={language.t("settings.modern.progress.title")}
+          description={language.t("settings.modern.progress.description")}
+        >
+          <Switch
+            checked={settings.general.showSessionProgressBar()}
+            onChange={settings.general.setShowSessionProgressBar}
+          />
+        </SettingsRow>
+
+        <SettingsRow
           title={language.t("settings.general.row.petEnabled.title")}
           description={language.t("settings.general.row.petEnabled.description")}
         >
@@ -561,6 +521,164 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
       </SettingsList>
     </div>
+  )
+
+  const ToolsSection = () => (
+    <section class="settings-section">
+      <div>
+        <h3 class="settings-section-title">{language.t("settings.modern.codeTools.title")}</h3>
+        <p class="settings-page-description">{language.t("settings.modern.codeTools.description")}</p>
+      </div>
+      <Show when={shells.error}>
+        <div class="settings-inline-actions settings-error" role="status">
+          {language.t("common.requestFailed")}
+          <Button size="small" variant="ghost" onClick={() => void refetchShells()}>
+            {language.t("common.retry")}
+          </Button>
+        </div>
+      </Show>
+      <SettingsList>
+        <SettingsRow
+          title={language.t("settings.general.row.shell.title")}
+          description={language.t("settings.general.row.shell.description")}
+        >
+          <Select
+            data-action="settings-shell"
+            options={shellOptions()}
+            current={shellOptions().find((o) => o.value === currentShell()) ?? autoOption}
+            value={(o) => o.id}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentShell()) return
+              void saveConfig({ shell: option.value })
+            }}
+            disabled={store.savingConfig}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.verificationNotice.title")}
+          description={language.t("settings.general.row.verificationNotice.description")}
+        >
+          <Select
+            data-action="settings-verification-notice"
+            options={noticeOptions()}
+            current={noticeOptions().find((o) => o.value === currentNotice()) ?? noticeOptions()[0]}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option || option.value === currentNotice()) return
+              void saveConfig({ verification: { notice: option.value } })
+            }}
+            disabled={store.savingConfig}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.modern.agentShell.title")}
+          description={language.t("settings.modern.agentShell.description")}
+        >
+          <Select
+            options={["legacy", "git-bash", "powershell"] as const}
+            current={globalSync.data.config.shellRouting?.agentDefault ?? "legacy"}
+            label={(value) =>
+              value === "legacy"
+                ? language.t("settings.modern.agentShell.legacy")
+                : value === "git-bash"
+                  ? "Git Bash"
+                  : "PowerShell"
+            }
+            onSelect={(value) => value && void saveConfig({ shellRouting: { agentDefault: value } })}
+            disabled={store.savingConfig}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.verification.title")}
+          description={language.t("settings.modern.verification.description")}
+        >
+          <Switch
+            checked={globalSync.data.config.verification?.enabled !== false}
+            disabled={store.savingConfig}
+            onChange={(enabled) => void saveConfig({ verification: { enabled } })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.snapshot.title")}
+          description={language.t("settings.modern.snapshot.description")}
+        >
+          <Switch
+            checked={globalSync.data.config.snapshot !== false}
+            disabled={store.savingConfig}
+            onChange={(snapshot) => void saveConfig({ snapshot })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.compaction.title")}
+          description={language.t("settings.modern.compaction.description")}
+        >
+          <Switch
+            checked={globalSync.data.config.compaction?.auto !== false}
+            disabled={store.savingConfig}
+            onChange={(auto) => void saveConfig({ compaction: { auto } })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.compaction.prune.title")}
+          description={language.t("settings.modern.compaction.prune.description")}
+        >
+          <Switch
+            checked={globalSync.data.config.compaction?.prune === true}
+            disabled={store.savingConfig}
+            onChange={(prune) => void saveConfig({ compaction: { prune } })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.compaction.threshold.title")}
+          description={language.t("settings.modern.compaction.threshold.description")}
+        >
+          <div class="settings-inline-actions">
+            <TextField
+              type="number"
+              disabled={store.savingConfig}
+              min="0"
+              step="1000"
+              value={store.threshold ?? String(globalSync.data.config.compaction?.threshold ?? 0)}
+              onChange={(value) => setStore("threshold", value)}
+              class="w-28"
+            />
+            <Button
+              size="small"
+              variant="secondary"
+              disabled={store.savingConfig || store.threshold === undefined}
+              onClick={() => {
+                const threshold = Number(store.threshold)
+                if (!Number.isSafeInteger(threshold) || threshold < 0) {
+                  showToast({ variant: "error", title: language.t("settings.modern.compaction.threshold.invalid") })
+                  return
+                }
+                void saveConfig({ compaction: { threshold } }).then((saved) => {
+                  if (saved) setStore("threshold", undefined)
+                })
+              }}
+            >
+              {language.t("settings.modern.save")}
+            </Button>
+          </div>
+        </SettingsRow>
+      </SettingsList>
+    </section>
   )
 
   const AppearanceSection = () => {
@@ -596,7 +714,9 @@ export const SettingsGeneral: Component = () => {
 
     return (
       <div class="flex flex-col gap-1">
-        <h3 data-settings-anchor="appearance" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
+        <h3 data-settings-anchor="appearance" class="text-14-medium text-text-strong pb-2">
+          {language.t("settings.general.section.appearance")}
+        </h3>
 
         <SettingsList>
           <SettingsRow
@@ -812,13 +932,15 @@ export const SettingsGeneral: Component = () => {
             <div class="flex items-center gap-3">
               <input
                 data-action="settings-wallpaper-dim"
+                aria-label={language.t("settings.general.row.wallpaperDim.title")}
+                aria-valuetext={`${settings.appearance.wallpaperDim()}%`}
                 type="range"
                 min="0"
                 max="60"
                 step="2"
                 value={settings.appearance.wallpaperDim()}
                 onInput={(event) => settings.appearance.setWallpaperDim(Number(event.currentTarget.value))}
-                class="h-1 w-40 cursor-pointer accent-[var(--v2-background-bg-accent)]"
+                class="w-40"
               />
               <span class="w-9 shrink-0 text-right text-[11px] tabular-nums text-text-weak">
                 {settings.appearance.wallpaperDim()}%
@@ -879,7 +1001,9 @@ export const SettingsGeneral: Component = () => {
 
   const NotificationsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 data-settings-anchor="notifications" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
+      <h3 data-settings-anchor="notifications" class="text-14-medium text-text-strong pb-2">
+        {language.t("settings.general.section.notifications")}
+      </h3>
 
       <SettingsList>
         <SettingsRow
@@ -923,7 +1047,9 @@ export const SettingsGeneral: Component = () => {
 
   const SoundsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 data-settings-anchor="sounds" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h3>
+      <h3 data-settings-anchor="sounds" class="text-14-medium text-text-strong pb-2">
+        {language.t("settings.general.section.sounds")}
+      </h3>
 
       <SettingsList>
         <SettingsRow
@@ -974,20 +1100,71 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
-  const TTS_VOICES = [
-    { value: "冰糖", label: "冰糖 (Bīng Táng)" },
-    { value: "茉莉", label: "茉莉 (Mò Lì)" },
-    { value: "苏打", label: "苏打 (Sū Dǎ)" },
-    { value: "白桦", label: "白桦 (Bái Huà)" },
-    { value: "Mia", label: "Mia (EN)" },
-    { value: "Chloe", label: "Chloe (EN)" },
-    { value: "Milo", label: "Milo (EN)" },
-    { value: "Dean", label: "Dean (EN)" },
-  ]
+  let speechAudio: HTMLAudioElement | undefined
+  let speechURL: string | undefined
+  let speechRequest: AbortController | undefined
+  const stopSpeech = () => {
+    speechRequest?.abort()
+    speechRequest = undefined
+    if (speechAudio) {
+      speechAudio.onended = null
+      speechAudio.onerror = null
+      speechAudio.pause()
+      speechAudio = undefined
+    }
+    if (speechURL) URL.revokeObjectURL(speechURL)
+    speechURL = undefined
+    setStore("speech", "idle")
+  }
+  onCleanup(() => {
+    stopSpeech()
+    stopDemoSound()
+  })
+  const previewSpeech = async () => {
+    if (store.speech !== "idle") {
+      stopSpeech()
+      return
+    }
+    const controller = new AbortController()
+    speechRequest = controller
+    setStore("speech", "loading")
+    try {
+      const blob = await requestSpeech({
+        apiKey: settings.tts.apiKey(),
+        voice: settings.tts.voice(),
+        text: language.t("settings.modern.speech.sample"),
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
+      speechURL = URL.createObjectURL(blob)
+      speechAudio = new Audio(speechURL)
+      speechAudio.onended = stopSpeech
+      speechAudio.onerror = () => {
+        showToast({
+          variant: "error",
+          title: language.t("settings.modern.speech.failed"),
+          description: language.t("ui.speech.error.playback"),
+        })
+        stopSpeech()
+      }
+      await speechAudio.play()
+      if (!controller.signal.aborted) setStore("speech", "playing")
+    } catch (error) {
+      if (controller.signal.aborted) return
+      showToast({
+        variant: "error",
+        title: language.t("settings.modern.speech.failed"),
+        description: language.t(speechErrorKey(error)),
+      })
+      stopSpeech()
+    }
+  }
 
   const TtsSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 data-settings-anchor="tts" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.tts")}</h3>
+      <h3 data-settings-anchor="tts" class="text-14-medium text-text-strong pb-2">
+        {language.t("settings.general.section.tts")}
+      </h3>
       <SettingsList>
         <SettingsRow
           title={language.t("settings.general.tts.enabled.title")}
@@ -1026,8 +1203,8 @@ export const SettingsGeneral: Component = () => {
         >
           <Select
             data-action="settings-tts-voice"
-            options={TTS_VOICES}
-            current={TTS_VOICES.find((v) => v.value === settings.tts.voice()) ?? TTS_VOICES[0]}
+            options={SPEECH_VOICES}
+            current={SPEECH_VOICES.find((v) => v.value === settings.tts.voice()) ?? SPEECH_VOICES[0]}
             value={(o) => o.value}
             label={(o) => o.label}
             onSelect={(option) => option && settings.tts.setVoice(option.value)}
@@ -1036,6 +1213,25 @@ export const SettingsGeneral: Component = () => {
             triggerVariant="settings"
             triggerStyle={{ "min-width": "180px" }}
           />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.modern.speech.preview")}
+          description={language.t("settings.modern.speech.description")}
+        >
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={() => void previewSpeech()}
+            data-action="settings-speech-preview"
+          >
+            {language.t(
+              store.speech === "idle"
+                ? "settings.modern.speech.preview"
+                : store.speech === "loading"
+                  ? "settings.modern.speech.cancel"
+                  : "settings.modern.speech.stop",
+            )}
+          </Button>
         </SettingsRow>
       </SettingsList>
     </div>
@@ -1091,7 +1287,10 @@ export const SettingsGeneral: Component = () => {
       <div class="flex flex-col gap-3">
         {/* ── User Profile ── */}
         <div class="flex flex-col gap-1">
-          <h3 data-settings-anchor="profile" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.profile")}</h3>
+          <h3 data-settings-anchor="profile" class="text-14-medium text-text-strong pb-2">
+            {language.t("settings.general.section.profile")}
+          </h3>
+          <p class="settings-page-description mb-3">{language.t("settings.modern.profile.description")}</p>
           <SettingsList>
             <SettingsRow
               title={language.t("settings.general.row.displayName.title")}
@@ -1158,9 +1357,7 @@ export const SettingsGeneral: Component = () => {
 
         {/* ── Assistant (RedCode) Profile ── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">
-            {language.t("settings.general.section.assistantAvatar")}
-          </h3>
+          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.assistantAvatar")}</h3>
           <SettingsList>
             <SettingsRow
               title={language.t("settings.general.row.assistantAvatar.title")}
@@ -1211,7 +1408,9 @@ export const SettingsGeneral: Component = () => {
 
   const UpdatesSection = () => (
     <div class="flex flex-col gap-1">
-      <h3 data-settings-anchor="updates" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
+      <h3 data-settings-anchor="updates" class="text-14-medium text-text-strong pb-2">
+        {language.t("settings.general.section.updates")}
+      </h3>
 
       <SettingsList>
         <SettingsRow
@@ -1239,10 +1438,7 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.updates.row.check.title")}
-          description={updateDescription()}
-        >
+        <SettingsRow title={language.t("settings.updates.row.check.title")} description={updateDescription()}>
           <div class="flex items-center gap-2" data-action="settings-updates-check">
             <Show when={store.updateStatus === "available" && platform.updateAndRestart}>
               <Button size="small" variant="primary" disabled={store.installing} onClick={install}>
@@ -1265,7 +1461,9 @@ export const SettingsGeneral: Component = () => {
   const DisplaySection = () => (
     <Show when={desktop()}>
       <div class="flex flex-col gap-1">
-        <h3 data-settings-anchor="display" class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.display")}</h3>
+        <h3 data-settings-anchor="display" class="text-14-medium text-text-strong pb-2">
+          {language.t("settings.general.section.display")}
+        </h3>
 
         <SettingsList>
           <SettingsRow
@@ -1281,33 +1479,57 @@ export const SettingsGeneral: Component = () => {
     </Show>
   )
 
+  const heading = () => {
+    if (section() === "appearance") return language.t("settings.modern.appearance")
+    if (section() === "sound") return language.t("settings.modern.sound")
+    if (section() === "devices") return language.t("settings.modern.devices")
+    return language.t("settings.tab.general")
+  }
+  const description = () => {
+    if (section() === "appearance") return language.t("settings.modern.appearance.description")
+    if (section() === "sound") return language.t("settings.modern.sound.description")
+    if (section() === "devices") return language.t("settings.modern.devices.description")
+    return language.t("settings.modern.general.description")
+  }
+
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
-        <div class="flex flex-col gap-1 pt-6 pb-8">
-          <h2 class="text-16-medium text-text-strong">{language.t("settings.tab.general")}</h2>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-8 w-full">
+    <div class={section() === "tools" ? "settings-section" : "settings-page-body"}>
+      <Show when={section() !== "tools" && section() !== "updates"}>
+        <header class="settings-page-heading">
+          <div>
+            <h2 class="settings-page-title">{heading()}</h2>
+            <p class="settings-page-description">{description()}</p>
+          </div>
+          <span class="settings-scope">{language.t("settings.modern.scope.local")}</span>
+        </header>
+      </Show>
+      <Show when={section() === "general"}>
         <GeneralSection />
-
-        <SettingsMobileCompanion directory={dir()} sessionID={params.id} />
-
-        <AppearanceSection />
-
-        <NotificationsSection />
-
-        <SoundsSection />
-
-        <TtsSection />
-
         <ProfileSection />
-
-        <UpdatesSection />
-
+      </Show>
+      <Show when={section() === "appearance"}>
+        <AppearanceSection />
         <DisplaySection />
-      </div>
+      </Show>
+      <Show when={section() === "sound"}>
+        <NotificationsSection />
+        <SoundsSection />
+        <TtsSection />
+      </Show>
+      <Show when={section() === "devices"}>
+        <Show
+          when={desktop() && !!platform.getMobileGatewayStatus}
+          fallback={<p class="settings-empty">{language.t("settings.modern.devices.desktopOnly")}</p>}
+        >
+          <SettingsMobileCompanion directory={dir()} sessionID={params.id} />
+        </Show>
+      </Show>
+      <Show when={section() === "updates"}>
+        <UpdatesSection />
+      </Show>
+      <Show when={section() === "tools"}>
+        <ToolsSection />
+      </Show>
     </div>
   )
 }

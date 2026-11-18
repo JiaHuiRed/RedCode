@@ -29,6 +29,15 @@ const post = (body: unknown, directory: string) =>
     }),
   )
 
+const put = (soulID: string, body: unknown, directory: string) =>
+  Effect.promise(async () =>
+    app().request(`/soul/${soulID}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-redcode-directory": directory },
+      body: JSON.stringify(body),
+    }),
+  )
+
 const tmp = () =>
   Effect.acquireRelease(
     Effect.promise(() => tmpdir()),
@@ -42,6 +51,57 @@ afterEach(async () => {
 })
 
 describe("POST /soul", () => {
+  it.live("updates the registered file, preserves metadata and keeps existing session snapshots", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmp()
+      const soulID = id()
+      const alias = path.join(soulDirectory(), `named-${soulID}.md`)
+      created.push(alias)
+      yield* Effect.promise(async () => {
+        await fs.promises.mkdir(soulDirectory(), { recursive: true })
+        await Bun.write(alias, `---\nid: ${soulID}\nname: Original\navatar: existing-avatar\n---\n\nOriginal body\n`)
+        await fs.promises.chmod(alias, 0o600)
+      })
+      const createSession = () =>
+        Effect.promise(async () => {
+          const response = await app().request("/session", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-redcode-directory": dir.path },
+            body: JSON.stringify({ soul: soulID }),
+          })
+          expect(response.status).toBe(200)
+          return response.json() as Promise<{ id: string; soulBodyHash: string }>
+        })
+      const oldSession = yield* createSession()
+      const response = yield* put(soulID, { content: "Edited body", displayName: "Updated" }, dir.path)
+      expect(response.status).toBe(200)
+      expect(yield* json(response)).toMatchObject({
+        id: soulID,
+        name: "Original",
+        avatar: "existing-avatar",
+        content: "Edited body",
+        path: alias,
+      })
+      expect(fs.existsSync(path.join(soulDirectory(), `${soulID}.md`))).toBe(false)
+      if (process.platform !== "win32") expect(fs.statSync(alias).mode & 0o777).toBe(0o600)
+      const newSession = yield* createSession()
+      expect(newSession.soulBodyHash).not.toBe(oldSession.soulBodyHash)
+      const oldResponse = yield* Effect.promise(async () =>
+        app().request(`/session/${oldSession.id}`, { headers: { "x-redcode-directory": dir.path } }),
+      )
+      expect(yield* json(oldResponse)).toMatchObject({ soulBodyHash: oldSession.soulBodyHash })
+      const before = yield* Effect.promise(() => Bun.file(alias).text())
+      expect(
+        (yield* put(soulID, { markdown: "---\nid: changed\nname: Changed\n---\n\nWrong identity\n" }, dir.path)).status,
+      ).toBe(400)
+      expect((yield* put(soulID, { content: "" }, dir.path)).status).toBe(400)
+      expect((yield* put(soulID, { content: "x".repeat(MAX_SOUL_BYTES) }, dir.path)).status).toBe(400)
+      expect((yield* put(soulID, { content: "mixed", markdown: "mixed" }, dir.path)).status).toBe(400)
+      expect(yield* Effect.promise(() => Bun.file(alias).text())).toBe(before)
+      expect((yield* put("does-not-exist", { content: "body" }, dir.path)).status).toBe(404)
+    }),
+  )
+
   it.live("creates a structured Soul and reads it back through soul.get", () =>
     Effect.gen(function* () {
       const dir = yield* tmp()

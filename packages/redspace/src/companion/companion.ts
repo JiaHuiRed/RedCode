@@ -11,6 +11,7 @@ import { Soul } from "@/soul"
 import { ID_PATTERN } from "@/soul/schema"
 import { makeRuntime } from "@/effect/run-service"
 import { activeFile, decode, digest, readArchive, safePath, type Archive } from "./archive"
+import { profileField, withProfileField } from "./profile"
 import {
   Bootstrap,
   CompanionConflict,
@@ -18,17 +19,22 @@ import {
   CompanionInvalidInput,
   CompanionNotFound,
   Coverage,
+  Details,
   Info,
+  InitializeResult,
+  introductionOf,
   ImportResult,
   Limits,
   ReadResult,
   RememberResult,
   SearchResult,
   type Error as CompanionError,
+  type CreateInput,
   type ImportInput,
   type ReadInput,
   type RememberInput,
   type SearchInput,
+  type UpdateInput,
 } from "./schema"
 
 export * from "./schema"
@@ -40,6 +46,11 @@ export const directory = Context.Reference<string>("opencode/Companion.directory
 export interface Interface {
   readonly list: () => Effect.Effect<Info[], CompanionError>
   readonly get: (id: string) => Effect.Effect<Info | undefined, CompanionError>
+  readonly initialize: () => Effect.Effect<InitializeResult, CompanionError>
+  readonly create: (input?: CreateInput) => Effect.Effect<InitializeResult, CompanionError>
+  readonly details: (id: string) => Effect.Effect<Details, CompanionError>
+  readonly update: (id: string, input: UpdateInput) => Effect.Effect<Details, CompanionError>
+  readonly contextRevision: (id: string) => Effect.Effect<string, CompanionError>
   readonly importArchive: (input: ImportInput) => Effect.Effect<ImportResult, CompanionError>
   readonly bootstrap: (id: string) => Effect.Effect<Bootstrap, CompanionError>
   readonly sources: (id: string) => Effect.Effect<string[], CompanionError>
@@ -62,6 +73,7 @@ const Manifest = Schema.Struct({
   profile: Info,
   digest: Schema.String,
   historyDigest: Schema.optional(Schema.String),
+  contextRevision: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
   // 0.19.1 审计 F-04：来源身份摘要。同一档案换了 id 再次导入时按它复用旧档案，
   // 而不是生成第二份 companion-<hash> 身份。旧档案没有这个字段，回退到 source.agentID。
   identity: Schema.optional(Schema.String),
@@ -70,12 +82,27 @@ const Manifest = Schema.Struct({
 })
 const Entry = Schema.Struct({ path: Schema.String, text: Schema.String, source: Schema.optional(Schema.String) })
 const SearchCursor = Schema.Struct({ scope: Schema.String, offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })
+const INITIAL_SOUL =
+  "Respond helpfully to the user's messages. Do not assume personal details or a relationship that the user has not shared.\n"
+const INTRODUCTION_PROMPT = `### Getting acquainted
+Getting acquainted is active by the user's choice. Continue only when relevant to their current message, asking at most one natural question at a time about names or how they would like to be addressed. Either name may stay undecided. Do not ask again for information already provided. You may suggest a name, but save it with companion_profile only after the user explicitly chooses or accepts it. Prioritize practical requests; if the user wants to continue later, pause the introduction. Never require completing this process to chat or do a task. Do not invent a personality, relationship or shared memories, or turn suggestions into facts. Use companion_memory only for worthwhile facts and experiences supported by the conversation. Finish or pause only when the user indicates they want to.\n`
 
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const souls = yield* Soul.Service
     const writes = Semaphore.makeUnsafe(1)
+    const roster = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.gen(function* () {
+        const root = yield* directory
+        return yield* writes.withPermits(1)(
+          Effect.acquireUseRelease(
+            io(() => Flock.acquire("roster", { dir: path.join(root, ".locks"), timeoutMs: 10_000 })),
+            () => effect,
+            (lease) => Effect.promise(() => lease[Symbol.asyncDispose]()),
+          ),
+        )
+      })
 
     const get = Effect.fn("Companion.get")(function* (id: string) {
       const root = yield* directory
@@ -86,6 +113,13 @@ export const layer = Layer.effect(
       const profile = yield* get(id)
       if (!profile) return yield* new CompanionNotFound({ message: `Companion "${id}" was not found.` })
       return profile
+    })
+
+    const contextRevision = Effect.fn("Companion.contextRevision")(function* (id: string) {
+      const root = yield* directory
+      const current = yield* io(() => manifest(root, id))
+      if (!current) return yield* new CompanionNotFound({ message: `Companion "${id}" was not found.` })
+      return current.contextRevision ?? ""
     })
 
     const list = Effect.fn("Companion.list")(function* () {
@@ -104,6 +138,160 @@ export const layer = Layer.effect(
       })
     })
 
+    const details = Effect.fn("Companion.details")(function* (id: string) {
+      const profile = yield* requireProfile(id)
+      const soul = yield* souls.details(profile.soulID)
+      if (!soul) return yield* new CompanionIO({ message: `The companion's Soul is unavailable: ${profile.soulID}` })
+      const [user, identity] = yield* io(() =>
+        Promise.all([profileText(profile.directory, "USER.md"), profileText(profile.directory, "IDENTITY.md")]),
+      )
+      return new Details({
+        profile,
+        user,
+        companionName: profileField(identity, "companion-name").value,
+        userName: profileField(user, "preferred-name").value,
+        paths: {
+          directory: profile.directory,
+          user: path.join(profile.directory, "USER.md"),
+          identity: path.join(profile.directory, "IDENTITY.md"),
+          memory: path.join(profile.directory, "MEMORY.md"),
+          soul: soul.path,
+        },
+      })
+    })
+
+    const createNative = Effect.fn("Companion.createNative")(function* (requestID?: string) {
+      const root = yield* directory
+      const profiles = yield* list()
+      if (requestID !== undefined) {
+        for (const profile of profiles) {
+          const previous = yield* io(() => manifest(root, profile.id))
+          if (previous?.raw.createRequestID === requestID) return new InitializeResult({ profile, created: false })
+        }
+      }
+      if (profiles.length >= Limits.companions)
+        return yield* new CompanionConflict({
+          message: `At most ${Limits.companions} companions can be created. Existing companions were not changed.`,
+        })
+      const id = `companion-${randomUUID().replaceAll("-", "").slice(0, 12)}`
+      const profile = new Info({
+        id,
+        name: "Chat",
+        soulID: id,
+        directory: AppFileSystem.resolve(path.join(root, id, "workspace")),
+        createdAt: yield* Clock.currentTimeMillis,
+        files: 2,
+        warnings: [],
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        needsSetup: true,
+        introduction: "available",
+      })
+      const staging = yield* io(() => fs.mkdtemp(path.join(root, ".initialize-")))
+      return yield* Effect.gen(function* () {
+        yield* io(async () => {
+          const workspace = path.join(staging, "workspace")
+          await fs.mkdir(path.join(workspace, "memory"), { recursive: true, mode: 0o700 })
+          for (const name of ["USER.md", "MEMORY.md"])
+            await fs.writeFile(path.join(workspace, name), "", { flag: "wx", mode: 0o600 })
+          await fs.writeFile(
+            path.join(staging, "profile.json"),
+            JSON.stringify(
+              {
+                version: 1,
+                profile,
+                digest: digest(INITIAL_SOUL),
+                ...(requestID === undefined ? {} : { createRequestID: requestID }),
+              },
+              null,
+              2,
+            ),
+            { flag: "wx", mode: 0o600 },
+          )
+        })
+        yield* souls
+          .create({ id, name: profile.name, content: INITIAL_SOUL })
+          .pipe(Effect.mapError((error) => new CompanionIO({ message: error.message })))
+        yield* io(() => AppFileSystem.renameWithRetry(staging, path.join(root, id)))
+        return new InitializeResult({ profile, created: true })
+      }).pipe(Effect.ensuring(io(() => fs.rm(staging, { recursive: true, force: true })).pipe(Effect.orDie)))
+    })
+
+    const create = Effect.fn("Companion.create")(function* (input?: CreateInput) {
+      if (input?.requestID !== undefined && !/^[a-zA-Z0-9_-]{1,128}$/.test(input.requestID))
+        return yield* new CompanionInvalidInput({
+          message: "requestID must contain 1–128 letters, digits, underscores or hyphens.",
+        })
+      return yield* roster(createNative(input?.requestID))
+    })
+
+    const initialize = Effect.fn("Companion.initialize")(function* () {
+      return yield* roster(
+        Effect.gen(function* () {
+          const existing = (yield* list())[0]
+          return existing ? new InitializeResult({ profile: existing, created: false }) : yield* createNative()
+        }),
+      )
+    })
+
+    const update = Effect.fn("Companion.update")(function* (id: string, input: UpdateInput) {
+      const original = yield* requireProfile(id)
+      const soul = input.name?.trim() === "" ? yield* souls.get(original.soulID) : undefined
+      const root = yield* directory
+      yield* io(async () => {
+        validID(id)
+        const name = input.name === undefined ? undefined : validLabel(input.name)
+        const userName = input.userName === undefined ? undefined : validLabel(input.userName)
+        if (input.user !== undefined && userName !== undefined)
+          throw new CompanionInvalidInput({ message: "user and userName cannot be saved together." })
+        if (input.user !== undefined && Buffer.byteLength(input.user, "utf8") > Limits.profile)
+          throw new CompanionInvalidInput({ message: `User profile exceeds ${Limits.profile} UTF-8 bytes.` })
+        await using lease = await Flock.acquire("profile", { dir: path.join(root, id, ".locks"), timeoutMs: 10_000 })
+        const current = await manifest(root, id)
+        if (!current) throw new CompanionNotFound({ message: `Companion "${id}" was not found.` })
+        await containedPath(root, current.profile.directory)
+        const changes: Array<[string, string]> = []
+        if (input.user !== undefined || userName !== undefined) {
+          const before = await profileText(current.profile.directory, "USER.md")
+          const content = input.user ?? withProfileField(before, "preferred-name", userName!)
+          if (Buffer.byteLength(content, "utf8") > Limits.textFile)
+            throw new CompanionInvalidInput({ message: "USER.md exceeds the 4 MiB text limit." })
+          changes.push(["USER.md", content])
+        }
+        if (name !== undefined) {
+          const before = await profileText(current.profile.directory, "IDENTITY.md")
+          const content = withProfileField(before, "companion-name", name)
+          if (Buffer.byteLength(content, "utf8") > Limits.textFile)
+            throw new CompanionInvalidInput({ message: "IDENTITY.md exceeds the 4 MiB text limit." })
+          changes.push(["IDENTITY.md", content])
+        }
+        const introduction = input.introduction ?? introductionOf(current.profile)
+        const profile = new Info({
+          ...current.profile,
+          ...(name === undefined ? {} : { name: name || soul?.displayName || soul?.name || "Chat" }),
+          introduction,
+          needsSetup: introduction === "available" || introduction === "active",
+        })
+        for (const [file, content] of changes)
+          await AppFileSystem.writeFileAtomic(path.join(profile.directory, file), content, 0o600)
+        await AppFileSystem.writeFileAtomic(
+          path.join(root, id, "profile.json"),
+          JSON.stringify(
+            {
+              ...current.raw,
+              profile,
+              ...(changes.length || introduction !== introductionOf(current.profile)
+                ? { contextRevision: randomUUID() }
+                : {}),
+            },
+            null,
+            2,
+          ),
+          0o600,
+        )
+      })
+      return yield* details(id)
+    })
+
     const importArchive = Effect.fn("Companion.importArchive")(function* (input: ImportInput) {
       const root = yield* directory
       const archive = yield* io(() => readArchive(input.source))
@@ -113,14 +301,10 @@ export const layer = Layer.effect(
         // Growing memories must not silently create another companion on the next import.
         const identity = digest(`${archive.agentID ?? "main"}:${archive.name ?? content}`)
         const id = validID(input.id ?? `companion-${identity.slice(0, 12)}`)
-        const name = (input.name ?? archive.name ?? "Companion").trim()
-        if (!name || /[\r\n]/.test(name) || Buffer.byteLength(name) > 256)
-          throw new CompanionInvalidInput({
-            message: "Companion name must be one non-empty line of at most 256 UTF-8 bytes.",
-          })
+        const name = validName(input.name ?? archive.name ?? "Companion")
         return { id, name, content, identity }
       })
-      return yield* writes.withPermits(1)(
+      return yield* roster(
         Effect.gen(function* () {
           // 0.19.1 审计 F-04：未显式指定 id 时，先按来源身份复用已有档案——TUI 用自定义 id
           // 导入过的档案，GUI 再导入同一来源不会生成第二份 identity。显式 id 仍以调用方为准。
@@ -147,6 +331,10 @@ export const layer = Layer.effect(
               })
             return yield* io(() => appendHistory(root, targetID, archive))
           }
+          if ((yield* list()).length >= Limits.companions)
+            return yield* new CompanionConflict({
+              message: `At most ${Limits.companions} companions can be created. Existing companions were not changed.`,
+            })
           const existing = yield* souls.get(targetID)
           if (existing && (existing.content.trim() !== prepared.content.trim() || existing.name !== prepared.name))
             return yield* new CompanionConflict({
@@ -243,6 +431,7 @@ export const layer = Layer.effect(
         const sources: string[] = []
         const warnings: string[] = []
         const sections: string[] = []
+        if (introductionOf(profile) === "active") sections.push(INTRODUCTION_PROMPT)
         for (const file of ["MEMORY.md", "USER.md", "IDENTITY.md", ...recent]) {
           const text = await optionalText(profile.directory, file, warnings)
           if (text === undefined) continue
@@ -510,7 +699,21 @@ export const layer = Layer.effect(
       )
     })
 
-    return Service.of({ list, get, importArchive, bootstrap, sources, search, read, remember })
+    return Service.of({
+      list,
+      get,
+      initialize,
+      create,
+      details,
+      update,
+      contextRevision,
+      importArchive,
+      bootstrap,
+      sources,
+      search,
+      read,
+      remember,
+    })
   }),
 )
 
@@ -538,6 +741,35 @@ function validID(id: string) {
       message: "Companion id must contain 1–64 lowercase letters, digits, hyphens or underscores.",
     })
   return id
+}
+
+function validName(value: string) {
+  const name = validLabel(value)
+  if (!name)
+    throw new CompanionInvalidInput({
+      message: "Companion name must be one non-empty line of at most 256 UTF-8 bytes.",
+    })
+  return name
+}
+
+function validLabel(value: string) {
+  const name = value.trim()
+  if (/[\r\n]/.test(value) || Buffer.byteLength(name, "utf8") > 256)
+    throw new CompanionInvalidInput({ message: "A name must be one line of at most 256 UTF-8 bytes." })
+  return name
+}
+
+async function profileText(root: string, file: "USER.md" | "IDENTITY.md") {
+  const target = path.join(root, file)
+  const stat = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
+    throw error
+  })
+  if (!stat) return ""
+  if (!stat.isFile() || stat.size > Limits.textFile)
+    throw new CompanionInvalidInput({ message: `${file} must be a regular UTF-8 file of at most 4 MiB.` })
+  await containedPath(root, target)
+  return decode(await fs.readFile(target), file)
 }
 
 async function readJSON(file: string): Promise<unknown | undefined> {

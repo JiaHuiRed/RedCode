@@ -75,12 +75,7 @@ import { useSync } from "@/context/sync"
 import { messageAgentColor } from "@/utils/agent"
 import { buildReference, appendReference, referenceLabel, referenceTime, type ReferenceAnchor } from "@/utils/reference"
 import { usePrompt } from "@/context/prompt"
-import {
-  pushRecentReference,
-  recentReferences,
-  referenceLocatable,
-  type RecentReference,
-} from "./reference-links"
+import { pushRecentReference, recentReferences, referenceLocatable, type RecentReference } from "./reference-links"
 import { findGroupHost, findPartHost, nextFrame, openGroupTrigger, revealWithinHost } from "./timeline-locate"
 import { sessionTitle } from "@/utils/session-title"
 import { guiDiagnostics } from "@/context/gui-diagnostics"
@@ -144,7 +139,8 @@ function sameKeys(a: readonly string[] | undefined, b: readonly string[] | undef
 // scheduleScrollToEnd/maybeAnchorBottom 在流式期每 flush 调用，不必每次同步读 localStorage。
 let nativeTimelineEnabledCache: boolean | undefined
 const nativeTimelineEnabled = () =>
-  (nativeTimelineEnabledCache ??= typeof localStorage !== "undefined" && localStorage.getItem("redcode:native-timeline") === "1")
+  (nativeTimelineEnabledCache ??=
+    typeof localStorage !== "undefined" && localStorage.getItem("redcode:native-timeline") === "1")
 
 const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60
@@ -544,6 +540,19 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return
     return sync.session.get(id)
+  })
+  const companions = useQuery(() => ({
+    queryKey: ["companion", globalSDK.url, "list"],
+    enabled: info()?.mode === "chat" && !!info()?.companionID,
+    queryFn: async () => (await globalSDK.client.companion.list({ throwOnError: true })).data,
+  }))
+  const assistantIdentity = createMemo(() => {
+    const session = info()
+    const soul = soulList.data?.find((item) => item.id === session?.soul)
+    if (session?.mode !== "chat" || !session.companionID) return soul
+    const profile = companions.data?.find((item) => item.id === session.companionID)
+    if (!profile || profile.soulID !== session.soul) return soul
+    return { ...soul, id: profile.soulID, name: profile.name, displayName: profile.name }
   })
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
@@ -1051,7 +1060,7 @@ export function MessageTimeline(props: {
     const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
     for (let node = walker.nextNode(); node && ranges.length < 200; node = walker.nextNode()) {
       const value = node.nodeValue ?? ""
-      for (let from = 0; ; ) {
+      for (let from = 0; ;) {
         const index = value.indexOf(query, from)
         if (index === -1) break
         const range = document.createRange()
@@ -1408,7 +1417,8 @@ export function MessageTimeline(props: {
         const target = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")].find(
           (row) => row.dataset.timelineKey === anchor.key,
         )
-        if (target) root.scrollTop += target.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+        if (target)
+          root.scrollTop += target.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
       }
       measuredBottomAnchored = isMeasuredBottom(root)
     }
@@ -2147,10 +2157,12 @@ export function MessageTimeline(props: {
           fileOpenSource = { ...source(file), sessionID: id }
           openFile?.(file.path)
         }}
-        onSource={(file) => props.onJumpTarget?.({
-          ...source(file),
-          createdAt: messageByID().get(file.messageID)?.time.created,
-        })}
+        onSource={(file) =>
+          props.onJumpTarget?.({
+            ...source(file),
+            createdAt: messageByID().get(file.messageID)?.time.created,
+          })
+        }
       />
     )
   }
@@ -2164,7 +2176,9 @@ export function MessageTimeline(props: {
       const parts = createMemo(() => {
         const group = row().group
         if (group.type === "part") return emptyTools
-        return group.refs.map((ref) => getMsgPart(ref.messageID, ref.partID)).filter((part): part is ToolPart => part?.type === "tool")
+        return group.refs
+          .map((ref) => getMsgPart(ref.messageID, ref.partID))
+          .filter((part): part is ToolPart => part?.type === "tool")
       })
 
       return (
@@ -2493,7 +2507,7 @@ export function MessageTimeline(props: {
                 >
                   <SoulAvatar
                     id={info()?.soul}
-                    soul={soulList.data?.find((soul) => soul.id === info()?.soul)}
+                    soul={assistantIdentity()}
                     unbound={!!info() && !info()?.soul}
                     size="medium"
                   />
@@ -2504,8 +2518,11 @@ export function MessageTimeline(props: {
                 >
                   {renderAssistantPartGroup(assistantPartRow)}
                   <Show
-                    when={openFile && !workingTurn(assistantPartRow().userMessageID) &&
-                      lastAssistantGroupKey().get(assistantPartRow().userMessageID) === assistantPartRow().group.key}
+                    when={
+                      openFile &&
+                      !workingTurn(assistantPartRow().userMessageID) &&
+                      lastAssistantGroupKey().get(assistantPartRow().userMessageID) === assistantPartRow().group.key
+                    }
                   >
                     <TurnOutputs userMessageID={assistantPartRow().userMessageID} />
                   </Show>
@@ -2546,7 +2563,7 @@ export function MessageTimeline(props: {
                 <div data-slot="session-turn-assistant-avatar">
                   <SoulAvatar
                     id={info()?.soul}
-                    soul={soulList.data?.find((soul) => soul.id === info()?.soul)}
+                    soul={assistantIdentity()}
                     unbound={!!info() && !info()?.soul}
                     size="medium"
                   />

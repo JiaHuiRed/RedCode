@@ -26,7 +26,14 @@ import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
 // 261110 Red 多项目导航：未提供时（attach / 旧测试）行为保持原样。
 import { useProjectNavigation, type ProjectDraft } from "@tui/context/project-navigation"
-import { appendDraftChunk, appendDraftText, consumeSubmittedDraft, sameDraftScope, type DraftPart, type DraftScope } from "./draft"
+import {
+  appendDraftChunk,
+  appendDraftText,
+  consumeSubmittedDraft,
+  sameDraftScope,
+  type DraftPart,
+  type DraftScope,
+} from "./draft"
 import { useEvent } from "@tui/context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui/context/editor"
 import { MessageID, PartID } from "@/session/schema"
@@ -248,7 +255,9 @@ export function Prompt(props: PromptProps) {
   // 261116 Red C01：忙碌时的默认投递取真正生效的 busy_enter（与服务端同一配置）；
   // 单条临时覆盖只在本次发送生效，发完复位。出厂默认仍是 steer。
   const busy = createMemo(() => status().type !== "idle")
-  const defaultDelivery = createMemo<"steer" | "queue">(() => (sync.data.config.busy_enter === "queue" ? "queue" : "steer"))
+  const defaultDelivery = createMemo<"steer" | "queue">(() =>
+    sync.data.config.busy_enter === "queue" ? "queue" : "steer",
+  )
   const [deliveryOverride, setDeliveryOverride] = createSignal<"steer" | "queue" | undefined>()
   const effectiveDelivery = createMemo<"steer" | "queue">(() => deliveryOverride() ?? defaultDelivery())
   const history = usePromptHistory()
@@ -874,6 +883,7 @@ export function Prompt(props: PromptProps) {
     set(prompt) {
       input.setText(prompt.input)
       setPrompt(prompt)
+      if (prompt.mode) setMode(prompt.mode)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
     },
@@ -1531,11 +1541,14 @@ export function Prompt(props: PromptProps) {
     // 261110 Red 请求由连接持有；离开后的完成回调只消费原草稿，不触碰已销毁的输入框。
     if (staleScope(submissionScope)) {
       if (navigation?.enabled) {
-        const remaining = consumeSubmittedDraft(navigation.draft(submissionScope.directory, submissionScope.sessionID), {
-          prompt: promptSnapshot,
-          cursor: 0,
-          mode: currentMode,
-        })
+        const remaining = consumeSubmittedDraft(
+          navigation.draft(submissionScope.directory, submissionScope.sessionID),
+          {
+            prompt: promptSnapshot,
+            cursor: 0,
+            mode: currentMode,
+          },
+        )
         if (remaining) navigation.saveDraft(submissionScope.directory, submissionScope.sessionID, remaining)
         if (isNewSession) navigation.finishSubmission(submissionScope.directory, sessionID)
       }
