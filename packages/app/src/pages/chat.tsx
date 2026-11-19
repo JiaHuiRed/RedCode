@@ -4,11 +4,13 @@ import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import type { CompanionInfo, Session } from "@redcode-ai/sdk/v2/client"
 import { Button } from "@redcode-ai/ui/button"
+import { Icon } from "@redcode-ai/ui/icon"
 import { Spinner } from "@redcode-ai/ui/spinner"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { SoulAvatar } from "@/components/soul-avatar"
+import { ChatComposerTools, type ChatModelChoice } from "@/components/chat-composer-tools"
 import { prepareSoulAvatar } from "@/utils/soul-avatar-image"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -37,12 +39,54 @@ export default function Chat() {
     creating: false,
     createError: "",
     changingIntroduction: false,
+    // 261119 Red Chat 不把模型绑到伙伴身份上：换模型只换下一次请求用哪颗脑子，
+    // Soul 与记忆不动。这些选择只活在首页草稿里，发完消息进入会话页后由该页的
+    // composer 接管。
+    model: undefined as ChatModelChoice | undefined,
+    variant: undefined as string | undefined,
+    files: [] as Array<{ mime: string; filename: string; url: string; size: number }>,
+    attachmentError: "",
   })
   let mounted = true
   let navigationEpoch = 0
+  let filePicker: HTMLInputElement | undefined
   onCleanup(() => {
     mounted = false
   })
+  // 261119 Red 首页附件走与 Code 相同的 FilePart 形状，但预算更窄：Chat 首条消息
+  // 通常只是一句话，不需要把几十 MB 的归档塞进首个请求。
+  const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+  const MAX_ATTACHMENTS = 4
+  const readAsDataURL = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error ?? new Error("read failed"))
+      reader.readAsDataURL(file)
+    })
+  const acceptFiles = async (incoming: File[]) => {
+    const room = MAX_ATTACHMENTS - state.files.length
+    if (room <= 0) {
+      setState("attachmentError", language.t("chat.composer.tooMany", { count: MAX_ATTACHMENTS }))
+      return
+    }
+    const accepted: typeof state.files = []
+    let error = ""
+    for (const file of incoming.slice(0, room)) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        error = language.t("chat.composer.tooLarge", { name: file.name })
+        continue
+      }
+      try {
+        accepted.push({ mime: file.type || "application/octet-stream", filename: file.name, url: await readAsDataURL(file), size: file.size })
+      } catch {
+        // 读取失败（权限或文件在选取后被移动）只在界面提示，不阻断其余文件。
+        error = language.t("chat.composer.readFailed", { name: file.name })
+      }
+    }
+    if (accepted.length > 0) setState("files", (files) => [...files, ...accepted])
+    setState("attachmentError", error)
+  }
   createEffect(
     on(
       () => search.companion,
@@ -213,6 +257,9 @@ export default function Chat() {
         session,
         messageID,
         text: content,
+        model: state.model,
+        variant: state.variant,
+        files: state.files.map(({ mime, filename, url }) => ({ mime, filename, url })),
         timeoutMessage: language.t("chat.companion.unconfirmed"),
       }),
     receivedProfile: (selected) => {
@@ -223,6 +270,8 @@ export default function Chat() {
     assignDraft: workspace.assignDraft,
     clearDraft: workspace.clearDraft,
     accepted: (session) => {
+      // 附件跟着这一条消息一起被接收，成功后清空；失败路径不动，草稿与附件都留着可重试。
+      setState({ files: [], attachmentError: "" })
       seedSession(session)
       recordCompanionMessageAccepted(queryClient, sdk.url, session)
       void queryClient.invalidateQueries({ queryKey: ["companion", sdk.url, session.companionID, "sessions"] })
@@ -373,12 +422,36 @@ export default function Chat() {
           </div>
         </Show>
         <form
-          class="flex flex-col gap-3 rounded-2xl border border-border-weak-base bg-surface-base p-4 shadow-sm"
+          class="flex flex-col gap-2 rounded-2xl border border-border-weak-base bg-surface-base p-3 shadow-sm"
           onSubmit={(event) => {
             event.preventDefault()
             void send()
           }}
         >
+          <Show when={state.attachmentError}>
+            <p role="alert" class="px-1 text-12-regular text-text-on-critical-base">
+              {state.attachmentError}
+            </p>
+          </Show>
+          <Show when={state.files.length > 0}>
+            <ul class="flex flex-wrap gap-1.5 px-1 pt-1">
+              <For each={state.files}>
+                {(file, index) => (
+                  <li class="flex max-w-full items-center gap-1.5 rounded-lg border border-border-weak-base bg-surface-raised-base py-0.5 pr-1 pl-2 text-12-regular text-text-weak">
+                    <span class="min-w-0 truncate">{file.filename}</span>
+                    <button
+                      type="button"
+                      class="shrink-0 rounded p-0.5 text-text-weaker hover:text-text-strong focus-visible:outline-2 focus-visible:outline-border-focus"
+                      aria-label={language.t("chat.composer.removeFile", { name: file.filename })}
+                      onClick={() => setState("files", (files) => files.filter((_, i) => i !== index()))}
+                    >
+                      <Icon name="close-small" size="small" />
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
           <textarea
             data-action="chat-first-message"
             aria-label={language.t("chat.native.placeholder")}
@@ -387,6 +460,12 @@ export default function Chat() {
             class="min-h-28 w-full resize-y border-0 bg-transparent px-1 py-2 text-14-regular leading-relaxed text-text-strong outline-none"
             disabled={submission()?.sending || !ready() || missing()}
             onInput={(event) => workspace.setDraft(draftKey(), event.currentTarget.value)}
+            onPaste={(event) => {
+              const pasted = Array.from(event.clipboardData?.files ?? [])
+              if (pasted.length === 0) return
+              event.preventDefault()
+              void acceptFiles(pasted)
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
                 event.preventDefault()
@@ -394,8 +473,35 @@ export default function Chat() {
               }
             }}
           />
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-12-regular text-text-weak">{profile()?.name ?? "Chat"}</span>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex min-w-0 flex-wrap items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="small"
+                icon="plus-small"
+                aria-label={language.t("chat.composer.addFile")}
+                disabled={submission()?.sending || !ready() || missing()}
+                onClick={() => filePicker?.click()}
+              />
+              <input
+                ref={filePicker}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  void acceptFiles(Array.from(event.currentTarget.files ?? []))
+                  event.currentTarget.value = ""
+                }}
+              />
+              <ChatComposerTools
+                disabled={submission()?.sending || !ready() || missing()}
+                model={state.model}
+                variant={state.variant}
+                onModelChange={(value) => setState("model", value)}
+                onVariantChange={(value) => setState("variant", value)}
+              />
+            </div>
             <Button
               type="submit"
               variant="primary"

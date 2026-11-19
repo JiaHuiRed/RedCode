@@ -5,7 +5,8 @@ import { join } from "node:path"
 
 const appRoot = join(import.meta.dir, "..")
 const repoRoot = join(appRoot, "..", "..")
-const opencodeDir = join(repoRoot, "packages", "opencode")
+// 261119 Red 后端在 packages/redspace（旧路径 packages/opencode 已不存在，GUI dev 一直起不来后端）。
+const backendDir = join(repoRoot, "packages", "redspace")
 
 const VITE_PORT = process.env.RC_VITE_PORT ?? "5173"
 const SERVER_PORT = process.env.RC_SERVER_PORT ?? "4097"
@@ -13,7 +14,7 @@ const CORS = `http://localhost:${VITE_PORT}`
 
 const backend = spawn(
   ["bun", "run", "--conditions=browser", "./src/index.ts", "serve", "--port", SERVER_PORT, "--cors", CORS],
-  { cwd: opencodeDir, stdio: ["ignore", "inherit", "inherit"] },
+  { cwd: backendDir, stdio: ["ignore", "inherit", "inherit"] },
 )
 
 const frontend = spawn(["bun", "x", "vite", "--port", VITE_PORT], {

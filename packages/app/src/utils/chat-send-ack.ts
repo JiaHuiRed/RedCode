@@ -81,8 +81,13 @@ export function sendCompanionMessage(input: {
   messageID: string
   text: string
   timeoutMessage: string
+  /** 261119 Red Chat 首页可临时换模型与推理档；缺省时不传，服务端按 agent 与默认值解析。 */
+  model?: { providerID: string; modelID: string }
+  variant?: string
+  files?: Array<{ mime: string; filename?: string; url: string }>
 }) {
   const { session, messageID } = input
+  const files = input.files ?? []
   return submitAcknowledgedChat({
     timeoutMessage: input.timeoutMessage,
     submit: (signal) =>
@@ -91,7 +96,9 @@ export function sendCompanionMessage(input: {
           directory: session.directory,
           sessionID: session.id,
           messageID,
-          parts: [{ type: "text", text: input.text }],
+          ...(input.model ? { model: input.model } : {}),
+          ...(input.variant ? { variant: input.variant } : {}),
+          parts: [{ type: "text", text: input.text }, ...files.map((file) => ({ type: "file" as const, ...file }))],
         },
         { throwOnError: true, signal },
       ),
