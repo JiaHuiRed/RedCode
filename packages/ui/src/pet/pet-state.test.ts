@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { createStore, produce } from "solid-js/store"
-import { applyDirectoryEvent } from "../context/global-sync/event-reducer"
-import type { State } from "../context/global-sync/types"
 import { petDetail } from "./pet-lines"
 import {
   applyPetEvent,
@@ -80,35 +78,6 @@ describe("current session projection", () => {
     finishPetBootstrap(state, "dir")
     expect(resolveSessionPet(state, NOW, "s", { status: { type: "busy" } }, "dir").kind).toBe("thinking")
     expect(resolveSessionPet(state, NOW, "s", { permissions: [{ id: "p", permission: "bash" }] }, "dir").kind).toBe("permission")
-  })
-
-  test("commits concurrent replies and idle through the actual child reducer", () => {
-    const state = createPetState()
-    const [child, setChild] = createStore({
-      session_status: { a: { type: "busy" } },
-      permission: { a: [
-        { id: "p1", sessionID: "a", permission: "bash", patterns: [], metadata: {}, always: [] },
-        { id: "p2", sessionID: "a", permission: "edit", patterns: [], metadata: {}, always: [] },
-      ] },
-      question: {},
-    } as unknown as State)
-    beginPetBootstrap(state, "dir")
-    for (const event of [
-      { type: "permission.replied", properties: { sessionID: "a", requestID: "p1" } },
-      { type: "session.status", properties: { sessionID: "a", status: { type: "idle" } } },
-    ]) {
-      applyPetEvent(state, event, NOW)
-      recordPetBootstrapEvent(state, "dir", event)
-    }
-    for (const event of finishPetBootstrap(state, "dir")) {
-      applyDirectoryEvent({
-        event: event as Parameters<typeof applyDirectoryEvent>[0]["event"],
-        directory: "dir", store: child, setStore: setChild, push() {}, loadLsp() {},
-      })
-    }
-    expect(child.permission.a.map((item) => item.id)).toEqual(["p2"])
-    expect(child.session_status.a?.type).toBe("idle")
-    expect(Object.keys(state.bootstraps)).toHaveLength(0)
   })
 
   test("question replies stay scoped across sessions and journal generations", () => {

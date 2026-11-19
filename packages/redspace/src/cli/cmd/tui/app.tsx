@@ -73,6 +73,7 @@ import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { createTuiApi } from "@/cli/cmd/tui/plugin/api"
 import type { RouteMap } from "@/cli/cmd/tui/plugin/api"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
+import { PetSource } from "@/cli/cmd/tui/pet-source"
 import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteDialog } from "./component/command-palette"
 import {
@@ -1109,6 +1110,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       <Show when={Flag.REDCODE_SHOW_TTFD}>
         <TimeToFirstDraw />
       </Show>
+      {/* 261119 Red TUI 桌宠来源：win32 才激活，渲染 null，不占布局 */}
+      <PetSource />
       <Show when={ready()}>
         <box flexGrow={1} minHeight={0} flexDirection="column">
           <Switch>

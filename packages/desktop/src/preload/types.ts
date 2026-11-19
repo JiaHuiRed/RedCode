@@ -1,5 +1,5 @@
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
-import type { DesktopPetBridge } from "@redcode-ai/app/desktop-pet"
+import type { DesktopPetBridge } from "@redcode-ai/ui/desktop-pet"
 import type { SidecarState } from "../main/sidecar-supervisor"
 import type { UpdateCheckResult, UpdateInstallResult } from "../main/updater"
 

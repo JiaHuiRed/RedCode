@@ -5,8 +5,8 @@ import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
-import { petState } from "./pet-store"
-import { DEFAULT_OUTFIT, outfitFor, resolvePet, resolveSessionPet, type PetDisplay } from "./pet-state"
+import { petState } from "@redcode-ai/ui/pet-store"
+import { DEFAULT_OUTFIT, outfitFor, resolvePet, resolveSessionPet, type PetDisplay } from "@redcode-ai/ui/pet-state"
 import {
   advancePetPresentation,
   clampPetPixels,
@@ -22,11 +22,11 @@ import {
   petTouchResponse,
   type PetBehavior,
   type PetTouch,
-} from "./pet-lines"
-import type { DesktopPetLayout } from "./desktop-pet"
+} from "@redcode-ai/ui/pet-lines"
+import type { DesktopPetLayout } from "@redcode-ai/ui/desktop-pet"
 import "./pet-layer.css"
 
-export type { DesktopPetBridge, DesktopPetLayout, DesktopPetSnapshot } from "./desktop-pet"
+export type { DesktopPetBridge, DesktopPetLayout, DesktopPetSnapshot } from "@redcode-ai/ui/desktop-pet"
 
 /**
  * Pet Layer — 赤（Q 版）的 GUI 常驻视觉层。
@@ -549,7 +549,10 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
   const sync = useServerSync()
   const platform = usePlatform()
   const [view, setView] = createStore({ now: Date.now() })
-  const [native, setNative] = createStore({ active: false })
+  // 261119 Red closed latch：用户点 × 只关本次显示（宿主侧），内联 DOM 在下一次
+  // push 确认（shown=true 保持隐藏 / shown=false 宿主不可用走内联兜底）前不出现，
+  // 避免关掉桌面赤后又在窗口里立刻冒出来一只。
+  const [native, setNative] = createStore({ active: false, closed: false })
 
   // 260929 Red tick 跟着开关走：关宠后不再每秒 resolvePet。
   createEffect(() => {
@@ -579,6 +582,14 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     set: (position: { x: number; y: number } | undefined) => settings.general.setPetPosition(position),
   }
 
+  // 261119 Red 显式激活接管：挂载即报一次（启动同为激活点），当前会话/目录变化再报
+  createEffect(
+    on(
+      () => `${props.directory ?? ""}\0${props.sessionID ?? ""}`,
+      () => platform.desktopPet?.activate(),
+    ),
+  )
+
   // 261118 Red 只在桌面桥存在时才走原生窗：设置未就绪不推（避免默认值闪一次），
   // 关闭推 null；in-flight 结果用 token 去重，避免旧 Promise 把新状态改回去。
   let publishToken = 0
@@ -592,10 +603,12 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     const token = ++publishToken
     void bridge.update(snapshot).then(
       (shown) => {
-        if (token === publishToken) setNative("active", shown)
+        // push 有了结论就清 latch：shown=true 原生接管（内联继续隐藏），
+        // shown=false 宿主不可用，回内联兜底
+        if (token === publishToken) setNative({ active: shown, closed: false })
       },
       () => {
-        if (token === publishToken) setNative("active", false)
+        if (token === publishToken) setNative({ active: false, closed: false })
       },
     )
   })
@@ -608,8 +621,8 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
     const bridge = platform.desktopPet
     if (!bridge) return
     const off = bridge.onClosed(() => {
-      setNative("active", false)
-      settings.general.setPetEnabled(false)
+      // 261119 Red 已定决策：点关闭只关本次显示，不改 petEnabled；下次显式激活（焦点/切会话）恢复
+      setNative({ active: false, closed: true })
     })
     onCleanup(off)
   })
@@ -620,7 +633,7 @@ export function PetLayer(props: { sessionID?: string; directory?: string }) {
   })
 
   return (
-    <Show when={!native.active}>
+    <Show when={!native.active && !native.closed}>
       <PetView
         enabled={settings.general.petEnabled()}
         display={display()}

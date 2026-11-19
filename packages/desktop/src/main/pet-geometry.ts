@@ -1,5 +1,5 @@
 import type { Point, Rectangle } from "electron"
-import type { DesktopPetLayout } from "@redcode-ai/app/desktop-pet"
+import type { DesktopPetLayout } from "@redcode-ai/ui/desktop-pet"
 
 export const PET_WINDOW = { width: 320, height: 432 }
 const PET_SIZE = 184

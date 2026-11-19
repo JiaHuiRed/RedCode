@@ -1,6 +1,6 @@
 # TUI 与 GUI 共用桌面上的赤
 
-状态：proposed，产品边界已定（2026-11-18），待技术验证；本方案尚未实现。
+状态：implemented（261119；实现记录见文末「实现记录」节）。
 
 ## 问题与目标
 
@@ -82,3 +82,25 @@ GUI 当前路由 + 状态投影 → 同一来源仲裁 → 本机桌宠宿主 �
 3. **关闭**：只关这一次显示，不改持久开关；下次显式激活恢复。
 
 首版不改变模型提示词、工具或请求上下文，因此不增加模型可见注入；若以后让赤发消息或操作权限，必须另立身份、授权与确认边界。
+
+## 实现记录（261119）
+
+按本文四阶段落地，全部代码已进树、定向测试与四包 typecheck 绿；真机验证矩阵待执行（见文末）。
+
+### 结构
+
+- **共享规则层下沉 `packages/ui/src/pet/`**：`pet-state.ts` / `pet-lines.ts` / `pet-store.ts` / `desktop-pet.ts` 从 app 移入（pet-state 本就零 Solid 依赖）；app 保留 `pet-layer.tsx` 并经 `@redcode-ai/app/desktop-pet` 子路径 re-export。宿主协议契约（消息类型、快照/登记文件校验器）在 `pet-host-protocol.ts`，desktop（宿主）与 redspace（来源）共用一份，来源客户端与登记文件读写也下沉到 ui（`pet-host-client.ts` / `pet-host-files.ts`，均 Electron 无关）。
+- **宿主**（`packages/desktop/src/main/pet-host.ts` + `pet-host-server.ts` + `pet-host-registry.ts`）：同一可执行文件 `--pet-host` 启动，独立 userData（`<appId>-pet`）与独立单实例锁（与 GUI 锁互不干扰——原型的第一验证点，实现即在 `runFork(main)` 前分支）；loopback `127.0.0.1:0` HTTP + Bearer token（仓库无 named pipe 先例，沿用 sidecar/mobile-gateway 的既定套路）；来源注册表 FSM（连接代次 + 有序序号、显式激活仲裁、断连交接）；rendezvous 落 `~/.redcode/state/pet-host.json`（运行中，宿主写、退出删）与 `pet-host-install.json`（spawn 命令登记，归 GUI 所有——GUI 启动即写，宿主不覆写，dev 下宿主的 argv[1] 不是可靠 app 路径）；最后一个来源断连 15s 后自退；赤窗位置一次性从 GUI 旧 store 迁移。
+- **GUI 来源**（`pet-host-client.ts` kind=gui）：渲染层 `desktop-pet:update` 改走宿主客户端；焦点与渲染层 `desktop-pet:activate`（PetLayer 在会话/目录变化时发）为显式激活；宿主不可用返回 false → 渲染层保持 inline 兜底（桥契约不变）；点 × 只关本次显示（closed 事件经 SSE 回源，PetLayer 用 closed latch 压住内联 DOM，`petEnabled` 不再被自动置 false）。
+- **TUI 来源**（`packages/redspace/src/cli/cmd/tui/pet-source.tsx` kind=tui）：消费本 scope 的 `sdk.event` 流喂共享 pet-state，1s tick + sync 状态/路由变化合并驱动，快照键比对后才推；挂载/会话切换显式激活；桌面版未登记时按快照变化留一条日志即降级；正常退出靠 SSE 断连由宿主兜底释放。
+
+### 与原方案的偏差
+
+- 传输选 loopback HTTP + token 而非 named pipe（方案原文「named pipe 或同等本机 IPC」；同用户威胁模型与 sidecar 一致，token 只落用户 profile 下的登记文件）。
+- 方案原文假设的「pet-only 宿主与 GUI 单实例共存」验证结果：两把锁分别落在 `<appId>` 与 `<appId>-pet` 两个 userData，互不触发 second-instance——无需转移活窗口。
+
+### 验证现状与待办
+
+- 已绿：desktop 宿主协议端到端（真 node:http + 真客户端 fetch，2 用例：注册→激活→closed→释放全链路、401/400/409 边界）+ 注册表 FSM 9 用例（含 onActivate 先于 onChange 的 close-latch 时序） + ui 规则层 67 用例（pet-state/lines）+ app journal×child-reducer 集成 1 用例，合计 78；desktop/app/ui/redspace 四包 typecheck；`check:subprocess-timeout` 门禁；`check-version-consistency`。
+- **模型可见四问全部为零**：不碰提示词、工具 schema、注入段与工具输出格式；`session/prefix-shape.ts` 无变化；无新增引擎 HTTP 端点（OpenAPI 不动）。
+- 待真机：GUI-only / TUI-only / GUI+TUI 同开（一只赤）、焦点与切会话接管、关闭→下次激活恢复、拖动跨屏、宿主崩溃与终端强杀恢复、GUI 退出赤不跟随；宿主冷启动与空闲工作集数字待实测回填本节。

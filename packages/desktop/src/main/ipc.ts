@@ -4,7 +4,7 @@ import { join, resolve, sep } from "node:path"
 import { BrowserWindow, Notification, app, dialog, ipcMain as electronIpcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
-import type { DesktopPetSnapshot } from "@redcode-ai/app/desktop-pet"
+import type { DesktopPetSnapshot } from "@redcode-ai/ui/desktop-pet"
 
 import type {
   InitStep,
@@ -24,9 +24,9 @@ import { getStore } from "./store"
 import { closeBrowserPreview, openHtmlPreview } from "./browser-preview"
 import type { UpdateCheckResult, UpdateInstallResult } from "./updater"
 import type { SidecarState } from "./sidecar-supervisor"
+import type { PetHostClient } from "@redcode-ai/ui/pet-host-client"
 import { getMainWindows, getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import { openPathChecked } from "./path-actions"
-import { closeDesktopPet, desktopPetHit, desktopPetReady, dragDesktopPet, isPetRenderer, updateDesktopPet } from "./pet-window"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -68,6 +68,7 @@ type Deps = {
   refreshMobileGatewayPairingCode: () => Promise<MobileGatewayStartInfo>
   stopMobileGateway: () => Promise<void>
   revokeMobileGatewayDevice: (id: string) => boolean
+  petHost: PetHostClient
 }
 
 function assertTrustedIpcSender(event: Pick<IpcMainEvent | IpcMainInvokeEvent, "senderFrame">) {
@@ -94,22 +95,17 @@ export function registerIpcHandlers(deps: Deps) {
     },
   }
 
+  // 261119 Red 桌宠窗已移交 pet-only 宿主进程：GUI 主进程只作为来源客户端推快照/激活。
+  // 赤渲染页的回程通道（ready/close/hit/drag）在宿主进程注册（pet-host.ts）。
   ipcMain.handle("desktop-pet:update", (event, snapshot: DesktopPetSnapshot | null) => {
     const source = BrowserWindow.fromWebContents(event.sender)
     if (!source || !getMainWindows().includes(source) || event.senderFrame !== event.sender.mainFrame) return false
-    return updateDesktopPet(source, snapshot)
+    return deps.petHost.push(snapshot)
   })
-  const onPet = (name: string, handler: (payload: unknown) => void) =>
-    ipcMain.on(`desktop-pet:${name}`, (event, payload: unknown) => {
-      if (isPetRenderer(event.sender) && event.senderFrame === event.sender.mainFrame) handler(payload)
-    })
-  onPet("ready", desktopPetReady)
-  onPet("close", closeDesktopPet)
-  onPet("hit", (value) => {
-    if (typeof value === "boolean") desktopPetHit(value)
-  })
-  onPet("drag", (phase) => {
-    if (phase === "start" || phase === "move" || phase === "end" || phase === "cancel") dragDesktopPet(phase)
+  ipcMain.on("desktop-pet:activate", (event) => {
+    const source = BrowserWindow.fromWebContents(event.sender)
+    if (!source || !getMainWindows().includes(source) || event.senderFrame !== event.sender.mainFrame) return
+    deps.petHost.activate()
   })
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())

@@ -11,7 +11,7 @@ import type { Event, ProcessMetric } from "electron"
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, Tray } from "electron"
 
 import contextMenu from "electron-context-menu"
-import { CHANNEL, QUIT_CONFIRM_DISABLED_KEY, UPDATER_ENABLED } from "./constants"
+import { CHANNEL, desktopAppId, QUIT_CONFIRM_DISABLED_KEY, UPDATER_ENABLED } from "./constants"
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { checkAppExists, resolveAppPath, wslPath, wslPathMany } from "./apps"
 import { listFonts } from "./fonts"
@@ -66,17 +66,16 @@ import {
   mobileGatewaySessionInScope,
   type MobileGatewayStartInfo,
 } from "./mobile-gateway"
+import { createPetHostClient } from "@redcode-ai/ui/pet-host-client"
+import { PET_HOST_INSTALL_FILE, petHostSpawnCommand, writePetStateJson } from "@redcode-ai/ui/pet-host-files"
+import { isPetHostArgv, runPetHost } from "./pet-host"
+import { PET_HOST_PROTOCOL } from "@redcode-ai/ui/pet-host"
 import { Cause, Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
   dev: "RedSpace Dev",
   beta: "RedSpace Beta",
   prod: "RedSpace",
-}
-const APP_IDS: Record<string, string> = {
-  dev: "ai.redcode.desktop.dev",
-  beta: "ai.redcode.desktop.beta",
-  prod: "ai.redcode.desktop",
 }
 const TEST_ONBOARDING = process.env.REDCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
@@ -515,7 +514,7 @@ const main = Effect.gen(function* () {
 
   process.env.REDCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
-  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.redcode.desktop.dev"
+  const appId = desktopAppId()
   /**
    * 260903 cc AUMID 与 userData 目录**分开取值**，别再共用 appId。
    *
@@ -558,6 +557,26 @@ const main = Effect.gen(function* () {
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
   logger = initLogging()
   initCrashReporter()
+
+  // 261119 Red 桌宠宿主来源客户端（kind: "gui"）：GUI 启动即写宿主 spawn 登记，
+  // 让 TUI 也能发现并拉起宿主；推送/激活由 ipc.ts（渲染层）与窗口焦点驱动。
+  // onboarding 测试环境不写——测试用的临时 electron 路径不能覆盖真实登记。
+  const petHost = createPetHostClient({ kind: "gui", log: (message, fields) => logger.log(`pet host: ${message}`, fields) })
+  // 261119 Red 宿主的 closed（用户点 ×）转发回渲染层：PetLayer 用它做内联 DOM 的关闭 latch
+  petHost.onClosed(() => {
+    for (const window of getMainWindows()) window.webContents.send("desktop-pet:closed")
+  })
+  if (process.platform === "win32" && !onboardingTestRoot) {
+    writePetStateJson(PET_HOST_INSTALL_FILE, {
+      protocol: PET_HOST_PROTOCOL,
+      version: app.getVersion(),
+      command: petHostSpawnCommand({
+        isPackaged: app.isPackaged,
+        execPath: process.execPath,
+        appArg: app.isPackaged ? undefined : app.getAppPath(),
+      }),
+    })
+  }
 
   try {
     setDefaultCACertificates([...new Set([...getCACertificates("default"), ...getCACertificates("system")])])
@@ -621,6 +640,7 @@ const main = Effect.gen(function* () {
   app.on("before-quit", () => {
     quitting = true
     stopMetricsLogging()
+    petHost.dispose()
     void killSidecar()
   })
 
@@ -712,6 +732,7 @@ const main = Effect.gen(function* () {
     refreshMobileGatewayPairingCode: async () => refreshMobileGatewayPairingCode(),
     stopMobileGateway: () => stopMobileGateway(),
     revokeMobileGatewayDevice: (id) => mobileGateway?.revoke(id) ?? false,
+    petHost,
   })
 
   yield* Effect.promise(() => app.whenReady())
@@ -857,6 +878,8 @@ const main = Effect.gen(function* () {
   //      窗口提前出现会变成「1.4 秒空白窗」，比没窗口更糟（仓里 ca2eebea 打过一次这种黑窗）。
   const win = createMainWindow()
   mainWindow = win
+  // 261119 Red GUI 窗口获得焦点 = 显式激活接管桌宠（已定决策；second-instance 聚焦同样触发）
+  win.on("focus", () => petHost.activate())
   // 261106 Red darwin 上关窗即销毁 BrowserWindow：不从 mainWindow 清掉的话，
   //   second-instance / 深链投递 / 菜单 trigger 会对已销毁实例调方法直接 throw
   win.on("closed", () => {
@@ -918,4 +941,10 @@ const main = Effect.gen(function* () {
   Deferred.doneUnsafe(serverReady, Effect.void)
 })
 
-Effect.runFork(main)
+// 261119 Red 桌宠宿主模式：同一可执行文件加 `--pet-host`，只跑 pet-only 宿主（独立 userData
+// 与单实例锁，不进 GUI main）。分支必须在 runFork 之前，避免 main 的 sidecar/菜单初始化。
+if (isPetHostArgv(process.argv)) {
+  void runPetHost()
+} else {
+  Effect.runFork(main)
+}

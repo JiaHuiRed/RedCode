@@ -23,6 +23,8 @@ export type DesktopPetLayout = {
 export type DesktopPetBridge = {
   /** 推送快照并请求原生窗显隐；false = 原生窗不可用，GUI 保留内联桌宠。 */
   update(snapshot: DesktopPetSnapshot | null): Promise<boolean>
+  /** 261119 Red 显式激活接管宿主显示（窗口焦点/当前会话变化）。关闭 latch 由 update=false/true 收敛。 */
+  activate(): void
   /** 订阅原生窗被关闭（× 或系统行为），返回退订函数。 */
   onClosed(listener: () => void): () => void
 }

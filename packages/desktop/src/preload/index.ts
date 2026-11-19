@@ -5,6 +5,7 @@ const api: ElectronAPI = {
   appVersion: process.env.npm_package_version ?? "unknown",
   desktopPet: {
     update: (snapshot) => ipcRenderer.invoke("desktop-pet:update", snapshot),
+    activate: () => ipcRenderer.send("desktop-pet:activate"),
     onClosed: (listener) => {
       ipcRenderer.on("desktop-pet:closed", listener)
       return () => ipcRenderer.removeListener("desktop-pet:closed", listener)

@@ -2,7 +2,7 @@ import { createSimpleContext } from "@redcode-ai/ui/context"
 import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
 import type { DesktopMenuAction } from "../desktop-menu"
-import type { DesktopPetBridge } from "../pet/desktop-pet"
+import type { DesktopPetBridge } from "@redcode-ai/ui/desktop-pet"
 import { ServerConnection } from "./server"
 
 type PickerPaths = string | string[] | null

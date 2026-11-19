@@ -2,7 +2,7 @@ import { BrowserWindow, screen } from "electron"
 import type { Point, WebContents } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { DesktopPetSnapshot } from "@redcode-ai/app/desktop-pet"
+import type { DesktopPetSnapshot } from "@redcode-ai/ui/desktop-pet"
 import type { PetDrag, PetScene } from "../preload/pet-types"
 import { petGeometry, savedPetPoint } from "./pet-geometry"
 import { rendererPage } from "./renderer-url"
@@ -10,10 +10,11 @@ import { getStore } from "./store"
 import { write as writeLog } from "./logging"
 
 // 261118 Red 窗口/坐标的归属与验收边界：docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md
-const POSITION_KEY = "desktopPetPosition"
+// 261119 Red 窗口归属从 GUI BrowserWindow owner 改为宿主来源仲裁（pet-host-registry）：
+//   本模块只管窗口本身（创建/发布/销毁/拖动/位置持久化），谁显示、何时销毁由 pet-host 决定。
+export const POSITION_KEY = "desktopPetPosition"
 const preload = join(dirname(fileURLToPath(import.meta.url)), "../preload/pet.js")
 let pet: BrowserWindow | undefined
-let owner: BrowserWindow | undefined
 let snapshot: DesktopPetSnapshot | undefined
 let geometry: ReturnType<typeof petGeometry>
 let loading: Promise<boolean> | undefined
@@ -21,7 +22,6 @@ let resolveReady: ((ready: boolean) => void) | undefined
 let ready = false
 let drag: { cursor: Point; origin: Point; moved: boolean } | undefined
 let interactive = false
-const watching = new WeakSet<BrowserWindow>()
 
 export function isPetRenderer(sender: WebContents) {
   return pet?.webContents === sender
@@ -40,28 +40,20 @@ function reposition() {
   publish()
 }
 
-export function updateDesktopPet(source: BrowserWindow, next: DesktopPetSnapshot | null): Promise<boolean> | boolean {
+export function updatePetSnapshot(next: DesktopPetSnapshot | null): Promise<boolean> | boolean {
   if (process.platform !== "win32") return false
-  if (owner && source !== owner && !source.isFocused()) return true
   if (!next) {
     pet?.destroy()
     return true
   }
-  owner = source
   snapshot = next
-  if (!watching.has(source)) {
-    watching.add(source)
-    source.once("closed", () => {
-      if (owner === source) pet?.destroy()
-    })
-  }
   if (pet) {
     publish()
     return ready || loading || false
   }
 
   const point = savedPetPoint(getStore().get(POSITION_KEY))
-  geometry = petGeometry((point ? screen.getDisplayNearestPoint(point) : screen.getDisplayMatching(source.getBounds())).workArea, point)
+  geometry = petGeometry((point ? screen.getDisplayNearestPoint(point) : screen.getPrimaryDisplay()).workArea, point)
   const win = new BrowserWindow({
     ...geometry.bounds,
     title: "RedSpace Pet",
@@ -95,7 +87,6 @@ export function updateDesktopPet(source: BrowserWindow, next: DesktopPetSnapshot
     screen.off("display-removed", reposition)
     screen.off("display-metrics-changed", reposition)
     pet = undefined
-    owner = undefined
     snapshot = undefined
     drag = undefined
     interactive = false
@@ -156,6 +147,5 @@ export function dragDesktopPet(phase: PetDrag) {
 }
 
 export function closeDesktopPet() {
-  owner?.webContents.send("desktop-pet:closed")
   pet?.destroy()
 }

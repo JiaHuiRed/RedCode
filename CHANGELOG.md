@@ -10,6 +10,8 @@
 
 ## [Unreleased]
 
+- **TUI 共用桌面桌宠**：只开 TUI、不开 GUI 时，赤也出现在 Windows 桌面上。新增 pet-only Electron 宿主（桌面版同一可执行文件 `--pet-host` 启动，独立 userData 与单实例锁，最后来源释放后自退），GUI 与 TUI 作为来源经 loopback HTTP + token 接入同一宿主，显式激活接管（GUI 窗口焦点/切会话、TUI 启动/切会话），关闭按钮只关本次显示、下次激活恢复；GUI 的内联兜底与设置开关语义不变。宿主协议、快照规则与来源客户端下沉 `@redcode-ai/ui/pet-*` 共享。宿主协议/仲裁与规则层定向测试 78 用例、四包 typecheck 绿；真机矩阵待验。模型可见四问全部为零（不碰提示词/工具/注入）。详见 [共用桌宠决策](docs/notes/implemented/feature/2026-11-18-tui-shared-desktop-pet.md)。
+
 - **混合编码日记忠实转码**：Companion 导入对 UTF-8 头 + GBK 主体的旧 Windows 日记做字节级忠实转码（逐序列歧义仲裁 + 强字符率门限 + 坏字节 U+FFFD 标记），原字节保留在 `source/`、manifest hash 不变，重导入可修复已存在档案且不触碰本地修改过的记忆。live 秋秋档案的 2026-05-31 / 06-21 / 06-23 三份日记恢复召回。详见 [转码与头像决策](docs/notes/implemented/feature/2026-11-19-companion-transcode-avatar.md)。
 
 - **导入伙伴头像接线**：`GET /companion/{id}` 响应新增可选 `avatar`（workspace 头像文件的原始 data URL，≤1 MiB，后端不落库）；聊天页对"从未设置过头像"的伙伴做一次性收养，经前端既有 256×256 PNG 重编码管线写入本地 settings，显式删除过的头像不会被覆盖。渲染器与存储格式不变。
@@ -24,7 +26,7 @@
 
 - **冷恢复前缀契约回归**：新增端到端用例——进程内 tools/system/消息缓存全部丢弃、磁盘 pin 保留时，续接首请求的工具定义仍取磁盘 pin 的旧值，`system` 段逐字节不变，历史只追加。这是客户端稳定性门禁，不宣称服务端缓存命中；对应上游 codex#62071 的意图，不引入其 `additional_tools` 机制。
 
-- **桌宠独立窗口**：桌面端把桌宠从主窗口提升为独立窗口，TUI 与桌面共享方案另记决策。详见 `docs/notes/proposed/feature/2026-11-18-tui-shared-desktop-pet.md`。
+- **桌宠独立窗口**：桌面端把桌宠从主窗口提升为独立窗口，TUI 与桌面共享方案另记决策。详见 `docs/notes/implemented/feature/2026-11-18-tui-shared-desktop-pet.md`。
 
 - **Chat 首次发送与会话消失**：会话在发送前被清理时恢复首条发送，不再留下空草稿或静默失败。
 

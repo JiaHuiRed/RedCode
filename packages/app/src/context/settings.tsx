@@ -2,7 +2,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo, untrack } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
-import { resolvePetBehavior, resolvePetPosition, type PetBehavior } from "@/pet/pet-lines"
+import { resolvePetBehavior, resolvePetPosition, type PetBehavior } from "@redcode-ai/ui/pet-lines"
 
 export interface NotificationSettings {
   agent: boolean

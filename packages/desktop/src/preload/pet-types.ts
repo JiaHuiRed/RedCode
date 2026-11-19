@@ -1,4 +1,4 @@
-import type { DesktopPetLayout, DesktopPetSnapshot } from "@redcode-ai/app/desktop-pet"
+import type { DesktopPetLayout, DesktopPetSnapshot } from "@redcode-ai/ui/desktop-pet"
 
 export type PetDrag = "start" | "move" | "end" | "cancel"
 export type PetScene = { snapshot: DesktopPetSnapshot; layout: DesktopPetLayout }
