@@ -163,6 +163,44 @@ describe("Git", () => {
     }),
   )
 
+  it.live("statUntracked() counts CRLF without trailing newline and skips binary files", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "crlf.txt"), "one\r\ntwo\r\nthree", "utf-8"))
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "empty.txt"), "", "utf-8"))
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "bin.dat"), new Uint8Array([0x41, 0x00, 0x42])))
+
+      const git = yield* Git.Service
+      const [crlf, empty, bin] = yield* Effect.all([
+        git.statUntracked(tmp.path, "crlf.txt"),
+        git.statUntracked(tmp.path, "empty.txt"),
+        git.statUntracked(tmp.path, "bin.dat"),
+      ])
+
+      expect(crlf).toEqual(expect.objectContaining({ additions: 3, deletions: 0 }))
+      expect(empty).toEqual(expect.objectContaining({ additions: 0, deletions: 0 }))
+      expect(bin).toBeUndefined()
+    }),
+  )
+
+  it.live("patchUntrackedBatch() emits every file and leaves the real index untouched", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a.txt"), "one\ntwo\n", "utf-8"))
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "b 中文.txt"), "three\n", "utf-8"))
+
+      const git = yield* Git.Service
+      const batch = yield* git.patchUntrackedBatch(tmp.path, ["a.txt", "b 中文.txt"])
+      expect(batch).toBeDefined()
+      expect(batch!.truncated).toBe(false)
+      expect(batch!.text).toContain("a.txt")
+      expect(batch!.text).toContain("three")
+
+      const status = yield* git.status(tmp.path)
+      expect(status.every((item) => item.code === "??")).toBe(true)
+    }),
+  )
+
   it.live("show() returns empty text for binary blobs", () =>
     Effect.gen(function* () {
       const tmp = yield* scopedTmpdir({ git: true })

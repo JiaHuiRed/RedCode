@@ -2,6 +2,9 @@ import { AppProcess } from "@redcode-ai/core/process"
 import { Duration, Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/process"
 import { join } from "node:path"
+import { open, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { randomUUID } from "node:crypto"
 import * as Log from "@redcode-ai/core/util/log"
 
 const log = Log.create({ service: "git" })
@@ -40,6 +43,40 @@ const fail = (err: unknown) =>
     truncated: false,
     timedOut: AppProcess.isTimeout(err),
   }) satisfies Result
+
+// 261120 Red 行数统计只为 UI 角标：32 MiB 上限在读之前判，避免整份读入内存；
+// 分块读取让 stat 后文件增长仍受同一预算约束。
+const MAX_UNTRACKED_STAT_BYTES = 32 * 1024 * 1024
+const UNTRACKED_READ_CHUNK = 64 * 1024
+
+async function countUntrackedLines(file: string) {
+  const handle = await open(file, "r")
+  try {
+    const info = await handle.stat()
+    if (info.size > MAX_UNTRACKED_STAT_BYTES) return undefined
+    const head = new Uint8Array(8000)
+    const headRead = await handle.read(head, 0, head.length, 0)
+    // git 对含 NUL 的文件按二进制处理（numstat 输出 "-"）——同样放弃统计
+    for (let i = 0; i < headRead.bytesRead; i++) if (head[i] === 0) return undefined
+    const buffer = new Uint8Array(UNTRACKED_READ_CHUNK)
+    let additions = 0
+    let last = -1
+    let total = 0
+    while (total < info.size) {
+      const capacity = Math.min(buffer.length, info.size - total, MAX_UNTRACKED_STAT_BYTES - total)
+      if (capacity <= 0) break
+      const chunk = await handle.read(buffer, 0, capacity, total)
+      if (chunk.bytesRead === 0) break
+      for (let i = 0; i < chunk.bytesRead; i++) if (buffer[i] === 10) additions++
+      last = buffer[chunk.bytesRead - 1]!
+      total += chunk.bytesRead
+    }
+    if (total > 0 && last !== 10) additions++
+    return additions
+  } finally {
+    await handle.close()
+  }
+}
 
 export type Kind = "added" | "deleted" | "modified"
 
@@ -111,6 +148,15 @@ export interface Interface {
   readonly patch: (cwd: string, ref: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly patchAll: (cwd: string, ref: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly patchUntracked: (cwd: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
+  /**
+   * 一次 git 进程批量生成多个未跟踪文件的补丁。临时 GIT_INDEX_FILE + add -N + diff，
+   * 不碰真实索引；任何一步失败返回 undefined，调用方按原逐文件路径回退。
+   */
+  readonly patchUntrackedBatch: (
+    cwd: string,
+    files: string[],
+    options?: PatchOptions,
+  ) => Effect.Effect<Patch | undefined>
   readonly statUntracked: (cwd: string, file: string) => Effect.Effect<Stat | undefined>
   readonly applyPatch: (cwd: string, patch: string) => Effect.Effect<Result>
 }
@@ -348,24 +394,55 @@ export const layer = Layer.effect(
     // 文件各起一个 git（预算 60 个），agent 干活时每秒一次防抖重算，Windows 上单次
     // spawn 15-40ms，60 个就是 1-2.5s 的进程风暴压在 sidecar 事件循环上。新文件的
     // additions 就是行数——单遍数 0x0A 字节即可，无需起进程。
+    // 261120 Red 两个运行时问题：原实现用 Bun.file()，桌面 sidecar 走 Node 目标时
+    // Bun 未定义、整个统计返回 undefined（三行新文件显示 +0）；32 MiB 上限又在
+    // arrayBuffer() 之后，超大文件先整份读进内存再丢弃。改为 Node fs 的 open/stat
+    // 预检大小 + 分块读取，Bun 与 Node 两个运行时同形。
+    // 261120 Red 批量未跟踪补丁：此前每个文件一次 git diff --no-index，257 个文件
+    // 387ms；改为临时索引 + add -N + 一次 diff。任何一步失败都返回 undefined，
+    // 调用方按原逐文件路径回退，特殊文件/子仓库不会让整批丢结果。
+    const patchUntrackedBatch = Effect.fn("Git.patchUntrackedBatch")(function* (
+      cwd: string,
+      files: string[],
+      options?: PatchOptions,
+    ) {
+      if (files.length === 0) return { text: "", truncated: false } satisfies Patch
+      // 每次请求独立临时索引：并发/取消不会污染真实 index。
+      const index = join(tmpdir(), `redcode-untracked-${randomUUID()}`)
+      const env = { GIT_INDEX_FILE: index }
+      const input = files.join("\0") + "\0"
+      const cleanup = Effect.promise(() => rm(index, { force: true })).pipe(Effect.catch(() => Effect.void))
+
+      const result = yield* Effect.gen(function* () {
+        // --empty 不依赖 HEAD，空仓也能建立基线；失败说明临时索引不可用，回退。
+        const tree = yield* run(["read-tree", "--empty"], { cwd, env })
+        if (tree.exitCode !== 0) return
+        const added = yield* run(["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], {
+          cwd,
+          env,
+          stdin: stdin(input),
+        })
+        if (added.exitCode !== 0) return
+        // 临时索引里只有 add -N 登记的文件，diff 不再带 pathspec（git diff 不支持
+        // --pathspec-from-file，路径多时 argv 又会超 Windows 上限）。
+        return yield* run(
+          ["diff", "--patch", "--no-ext-diff", "--no-renames", `--unified=${options?.context ?? 3}`],
+          { cwd, env, maxOutputBytes: options?.maxOutputBytes },
+        )
+      }).pipe(Effect.ensuring(cleanup))
+
+      if (!result || result.exitCode !== 0) return
+      return { text: result.truncated ? "" : result.text(), truncated: result.truncated } satisfies Patch
+    })
+
     const statUntracked = Effect.fn("Git.statUntracked")(function* (cwd: string, file: string) {
-      const path = join(cwd, file)
-      const bytes = yield* Effect.tryPromise({
-        try: () => Bun.file(path).arrayBuffer(),
+      const counted = yield* Effect.tryPromise({
+        try: () => countUntrackedLines(join(cwd, file)),
         catch: () => undefined,
       }).pipe(Effect.catch(() => Effect.succeed(undefined)))
       // status 与 stat 之间文件可能已被删——按"统计不到"处理，与 numstat 空输出同义
-      if (!bytes) return undefined
-      const view = new Uint8Array(bytes)
-      // 32MB 上限：行数统计只为 UI 角标，超大文件直接放弃统计（patch 层有自己的字节预算）
-      if (view.byteLength > 32 * 1024 * 1024) return undefined
-      // git 对含 NUL 的文件按二进制处理（numstat 输出 "-"）——同样放弃统计
-      const head = view.subarray(0, 8000)
-      for (let i = 0; i < head.length; i++) if (head[i] === 0) return undefined
-      let additions = 0
-      for (let i = 0; i < view.length; i++) if (view[i] === 10) additions++
-      if (view.length > 0 && view[view.length - 1] !== 10) additions++
-      return { file, additions, deletions: 0 } satisfies Stat
+      if (counted === undefined) return undefined
+      return { file, additions: counted, deletions: 0 } satisfies Stat
     })
 
     const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string) {
@@ -387,6 +464,7 @@ export const layer = Layer.effect(
       patch,
       patchAll,
       patchUntracked,
+      patchUntrackedBatch,
       statUntracked,
       applyPatch,
     })

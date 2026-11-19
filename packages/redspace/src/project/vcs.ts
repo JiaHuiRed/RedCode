@@ -95,24 +95,40 @@ const splitGitPatch = (patch: Git.Patch) => {
   return chunks.slice(0, -1)
 }
 
-const batchPatches = Effect.fnUntraced(function* (git: Git.Interface, cwd: string, ref: string, list: Git.Item[]) {
-  if (list.length === 0) return { patches: new Map<string, string>(), capped: false }
-
-  const result = yield* git.patchAll(cwd, ref, {
-    context: PATCH_CONTEXT_LINES,
-    maxOutputBytes: MAX_TOTAL_PATCH_BYTES,
-  })
-  if (result.truncated) log.warn("batched patch exceeded byte limit", { max: MAX_TOTAL_PATCH_BYTES })
-
-  return {
-    patches: splitGitPatch(result).reduce((acc, patch, index) => {
-      const file = fileFromPatchChunk(patch) ?? list[index]?.file
-      if (!file) return acc
-      acc.set(file, (acc.get(file) ?? "") + patch)
-      return acc
-    }, new Map<string, string>()),
-    capped: result.truncated,
+const collectPatches = (patch: Git.Patch, into: Map<string, string>) => {
+  for (const chunk of splitGitPatch(patch)) {
+    const file = fileFromPatchChunk(chunk)
+    if (file) into.set(file, (into.get(file) ?? "") + chunk)
   }
+  return patch.truncated
+}
+
+const batchPatches = Effect.fnUntraced(function* (git: Git.Interface, cwd: string, ref: string, list: Git.Item[]) {
+  if (list.length === 0) return emptyBatch()
+
+  const untracked = list.filter((item) => item.code === "??").map((item) => item.file)
+  const [tracked, untrackedPatch] = yield* Effect.all(
+    [
+      git.patchAll(cwd, ref, { context: PATCH_CONTEXT_LINES, maxOutputBytes: MAX_TOTAL_PATCH_BYTES }),
+      untracked.length > 0
+        ? git.patchUntrackedBatch(cwd, untracked, {
+            context: PATCH_CONTEXT_LINES,
+            maxOutputBytes: MAX_TOTAL_PATCH_BYTES,
+          })
+        : Effect.succeed(undefined),
+    ],
+    { concurrency: 2 },
+  )
+  if (tracked.truncated) log.warn("batched patch exceeded byte limit", { max: MAX_TOTAL_PATCH_BYTES })
+  if (untrackedPatch?.truncated)
+    log.warn("batched untracked patch exceeded byte limit", { max: MAX_TOTAL_PATCH_BYTES })
+  if (untracked.length > 0 && !untrackedPatch)
+    log.warn("batched untracked patch unavailable, falling back", { files: untracked.length })
+
+  const patches = new Map<string, string>()
+  const trackedCapped = collectPatches(tracked, patches)
+  const untrackedCapped = untrackedPatch ? collectPatches(untrackedPatch, patches) : false
+  return { patches, capped: trackedCapped || untrackedCapped }
 })
 
 const nativePatch = Effect.fnUntraced(function* (
@@ -168,7 +184,8 @@ const files = Effect.fnUntraced(function* (
 
   for (const item of list.toSorted((a, b) => a.file.localeCompare(b.file))) {
     const added = item.status === "added"
-    const budgeted = !added || untracked++ < MAX_UNTRACKED_FILE_PROCESSES
+    // 批量补丁已命中的未跟踪文件不再消耗逐文件进程预算；未命中时才回退计数。
+    const budgeted = batch.patches.has(item.file) || !added || untracked++ < MAX_UNTRACKED_FILE_PROCESSES
     const stat = budgeted
       ? (map.get(item.file) ?? (added ? yield* git.statUntracked(cwd, item.file) : undefined))
       : undefined
@@ -197,17 +214,11 @@ const diffAgainstRef = Effect.fnUntraced(function* (git: Git.Interface, cwd: str
   const [list, stats, extra] = yield* Effect.all([git.diff(cwd, ref), git.stats(cwd, ref), git.status(cwd)], {
     concurrency: 3,
   })
-  return yield* files(
-    git,
-    cwd,
-    ref,
-    merge(
-      list,
-      extra.filter((item) => item.code === "??"),
-    ),
-    nums(stats),
-    yield* batchPatches(git, cwd, ref, list),
+  const merged = merge(
+    list,
+    extra.filter((item) => item.code === "??"),
   )
+  return yield* files(git, cwd, ref, merged, nums(stats), yield* batchPatches(git, cwd, ref, merged))
 })
 
 const track = Effect.fnUntraced(function* (git: Git.Interface, cwd: string, ref: string | undefined) {
@@ -382,9 +393,22 @@ export const layer: Layer.Layer<Service, never, Git.Service | Bus.Service> = Lay
           concurrency: 2,
         })
         const tracked = hasHead ? (yield* git.patchAll(ctx.directory, "HEAD")).text : ""
+        const untrackedFiles = status.filter((item) => item.code === "??").map((item) => item.file)
+        const batch =
+          untrackedFiles.length > 0
+            ? yield* git.patchUntrackedBatch(ctx.directory, untrackedFiles, {
+                maxOutputBytes: MAX_TOTAL_PATCH_BYTES,
+              })
+            : undefined
+        if (batch) {
+          const byFile = new Map<string, string>()
+          collectPatches(batch, byFile)
+          const untracked = untrackedFiles.map((file) => byFile.get(file) ?? "").filter(Boolean)
+          return [tracked, ...untracked].filter(Boolean).join("\n")
+        }
         const untracked = yield* Effect.forEach(
-          status.filter((item) => item.code === "??"),
-          (item) => git.patchUntracked(ctx.directory, item.file).pipe(Effect.map((patch) => patch.text)),
+          untrackedFiles,
+          (file) => git.patchUntracked(ctx.directory, file).pipe(Effect.map((patch) => patch.text)),
         )
         return [tracked, ...untracked].filter(Boolean).join("\n")
       }),
