@@ -74,6 +74,7 @@ import { makeShared } from "./prompt/shared"
 import { sessionSoul, sessionTitlePrefix } from "./soul"
 import * as Soul from "@/soul"
 import { Companion } from "@/companion/companion"
+import { Commitment } from "@/companion/commitment"
 import { companionContinuity } from "./companion-continuity"
 import { companionAgent, isCompanionChat } from "./companion"
 import { makeShell } from "./prompt/shell"
@@ -573,6 +574,62 @@ export const layer = Layer.effect(
       const withPrefix = `[${yield* sessionTitlePrefix(input.session.id, input.session.soul, souls)}] ${cleaned}`
       const t = withPrefix.length > 100 ? withPrefix.substring(0, 97) + "..." : withPrefix
       yield* sessions.setTitle({ sessionID: input.session.id, title: t })
+    })
+
+    // 261119 Red 隐藏提取 pass：一轮真正结束后，从最近一次交换里找「用户没明说、但值得之后
+    // 问一句」的跟进。默认关（REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1），只在绑定主 Chat
+    // 运行；到期提示走 companionContinuity，创建后至少静默 MIN_DELAY_MS。
+    const extractCommitments = Effect.fn("SessionPrompt.extractCommitments")(function* (input: {
+      session: Session.Info
+      user: MessageV2.User
+      userText: string
+      assistantText: string
+      providerID: ProviderID
+      modelID: ModelID
+    }) {
+      if (input.session.mode !== "chat" || !input.session.companionID || input.session.parentID) return
+      if (!Commitment.enabled()) return
+      const companionID = input.session.companionID
+      const userText = input.userText.trim().slice(0, 2000)
+      if (!userText) return
+      const assistantText = input.assistantText.trim().slice(0, 4000)
+      const ag = yield* agents.get("commitment")
+      if (!ag) return
+      const model = yield* provider.getModel(input.providerID, input.modelID)
+      const now = Date.now()
+      const existing = Commitment.pending({ companionID, nowMs: now })
+      const raw = yield* llm
+        .stream({
+          agent: ag,
+          user: input.user,
+          system: [],
+          tools: {},
+          model,
+          sessionID: input.session.id,
+          retries: 1,
+          messages: [
+            {
+              role: "user",
+              content: [
+                `Current time: ${new Date(now).toISOString()}`,
+                `Existing pending commitments: ${JSON.stringify(existing)}`,
+                `User message: ${userText}`,
+                `Assistant reply: ${assistantText}`,
+              ].join("\n"),
+            },
+          ],
+        })
+        .pipe(
+          Stream.filter(LLMEvent.is.textDelta),
+          Stream.map((e) => e.text),
+          Stream.mkString,
+        )
+      Commitment.record({
+        companionID,
+        sessionID: input.session.id,
+        candidates: Commitment.validate({ candidates: Commitment.parse(raw), nowMs: now }),
+        nowMs: now,
+      })
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -1663,6 +1720,24 @@ export const layer = Layer.effect(
                 text: OutputLoss.notice(),
               })
             }
+            const lastUserMsg = msgs.findLast((msg) => msg.info.id === lastUser.id)
+            yield* extractCommitments({
+              session: yield* sessions.get(sessionID).pipe(Effect.orDie),
+              user: lastUser,
+              userText: (lastUserMsg?.parts ?? [])
+                .flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+                .join("\n"),
+              assistantText: visibleText,
+              providerID: lastUser.model.providerID,
+              modelID: lastUser.model.modelID,
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.void
+                  : elog.warn("commitment extraction failed", { sessionID, error: Cause.squash(cause) }),
+              ),
+              Effect.forkIn(scope),
+            )
             const next = yield* sessions.claimQueuedMessage(sessionID)
             if (next) {
               resetQueuedTurn(next.id)

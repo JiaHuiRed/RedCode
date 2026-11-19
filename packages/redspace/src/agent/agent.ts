@@ -13,6 +13,7 @@ import DEFINITION_EXPLORE from "./definition/explore.md" with { type: "text" }
 import DEFINITION_EXECUTE from "./definition/execute.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
+import PROMPT_COMMITMENT from "./prompt/commitment.md" with { type: "text" }
 import matter from "gray-matter"
 import { Permission } from "@/permission"
 import { ConfigPermission } from "@/config/permission"
@@ -325,6 +326,8 @@ export const layer = Layer.effect(
           compaction: machine({ name: "compaction", prompt: PROMPT_COMPACTION }),
           title: machine({ name: "title", prompt: PROMPT_TITLE, temperature: 0.5 }),
           summary: machine({ name: "summary", prompt: PROMPT_SUMMARY }),
+          // 261119 Red Inferred commitments 的隐藏提取 pass，与 title/summary 同类：不进可见 agent 列表。
+          commitment: machine({ name: "commitment", prompt: PROMPT_COMMITMENT, temperature: 0.2 }),
         }
 
         // 260828 cc 由 `agent/*.md` 文件定义的名字（config.ts 装载时记的派生状态）。md 与 jsonc 的
