@@ -207,6 +207,21 @@ type Chunk = {
 
 export const log = Log.create({ service: "shell-tool" })
 
+// 261119 Red 中断/超时只说明「命令没有正常返回」，不说明副作用没发生。模型曾据此重复
+// 启动已经跑起来的 dev 服务（迁移审计 P1），文案必须逼它先验证现实状态再决定重试。
+export function outcomeNotes(input: { aborted: boolean; expired: boolean; timeout: number }) {
+  const notes: string[] = []
+  if (input.expired)
+    notes.push(
+      `shell tool terminated command after exceeding timeout ${input.timeout} ms. If this command is expected to take longer and is not waiting for interactive input, retry with a larger timeout value in milliseconds. The command may have already produced side effects left behind by a background process; verify the actual state before retrying.`,
+    )
+  if (input.aborted)
+    notes.push(
+      "The command was interrupted before it returned. Its exit status is unknown and any process it started may still be running — verify the actual state (port/process) before retrying.",
+    )
+  return notes
+}
+
 const resolveWasm = (asset: string) => {
   if (asset.startsWith("file://")) return fileURLToPath(asset)
   if (asset.startsWith("/") || /^[a-z]:/i.test(asset)) return asset
@@ -826,24 +841,24 @@ export const ShellTool = Tool.define(
 
           if (exit.kind === "abort") {
             aborted = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+            // 261119 Red kill 失败只是「没能确认终止」，不能把整个工具变成 defect 而吞掉
+            // 已产出的输出与中断语义；进程可能仍在运行，文案里已提示先验证。
+            yield* handle
+              .kill({ forceKillAfter: "3 seconds" })
+              .pipe(Effect.catch((error) => Effect.sync(() => log.warn("kill.failed", { reason: "abort", error }))))
           }
           if (exit.kind === "timeout") {
             expired = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+            yield* handle
+              .kill({ forceKillAfter: "3 seconds" })
+              .pipe(Effect.catch((error) => Effect.sync(() => log.warn("kill.failed", { reason: "timeout", error }))))
           }
 
           return exit.kind === "exit" ? exit.code : null
         }),
       ).pipe(Effect.orDie)
 
-      const meta: string[] = []
-      if (expired) {
-        meta.push(
-          `shell tool terminated command after exceeding timeout ${input.timeout} ms. If this command is expected to take longer and is not waiting for interactive input, retry with a larger timeout value in milliseconds.`,
-        )
-      }
-      if (aborted) meta.push("User aborted the command")
+      const meta = outcomeNotes({ aborted, expired, timeout: input.timeout })
       const raw = list.map((item) => item.text).join("")
       const end = tail(raw, limits.maxLines, limits.maxBytes)
       if (end.cut) cut = true

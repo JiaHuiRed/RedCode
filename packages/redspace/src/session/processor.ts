@@ -1348,7 +1348,7 @@ export const layer = Layer.effect(
           { concurrency: "unbounded" },
         )
 
-        const interruptedText = "Tool execution aborted"
+        const interruptedText = "Tool execution was interrupted before it settled; the operation may have taken effect"
         const interrupted = Object.keys(ctx.toolcalls)
         if (interrupted.length > 0) {
           // 261108 Red 审计 RC-P2-05：预算单位是「连续中断的 step」，不是工具调用数。
