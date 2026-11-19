@@ -151,7 +151,7 @@ Codex 侧的同型证据(400 commit 内,`55897425e8` #59832 原文):
 
 ## 后果
 
-- **做成**:所有模型顶层 `tools` 从 17.1k 固定成本降为一次性声明;命中率上限在原基础上抬升。**6.2-sol 的 22k 缺口不受影响**——那是 instructions 段的每轮全 miss,本方案动不到,仍需另解(压缩 instructions 体积,或等模型更新)。
+- **做成**:所有模型顶层 `tools` 从 17.1k 固定成本降为一次性声明;命中率上限在原基础上抬升。**6.2-sol 的 22k 缺口不受影响**——那是 instructions 段的每轮全 miss,本方案动不到。~~仍需另解(压缩 instructions 体积,或等模型更新)~~ **261119 已定位根因并给出第三条路**:缺口根因是顶层 `instructions` 字段不在 6.2 缓存路径上(input 数组才在),修法 = 固定指令改走 input 前缀 developer message,与 本 note 的 tools 声明合并实施即为 Codex Responses Lite 完整形态 → `2026-11-19-instructions-developer-prefix.md`。
 - **做不成**:维持现状,日常用 6.1 家族(terra/sol),6.2-sol 标记为"instructions 段不缓存,等 `last_updated` 再试"。
 
 ## 落地时的回链要求
@@ -159,3 +159,7 @@ Codex 侧的同型证据(400 commit 内,`55897425e8` #59832 原文):
 - CHANGELOG 条目回链本 note。
 - `session/prompt.ts` 声明组装处、`provider/transform.ts` 分流处加头注释回链。
 - 模型可见内容变化(工具声明位置从顶层移入历史),按根 AGENTS"模型可见改动四问"逐条回答:看到什么变了 / token 影响 / KV cache 影响(首轮一次性重建,之后前缀稳定) / 注入项硬上限(声明总量需有上限,建议复用 `PromptCaches.tools` 的会话级定义,不再新增无界写入)。
+
+## 相关
+
+- instructions 缓存缺口根因与 developer message 前缀方案(261119 调研定案):`docs/notes/proposed/feature/2026-11-19-instructions-developer-prefix.md`——本 note 的 tools 声明与它的 developer 前缀共享同一硬门槛实测。
