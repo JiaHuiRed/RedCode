@@ -12,6 +12,12 @@
 
 - Chat 首页新增「梦境日记」。可直接阅读当前伙伴从 RedClaw 带来的旧梦，兼容 `DREAMS.md` 和 `dreams.md`。只在打开时读取文件，无需模型调用。
 
+- **Chat 推断承诺 v1**：Chat 对话结束后可发现「用户没明说、但值得之后问一句」的跟进，并在同一伙伴的后续会话里自然提一次。提取是隐藏的一跳、默认关（`REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1`），只存元数据（kind／时间窗／短句）；到期后至少静默 30 分钟、滚动 24 小时最多 3 条，注入即标记已投递，同一条不重复。模型可见四问：默认零变化；开启后只追加当轮历史尾部 ≤1024 bytes（约 250 token）；固定前缀与工具表逐字节不变；单条文本 512 bytes、每批最多 3 条候选。验证：typecheck 与注入登记表全绿，单测 8 pass，in-memory 冒烟覆盖静默期与一次性投递。
+
+- **压缩前记忆冲刷 v1**：压缩摘要生成之前跑一次隐藏 pass，把会话里尚未落盘的长期上下文（偏好、边界、进行中的事、情绪背景）经既有 `Companion.remember` 写入日记，避免压缩边界后丢失。输入倒序收集最近正文、上限 12K UTF-8 bytes，输出最多 3 条、每条 ≤1KB；幂等键 `flush:<parentID>:<index>`；失败只记日志、不阻断压缩。默认关（`REDCODE_EXPERIMENTAL_COMPANION_MEMORY_FLUSH=1`）。验证：typecheck 通过，新增单测 6 pass，compaction 全量 105 pass。
+
+- **Shell 中断如实报告未知结果**：中断文案从 `User aborted the command` 改为「退出状态未知、启动的后台进程可能仍在运行，重试前先验证端口/进程」；超时同理补副作用提示。`taskkill` 失败不再把工具变成执行失败，只记日志并保留已产出的输出；未结算工具调用的错误文本改为「可能已经生效」。这拦住「启动 dev 服务被中断 → 模型以为没起来 → 反复重发」的循环。验证：新增 3 个回归用例，typecheck 通过。
+
 ### [0.19.4] - 2026-11-19
 
 - **Chat 首页输入框补齐模型与附件**：聊天首页原本只有一个裸文本框，与 Code 侧能力差距明显。现在输入框下方有附件入口（点击或粘贴，单条最多 4 个、每个 ≤10MB，按 `FilePart` 形状随首条消息发送）、模型选择与推理档位：模型列表复用 UI 的虚拟化 `List`（几百个模型不做全量渲染），档位复用 Code 同款 `EffortSliderV2`，档位集合取所选模型的 `variants`。模型选择是**草稿级**的临时状态，不绑定伙伴、不写进档案——换模型只换下一次请求用哪颗脑子，Soul 与记忆不动；不选时请求不带 `model`/`variant`，由服务端按 agent 与默认值解析，与改动前行为一致。`/chat` 不在 `LocalProvider` 内，因此不复用 Code 的 `ModelSelectorPopover`，改为基于 `useProviders` 的轻量实现（不新增 context 依赖）。逐条 temperature 未做：`session.create` 与 `prompt_async` 契约都不接受该字段，加控件不会生效，需另立跨层改动。
