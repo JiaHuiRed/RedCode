@@ -1,4 +1,7 @@
 import type { CompanionInfo, Session } from "@redcode-ai/sdk/v2/client"
+import type { ChatAttachment } from "./chat-attachments"
+
+type SendOptions = { model?: { providerID: string; modelID: string }; variant?: string; files: ChatAttachment[] }
 
 export type PreparedChat = Pick<Session, "id" | "directory" | "companionID">
 export type ChatSubmission = {
@@ -7,6 +10,7 @@ export type ChatSubmission = {
   prepared?: PreparedChat
   messageID: string
   submittedText: string
+  submittedOptions?: string
   introductionText: string
   kind: "message" | "introduction"
 }
@@ -39,6 +43,7 @@ export function restoreChatSubmissions(value: unknown): Record<string, ChatSubmi
         : {}),
       messageID: typeof item.messageID === "string" ? item.messageID : "",
       submittedText: typeof item.submittedText === "string" ? item.submittedText : "",
+      ...(typeof item.submittedOptions === "string" && { submittedOptions: item.submittedOptions }),
       introductionText: typeof item.introductionText === "string" ? item.introductionText : "",
       kind: item.kind === "introduction" ? "introduction" : "message",
     }
@@ -50,6 +55,7 @@ type Dependencies = {
   ready: () => boolean
   profile: () => CompanionInfo | undefined
   text: () => string
+  options: (scope: string, kind: ChatSubmission["kind"]) => SendOptions
   currentID: () => string | undefined
   epoch: () => number
   mounted: () => boolean
@@ -60,12 +66,12 @@ type Dependencies = {
   activate: (profile: CompanionInfo) => Promise<CompanionInfo>
   createSession: (profile: CompanionInfo) => Promise<Session>
   getSession: (session: PreparedChat) => Promise<Session | undefined>
-  submit: (session: Session, messageID: string, text: string) => Promise<unknown>
+  submit: (session: Session, messageID: string, text: string, options: SendOptions) => Promise<unknown>
   receivedProfile: (profile: CompanionInfo) => void
   selectInitialized: (id: string) => void
   assignDraft: (id: string) => void
   clearDraft: (id: string, submitted: string) => void
-  accepted: (session: Session) => void
+  accepted: (session: Session, options: SendOptions) => void
   navigate: (session: Session) => void
   introductionText: (profile: CompanionInfo | undefined) => string
   nextMessageID: () => string
@@ -84,6 +90,11 @@ export function createChatHomeSubmit(input: Dependencies) {
     const text =
       kind === "message" ? snapshot.trim() : input.get(scope)?.introductionText || input.introductionText(profile)
     if (!text) return
+    const options = input.options(scope, kind)
+    // Preserve the retry key for old text-only drafts. Never persist attachment bodies.
+    const optionKey = options.model || options.variant || options.files.length
+      ? JSON.stringify([options.model?.providerID, options.model?.modelID, options.variant, options.files.map(file => file.id)])
+      : undefined
     const epoch = input.epoch()
     input.set(scope, { sending: true, error: "", kind, ...(kind === "introduction" ? { introductionText: text } : {}) })
     try {
@@ -116,12 +127,13 @@ export function createChatHomeSubmit(input: Dependencies) {
           submittedText: "",
         })
       const attempt = input.get(scope)!
-      const messageID = attempt.messageID && attempt.submittedText === text ? attempt.messageID : input.nextMessageID()
-      input.set(scope, { messageID, submittedText: text })
-      await input.submit(session, messageID, text)
-      input.accepted(session)
+      const samePayload = attempt.submittedText === text && attempt.submittedOptions === optionKey
+      const messageID = attempt.messageID && samePayload ? attempt.messageID : input.nextMessageID()
+      input.set(scope, { messageID, submittedText: text, submittedOptions: optionKey })
+      await input.submit(session, messageID, text, options)
+      input.accepted(session, options)
       if (kind === "message") input.clearDraft(scope, snapshot)
-      input.set(scope, { prepared: undefined, messageID: "", submittedText: "", introductionText: "" })
+      input.set(scope, { prepared: undefined, messageID: "", submittedText: "", submittedOptions: undefined, introductionText: "" })
       if (input.mounted() && input.epoch() === epoch && input.currentID() === profile.id) input.navigate(session)
     } catch (error) {
       input.set(scope, { error: input.error(error) })

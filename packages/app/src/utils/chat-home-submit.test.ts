@@ -40,6 +40,9 @@ function harness(initial: CompanionInfo[] = [a, b]) {
     promptGate: undefined as Promise<void> | undefined,
     invalidSession: false,
     noModels: false,
+    modelID: "model-a",
+    files: {} as Record<string, { id: string; filename: string; mime: string; url: string }[]>,
+    prepareGate: undefined as Promise<void> | undefined,
     lookupError: false,
   }
   const calls = {
@@ -48,6 +51,7 @@ function harness(initial: CompanionInfo[] = [a, b]) {
     activated: [] as string[],
     prompts: [] as { companion: string; sessionID: string; messageID: string; text: string }[],
     accepted: [] as string[],
+    payloads: [] as { model?: string; files: string[] }[],
     navigated: [] as string[],
   }
   const promptEntered = deferred()
@@ -64,6 +68,10 @@ function harness(initial: CompanionInfo[] = [a, b]) {
         ready: () => true,
         profile,
         text: () => state.drafts[profile()?.id ?? "default"] ?? "",
+        options: (owner, kind) => ({
+          model: { providerID: "test", modelID: state.modelID },
+          files: kind === "message" ? [...(state.files[owner] ?? [])] : [],
+        }),
         currentID: () => profile()?.id,
         epoch: () => state.epoch,
         mounted: () => mounted,
@@ -77,6 +85,7 @@ function harness(initial: CompanionInfo[] = [a, b]) {
           return { ...a, introduction: "available" }
         },
         prepare: async () => {
+          if (state.prepareGate) await state.prepareGate
           if (state.noModels) throw new Error("No model configured")
         },
         activate: async (value) => {
@@ -98,7 +107,8 @@ function harness(initial: CompanionInfo[] = [a, b]) {
           if (state.lookupError) throw new Error("Connection lost")
           return sessions.get(value.id)
         },
-        submit: async (session, messageID, text) => {
+        submit: async (session, messageID, text, options) => {
+          calls.payloads.push({ model: options.model?.modelID, files: options.files.map(file => file.id) })
           calls.prompts.push({ companion: session.companionID!, sessionID: session.id, messageID, text })
           promptEntered.resolve()
           if (state.promptGate) await state.promptGate
@@ -190,6 +200,36 @@ describe("Chat home asynchronous submission", () => {
     expect(h.state.drafts[a.id]).toBe("")
     expect(h.state.drafts[b.id]).toBe("B的新草稿")
     expect(h.calls.navigated).toEqual([])
+  })
+
+  test("captures the clicked model and files before awaiting session preparation", async () => {
+    const h = harness()
+    const gate = deferred()
+    const file = { id: "one", filename: "a.png", mime: "image/png", url: "data:a" }
+    h.state.files[a.id] = [file]
+    h.state.prepareGate = gate.promise
+    const pending = h.create().send()
+    h.choose(b.id)
+    h.state.files[b.id] = [{ ...file, id: "two" }]
+    h.state.modelID = "model-b"
+    gate.resolve()
+    await pending
+    expect(h.calls.payloads).toEqual([{ model: "model-a", files: ["one"] }])
+    expect(h.calls.prompts[0].companion).toBe(a.id)
+  })
+
+  test("a retry reuses the exact payload ID, but changing its file allocates a fresh ID", async () => {
+    const h = harness()
+    const file = { id: "one", filename: "file", mime: "text/plain", url: "data:test" }
+    h.state.files[a.id] = [file]
+    h.state.fail.add(a.id)
+    const page = h.create()
+    await page.send()
+    h.state.retries = restoreChatSubmissions(h.state.retries)
+    await page.send()
+    h.state.files[a.id] = [{ ...file, id: "two" }]
+    await page.send()
+    expect(h.calls.prompts.map(p => p.messageID)).toEqual(["message-1", "message-1", "message-2"])
   })
 
   test("switching A to B and back does not resurrect an old navigation intent", async () => {

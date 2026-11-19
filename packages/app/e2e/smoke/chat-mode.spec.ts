@@ -328,3 +328,45 @@ test("read imported dreams on demand, retry a failed read and switch companions"
   expect(reads).toEqual([first.directory, first.directory])
   expect(modelRequests).toBe(0)
 })
+
+test("first-chat attachments follow the selected companion and the outgoing request", async ({ page }) => {
+  const profiles = ["friend-a", "friend-b"].map(id => ({
+    id, name: id, soulID: id, directory: fixture.directory, createdAt: 1, files: 2, warnings: [], timezone: "UTC",
+    introduction: "complete",
+  }))
+  const session = { ...fixture.sessions[0]!, id: "ses_attachment_b", mode: "chat", companionID: "friend-b" }
+  await mockRedCodeServer(page, { ...fixture, pageMessages: () => ({ items: [] }) })
+  await page.route("**/*", async route => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (route.request().method() === "OPTIONS") return route.fallback()
+    if (url.pathname === "/companion") return json(route, profiles)
+    if (url.pathname === "/config/providers") return json(route, { providers: fixture.provider.all })
+    if (url.pathname === "/session" && route.request().method() === "POST") return json(route, session)
+    if (url.pathname.endsWith("/prompt_async")) return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    return route.fallback()
+  })
+  await page.goto("/chat?companion=friend-a")
+  const home = page.locator('[data-component="chat-home"]')
+  const pick = home.locator('input[type="file"]')
+  const choose = home.locator("select").first()
+  const first = { name: "for-a.txt", mimeType: "text/plain", buffer: Buffer.from("A") }
+  const second = { name: "for-b.txt", mimeType: "text/plain", buffer: Buffer.from("B") }
+  await expect(choose).toHaveValue("friend-a")
+  await pick.setInputFiles(first)
+  await expect(home.getByText(first.name, { exact: true })).toBeVisible()
+  await choose.selectOption("friend-b")
+  await expect(home.getByText(first.name, { exact: true })).toHaveCount(0)
+  await pick.setInputFiles(second)
+  await choose.selectOption("friend-a")
+  await expect(home.getByText(first.name, { exact: true })).toBeVisible()
+  await expect(home.getByText(second.name, { exact: true })).toHaveCount(0)
+  await choose.selectOption("friend-b")
+  await home.locator('[data-action="chat-first-message"]').fill("hello B")
+  const sent = page.waitForRequest(req => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/prompt_async"))
+  await home.locator('button[type="submit"]').click()
+  expect((await sent).postDataJSON().parts).toEqual([
+    { type: "text", text: "hello B" },
+    { type: "file", mime: "text/plain", filename: second.name, url: "data:text/plain;base64,Qg==" },
+  ])
+})
