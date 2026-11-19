@@ -9,6 +9,7 @@ import { Spinner } from "@redcode-ai/ui/spinner"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"
+import { CompanionDreamDiary } from "@/components/companion-dream-diary"
 import { SoulAvatar } from "@/components/soul-avatar"
 import { ChatComposerTools, type ChatModelChoice } from "@/components/chat-composer-tools"
 import { prepareSoulAvatar } from "@/utils/soul-avatar-image"
@@ -340,6 +341,19 @@ export default function Chat() {
             >
               {language.t(state.creating ? "chat.companion.creating" : "chat.companion.new")}
             </Button>
+            <Show when={profile()}>
+              {(selected) => (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const owner = selected()
+                    dialog.show(() => <CompanionDreamDiary profile={owner} />)
+                  }}
+                >
+                  {language.t("chat.dreams.title")}
+                </Button>
+              )}
+            </Show>
             <Button variant="ghost" onClick={() => openSettings()}>
               {language.t("chat.native.settings")}
             </Button>

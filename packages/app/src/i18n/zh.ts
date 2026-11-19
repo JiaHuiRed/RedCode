@@ -12,6 +12,8 @@ export const dict = {
   "chat.description": "聊聊日常，也一起做事。带上已经积累的记忆，继续往后的相处。",
   "chat.profile.files": "{{count}} 份档案文件",
   "chat.profile.description": "可以开始新的聊天，也可以接着以前的对话。同一份档案会一直跟着她。",
+  "chat.dreams.title": "梦境日记",
+  "chat.dreams.empty": "还没有梦境记录。",
   "chat.profile.choose": "选择伙伴",
   "chat.profile.missing": "暂时无法找到这位伙伴，请重新选择可用的伙伴。",
   "chat.start": "开始聊天",

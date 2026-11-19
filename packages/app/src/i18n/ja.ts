@@ -8,6 +8,8 @@ export const dict = {
   "chat.description": "日々の会話も、一緒に進める作業も。これまでの思い出を引き継いで、次の日々へ。",
   "chat.profile.files": "アーカイブファイル {{count}} 件",
   "chat.profile.description": "新しい会話を始めたり、以前の会話を続けたりできます。同じアーカイブを引き継ぎます。",
+  "chat.dreams.title": "夢日記",
+  "chat.dreams.empty": "夢の記録はまだありません。",
   "chat.profile.choose": "パートナーを選択",
   "chat.profile.missing": "このパートナーが見つかりません。利用可能なパートナーを選択してください。",
   "chat.start": "会話を始める",

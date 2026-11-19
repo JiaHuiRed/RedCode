@@ -10,6 +10,8 @@ export const dict = {
   "chat.profile.files": "{{count}} archive files",
   "chat.profile.description":
     "Start a new conversation or return to an earlier one. The same companion archive stays with you.",
+  "chat.dreams.title": "Dream diary",
+  "chat.dreams.empty": "No dream entries yet.",
   "chat.profile.choose": "Choose a companion",
   "chat.profile.missing": "This companion is unavailable. Choose an available companion to continue.",
   "chat.start": "Start a conversation",
