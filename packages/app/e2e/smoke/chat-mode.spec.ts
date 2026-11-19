@@ -282,3 +282,49 @@ test("read a companion's latest diary and switch to an earlier date", async ({ p
   await diary.locator("select").selectOption("2026-05-01.md")
   await expect(diary.getByText("One place too late.")).toBeVisible()
 })
+
+test("read imported dreams on demand, retry a failed read and switch companions", async ({ page }) => {
+  const first = {
+    id: "dreamer", name: "Autumn", soulID: "dreamer", directory: fixture.directory,
+    createdAt: 1700000000000, files: 1, timezone: "UTC", warnings: [],
+  }
+  const second = { ...first, id: "friend", name: "Friend", soulID: "friend", directory: fixture.directory + "-other" }
+  const reads: string[] = []
+  let modelRequests = 0
+  await mockRedCodeServer(page, { ...fixture, pageMessages: () => ({ items: [] }) })
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (url.pathname.endsWith("/prompt_async")) modelRequests++
+    if (url.pathname === "/companion") return json(route, [first, second])
+    const owner = [first, second].find((item) => url.pathname === "/companion/" + item.id)
+    if (owner) return json(route, { profile: owner, paths: { directory: owner.directory } })
+    if (url.pathname === "/file" && url.searchParams.get("path") === ".") {
+      return json(route, url.searchParams.get("directory") === first.directory ? [{ name: "dreams.md", type: "file" }] : [])
+    }
+    if (url.pathname === "/file/content" && url.searchParams.get("path") === "dreams.md") {
+      reads.push(url.searchParams.get("directory")!)
+      if (reads.length === 1)
+        return route.fulfill({ status: 503, headers: { "access-control-allow-origin": "*" }, body: "Offline" })
+      return json(route, { type: "text", content: "# Dream diary\nI dreamt of a silver boat." })
+    }
+    return route.fallback()
+  })
+  await page.goto("/chat?companion=dreamer")
+  const open = page.getByRole("button", { name: "Dream diary", exact: true })
+  await expect(open).toBeVisible()
+  expect(reads).toEqual([])
+  await open.click()
+  const diary = page.getByRole("dialog", { name: "Dream diary" })
+  await expect(diary.getByRole("alert")).toBeVisible()
+  await diary.getByRole("button", { name: "Retry" }).click()
+  await expect(diary.getByRole("article")).toContainText("I dreamt of a silver boat.")
+  await diary.getByRole("button", { name: "Close" }).click()
+  await page.locator('[data-component="chat-home"] select').first().selectOption(second.id)
+  await expect(page.getByRole("heading", { name: second.name })).toBeVisible()
+  await open.click()
+  await expect(diary).toContainText("No dream entries yet.")
+  await expect(diary).not.toContainText("silver boat")
+  expect(reads).toEqual([first.directory, first.directory])
+  expect(modelRequests).toBe(0)
+})

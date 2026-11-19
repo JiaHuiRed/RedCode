@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- Chat 首页新增「梦境日记」。可直接阅读当前伙伴从 RedClaw 带来的旧梦，兼容 `DREAMS.md` 和 `dreams.md`。只在打开时读取文件，无需模型调用。
+
 ### [0.19.4] - 2026-11-19
 
 - **Chat 首页输入框补齐模型与附件**：聊天首页原本只有一个裸文本框，与 Code 侧能力差距明显。现在输入框下方有附件入口（点击或粘贴，单条最多 4 个、每个 ≤10MB，按 `FilePart` 形状随首条消息发送）、模型选择与推理档位：模型列表复用 UI 的虚拟化 `List`（几百个模型不做全量渲染），档位复用 Code 同款 `EffortSliderV2`，档位集合取所选模型的 `variants`。模型选择是**草稿级**的临时状态，不绑定伙伴、不写进档案——换模型只换下一次请求用哪颗脑子，Soul 与记忆不动；不选时请求不带 `model`/`variant`，由服务端按 agent 与默认值解析，与改动前行为一致。`/chat` 不在 `LocalProvider` 内，因此不复用 Code 的 `ModelSelectorPopover`，改为基于 `useProviders` 的轻量实现（不新增 context 依赖）。逐条 temperature 未做：`session.create` 与 `prompt_async` 契约都不接受该字段，加控件不会生效，需另立跨层改动。
