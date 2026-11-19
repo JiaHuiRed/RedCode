@@ -8,6 +8,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { errorMessage } from "@/utils/session-helpers"
 
+// 261119 Red 后台生成与阅读共用同一份梦境日记。方案见 docs/notes/proposed/architecture/2026-11-19-companion-heartbeat-dreams.md
 export function CompanionDreamDiary(props: { profile: CompanionInfo }) {
   const sdk = useGlobalSDK()
   const language = useLanguage()
