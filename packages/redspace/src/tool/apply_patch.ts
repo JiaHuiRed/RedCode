@@ -4,6 +4,7 @@ import * as Tool from "./tool"
 import { Bus } from "../bus"
 import { FileWatcher } from "../file/watcher"
 import { InstanceState } from "@/effect/instance-state"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Patch } from "../patch"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { assertExternalDirectoryEffect } from "./external-directory"
@@ -26,6 +27,7 @@ export const ApplyPatchTool = Tool.define(
   "apply_patch",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
+    const flags = yield* RuntimeFlags.Service
     const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
     const bus = yield* Bus.Service
@@ -296,12 +298,13 @@ export const ApplyPatchTool = Tool.define(
       }
 
       // Notify LSP of file changes and collect diagnostics
+      // 261119 Red REDCODE_DISABLE_LSP_DIAGNOSTICS：只同步文档状态，不等诊断也不注入（同 edit.ts）
       for (const change of fileChanges) {
         if (change.type === "delete") continue
         const target = change.movePath ?? change.filePath
-        yield* lsp.touchFile(target, "document")
+        yield* lsp.touchFile(target, flags.disableLspDiagnostics ? undefined : "document")
       }
-      const diagnostics = yield* lsp.diagnostics()
+      const diagnostics = flags.disableLspDiagnostics ? {} : yield* lsp.diagnostics()
 
       // Generate output summary
       const summaryLines = fileChanges.map((change) => {

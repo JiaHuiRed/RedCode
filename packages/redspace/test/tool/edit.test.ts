@@ -12,6 +12,7 @@ import {
 } from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Hash } from "@redcode-ai/core/util/hash"
 import * as Bom from "@/util/bom"
@@ -44,6 +45,7 @@ const layer = Layer.mergeAll(
   LSP.defaultLayer,
   AppFileSystem.defaultLayer,
   Format.defaultLayer,
+  RuntimeFlags.defaultLayer,
   Bus.layer,
   Truncate.defaultLayer,
   Agent.defaultLayer,
@@ -1178,4 +1180,94 @@ describe("edit 大文件 fuzzy 跳过披露", () => {
       expect(err.message).not.toContain("fuzzy matching was skipped")
     }),
   )
+})
+
+
+// 261119 Red REDCODE_DISABLE_LSP_DIAGNOSTICS：假阳性噪音开关——旗标开启时 edit
+// 只同步文档状态（touchFile 不带 "document"），不等诊断回包、不注入工具输出。
+// 用 fake LSP 返回真诊断钉住行为，避免无诊断环境下「跳过」与「没得注入」不可区分。
+describe("tool.edit diagnostics flag", () => {
+  const makeCalls = () => ({ touchModes: [] as (string | undefined)[], diagnosticsCalls: 0, diagnosticsFor: "" })
+  const fakeDiagnostic = {
+    severity: 1 as const,
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+    message: "fake lsp error",
+  }
+
+  const fakeLsp = (calls: ReturnType<typeof makeCalls>) =>
+    Layer.succeed(
+      LSP.Service,
+      LSP.Service.of({
+        init: () => Effect.void,
+        status: () => Effect.succeed([]),
+        hasClients: () => Effect.succeed(true),
+        touchFile: (input, mode) => {
+          calls.touchModes.push(mode)
+          return Effect.void
+        },
+        diagnostics: () => {
+          calls.diagnosticsCalls++
+          return Effect.succeed(calls.diagnosticsFor ? { [calls.diagnosticsFor]: [fakeDiagnostic] } : {})
+        },
+        hover: () => Effect.succeed([]),
+        definition: () => Effect.succeed([]),
+        references: () => Effect.succeed([]),
+        implementation: () => Effect.succeed([]),
+        documentSymbol: () => Effect.succeed([]),
+        workspaceSymbol: () => Effect.succeed([]),
+        prepareCallHierarchy: () => Effect.succeed([]),
+        incomingCalls: () => Effect.succeed([]),
+        outgoingCalls: () => Effect.succeed([]),
+        rename: () => Effect.succeed(undefined),
+        codeAction: () => Effect.succeed([]),
+        completion: () => Effect.succeed([]),
+      }),
+    )
+
+  const localLayer = (calls: ReturnType<typeof makeCalls>, flagLayer: Layer.Layer<RuntimeFlags.Service>) =>
+    Layer.mergeAll(
+      fakeLsp(calls),
+      AppFileSystem.defaultLayer,
+      Format.defaultLayer,
+      Bus.layer,
+      Truncate.defaultLayer,
+      Agent.defaultLayer,
+      flagLayer,
+    )
+
+  const cases = [
+    { name: "默认（诊断开启）：等诊断并注入", flagLayer: RuntimeFlags.layer() },
+    { name: "旗标开启：不等诊断也不注入", flagLayer: RuntimeFlags.layer({ disableLspDiagnostics: true }) },
+  ]
+
+  for (const { name, flagLayer } of cases) {
+    // calls 由 layer 与断言共享：fake LSP 记账进这一份，用例直接对它断言
+    const calls = makeCalls()
+    const itLocal = testEffect(localLayer(calls, flagLayer))
+
+    itLocal.instance(name, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "flag.txt")
+        calls.diagnosticsFor = filepath
+        yield* Effect.promise(() => fs.writeFile(filepath, "one", "utf-8"))
+        yield* FileTime.record(ctx.sessionID, filepath)
+        const info = yield* EditTool
+        const tool = yield* info.init()
+        const result = yield* tool.execute({ filePath: filepath, oldString: "one", newString: "two" }, { ...ctx })
+
+        if (name.includes("旗标开启")) {
+          expect(calls.diagnosticsCalls).toBe(0)
+          expect(calls.touchModes.every((mode) => mode === undefined)).toBe(true)
+          expect(result.output).not.toContain("LSP errors detected")
+          expect(result.metadata.diagnostics).toEqual({})
+        } else {
+          expect(calls.diagnosticsCalls).toBeGreaterThan(0)
+          expect(calls.touchModes).toContain("document")
+          expect(result.output).toContain("LSP errors detected in this file, please fix:")
+          expect(result.output).toContain("fake lsp error")
+        }
+      }),
+    )
+  }
 })

@@ -14,6 +14,7 @@ import { FileWatcher } from "../file/watcher"
 import { Bus } from "../bus"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -103,6 +104,7 @@ export const EditTool = Tool.define(
   "edit",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
+    const flags = yield* RuntimeFlags.Service
     const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
     const bus = yield* Bus.Service
@@ -114,7 +116,7 @@ export const EditTool = Tool.define(
         Effect.gen(function* () {
           // Hashline mode — self-contained [path#TAG] + operation format
           if (params.input) {
-            return yield* executeHashline(params.input, ctx, lsp, afs, format, bus)
+            return yield* executeHashline(params.input, ctx, lsp, afs, format, bus, !flags.disableLspDiagnostics)
           }
 
           if (!params.filePath) {
@@ -324,8 +326,10 @@ export const EditTool = Tool.define(
           })
 
           let output = "Edit applied successfully."
-          yield* lsp.touchFile(filePath, "document")
-          const diagnostics = yield* lsp.diagnostics()
+          // 261119 Red REDCODE_DISABLE_LSP_DIAGNOSTICS：假阳性噪音开关——只同步文档状态，
+          // 不等诊断回包（省每刀最多 5s）也不注入工具输出；report 对空集返回 ""，注入自然短路
+          yield* lsp.touchFile(filePath, flags.disableLspDiagnostics ? undefined : "document")
+          const diagnostics = flags.disableLspDiagnostics ? {} : yield* lsp.diagnostics()
           const normalizedFilePath = AppFileSystem.normalizePath(filePath)
           const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
           if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
@@ -567,6 +571,7 @@ const executeHashline = (
   afs: AppFileSystem.Interface,
   format: Format.Interface,
   bus: Bus.Interface,
+  diagnosticsEnabled: boolean,
 ) =>
   Effect.gen(function* () {
     const instance = yield* InstanceState.context
@@ -698,8 +703,8 @@ const executeHashline = (
     })
 
     let output = "Edit applied successfully."
-    yield* lsp.touchFile(resolvedPath, "document")
-    const diagnostics = yield* lsp.diagnostics()
+    yield* lsp.touchFile(resolvedPath, diagnosticsEnabled ? "document" : undefined)
+    const diagnostics = diagnosticsEnabled ? yield* lsp.diagnostics() : {}
     const normalizedFilePath = AppFileSystem.normalizePath(resolvedPath)
     const block = LSP.Diagnostic.report(resolvedPath, diagnostics[normalizedFilePath] ?? [])
     if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`

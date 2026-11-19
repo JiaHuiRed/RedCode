@@ -4,6 +4,7 @@ import path from "path"
 import fs from "fs/promises"
 import { WriteTool } from "../../src/tool/write"
 import { LSP } from "@/lsp/lsp"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Bus } from "../../src/bus"
 import { Format } from "../../src/format"
@@ -36,6 +37,7 @@ const it = testEffect(
     LSP.defaultLayer,
     AppFileSystem.defaultLayer,
     Bus.layer,
+    RuntimeFlags.defaultLayer,
     Format.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     Truncate.defaultLayer,

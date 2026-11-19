@@ -11,6 +11,7 @@ import { FileWatcher } from "../file/watcher"
 import { Format } from "../format"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { InstanceState } from "@/effect/instance-state"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
@@ -29,6 +30,7 @@ export const WriteTool = Tool.define(
   "write",
   Effect.gen(function* () {
     const lsp = yield* LSP.Service
+    const flags = yield* RuntimeFlags.Service
     const fs = yield* AppFileSystem.Service
     const bus = yield* Bus.Service
     const format = yield* Format.Service
@@ -101,8 +103,9 @@ export const WriteTool = Tool.define(
           })
 
           let output = "Wrote file successfully."
-          yield* lsp.touchFile(filepath, "document")
-          const diagnostics = yield* lsp.diagnostics()
+          // 261119 Red REDCODE_DISABLE_LSP_DIAGNOSTICS：只同步文档状态，不等诊断也不注入（同 edit.ts）
+          yield* lsp.touchFile(filepath, flags.disableLspDiagnostics ? undefined : "document")
+          const diagnostics = flags.disableLspDiagnostics ? {} : yield* lsp.diagnostics()
           const normalizedFilepath = AppFileSystem.normalizePath(filepath)
           let projectDiagnosticsCount = 0
           for (const [file, issues] of Object.entries(diagnostics)) {

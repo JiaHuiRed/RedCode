@@ -4,6 +4,7 @@ import * as fs from "fs/promises"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { ApplyPatchTool } from "../../src/tool/apply_patch"
 import { LSP } from "@/lsp/lsp"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
@@ -19,6 +20,7 @@ const it = testEffect(
     LSP.defaultLayer,
     AppFileSystem.defaultLayer,
     Format.defaultLayer,
+    RuntimeFlags.defaultLayer,
     Bus.layer,
     Truncate.defaultLayer,
     Agent.defaultLayer,

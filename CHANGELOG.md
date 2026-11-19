@@ -10,6 +10,8 @@
 
 ## [Unreleased]
 
+- **LSP 诊断注入开关**：新增环境变量 `REDCODE_DISABLE_LSP_DIAGNOSTICS`——开启后 edit / write / apply_patch 不再等待 LSP 诊断回包（每刀省最多 5 秒），不再向工具输出注入 `LSP errors detected…` 块（假阳性不再误导模型），TUI 的诊断红色面板随之消失；LSP 服务器本身照常运行（hover / `@file:start` / lsp 工具不受影响）。适用于 LSP 误报频繁的场景，重启生效。
+
 - **TUI 共用桌面桌宠**：只开 TUI、不开 GUI 时，赤也出现在 Windows 桌面上。新增 pet-only Electron 宿主（桌面版同一可执行文件 `--pet-host` 启动，独立 userData 与单实例锁，最后来源释放后自退），GUI 与 TUI 作为来源经 loopback HTTP + token 接入同一宿主，显式激活接管（GUI 窗口焦点/切会话、TUI 启动/切会话），关闭按钮只关本次显示、下次激活恢复；GUI 的内联兜底与设置开关语义不变。宿主协议、快照规则与来源客户端下沉 `@redcode-ai/ui/pet-*` 共享。宿主协议/仲裁与规则层定向测试 78 用例、四包 typecheck 绿；真机矩阵待验。模型可见四问全部为零（不碰提示词/工具/注入）。详见 [共用桌宠决策](docs/notes/implemented/feature/2026-11-18-tui-shared-desktop-pet.md)。
 
 - **混合编码日记忠实转码**：Companion 导入对 UTF-8 头 + GBK 主体的旧 Windows 日记做字节级忠实转码（逐序列歧义仲裁 + 强字符率门限 + 坏字节 U+FFFD 标记），原字节保留在 `source/`、manifest hash 不变，重导入可修复已存在档案且不触碰本地修改过的记忆。live 秋秋档案的 2026-05-31 / 06-21 / 06-23 三份日记恢复召回。详见 [转码与头像决策](docs/notes/implemented/feature/2026-11-19-companion-transcode-avatar.md)。

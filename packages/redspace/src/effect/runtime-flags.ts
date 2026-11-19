@@ -20,6 +20,7 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   disableEmbeddedWebUi: bool("REDCODE_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("REDCODE_DISABLE_EXTERNAL_SKILLS"),
   disableLspDownload: bool("REDCODE_DISABLE_LSP_DOWNLOAD"),
+  disableLspDiagnostics: bool("REDCODE_DISABLE_LSP_DIAGNOSTICS"),
   skipMigrations: bool("REDCODE_SKIP_MIGRATIONS"),
   disableClaudeCodePrompt: Config.all({
     broad: bool("REDCODE_DISABLE_CLAUDE_CODE"),
