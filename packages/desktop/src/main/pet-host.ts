@@ -62,6 +62,10 @@ export async function runPetHost(): Promise<void> {
     app.quit()
     return
   }
+  // 261119 Red protocol.handle 必须在 app ready 之后调用；此前直接跑 runPetHost 会在
+  // registerRendererProtocol 抛错，async 函数 reject 被调用处的 void 吞掉 →
+  // 进程挂着却永不写 pet-host.json，来源侧反复 spawn 一个抢不到锁的新实例。
+  await app.whenReady()
   const logger = initLogging()
   registerRendererProtocol()
   // 宿主无常驻窗：关掉 Electron 默认的「窗口全关即退出」，存活只由 idle-exit 与来源驱动

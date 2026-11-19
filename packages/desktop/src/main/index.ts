@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
@@ -943,8 +943,20 @@ const main = Effect.gen(function* () {
 
 // 261119 Red 桌宠宿主模式：同一可执行文件加 `--pet-host`，只跑 pet-only 宿主（独立 userData
 // 与单实例锁，不进 GUI main）。分支必须在 runFork 之前，避免 main 的 sidecar/菜单初始化。
+// 启动失败不再静默：吞掉 rejection 会让进程挂在那儿既不登记也不退出，来源只能反复 spawn
+// 抢锁失败的实例（261119 实测：赤在 GUI 关闭后再也回不来）。
 if (isPetHostArgv(process.argv)) {
-  void runPetHost()
+  void runPetHost().catch((error) => {
+    // 宿主没有可用的日志设施时也要留下痕迹：detached 启动时 stderr 被丢弃，
+    // 因此同时写宿主 userData 下的固定文件名，便于事后定位
+    try {
+      writeFileSync(join(app.getPath("userData"), "pet-host-error.log"), `${new Date().toISOString()} ${String(error)}\n`)
+    } catch {
+      // 写诊断文件本身失败没有补救手段：错误仍会经 stderr 与退出码暴露
+    }
+    process.stderr.write(`pet host failed: ${String(error)}\n`)
+    app.exit(1)
+  })
 } else {
   Effect.runFork(main)
 }
