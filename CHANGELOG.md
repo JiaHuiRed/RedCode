@@ -8,7 +8,13 @@
 
 ---
 
-## [Unreleased]
+### [0.19.4] - 2026-11-19
+
+- **Chat 首页输入框补齐模型与附件**：聊天首页原本只有一个裸文本框，与 Code 侧能力差距明显。现在输入框下方有附件入口（点击或粘贴，单条最多 4 个、每个 ≤10MB，按 `FilePart` 形状随首条消息发送）、模型选择与推理档位：模型列表复用 UI 的虚拟化 `List`（几百个模型不做全量渲染），档位复用 Code 同款 `EffortSliderV2`，档位集合取所选模型的 `variants`。模型选择是**草稿级**的临时状态，不绑定伙伴、不写进档案——换模型只换下一次请求用哪颗脑子，Soul 与记忆不动；不选时请求不带 `model`/`variant`，由服务端按 agent 与默认值解析，与改动前行为一致。`/chat` 不在 `LocalProvider` 内，因此不复用 Code 的 `ModelSelectorPopover`，改为基于 `useProviders` 的轻量实现（不新增 context 依赖）。逐条 temperature 未做：`session.create` 与 `prompt_async` 契约都不接受该字段，加控件不会生效，需另立跨层改动。
+
+- **桌宠宿主启动与快照校验修复**：`--pet-host` 在 `requestSingleInstanceLock()` 之后、`initLogging` 之前补 `await app.whenReady()`——此前 `protocol.handle` 在 ready 前被调用而抛错，错误又被 `void` 吞掉，进程占着 `-pet` 单实例锁却不监听端口、不写 `pet-host.json`，表现为 TUI 反复拉起抢锁失败的实例、赤始终不出现；同时 `index.ts` 的调用点不再吞 rejection，失败写 `pet-host-error.log` 并以非零码退出。另一处：宿主校验的 `KIND_SCALARS` 只放行 6 个标量并额外要求工具/编码等状态走嵌套对象，但快照的 `kind` 实际直接取 `PetDisplay["kind"]`（11 种标量），全仓没有嵌套形态的发送方——TUI 一进入工具状态就被 400 拒绝，而客户端在 update 非 2xx 分支只静默丢弃。现按 `PetDisplayBase` 全枚举放行并删除无人发送的对象分支，回归用例遍历 11 种 kind 走真 HTTP（旧实现在 `tool` 上红）。详见 [共用桌宠决策](docs/notes/implemented/feature/2026-11-18-tui-shared-desktop-pet.md)。
+
+- **GUI dev 脚本后端路径修正**：`packages/app/script/dev.ts` 与 app 的 AGENTS.md 仍指向 `packages/opencode`（该目录早已不存在），`bun run dev` 起后端必然 `ENOENT`；改为实际目录 `packages/redspace`，与包内文档一致。
 
 - **GPT-6.2 指令前缀默认启用**：`REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER` 默认开启（设 `false` 退回顶层 `instructions`），且**不跟随** `REDCODE_EXPERIMENTAL`——退回旧形状必须显式指定。仅对 `openai` OAuth 的 `gpt-6.2` 系把同一串 system 正文作为 `input[0]` 的 developer 消息发送，并省略顶层 `instructions`：后者在订阅端点不在缓存断点内，实测每轮约 21.7k token 全量未命中。Sol OAuth 成对实测暖轮未命中 22,775 → 253（降 99%）；Astra 与 Sol 同形（指令全 miss），未单跑对照。6.1、API-key、非 Responses 路径不变；压缩摘要走同一个 `prepare`，跟随本开关，符合上游 `#64544` 终态；native 接管时 system 本来就进 `input` 首项、从不发顶层字段。模型可见变化是同一串正文的角色封装与位置：token 数按服务端角色折算可能有小幅差异，固定前缀从首项起与旧形状不同（切换按冷轮核算），不新增输入副本、不放大既有指令总量。详见 [指令前缀决策](docs/notes/proposed/feature/2026-11-19-instructions-developer-prefix.md)。
 
