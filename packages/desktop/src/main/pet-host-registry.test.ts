@@ -7,18 +7,13 @@ const SNAPSHOT = { kind: "thinking", outfit: "openai", behavior: {
   idleActionChance: 0, idleActionMs: 1, coffeeChance: 0, touchCooldownMs: 1, touchResponseMs: 1,
 } } as const
 
-function create(t0 = 1_000) {
-  let now = t0
+function create() {
   const changes: string[] = []
   const registry = createPetHostRegistry({
-    now: () => now,
     onChange: () => changes.push(registry.active()?.sourceID ?? "none"),
   })
   return {
     registry,
-    tick: (ms: number) => {
-      now += ms
-    },
     changes,
   }
 }
@@ -35,13 +30,12 @@ describe("pet host registry", () => {
   })
 
   test("后激活的来源接管，先激活者保持快照不变", () => {
-    const { registry, tick } = create()
+    const { registry } = create()
     registry.register("gui", "gui", 1)
     registry.attach("gui")
     registry.snapshot("gui", 1, 1, { ...SNAPSHOT, kind: "coding", tool: "edit" })
     registry.activate("gui", 1)
     expect(registry.active()?.snapshot).toEqual({ ...SNAPSHOT, kind: "coding", tool: "edit" })
-    tick(100)
     registry.register("tui", "tui", 1)
     registry.attach("tui")
     registry.snapshot("tui", 1, 1, { ...SNAPSHOT, kind: "idle", outfit: "default" })
@@ -49,6 +43,20 @@ describe("pet host registry", () => {
     registry.activate("tui", 1)
     expect(registry.active()?.sourceID).toBe("tui")
     expect(registry.active()?.snapshot?.kind).toEqual("idle")
+  })
+
+  test("连续激活按到达顺序交接，最后来源断连后回到上一个", () => {
+    const { registry } = create()
+    for (const id of ["gui", "tui"] as const) {
+      registry.register(id, id, 1)
+      registry.attach(id)
+      registry.activate(id, 1)
+    }
+    expect(registry.active()?.sourceID).toBe("tui")
+    registry.activate("gui", 1)
+    expect(registry.active()?.sourceID).toBe("gui")
+    registry.detach("gui")
+    expect(registry.active()?.sourceID).toBe("tui")
   })
 
   test("旧代次的注册/激活/快照都被拒绝", () => {
@@ -72,12 +80,11 @@ describe("pet host registry", () => {
   })
 
   test("活跃来源断连后交接给仍激活的来源；无人激活则不显示", () => {
-    const { registry, tick } = create()
+    const { registry } = create()
     registry.register("gui", "gui", 1)
     registry.attach("gui")
     registry.snapshot("gui", 1, 1, { ...SNAPSHOT, kind: "idle" })
     registry.activate("gui", 1)
-    tick(50)
     registry.register("tui", "tui", 1)
     registry.attach("tui")
     registry.snapshot("tui", 1, 1, { ...SNAPSHOT, kind: "thinking" })
@@ -128,7 +135,6 @@ describe("pet host registry", () => {
   test("onActivate 在 onChange 之前触发，且仅成功激活时触发（宿主靠它清 close latch）", () => {
     const order: string[] = []
     const registry = createPetHostRegistry({
-      now: () => 1_000,
       onActivate: () => order.push("activate"),
       onChange: () => order.push("change"),
     })

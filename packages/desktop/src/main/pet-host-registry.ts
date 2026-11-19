@@ -11,7 +11,7 @@ export type RegistrySource = {
   generation: number
   sequence: number
   snapshot: DesktopPetSnapshot | null
-  activatedAt: number | undefined
+  activationOrder: number
   connected: boolean
 }
 
@@ -25,25 +25,20 @@ export type PetActiveDisplay = {
 export type PetHostRegistry = ReturnType<typeof createPetHostRegistry>
 
 export function createPetHostRegistry(deps: {
-  now: () => number
   onChange: () => void
   /** 显式激活成功时回调（在 onChange 之前）：宿主用它清掉「点 × 只关本次」的 latch。 */
   onActivate?: (sourceID: string) => void
 }) {
   const sources = new Map<string, RegistrySource>()
+  let activationOrder = 0
 
   const changed = () => deps.onChange()
 
-  /** 连接且显式激活过的来源按激活时间取最新；快照未推过按不显示处理。 */
+  /** 连接且显式激活过的来源按激活顺序取最后一个；快照未推过按不显示处理。 */
   function pickActive(): PetActiveDisplay | undefined {
     let best: RegistrySource | undefined
-    let bestActivatedAt = -1
     for (const source of sources.values()) {
-      if (!source.connected || source.activatedAt === undefined) continue
-      if (source.activatedAt > bestActivatedAt) {
-        best = source
-        bestActivatedAt = source.activatedAt
-      }
+      if (source.connected && source.activationOrder > (best?.activationOrder ?? 0)) best = source
     }
     if (!best) return undefined
     return { sourceID: best.sourceID, kind: best.kind, snapshot: best.snapshot }
@@ -54,7 +49,7 @@ export function createPetHostRegistry(deps: {
     register(sourceID: string, kind: PetSourceKind, generation: number): "ok" | "stale" {
       const existing = sources.get(sourceID)
       if (existing && existing.generation > generation) return "stale"
-      sources.set(sourceID, { sourceID, kind, generation, sequence: 0, snapshot: null, activatedAt: undefined, connected: false })
+      sources.set(sourceID, { sourceID, kind, generation, sequence: 0, snapshot: null, activationOrder: 0, connected: false })
       changed()
       return "ok"
     },
@@ -76,11 +71,11 @@ export function createPetHostRegistry(deps: {
       changed()
     },
 
-    /** 显式激活接管。旧代次拒绝；同代次刷新激活时间。 */
+    /** 显式激活接管。旧代次拒绝；同代次刷新激活顺序。 */
     activate(sourceID: string, generation: number): boolean {
       const source = sources.get(sourceID)
       if (!source || source.generation !== generation) return false
-      source.activatedAt = deps.now()
+      source.activationOrder = ++activationOrder
       deps.onActivate?.(sourceID)
       changed()
       return true

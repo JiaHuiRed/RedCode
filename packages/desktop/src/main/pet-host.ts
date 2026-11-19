@@ -92,7 +92,6 @@ export async function runPetHost(): Promise<void> {
   }
 
   const registry = createPetHostRegistry({
-    now: () => Date.now(),
     // 已定决策：显式激活接管——任一来源激活即解除「点 × 只关本次」的 latch，赤回来
     onActivate: () => {
       displayClosed = false

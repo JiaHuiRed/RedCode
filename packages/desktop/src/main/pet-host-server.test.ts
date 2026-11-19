@@ -23,7 +23,7 @@ async function waitUntil(condition: () => boolean, what: string) {
 }
 
 async function setup() {
-  const registry = createPetHostRegistry({ now: () => Date.now(), onChange: () => {} })
+  const registry = createPetHostRegistry({ onChange: () => {} })
   const server = await createPetHostServer({ token: "tok-test-123", registry })
   const hostFile: PetHostFile = {
     protocol: 1,
