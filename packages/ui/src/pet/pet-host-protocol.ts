@@ -71,7 +71,24 @@ export type PetHostInstallFile = {
   command: string[]
 }
 
-const KIND_SCALARS = new Set(["idle", "unknown", "thinking", "compacting", "success", "error"])
+// 261119 Red kind 是 PetDisplay 的标量判别值，覆盖全部 11 种状态。
+// 早先这里只放行 6 种标量、要求 tool/coding/searching/waiting/permission 走嵌套对象，
+// 与 pet-state 的实际产出相反：TUI 一进工具/编码状态就被 400 拒绝，且客户端这条分支
+// 不打日志，表现为「赤在 GUI 关掉后再也回不来」。用户点关闭按钮后端的 waiting/permission
+// 同样受影响，故按 PetDisplayBase 的完整枚举放行，不保留无人发送的对象形态。
+const KIND_SCALARS = new Set([
+  "idle",
+  "unknown",
+  "thinking",
+  "coding",
+  "searching",
+  "tool",
+  "waiting",
+  "permission",
+  "compacting",
+  "success",
+  "error",
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -81,22 +98,12 @@ function boundedString(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max
 }
 
-/** 校验跨进程快照：kind 枚举（含 tool 对象形态）、outfit/标签长度、behavior 数值有界。 */
+/** 校验跨进程快照：kind 标量枚举、outfit/标签长度、behavior 数值有界。 */
 export function validatePetSnapshot(raw: unknown): DesktopPetSnapshot | null | undefined {
   if (raw === null) return null
   if (!isRecord(raw)) return undefined
   const { kind, outfit, behavior } = raw as { kind: unknown; outfit: unknown; behavior: unknown }
-  if (typeof kind === "string") {
-    if (!KIND_SCALARS.has(kind)) return undefined
-  } else if (isRecord(kind)) {
-    const tool = kind.kind === "coding" || kind.kind === "searching" || kind.kind === "tool"
-    const asked = kind.kind === "waiting" || kind.kind === "permission"
-    if (!tool && !asked) return undefined
-    if (tool && !boundedString(kind.tool, LABEL_MAX)) return undefined
-    if (asked && kind.detail !== undefined && !boundedString(kind.detail, LABEL_MAX)) return undefined
-  } else {
-    return undefined
-  }
+  if (typeof kind !== "string" || !KIND_SCALARS.has(kind)) return undefined
   if (!boundedString(outfit, OUTFIT_MAX)) return undefined
   if (!isRecord(behavior)) return undefined
   const fields = Object.keys(behavior)

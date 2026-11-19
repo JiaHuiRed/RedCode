@@ -45,6 +45,39 @@ async function setup() {
 }
 
 describe("pet host server + client", () => {
+  // 261119 Red 回归：kind 是 PetDisplay 的标量判别值，宿主曾只放行 6 种并要求
+  // tool/coding/searching/waiting/permission 走嵌套对象，导致 TUI 一进工具状态就被
+  // 400 拒绝且客户端不打日志（表现为赤在 GUI 关掉后再也回不来）。
+  test("全部 PetDisplay kind 都能通过宿主校验", async () => {
+    const { hostFile, cleanup } = await setup()
+    try {
+      const client = createPetHostClient({
+        kind: "tui",
+        log: () => {},
+        readJson: (name) => (name === PET_HOST_FILE ? hostFile : undefined),
+      })
+      const kinds = [
+        "idle",
+        "unknown",
+        "thinking",
+        "coding",
+        "searching",
+        "tool",
+        "waiting",
+        "permission",
+        "compacting",
+        "success",
+        "error",
+      ] as const
+      for (const kind of kinds) {
+        expect({ kind, accepted: await client.push({ ...SNAPSHOT, kind }) }).toEqual({ kind, accepted: true })
+      }
+      client.dispose()
+    } finally {
+      await cleanup()
+    }
+  })
+
   test("客户端注册→推快照→激活→closed 事件→释放，全链路走真 HTTP", async () => {
     const { registry, server, hostFile, baseURL, cleanup } = await setup()
     try {
