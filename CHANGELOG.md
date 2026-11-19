@@ -10,7 +10,9 @@
 
 ### [Unreleased]
 
-- **Chat 伙伴专属 AGENTS**：Chat 主会话不再读取全局/项目工程 `AGENTS.md` 与工程 `MEMORY.md`，改为注入唯一一份 `session/prompt/companion-agents.md`——伙伴自己的「家规」，写记忆、陪伴分寸、轻干活与安全边界；支持 `~/.redcode/companion-agents.md` 用户覆盖（非空且不超过 16 KiB 时生效，否则回退内置）；`chat.md` 同步删掉与伙伴 AGENTS 重叠的陪伴/日记段落，只保留 Chat 模式契约。Code 仍读原有的两份 AGENTS 与工程 MEMORY，两条路径互不影响。模型可见四问：Chat 固定前缀移除全局工程 AGENTS（本机约 2.1K token）、新增伙伴 AGENTS（约 0.4K token），净减约 1.7K；Code 前缀逐字节不变；仅绑定伙伴的主 Chat 按 `personalChat` 条件注入，会话缓存内稳定；内置文件与覆盖文件均受 16 KiB 上限约束，超限回退并告警。验证：typecheck 通过，instruction 单测 42 pass（含新增「`agents:false` 同时挡掉 AGENTS/MEMORY」用例），注入登记表自检 40 项全部有效。
+- **Chat 伙伴专属 AGENTS**：Chat 主会话不再读取全局/项目工程 `AGENTS.md` 与工程 `MEMORY.md`，改为注入唯一一份 `session/prompt/companion-agents.md`——伙伴自己的「家规」，写记忆、陪伴分寸、轻干活与安全边界；支持 `~/.redcode/companion-agents.md` 用户覆盖（非空且不超过 16 KiB 时生效，否则回退内置）；`chat.md` 同步删掉与伙伴 AGENTS 重叠的陪伴/日记段落，只保留 Chat 模式契约。Code 仍读原有的两份 AGENTS 与工程 MEMORY，两条路径互不影响。模型可见四问：Chat 固定前缀移除全局工程 AGENTS（本机约 2.1K token）、新增伙伴 AGENTS（约 0.4K token），净减约 1.7K；Code 前缀逐字节不变；仅绑定伙伴的主 Chat 按 `personalChat` 条件注入，会话缓存内稳定；内置文件与覆盖文件均受 16 KiB 上限约束，超限回退并告警。验证：typecheck 通过，instruction 单测 42 pass（含新增「`agents:false` 同时挡掉 AGENTS/MEMORY」用例），注入登记表自检 40 项全部有效。详见 [伙伴 AGENTS 决策](docs/notes/implemented/architecture/2026-11-20-companion-agents.md)。
+
+- **未跟踪文件行数与补丁跨运行时修复**：`Git.statUntracked` 从 `Bun.file()` 改为 Node fs 的 `stat` + 分块读取——桌面 sidecar 走 Node 目标时不再把三行新文件显示成 +0，32 MiB 上限前移到读取之前，超限文件不读正文；新增 `patchUntrackedBatch`，用临时 `GIT_INDEX_FILE` + `add -N` + 一次 `git diff` 批量生成未跟踪补丁，失败回退逐文件，`vcs.diff` 与 `diffRaw` 都优先走批量。模型可见四问全部为零（不碰提示词/工具/注入）。验证：redspace typecheck 通过，git 11 pass、vcs 12 pass（含 CRLF/空文件/二进制/批量补丁与真实索引不变用例）。详见 [修复决策](docs/notes/implemented/bug-fix/2026-11-20-untracked-stat-batch.md)。
 
 - Chat 首页新增「梦境日记」。可直接阅读当前伙伴从 RedClaw 带来的旧梦，兼容 `DREAMS.md` 和 `dreams.md`。只在打开时读取文件，无需模型调用。
 

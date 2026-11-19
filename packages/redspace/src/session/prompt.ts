@@ -2307,6 +2307,7 @@ export const layer = Layer.effect(
             ...env,
             // 261120 Red Chat 只加载伙伴自己的一份 AGENTS：全局/项目工程 AGENTS 在 Chat 不注入。
             // injection-registry: companion-agents
+            // 决策见 docs/notes/implemented/architecture/2026-11-20-companion-agents.md
             ...(personalChat ? [companionAgents] : []),
             ...instructions,
             ...(soul.prompt ? [soul.prompt] : []),

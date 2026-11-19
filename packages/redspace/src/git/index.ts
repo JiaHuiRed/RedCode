@@ -398,6 +398,7 @@ export const layer = Layer.effect(
     // Bun 未定义、整个统计返回 undefined（三行新文件显示 +0）；32 MiB 上限又在
     // arrayBuffer() 之后，超大文件先整份读进内存再丢弃。改为 Node fs 的 open/stat
     // 预检大小 + 分块读取，Bun 与 Node 两个运行时同形。
+    // 决策见 docs/notes/implemented/bug-fix/2026-11-20-untracked-stat-batch.md
     // 261120 Red 批量未跟踪补丁：此前每个文件一次 git diff --no-index，257 个文件
     // 387ms；改为临时索引 + add -N + 一次 diff。任何一步失败都返回 undefined，
     // 调用方按原逐文件路径回退，特殊文件/子仓库不会让整批丢结果。
