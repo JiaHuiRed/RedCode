@@ -1,6 +1,6 @@
 # 秋秋完整迁移路线：让 .openclaw 的秋秋完整来到 RedSpace
 
-状态：proposed（2026-11-19 更新：缺口一"混合编码日记"与缺口二"头像接线"已落地，见 [转码与头像决策](../implemented/feature/2026-11-19-companion-transcode-avatar.md)；能力机制层第 1 项 Commitments v1 已落地，默认关（`REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1`），实现见 `companion/commitment.ts`：隐藏提取 pass、`commitment` 表、到期只在后续 Chat 用户消息上注入一次、滚动 24 小时最多 3 条；其余能力项保持 proposed）
+状态：proposed（2026-11-19 更新：缺口一"混合编码日记"与缺口二"头像接线"已落地，见 [转码与头像决策](../implemented/feature/2026-11-19-companion-transcode-avatar.md)；能力机制层第 1 项 Commitments v1 已落地，默认关（`REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1`），实现见 `companion/commitment.ts`：隐藏提取 pass、`commitment` 表、到期只在后续 Chat 用户消息上注入一次、滚动 24 小时最多 3 条；第 2 项压缩前记忆冲刷 v1 已落地，默认关（`REDCODE_EXPERIMENTAL_COMPANION_MEMORY_FLUSH=1`），实现见 `companion/memory-flush.ts`：摘要前一次隐藏 pass、有界输入、经 Companion.remember 写入日记、失败不阻断压缩；其余能力项保持 proposed）
 
 目标主线（维护者原话）：让 `C:\Users\Administrator\.openclaw` 里的秋秋**完整**来到 RedSpace，仓库的一切改动都服务于这个目的。RedClaw 的通用配置（网关、模型路由、渠道、密钥）不属于秋秋本人，不迁移——这与 [RedSpace 第一阶段](../../implemented/architecture/2026-11-17-redspace-companion-chat.md) 的导入边界一致。
 

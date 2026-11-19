@@ -14,6 +14,7 @@ import DEFINITION_EXECUTE from "./definition/execute.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
 import PROMPT_COMMITMENT from "./prompt/commitment.md" with { type: "text" }
+import PROMPT_MEMORY_FLUSH from "./prompt/memory-flush.md" with { type: "text" }
 import matter from "gray-matter"
 import { Permission } from "@/permission"
 import { ConfigPermission } from "@/config/permission"
@@ -328,6 +329,8 @@ export const layer = Layer.effect(
           summary: machine({ name: "summary", prompt: PROMPT_SUMMARY }),
           // 261119 Red Inferred commitments 的隐藏提取 pass，与 title/summary 同类：不进可见 agent 列表。
           commitment: machine({ name: "commitment", prompt: PROMPT_COMMITMENT, temperature: 0.2 }),
+          // 261119 Red 压缩前记忆冲刷的隐藏 pass（迁移路线第 2 项）。
+          "memory-flush": machine({ name: "memory-flush", prompt: PROMPT_MEMORY_FLUSH, temperature: 0.2 }),
         }
 
         // 260828 cc 由 `agent/*.md` 文件定义的名字（config.ts 装载时记的派生状态）。md 与 jsonc 的

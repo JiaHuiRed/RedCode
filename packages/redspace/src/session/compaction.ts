@@ -15,7 +15,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { Cause, Effect, Exit, Layer, Context, Option, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Context, Option, Schema, Stream } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
@@ -26,6 +26,10 @@ import * as NativeContext from "./native-context"
 import * as NativeRuntime from "./native-context-runtime"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { SystemPrompt } from "./system"
+import { LLM } from "./llm"
+import { LLMEvent } from "@redcode-ai/llm"
+import { Companion } from "@/companion/companion"
+import { MemoryFlush } from "@/companion/memory-flush"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -394,6 +398,8 @@ export const layer = Layer.effect(
     const processors = yield* SessionProcessor.Service
     const provider = yield* Provider.Service
     const flags = yield* RuntimeFlags.Service
+    const companions = yield* Companion.Service
+    const llm = yield* LLM.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: MessageV2.Assistant["tokens"]
@@ -825,6 +831,54 @@ export const layer = Layer.effect(
       })))
     })
 
+    // 261119 Red 压缩前记忆冲刷（迁移路线第 2 项）：在摘要折叠会话之前，把还没落盘的
+    // 长期上下文经既有 Companion.remember 路径写入日记。默认关，失败只记日志、不阻断压缩。
+    const memoryFlush = Effect.fn("SessionCompaction.memoryFlush")(function* (input: {
+      sessionID: SessionID
+      messages: MessageV2.WithParts[]
+      parentID: MessageID
+      model: Provider.Model
+    }) {
+      if (!MemoryFlush.enabled()) return
+      const info = yield* session.get(input.sessionID)
+      if (info.mode !== "chat" || !info.companionID || info.parentID) return
+      const agent = yield* agents.get("memory-flush")
+      if (!agent) return
+      const text = MemoryFlush.contextText(input.messages)
+      if (Buffer.byteLength(text) < MemoryFlush.MIN_CONTEXT_BYTES) return
+      const user = input.messages.findLast((message) => message.info.id === input.parentID)
+      if (!user || user.info.role !== "user") return
+      const raw = yield* llm
+        .stream({
+          agent,
+          user: user.info,
+          system: [],
+          tools: {},
+          model: input.model,
+          sessionID: input.sessionID,
+          retries: 1,
+          messages: [
+            {
+              role: "user",
+              content: `Current time: ${new Date().toISOString()}\n\nConversation excerpt:\n${text}`,
+            },
+          ],
+        })
+        .pipe(
+          Stream.filter(LLMEvent.is.textDelta),
+          Stream.map((event) => event.text),
+          Stream.mkString,
+        )
+      const entries = MemoryFlush.parse(raw)
+      for (const [index, entry] of entries.entries())
+        yield* companions.remember({
+          id: info.companionID,
+          text: entry,
+          source: "compaction flush",
+          idempotencyKey: `flush:${input.parentID}:${index}`,
+        })
+    })
+
     const processCompactionInner = Effect.fn("SessionCompaction.process")(function* (input: {
       parentID: MessageID
       messages: MessageV2.WithParts[]
@@ -891,9 +945,19 @@ export const layer = Layer.effect(
       // 给它挂个"压缩中"只会闪一下，没有信息量。
      yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
      const startedAt = Date.now()
+      const userMessage = parent.info
+      yield* memoryFlush({
+        sessionID: input.sessionID,
+        messages: input.messages,
+        parentID: input.parentID,
+        model: yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie),
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.sync(() => log.warn("memory flush failed", { cause })),
+        ),
+      )
       if ((yield* config.get()).compaction?.native?.enabled)
         return yield* processNative({ ...input, rapidRefillStreak: rapidRefillCheck?.streak })
-      const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
       // 260818 Red 修口径：此前用 sumTokens 累计所有 assistant 消息的 token 消耗（每轮
@@ -1309,6 +1373,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Bus.layer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(Companion.defaultLayer),
+    Layer.provide(LLM.defaultLayer),
   ),
 )
 

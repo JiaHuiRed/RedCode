@@ -43,6 +43,7 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
+import { Companion } from "../../src/companion/companion"
 import { Snippet } from "@/session/snippet"
 import * as ContextCompaction from "../../src/session/context-compaction"
 import { Database } from "../../src/storage/db"
@@ -316,6 +317,8 @@ const deps = Layer.mergeAll(
   SyncEvent.defaultLayer,
   RuntimeFlags.layer({}),
   EventV2Bridge.defaultLayer,
+  Companion.defaultLayer,
+  LLM.defaultLayer,
 )
 
 const env = Layer.mergeAll(
@@ -326,7 +329,13 @@ const env = Layer.mergeAll(
 
 const it = testEffect(env)
 
-const compactionEnv = Layer.mergeAll(SessionNs.defaultLayer, CrossSpawnSpawner.defaultLayer, Snippet.defaultLayer)
+const compactionEnv = Layer.mergeAll(
+  SessionNs.defaultLayer,
+  CrossSpawnSpawner.defaultLayer,
+  Snippet.defaultLayer,
+  Companion.defaultLayer,
+  LLM.defaultLayer,
+)
 const itCompaction = testEffect(compactionEnv)
 const promptEnv = Layer.mergeAll(
   TestLLMServer.layer,
