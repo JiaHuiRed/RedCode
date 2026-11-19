@@ -9,6 +9,7 @@ import { PromptPin } from "./prompt-pin"
 import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
 import * as Log from "@redcode-ai/core/util/log"
+import { Global } from "@redcode-ai/core/global"
 import { SessionRevert } from "./revert"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
@@ -26,6 +27,7 @@ import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.md" with { type: "text" }
 import WORK_RULES from "./prompt/work-rules.md" with { type: "text" }
 import CONVERSATION from "./prompt/conversation.md" with { type: "text" }
+import COMPANION_AGENTS from "./prompt/companion-agents.md" with { type: "text" }
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -138,6 +140,8 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 const EXTERNAL_COMPRESS_TOOLS = new Set(["compress-range", "compress-message"])
 
 const log = Log.create({ service: "session.prompt" })
+// 261120 Red 伙伴 AGENTS 的用户覆盖文件：存在且非空时替代内置那份（仍是唯一一份）。
+const COMPANION_AGENTS_MAX_BYTES = 16 * 1024
 const elog = EffectLogger.create({ service: "session.prompt" })
 
 export interface Interface {
@@ -2197,12 +2201,12 @@ export const layer = Layer.effect(
           const mediaEviction = (yield* config.get()).experimental?.mediaEviction
           const mediaOptions =
             mediaEviction?.enabled === false ? undefined : { keepRecentMedia: mediaEviction?.keepRecent ?? 5 }
-          const [skills, env, instructions, mcpGuide, modelMsgs, soul, companion] = yield* Effect.all([
+          const [skills, env, instructions, mcpGuide, modelMsgs, soul, companion, companionAgents] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
             cachedSystem
               ? Effect.succeed(cachedSystem.instructions)
-              : instruction.system({ memory: !chatMode }).pipe(Effect.orDie),
+              : instruction.system({ memory: !chatMode, agents: !chatMode }).pipe(Effect.orDie),
             // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
             // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
@@ -2223,6 +2227,22 @@ export const layer = Layer.effect(
                     Effect.orDie,
                   )
                 : Effect.succeed(undefined),
+            personalChat
+              ? Effect.gen(function* () {
+                  const file = path.join(Global.Path.config, "companion-agents.md")
+                  const info = yield* fsys.stat(file)
+                  const bytes = Number(info.size)
+                  if (bytes > COMPANION_AGENTS_MAX_BYTES) {
+                    log.warn("companion agents override too large, using built-in", {
+                      bytes,
+                      max: COMPANION_AGENTS_MAX_BYTES,
+                    })
+                    return COMPANION_AGENTS
+                  }
+                  const text = yield* fsys.readFileStringSafe(file)
+                  return text?.trim() ? text : COMPANION_AGENTS
+                }).pipe(Effect.catch(() => Effect.succeed(COMPANION_AGENTS)))
+              : Effect.succeed(COMPANION_AGENTS),
           ])
           if (!cachedSystem) {
             const systemCache = {
@@ -2285,6 +2305,9 @@ export const layer = Layer.effect(
           // (formerly Soul preceded them); it remains before MCP/skills and is independently session-cached.
           const system = [
             ...env,
+            // 261120 Red Chat 只加载伙伴自己的一份 AGENTS：全局/项目工程 AGENTS 在 Chat 不注入。
+            // injection-registry: companion-agents
+            ...(personalChat ? [companionAgents] : []),
             ...instructions,
             ...(soul.prompt ? [soul.prompt] : []),
             // 261117 Red 主会话共享相处契约，身份仍只取绑定 Soul；工具循环不重复追加。

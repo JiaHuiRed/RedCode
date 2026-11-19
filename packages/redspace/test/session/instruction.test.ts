@@ -687,6 +687,21 @@ describe("Instruction.system max_total_bytes", () => {
   )
 })
 
+// 261120 Red Chat 只加载伙伴自己的一份 AGENTS：工程 AGENTS 与工程 MEMORY 一起挡掉，
+// 不叠加任何全局/项目来源。Code 仍走默认全量，不在此处另测。
+describe("Instruction.system agents filter", () => {
+  it.live("agents:false drops project AGENTS.md and MEMORY.md from injection", () =>
+    withFiles({ "AGENTS.md": "# Project rules", "MEMORY.md": "# Memory lessons" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const parts = yield* svc.system({ memory: false, agents: false })
+        expect(parts.join("\n")).not.toContain(path.join(dir, "AGENTS.md"))
+        expect(parts.join("\n")).not.toContain(path.join(dir, "MEMORY.md"))
+      }),
+    ),
+  )
+})
+
 // 261107 Red describe() 与 system() 共用 evaluate() 预算管线；这里断言的是清单投影的
 // 命运语义。与上面同理，只按路径断言「该在的在、命运对」，不数总数。
 describe("Instruction.describe", () => {

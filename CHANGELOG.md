@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **Chat 伙伴专属 AGENTS**：Chat 主会话不再读取全局/项目工程 `AGENTS.md` 与工程 `MEMORY.md`，改为注入唯一一份 `session/prompt/companion-agents.md`——伙伴自己的「家规」，写记忆、陪伴分寸、轻干活与安全边界；支持 `~/.redcode/companion-agents.md` 用户覆盖（非空且不超过 16 KiB 时生效，否则回退内置）；`chat.md` 同步删掉与伙伴 AGENTS 重叠的陪伴/日记段落，只保留 Chat 模式契约。Code 仍读原有的两份 AGENTS 与工程 MEMORY，两条路径互不影响。模型可见四问：Chat 固定前缀移除全局工程 AGENTS（本机约 2.1K token）、新增伙伴 AGENTS（约 0.4K token），净减约 1.7K；Code 前缀逐字节不变；仅绑定伙伴的主 Chat 按 `personalChat` 条件注入，会话缓存内稳定；内置文件与覆盖文件均受 16 KiB 上限约束，超限回退并告警。验证：typecheck 通过，instruction 单测 42 pass（含新增「`agents:false` 同时挡掉 AGENTS/MEMORY」用例），注入登记表自检 40 项全部有效。
+
 - Chat 首页新增「梦境日记」。可直接阅读当前伙伴从 RedClaw 带来的旧梦，兼容 `DREAMS.md` 和 `dreams.md`。只在打开时读取文件，无需模型调用。
 
 - **Chat 推断承诺 v1**：Chat 对话结束后可发现「用户没明说、但值得之后问一句」的跟进，并在同一伙伴的后续会话里自然提一次。提取是隐藏的一跳、默认关（`REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1`），只存元数据（kind／时间窗／短句）；到期后至少静默 30 分钟、滚动 24 小时最多 3 条，注入即标记已投递，同一条不重复。模型可见四问：默认零变化；开启后只追加当轮历史尾部 ≤1024 bytes（约 250 token）；固定前缀与工具表逐字节不变；单条文本 512 bytes、每批最多 3 条候选。验证：typecheck 与注入登记表全绿，单测 8 pass，in-memory 冒烟覆盖静默期与一次性投递。
