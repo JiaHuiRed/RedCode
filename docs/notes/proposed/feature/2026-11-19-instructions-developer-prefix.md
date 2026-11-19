@@ -32,7 +32,7 @@
 - 压缩摘要走同一个 `prepare`，跟随开关，无需单独分支。
 - native 路径未改：`native-request.ts` 把 system 消息抽进 `request.system`，`packages/llm/src/protocols/openai-responses.ts:358` 以 `input[0]` 的 `role:"system"` 发出，且从不发送顶层 `instructions`。角色与 AI SDK 的 developer 不同，但位置已在 input 内。
 - 测试 `packages/redspace/test/session/llm-request.test.ts`：prepare 分支（6.2 / 6.1 / API-key / 插件追加块）+ 真实 `@ai-sdk/openai` 序列化，断言 wire body 的 `instructions` 缺失与 `input[0].role === "developer"`，并保留旧形状对照。
-- A/B 跑法：两组独立进程，A 不设变量、B 设 `REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER=true`，账号/模型/effort/工具/确定性输入相同；读数按 `request.provider-usage` 的暖轮 `input_tokens − cached_tokens` 中位数，判据沿用上文「OAuth A/B 与上线判据」。
+- A/B 跑法：两组独立进程，**A 设 `REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER=false`、B 设 `true`**，账号/模型/effort/工具/确定性输入相同；读数按 `request.provider-usage` 的暖轮 `input_tokens − cached_tokens` 中位数，判据沿用上文「OAuth A/B 与上线判据」。开关现为默认开，A 组**必须显式设 false**——不设变量的进程会走新形状，那样的「对照」两组都是 B。
 
 ### 实测结果（2026-11-19，Sol OAuth）
 
@@ -51,7 +51,9 @@
 
 Astra 未单跑对照：2026-11-18 已实测其 `instructions` 同样 21,740 全未命中（与 Sol 同形），且单价高于 Sol，按机制判定收益同源，不再消耗额度。
 
-未验：压缩摘要后的首轮、Astra 端点、长上下文（>100k）稳态、跨会话冷启动的缓存归属。样本为同账号短间隔成对会话，不能外推 TTL 或族级策略；开关维持默认关，等补验后再谈默认开启。
+未验：压缩摘要后的首轮、Astra 端点、长上下文（>100k）稳态、跨会话冷启动的缓存归属。样本为同账号短间隔成对会话，不能外推 TTL 或族级策略。
+
+**数字的可复现前提**：上表是在开关仍为默认关时跑的，当时 A 组的「不设变量」等价于显式 `false`。现默认已开，复测请按上文跑法显式设置两组，否则 A 组会误走新形状。
 
 ## OAuth A/B 与上线判据
 
