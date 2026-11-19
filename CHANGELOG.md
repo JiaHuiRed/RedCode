@@ -10,6 +10,8 @@
 
 ## [Unreleased]
 
+- **GPT-6.2 指令前缀默认启用**：`REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER` 默认开启（设 `false` 退回顶层 `instructions`），且**不跟随** `REDCODE_EXPERIMENTAL`——退回旧形状必须显式指定。仅对 `openai` OAuth 的 `gpt-6.2` 系把同一串 system 正文作为 `input[0]` 的 developer 消息发送，并省略顶层 `instructions`：后者在订阅端点不在缓存断点内，实测每轮约 21.7k token 全量未命中。Sol OAuth 成对实测暖轮未命中 22,775 → 253（降 99%）；Astra 与 Sol 同形（指令全 miss），未单跑对照。6.1、API-key、非 Responses 路径不变；压缩摘要走同一个 `prepare`，跟随本开关，符合上游 `#64544` 终态；native 接管时 system 本来就进 `input` 首项、从不发顶层字段。模型可见变化是同一串正文的角色封装与位置：token 数按服务端角色折算可能有小幅差异，固定前缀从首项起与旧形状不同（切换按冷轮核算），不新增输入副本、不放大既有指令总量。详见 [指令前缀决策](docs/notes/proposed/feature/2026-11-19-instructions-developer-prefix.md)。
+
 - **LSP 诊断注入开关**：新增环境变量 `REDCODE_DISABLE_LSP_DIAGNOSTICS`——开启后 edit / write / apply_patch 不再等待 LSP 诊断回包（每刀省最多 5 秒），不再向工具输出注入 `LSP errors detected…` 块（假阳性不再误导模型），TUI 的诊断红色面板随之消失；LSP 服务器本身照常运行（hover / `@file:start` / lsp 工具不受影响）。适用于 LSP 误报频繁的场景，重启生效。
 
 - **TUI 共用桌面桌宠**：只开 TUI、不开 GUI 时，赤也出现在 Windows 桌面上。新增 pet-only Electron 宿主（桌面版同一可执行文件 `--pet-host` 启动，独立 userData 与单实例锁，最后来源释放后自退），GUI 与 TUI 作为来源经 loopback HTTP + token 接入同一宿主，显式激活接管（GUI 窗口焦点/切会话、TUI 启动/切会话），关闭按钮只关本次显示、下次激活恢复；GUI 的内联兜底与设置开关语义不变。宿主协议、快照规则与来源客户端下沉 `@redcode-ai/ui/pet-*` 共享。宿主协议/仲裁与规则层定向测试 78 用例、四包 typecheck 绿；真机矩阵待验。模型可见四问全部为零（不碰提示词/工具/注入）。详见 [共用桌宠决策](docs/notes/implemented/feature/2026-11-18-tui-shared-desktop-pet.md)。

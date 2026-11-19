@@ -70,6 +70,13 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   // 就真等一天。默认钳到 10 分钟，特殊场景用该变量放宽。
   bashMaxTimeoutMs: positiveInteger("REDCODE_EXPERIMENTAL_BASH_MAX_TIMEOUT_MS"),
   experimentalNativeLlm: enabledByExperimental("REDCODE_EXPERIMENTAL_NATIVE_LLM"),
+  // 261119 Red GPT-6.2 系在 ChatGPT OAuth 端点把顶层 instructions 排除在缓存断点之外，
+  // 实测每轮约 21.7k token 全量未命中。默认把同一串指令作为 input 首条 developer 消息发送，
+  // 成对实测暖轮未命中 22,775 → 253（Sol/Astra 同形，Astra 不再单跑对照）。
+  // 设 REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER=false 退回顶层 instructions。
+  // 不跟随 REDCODE_EXPERIMENTAL：退回旧形状必须显式指定，避免宽泛开关静默改变请求形状。
+  // 决策与判据见 docs/notes/proposed/feature/2026-11-19-instructions-developer-prefix.md
+  experimentalInstructionsDeveloper: boolDefaultTrue("REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER"),
   // 261017 Red PTC 形态（模型写程序调工具）默认关闭：它执行模型写的代码，属于新的执行面，
   // 且子进程仍带用户文件权限。261018 Red 只认专属授权，全局 experimental 不启用执行面；
   // 关闭时工具表与固定前缀零变化，见 docs/notes/implemented/feature/2026-10-17-run-code-ptc-tool-presentation.md。

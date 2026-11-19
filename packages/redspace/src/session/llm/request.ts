@@ -56,8 +56,29 @@ export type Prepared = {
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
   mergeDeep(target, source ?? {}) as Record<string, any>
 
+// 261119 Red GPT-6.2 系的顶层 instructions 不在缓存断点内（实测每轮约 21.7k 全量未命中），
+// 同一串指令应作为 input 首条 developer 消息发送。只对 6.2 系分流：6.1 在订阅端点全命中，
+// 不能跟着换位置。决策与 A/B 判据见
+// docs/notes/proposed/feature/2026-11-19-instructions-developer-prefix.md
+const DEVELOPER_INSTRUCTIONS_MODEL_RE = /(?:^|\/)gpt-6\.2(?:[.-]|$)/
+
+export function usesDeveloperInstructions(input: {
+  readonly model: Provider.Model
+  readonly provider: Provider.Info
+  readonly auth: Auth.Info | undefined
+  readonly flags: RuntimeFlags.Info
+}): boolean {
+  return (
+    input.provider.id === "openai" &&
+    input.auth?.type === "oauth" &&
+    input.flags.experimentalInstructionsDeveloper &&
+    DEVELOPER_INSTRUCTIONS_MODEL_RE.test(input.model.api.id)
+  )
+}
+
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
+  const developerInstructions = usesDeveloperInstructions(input)
   const agentPrompt = input.agent.prompt ?? SystemPrompt.provider(input.model).join("\n\n")
   const agentPrefix = input.agent.mode === "subagent" ? SUBAGENT_ROLE + "\n\n" : ""
   const system = [
@@ -91,19 +112,23 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         providerOptions: input.provider.options,
       })
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
-  if (isOpenaiOauth) options.instructions = system.join("\n")
+  if (developerInstructions) {
+    // 261119 Red developer 模式下顶层 instructions 必须省略，否则同一串指令会发两份；
+    // systemMessageMode 显式置 developer，避免模型 id 解析不到 reasoning 时退回 system 角色。
+    options.systemMessageMode = "developer"
+  } else if (isOpenaiOauth) options.instructions = system.join("\n")
 
   // 260726 Red prefill REMOVED — inserting assistant prefill before user messages broke prefix cache
   // (turn 1 had system+assist+user, turn 2 had system+user+assist → no shared prefix = cache miss on turn 2).
   // Iron rules in prompt.ts system prompt already cover behaviour enforcement without structural damage.
+  // 261119 Red developer 模式只发一条 system 消息，正文与旧 instructions 逐字一致（同一 join）。
   const messages =
-    isOpenaiOauth || input.isWorkflow
+    input.isWorkflow || (isOpenaiOauth && !developerInstructions)
       ? input.messages
       : [
-          ...system.map((x): ModelMessage => ({
-            role: "system",
-            content: x,
-          })),
+          ...(developerInstructions
+            ? [{ role: "system" as const, content: system.join("\n") }]
+            : system.map((x): ModelMessage => ({ role: "system", content: x }))),
           ...input.messages,
         ]
 

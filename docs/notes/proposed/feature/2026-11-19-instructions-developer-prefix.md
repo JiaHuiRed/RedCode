@@ -24,6 +24,35 @@
 
 **本地已验**：用本仓 `@ai-sdk/openai@4.0.59` 和 `ai.streamText`（`allowSystemInMessages:true`），以内存 fetch 读取实际序列化 JSON。Sol、Astra 均验证了 A 的顶层字段与 B 的 developer 正文逐字相同；移除这处差异后，工具、历史、`store:false` 和其余请求字段一致。B 追加 assistant/user 后原 input 仍是完整前缀，默认角色与显式 developer 在这两个模型上相同。这项检查没有调用模型。
 
+## 实现记录（2026-11-19，第一阶段）
+
+开关 `REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER`（RuntimeFlags，默认开；设 `false` 退回顶层 `instructions`）。不跟随 `REDCODE_EXPERIMENTAL`：退回旧形状必须显式指定，避免宽泛开关静默改变请求形状。
+
+- `packages/redspace/src/session/llm/request.ts`：`usesDeveloperInstructions` 判定 `provider=openai && auth=oauth && gpt-6.2 系（按 model.api.id，不是展示 id）`；命中时 `options.systemMessageMode="developer"` 且不写 `options.instructions`，system 以**一条** join 后的消息放在 messages 头部，正文与旧 `instructions` 逐字相同（插件追加块也并入同一条）。6.1、API-key、非 Responses 路径与 workflow 不变。
+- 压缩摘要走同一个 `prepare`，跟随开关，无需单独分支。
+- native 路径未改：`native-request.ts` 把 system 消息抽进 `request.system`，`packages/llm/src/protocols/openai-responses.ts:358` 以 `input[0]` 的 `role:"system"` 发出，且从不发送顶层 `instructions`。角色与 AI SDK 的 developer 不同，但位置已在 input 内。
+- 测试 `packages/redspace/test/session/llm-request.test.ts`：prepare 分支（6.2 / 6.1 / API-key / 插件追加块）+ 真实 `@ai-sdk/openai` 序列化，断言 wire body 的 `instructions` 缺失与 `input[0].role === "developer"`，并保留旧形状对照。
+- A/B 跑法：两组独立进程，A 不设变量、B 设 `REDCODE_EXPERIMENTAL_INSTRUCTIONS_DEVELOPER=true`，账号/模型/effort/工具/确定性输入相同；读数按 `request.provider-usage` 的暖轮 `input_tokens − cached_tokens` 中位数，判据沿用上文「OAuth A/B 与上线判据」。
+
+### 实测结果（2026-11-19，Sol OAuth）
+
+`openai/gpt-6.2-sol`、`variant=low`、`store:false`、同工作区、prompt 固定 `OK`、暖轮间隔 45 秒，每组 1 冷 + 2 暖。读数取自 `--format json` 的 `step_finish.tokens`（`tokens.input` 即未命中，`tokens.cache.read` 为命中）：
+
+| 组 | 冷轮未命中 | 暖轮未命中 | 暖轮命中 |
+| --- | ---: | --- | ---: |
+| A（顶层 `instructions`） | 35,460 | 22,737 / 22,813（中位 22,775） | 12,800 / 12,800 |
+| B（developer 前缀） | 35,464 | 215 / 290（中位 253） | 35,328 / 35,328 |
+
+暖轮未命中下降 22,522（99%），超过 80% 判据（约 17.4k）。B 的命中量比 A 多 22,528，与 A 组 `attribution.request_fields.instructions.input_tokens=22,347` 同量级——**订阅 OAuth 端点缓存了 developer 前缀，与 issue #62109 的零命中样本相反**。
+
+同轮工具冒烟（`echo cache-probe-ok`，两组各追加一次）：工具调用正常，两个 step 都完成；工具调用前的 step B 命中 35,328（A 为 12,800），**工具结果之后的 step 两组均为整轮零命中**（A 36,586 / B 36,582）。
+
+那次零命中是**缓存写入延迟**，不是工具循环特性：同一 B 会话等待 40 秒后再发 `OK`，命中 35,328 / 未命中 529。历史长会话的数据也一致——该会话内 6.2 的 123 个工具 step 与 6.1 的 16 个都保持命中（相邻 step 间隔 10–25 秒），因此与模型家族无关。同一轮工具循环内连续 step（间隔数秒）仍会整轮 miss，这是既有服务端行为。`#64542` 的 OpenCode 录像也未覆盖工具循环。
+
+Astra 未单跑对照：2026-11-18 已实测其 `instructions` 同样 21,740 全未命中（与 Sol 同形），且单价高于 Sol，按机制判定收益同源，不再消耗额度。
+
+未验：压缩摘要后的首轮、Astra 端点、长上下文（>100k）稳态、跨会话冷启动的缓存归属。样本为同账号短间隔成对会话，不能外推 TTL 或族级策略；开关维持默认关，等补验后再谈默认开启。
+
 ## OAuth A/B 与上线判据
 
 | 步骤 | 做法与判断 |
