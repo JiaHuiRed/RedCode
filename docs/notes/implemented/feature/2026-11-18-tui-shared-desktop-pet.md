@@ -103,4 +103,9 @@ GUI 当前路由 + 状态投影 → 同一来源仲裁 → 本机桌宠宿主 �
 
 - 已绿：desktop 宿主协议端到端（真 node:http + 真客户端 fetch，2 用例：注册→激活→closed→释放全链路、401/400/409 边界）+ 注册表 FSM 9 用例（含 onActivate 先于 onChange 的 close-latch 时序） + ui 规则层 67 用例（pet-state/lines）+ app journal×child-reducer 集成 1 用例，合计 78；desktop/app/ui/redspace 四包 typecheck；`check:subprocess-timeout` 门禁；`check-version-consistency`。
 - **模型可见四问全部为零**：不碰提示词、工具 schema、注入段与工具输出格式；`session/prefix-shape.ts` 无变化；无新增引擎 HTTP 端点（OpenAPI 不动）。
-- 待真机：GUI-only / TUI-only / GUI+TUI 同开（一只赤）、焦点与切会话接管、关闭→下次激活恢复、拖动跨屏、宿主崩溃与终端强杀恢复、GUI 退出赤不跟随；宿主冷启动与空闲工作集数字待实测回填本节。
+- 待真机：GUI+TUI 同开（一只赤）、焦点与切会话接管、关闭→下次激活恢复、拖动跨屏、宿主冷启动与空闲工作集数字待实测回填本节。
+- **261119 真机排障（两个根因，均已修）**：
+  1. `--pet-host` 在 `requestSingleInstanceLock()` 之后、`initLogging` 之前缺 `await app.whenReady()`，`protocol.handle` 在 ready 前抛错，而 `index.ts` 调用点用 `void` 吞掉 rejection。后果是进程持有 `-pet` 单实例锁却不监听端口、不写 `pet-host.json`，后续每次 spawn 都抢锁失败并按退出码 0 静默退出——表现成「赤永远不出现」。修法：ready 之后再起宿主；调用点失败写 `pet-host-error.log` 并 `app.exit(1)`，不再静默。
+  2. 宿主校验的 `KIND_SCALARS` 只放行 `idle/unknown/thinking/compacting/success/error` 六个标量，另要求 `tool/coding/searching/waiting/permission` 走嵌套对象形态；但 `DesktopPetSnapshot.kind` 直接取 `PetDisplay["kind"]`（11 种标量），全仓无任何对象形态发送方。TUI 一进入工具状态即被 400，客户端 update 非 2xx 分支只 abort+dropping 不打日志，日志里只剩笼统的 `pet host unavailable`。修法：按 `PetDisplayBase` 全枚举放行、删除无人发送的对象分支；回归用例遍历 11 种 kind 走真 HTTP（旧实现在 `tool` 上红）。
+  - 已验真机：GUI-only 显示、TUI-only 显示（修复后赤恢复正常出现）、开 GUI 再关掉仍由 TUI 维持、宿主崩溃后按登记的 install 重新拉起。打包侧注意：宿主从 `dist\win` 启动并常驻，重编前必须先结束带 `--pet-host` 的进程，否则 electron-builder 清目录时撞 `EPERM unlink dxil.dll`，会留下缺 `locales`/`pak` 的残缺 dist。
+  - 仍待：双开一只赤、焦点接管、关闭恢复、拖动跨屏、宿主内存数字回填。
