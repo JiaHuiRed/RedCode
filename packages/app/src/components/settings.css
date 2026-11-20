@@ -111,6 +111,7 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
+  corner-shape: round;
   background: currentColor;
   flex-shrink: 0;
 }
@@ -354,6 +355,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--settings-accent);
   border: 3px solid var(--surface-base);
   box-shadow: 0 0 0 1px var(--settings-accent);
@@ -362,6 +364,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--settings-accent);
   border: 2px solid var(--surface-base);
 }

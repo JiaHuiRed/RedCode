@@ -196,11 +196,16 @@ export const layer = Layer.effect(
           message: `At most ${Limits.companions} companions can be created. Existing companions were not changed.`,
         })
       const id = `companion-${randomUUID().replaceAll("-", "").slice(0, 12)}`
+      // 261120 Red Windows 8.3 短名：root 来自 TEMP（ADMINI~1），此时 workspace 还不存在，
+      // 直接 resolve(path.join(root, id, "workspace")) 会拿到短名；而 manifest 读时 workspace
+      // 已存在、resolve 走 realpath 返回长名，同一 profile 两次响应路径形态不一致（nightly #1）。
+      // 先确保 root 存在，再解析 root 本身拿长名前缀，与 manifest 的 realpath 结果对齐。
+      yield* io(() => fs.mkdir(root, { recursive: true, mode: 0o700 }))
       const profile = new Info({
         id,
         name: "Chat",
         soulID: id,
-        directory: AppFileSystem.resolve(path.join(root, id, "workspace")),
+        directory: path.join(AppFileSystem.resolve(root), id, "workspace"),
         createdAt: yield* Clock.currentTimeMillis,
         files: 2,
         warnings: [],
