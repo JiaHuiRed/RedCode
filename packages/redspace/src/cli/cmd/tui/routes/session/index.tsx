@@ -2134,6 +2134,9 @@ export function UserMessage(props: {
         .trim() || undefined
     )
   })
+  // 261120 Red 摘要 markdown 的 streaming 生命周期在 CompactionSummaryMarkdown 内部管理：
+  // 摘要在 compactionOpen() 展开时才挂载，lifecycle 必须跟 markdown 的挂载同步，
+  // 挂载即 false 会踩 OpenTUI 的空块坑（见 useStreamingLifecycle 注释）。
   const compactionContext = createMemo(() => {
     const messages = sync.data.message[props.message.sessionID] ?? []
     const markerIndex = messages.findIndex((message) => message.id === props.message.id)
@@ -2316,14 +2319,12 @@ export function UserMessage(props: {
               <text fg={theme.textMuted}>未提交的摘要草稿</text>
             </Show>
             <Show when={compactionSummary()}>
-              <markdown
-                syntaxStyle={syntax()}
-                streaming={true}
-                internalBlockMode="top-level"
-                content={compactionSummary()!}
-                conceal={ctx.conceal()}
-                fg={theme.textMuted}
-                bg={theme.background}
+              <CompactionSummaryMarkdown
+                summary={compactionSummary()!}
+                done={() => {
+                  const message = compactionMessage()
+                  return message?.time.completed !== undefined || !!compactionError()
+                }}
               />
             </Show>
             <Show when={compactionStats()}>
@@ -2642,6 +2643,8 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   })
   // Keep markdown emphasis for the existing thinking color/concealment, but render it without italics.
   const syntax = createMemo(() => generateSubtleSyntax(theme, { "markup.italic": { italic: false } }))
+  // 261120 Red 与 TextPart 同一挂载坑规避：思考流完成后关闭 streaming 做最终解析。
+  const streaming = useStreamingLifecycle(() => isDone())
 
   const toggle = () => {
     if (!inMinimal()) return
@@ -2657,7 +2660,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             <code
               filetype="markdown"
               drawUnstyledText={false}
-              streaming={true}
+              streaming={streaming()}
               syntaxStyle={syntax()}
               // `_思考中:_`/`_已思考:_` still drives markdown emphasis color and conceals the underscores;
               // the syntax override above removes only the italic attribute from that emphasis token.
@@ -2695,17 +2698,52 @@ function CollapsedReasoningText(props: { title: string | null; duration: number 
   )
 }
 
+// 261120 Red OpenTUI 0.5.7 探针实测（test/cli/tui/markdown-streaming-probe*.tmp）：
+// 挂载时 streaming=false、以及首帧渲染前的 onMount 同步翻转，都会让整块内容不渲染；
+// 首帧画过之后再切 false（set streaming → updateBlocks(true)）才正常，且完成尾块最终解析。
+// 所以完成态的块用 setTimeout 出当前挂载周期、等首帧渲染后关 streaming——历史会话回放
+// （挂载即完成）与快照 harness（renderOnce + 25ms + renderOnce）都落在 10ms 翻转之后。
+function useStreamingLifecycle(done: () => boolean) {
+  const [settled, setSettled] = createSignal(false)
+  onMount(() => {
+    const timer = setTimeout(() => setSettled(true), 10)
+    onCleanup(() => clearTimeout(timer))
+  })
+  return () => !done() || !settled()
+}
+
+// 压缩摘要在 compactionOpen() 展开时才挂载，streaming 生命周期必须跟它的挂载同步
+//（见 useStreamingLifecycle 注释），所以抽成独立组件而不是复用外层状态。
+function CompactionSummaryMarkdown(props: { summary: string; done: () => boolean }) {
+  const ctx = use()
+  const { theme, syntax } = useTheme()
+  const streaming = useStreamingLifecycle(props.done)
+  return (
+    <markdown
+      syntaxStyle={syntax()}
+      streaming={streaming()}
+      content={props.summary}
+      conceal={ctx.conceal()}
+      fg={theme.textMuted}
+      bg={theme.background}
+    />
+  )
+}
+
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessageInfo }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+
+  const streaming = useStreamingLifecycle(
+    () => props.message.time.completed !== undefined || !!props.message.error,
+  )
 
   return (
     <Show when={isVisibleTextPart(props.part) && props.part.text.trim()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}
-          streaming={true}
-          internalBlockMode="top-level"
+          streaming={streaming()}
           content={filterCannedAgreement(props.part.text).trim()}
           tableOptions={{ style: "grid" }}
           conceal={ctx.conceal()}
