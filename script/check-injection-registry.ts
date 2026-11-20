@@ -188,7 +188,7 @@ function commitMsg(msgFile: string) {
   registryFiles.add(PROMPT_TS)
 
   // 中枢改动一律要求四问；登记项文件仅当改动靠近锚点时才要求。
-  const central = staged.filter((f) => f === REGISTRY || f === PROMPT_TS)
+  const central: string[] = staged.filter((f) => f === REGISTRY || f === PROMPT_TS)
   const nearAnchors = staged.filter((f) => registryFiles.has(f) && !central.includes(f) && changedNearAnchor(f, anchorsByFile.get(f) ?? []))
   const hit = [...central, ...nearAnchors]
   if (hit.length === 0) process.exit(0)
