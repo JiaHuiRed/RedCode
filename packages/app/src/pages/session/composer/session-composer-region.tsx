@@ -8,6 +8,7 @@ import { Dialog } from "@redcode-ai/ui/dialog"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { PromptInput } from "@/components/prompt-input"
+import { BackgroundActivityDock } from "@/components/background-activity"
 import { TaskSteering } from "@/components/task-steering"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -294,19 +295,24 @@ export function SessionComposerRegion(props: {
                 // 260808 Red: 这里原本还套了一层 <Show when={!blocked()}>，权限/提问弹窗
                 // 一出现就把 PromptInput 卸载、连同正在编辑的内容一起销毁。已去掉——
                 // 弹窗期间输入框常驻，随便打字（GUI 弹窗是点按钮，没有按键冲突）。
-                <PromptInput
-                  variant={props.placement === "inline" ? "new-session" : undefined}
-                  ref={props.inputRef}
-                  newSessionWorktree={props.newSessionWorktree}
-                  newSessionSoul={props.newSessionSoul}
-                  onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
-                  onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                  edit={props.followup?.edit}
-                  onEditLoaded={props.followup?.onEditLoaded}
-                  shouldQueue={props.followup?.queue}
-                  onAbort={props.followup?.onAbort}
-                  onSubmit={props.onSubmit}
-                />
+                // 261120 Red 后台活动悬浮胶囊挂在 relative 容器里，定位到输入框上方留白；
+                // 宽屏由它接管，窄屏仍是输入框底栏的 fallback 按钮。
+                <div class="relative">
+                  <BackgroundActivityDock />
+                  <PromptInput
+                    variant={props.placement === "inline" ? "new-session" : undefined}
+                    ref={props.inputRef}
+                    newSessionWorktree={props.newSessionWorktree}
+                    newSessionSoul={props.newSessionSoul}
+                    onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
+                    onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                    edit={props.followup?.edit}
+                    onEditLoaded={props.followup?.onEditLoaded}
+                    shouldQueue={props.followup?.queue}
+                    onAbort={props.followup?.onAbort}
+                    onSubmit={props.onSubmit}
+                  />
+                </div>
               }
             >
               <div

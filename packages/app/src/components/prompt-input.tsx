@@ -1773,7 +1773,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         data-component={newSession() ? "session-new-composer" : "session-composer"}
         onSubmit={handleSubmit}
         classList={{
-          "group/prompt-input min-h-[101px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+          "group/prompt-input w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+          // 261120 Red 新建会话页输入框整体放大，与放大的编辑区一致。
+          "min-h-[124px]": newSession(),
+          "min-h-[101px]": !newSession(),
           "border-icon-info-active border-dashed": store.draggingType !== null,
           [props.class ?? ""]: !!props.class,
         }}
@@ -1862,7 +1865,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               classList={{
                 "select-text": true,
                 "w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap [font-size:var(--font-size-base)] [line-height:1.5] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
-                "min-h-[55px]": !promptSize.expanded,
+                // 261120 Red 新建会话页输入框放大：它是整页唯一的焦点，编辑区多给一行呼吸；
+                // 会话页保持原高度，不挤占对话空间。
+                "min-h-[72px]": !promptSize.expanded && newSession(),
+                "min-h-[55px]": !promptSize.expanded && !newSession(),
                 "min-h-[40vh]": promptSize.expanded,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,

@@ -574,13 +574,11 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   )
 }
 
-// 输入框底栏入口：与 TUI 的「后台 N」一致，10 秒一轮轻量轮询。
+// 后台任务计数轮询：悬浮胶囊与底栏 fallback 共用同一份状态，10 秒一轮轻量轮询。
 // 261115 Red UX-17：运行中之外还统计「完成未看」——没有在跑的任务但有结果没收时，
 // 入口给「待查看 N」，把用户领回来。
-export function BackgroundActivityButton() {
+function useBackgroundCounts() {
   const sdk = useSDK()
-  const dialog = useDialog()
-  const language = useLanguage()
   const [running, setRunning] = createSignal(0)
   const [unseen, setUnseen] = createSignal(0)
 
@@ -594,13 +592,23 @@ export function BackgroundActivityButton() {
           setUnseen(jobs.filter((job) => job.status !== "running" && !seenResults.has(job.id)).length)
         })
         .catch(() => {
-          // 旧服务端没有 /background 路由：按钮仍然可点，只是不显示计数。
+          // 旧服务端没有 /background 路由：入口仍然可点，只是不显示计数。
         })
     }
     tick()
     const timer = setInterval(tick, 10_000)
     onCleanup(() => clearInterval(timer))
   })
+
+  return { running, unseen }
+}
+
+// 261120 Red 输入框底栏 fallback：窄屏（<md）没有两侧留白，悬浮胶囊无处安放，
+// 底栏入口保留；宽屏隐藏，由 BackgroundActivityDock 接管。
+export function BackgroundActivityButton() {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const { running, unseen } = useBackgroundCounts()
 
   return (
     <Tooltip placement="top" value={language.t("dialog.background.title")}>
@@ -609,7 +617,7 @@ export function BackgroundActivityButton() {
         type="button"
         variant="ghost"
         size="small"
-        class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium"
+        class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium xl:hidden"
         classList={{
           "text-v2-text-text-faint": running() === 0 && unseen() === 0,
           "text-v2-state-fg-warning": running() > 0,
@@ -631,5 +639,52 @@ export function BackgroundActivityButton() {
             : language.t("prompt.background.button")}
       </Button>
     </Tooltip>
+  )
+}
+
+// 261120 Red 后台活动悬浮胶囊：宽屏（≥xl，留白 ≥220px 才放得下）从输入框底栏
+// 摘出来，放到输入框左侧留白区、与输入框垂直居中。它是「有活动才出现」的信号——
+// 运行中黄点、完成未看蓝点，空闲时整块不渲染。点开仍是同一个 DialogBackground，
+// 与底栏 fallback 共用计数逻辑与已看集合。
+export function BackgroundActivityDock() {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const { running, unseen } = useBackgroundCounts()
+  const active = createMemo(() => running() > 0 || unseen() > 0)
+
+  return (
+    <Show when={active()}>
+      <div class="pointer-events-none absolute right-full top-1/2 z-20 hidden -translate-y-1/2 mr-3 xl:flex">
+        <Tooltip placement="top" value={language.t("dialog.background.title")}>
+          <button
+            type="button"
+            data-action="prompt-background"
+            class="pointer-events-auto flex h-7 items-center gap-2 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2.5 text-12-medium shadow-[var(--v2-elevation-floating)] transition-colors duration-150 ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-icon-icon-info"
+            classList={{
+              "text-v2-state-fg-warning": running() > 0,
+              "text-v2-text-text-muted": running() === 0 && unseen() > 0,
+            }}
+            aria-label={language.t("dialog.background.title")}
+            onClick={() => dialog.show(() => <DialogBackground />)}
+          >
+            <span class="relative flex size-4 shrink-0 items-center justify-center">
+              <Icon name="brain" size="small" />
+              <Show when={running() > 0 || unseen() > 0}>
+                <span
+                  class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full ring-1 ring-v2-border-border-base"
+                  classList={{
+                    "bg-v2-state-fg-warning": running() > 0,
+                    "bg-v2-state-fg-info": running() === 0 && unseen() > 0,
+                  }}
+                />
+              </Show>
+            </span>
+            {running() > 0
+              ? language.t("prompt.background.running", { count: running() })
+              : language.t("prompt.background.unseen", { count: unseen() })}
+          </button>
+        </Tooltip>
+      </div>
+    </Show>
   )
 }
