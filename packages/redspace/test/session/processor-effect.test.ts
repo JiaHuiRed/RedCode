@@ -1826,8 +1826,8 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
         expect(yield* llm.calls).toBe(1)
         expect(call?.state.status).toBe("error")
         if (call?.state.status === "error") {
-          // 261108 Red 中断文本带进度后缀（第 N/limit 次），核心语义仍是 aborted。
-          expect(call.state.error).toContain("Tool execution aborted")
+          // 261108 Red 中断文本带进度后缀（第 N/limit 次）；261119 9a510720 文案改为「未结算 ≠ 未发生」。
+          expect(call.state.error).toContain("Tool execution was interrupted before it settled")
           expect(call.state.metadata?.interrupted).toBe(true)
           expect(call.state.metadata?.failureGuard).toMatchObject({ count: 1 })
           expect(call.state.time.end).toBeDefined()
