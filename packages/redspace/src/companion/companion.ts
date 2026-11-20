@@ -838,8 +838,11 @@ async function manifest(root: string, id: string) {
   const stored = await readJSON(path.join(root, id, "profile.json"))
   if (stored === undefined) return undefined
   const result = Schema.decodeUnknownSync(Manifest)(stored)
-  if (result.profile.id !== id || result.profile.soulID !== id)
-    throw new CompanionIO({ message: `Companion "${id}" has an inconsistent profile identity.` })
+  // 261120 Red soulID 不要求与档案同名：native create / import 建同名 soul，但迁移场景允许
+  // 档案绑定存量 Soul（如 openclaw 迁入的 qiuqiu.md）；指向缺失的 soul 由 details() 显式报
+  // "Soul is unavailable"，不在这里静默跳过。决策见
+  // docs/notes/implemented/architecture/2026-11-20-companion-soulid-binding.md
+  if (result.profile.id !== id) throw new CompanionIO({ message: `Companion "${id}" has an inconsistent profile identity.` })
   // Resolve the private workspace from the current home so moving the profile directory remains possible.
   return {
     ...result,
