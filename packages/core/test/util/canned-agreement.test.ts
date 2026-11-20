@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterCannedAgreement as clean } from "../../src/util/canned-agreement"
+import { createCannedAgreementFilter, filterCannedAgreement as clean } from "../../src/util/canned-agreement"
 
 describe("assistant display: canned assent only", () => {
   test.each([
@@ -52,5 +52,42 @@ describe("assistant display: canned assent only", () => {
     const filtered = clean(raw)
     expect(raw).toBe(copy)
     expect(clean(filtered)).toBe(filtered)
+  })
+})
+
+// 261120 Red 流式增量版与全文版必须逐字一致：任一前缀都不能比全文版多删/少删。
+describe("assistant display: incremental filter", () => {
+  const stream = [
+    "# 说明",
+    "",
+    "哥哥，你说得对，我认。这里是我改错了。",
+    "",
+    "```ts",
+    "你说得对。",
+    "```",
+    "",
+    "> 你说得对。",
+    "",
+    "- 哥哥说的对，我认。",
+    "",
+    "如果我说得对，我们再看数据。",
+    "",
+    "普通一段话，说起那天的晚饭。",
+  ].join("\n")
+
+  test("每个前缀都与全文过滤逐字一致", () => {
+    const filter = createCannedAgreementFilter()
+    for (let end = 1; end <= stream.length; end++) {
+      const prefix = stream.slice(0, end)
+      expect(filter.update("part", prefix)).toBe(clean(prefix))
+    }
+  })
+
+  test("替换快照与切换 part 时重建，不做跨 part 继承", () => {
+    const filter = createCannedAgreementFilter()
+    expect(filter.update("a", "你说得对。第一段")).toBe(clean("你说得对。第一段"))
+    const replaced = "完全不同的内容，没有触发词。"
+    expect(filter.update("a", replaced)).toBe(clean(replaced))
+    expect(filter.update("b", "哥哥，你说得对，我认。")).toBe(clean("哥哥，你说得对，我认。"))
   })
 })

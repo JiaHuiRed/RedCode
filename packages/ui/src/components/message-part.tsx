@@ -59,7 +59,7 @@ import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import { checksum } from "@redcode-ai/core/util/encode"
-import { filterCannedAgreement } from "@redcode-ai/core/util/canned-agreement"
+import { createCannedAgreementFilter, filterCannedAgreement } from "@redcode-ai/core/util/canned-agreement"
 import { Avatar } from "./avatar"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
@@ -1664,9 +1664,11 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const rawText = () => readPartText(data.store.part_text_accum_delta, part())
+  // 261120 Red 流式正文走增量过滤：每次更新只处理新增完整行，避免整段重新分行。
+  const cannedAgreement = createCannedAgreementFilter()
   const text = () =>
     props.message.role === "assistant" && !(props.message as AssistantMessage).summary
-      ? filterCannedAgreement(rawText())
+      ? cannedAgreement.update(part().id, rawText())
       : rawText()
   // 261011 Red 压缩摘要默认折叠：summary=true 的 assistant 消息（压缩产物）此前与普通
   // 回复同构全量铺开，几百行文件清单直接糊满聊天区。对齐思考链折叠模式（260830）：

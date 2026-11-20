@@ -81,7 +81,7 @@ import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import * as Editor from "../../util/editor"
 import stripAnsi from "strip-ansi"
-import { filterCannedAgreement } from "@redcode-ai/core/util/canned-agreement"
+import { createCannedAgreementFilter } from "@redcode-ai/core/util/canned-agreement"
 import { usePromptRef } from "../../context/prompt"
 import { CompanionIntroduction } from "../../component/companion-introduction"
 import { useExit } from "../../context/exit"
@@ -2592,6 +2592,8 @@ const INLINE_TOOL_ICON_WIDTH = 2
 function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessageInfo }) {
   const { theme } = useTheme()
   const ctx = use()
+  // 261120 Red 流式思考走增量过滤：每次只处理新增完整行。
+  const cannedAgreement = createCannedAgreementFilter()
   // Collapsed by default in hide mode: a single line throughout, so the
   // layout never shifts. Click to open the full markdown block, click to close.
   const [expanded, setExpanded] = createSignal(false)
@@ -2599,7 +2601,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const content = createMemo(() => {
     // OpenRouter encrypts some reasoning blocks; drop the placeholder.
     // 261115 Red 思考链与正文同口径：套话同样不展示。
-    return filterCannedAgreement(props.part.text).replace("[REDACTED]", "").trim()
+    return cannedAgreement.update(props.part.id, props.part.text).replace("[REDACTED]", "").trim()
   })
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.
@@ -2736,6 +2738,8 @@ function CompactionSummaryMarkdown(props: { summary: string; done: () => boolean
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessageInfo }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  // 261120 Red 流式正文走增量过滤：每次只处理新增完整行。
+  const cannedAgreement = createCannedAgreementFilter()
 
   const done = () => props.message.time.completed !== undefined || !!props.message.error
   const streaming = useStreamingLifecycle(done)
@@ -2750,7 +2754,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
           // 修 Karina 31ff6d7d 移除该模式后标题随 streaming 整块重建而闪的回归。完成态直接
           // coalesced（与基线一致、保留她修的「长文档不堆大量独立节点」），不走 10ms 妥协。
           internalBlockMode={done() ? "coalesced" : "top-level"}
-          content={filterCannedAgreement(props.part.text).trim()}
+          content={cannedAgreement.update(props.part.id, props.part.text).trim()}
           tableOptions={{ style: "grid" }}
           conceal={ctx.conceal()}
           fg={theme.markdownText}

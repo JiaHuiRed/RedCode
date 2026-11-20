@@ -74,30 +74,100 @@ function stripLine(line: string): string {
   return lead ? lead + body : body
 }
 
+type LineState = {
+  fence: { marker: string; length: number } | undefined
+  closeQuote: string | undefined
+}
+
+/** 单行变换：围栏/引号状态由调用方持有；commit=false 只预览未结束行，不推进状态。 */
+function transformLine(line: string, state: LineState, commit: boolean): string {
+  const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+  if (marker) {
+    if (commit) {
+      if (!state.fence) state.fence = { marker: marker[0]!, length: marker.length }
+      else if (marker[0] === state.fence.marker && marker.length >= state.fence.length) state.fence = undefined
+    }
+    return line
+  }
+  if (state.fence) return line
+  const literal = state.closeQuote || /^\s*>/.test(line) || /^(?: {4}|\t)/.test(line)
+  const next = literal ? line : stripLine(line)
+  // Track quotation scope using original text so multiline quotations survive.
+  if (commit) {
+    for (const character of line) {
+      if (state.closeQuote) {
+        if (character === state.closeQuote) state.closeQuote = undefined
+      } else if (character in QUOTES) state.closeQuote = QUOTES[character]
+    }
+  }
+  return next
+}
+
 /**
  * Safe on accumulated streaming text: no cross-chunk state is required.
  * Fenced/indented/quoted text and prose discussing the phrase are untouched.
  */
 export function filterCannedAgreement(text: string): string {
   if (!text.includes("说") && !text.includes("我认")) return text
-  let fence: { marker: string; length: number } | undefined
-  let closeQuote: string | undefined
-  return text.split('\n').map((line) => {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
-    if (marker) {
-      if (!fence) fence = { marker: marker[0]!, length: marker.length }
-      else if (marker[0] === fence.marker && marker.length >= fence.length) fence = undefined
-      return line
-    }
-    if (fence) return line
-    const literal = closeQuote || /^\s*>/.test(line) || /^(?: {4}|\t)/.test(line)
-    const next = literal ? line : stripLine(line)
-    // Track quotation scope using original text so multiline quotations survive.
-    for (const character of line) {
-      if (closeQuote) {
-        if (character === closeQuote) closeQuote = undefined
-      } else if (character in QUOTES) closeQuote = QUOTES[character]
-    }
-    return next
-  }).join('\n')
+  const state: LineState = { fence: undefined, closeQuote: undefined }
+  return text.split("\n").map((line) => transformLine(line, state, true)).join("\n")
+}
+
+/**
+ * 261120 Red 流式增量版：按 part 保存已完成行的结果与围栏/引号状态，每次只处理新增的完整行，
+ * 未结束行按当前状态预览、不提交状态。替换快照（文本不再是上一份的延长）整体重建；全文首次
+ * 出现触发词时回扫之前的行，与 filterCannedAgreement 的全文口径逐字一致。
+ * 依据 → docs/audits/2026-11-20-redspace-windows-performance-audit.md §3
+ */
+export function createCannedAgreementFilter() {
+  let key: string | undefined
+  let source = ""
+  let output = ""
+  let rest = ""
+  let triggered = false
+  let state: LineState = { fence: undefined, closeQuote: undefined }
+
+  const reset = () => {
+    source = ""
+    output = ""
+    rest = ""
+    triggered = false
+    state = { fence: undefined, closeQuote: undefined }
+  }
+  const append = (chunk: string) => {
+    const lines = (rest + chunk).split("\n")
+    rest = lines.pop() ?? ""
+    for (const line of lines) output += transformLine(line, state, true) + "\n"
+  }
+  const raw = (text: string) => !text.includes("说") && !text.includes("我认")
+
+  return {
+    update(nextKey: string, text: string): string {
+      if (nextKey !== key) {
+        key = nextKey
+        reset()
+      }
+      if (!triggered) {
+        // 纯函数全文无触发词时原样返回；这里同样先不处理，等首次触发再回扫。
+        if (raw(text)) {
+          source = text
+          return text
+        }
+        reset()
+        triggered = true
+      } else if (!text.startsWith(source)) {
+        reset()
+        if (raw(text)) {
+          source = text
+          return text
+        }
+        triggered = true
+      }
+      if (text !== source) {
+        append(text.slice(source.length))
+        source = text
+      }
+      return output + transformLine(rest, state, false)
+    },
+  }
 }
