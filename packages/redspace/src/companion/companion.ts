@@ -124,18 +124,35 @@ export const layer = Layer.effect(
 
     const list = Effect.fn("Companion.list")(function* () {
       const root = yield* directory
-      return yield* io(async () => {
+      const scanned = yield* io(async () => {
         const children = await fs.readdir(root, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return []
           throw error
         })
-        const profiles = await Promise.all(
+        // 261120 Red 单个档案损坏（profile.json 格式不兼容或身份字段不一致）不该拖垮整张名单，
+        // 否则 TUI 加载 Soul 时会连带失败。坏档案挑出来由下方 Console.warn 点名，其余照常返回。
+        return Promise.all(
           children
             .filter((child) => child.isDirectory() && ID_PATTERN.test(child.name))
-            .map((child) => manifest(root, child.name)),
+            .map((child) =>
+              manifest(root, child.name).then(
+                (value) => ({ id: child.name, value, invalid: undefined }),
+                (error: unknown) => ({
+                  id: child.name,
+                  value: undefined,
+                  invalid: error instanceof Error ? error.message : String(error),
+                }),
+              ),
+            ),
         )
-        return profiles.flatMap((value) => (value ? [value.profile] : [])).sort((a, b) => a.createdAt - b.createdAt)
       })
+      for (const entry of scanned) {
+        if (entry.invalid !== undefined)
+          yield* Console.warn(`Companion.list: skipped invalid archive "${entry.id}": ${entry.invalid}`)
+      }
+      return scanned
+        .flatMap((entry) => (entry.value ? [entry.value.profile] : []))
+        .sort((a, b) => a.createdAt - b.createdAt)
     })
 
     const details = Effect.fn("Companion.details")(function* (id: string) {

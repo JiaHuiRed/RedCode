@@ -71,6 +71,23 @@ describe("companion archive", () => {
   )
 
   it.live(
+    "skips a corrupted archive instead of failing the whole list",
+    setup((value) =>
+      Effect.gen(function* () {
+        const service = yield* Companion.Service
+        const first = yield* service.create({ requestID: "good-one" })
+        const second = yield* service.create({ requestID: "good-two" })
+        yield* Effect.promise(async () => {
+          await fs.mkdir(path.join(value.root, "broken/workspace"), { recursive: true })
+          await fs.writeFile(path.join(value.root, "broken/profile.json"), "{ not valid json")
+        })
+        const listed = yield* service.list()
+        expect(listed.map((profile) => profile.id).sort()).toEqual([first.profile.id, second.profile.id].sort())
+      }),
+    ),
+  )
+
+  it.live(
     "shares the roster lock between separate native and import service instances",
     setup((value) =>
       Effect.gen(function* () {

@@ -142,7 +142,9 @@ export const {
         sdk.client.soul.list({ throwOnError: true }),
         sdk.client.soul.default({ client: "tui" }, { throwOnError: true }),
         sdk.client.soul.issues({ throwOnError: true }),
-        sdk.client.companion.list({ throwOnError: true }),
+        // 261120 Red companion.list 只用于排除已绑定 Chat 伙伴的 Soul。后端单个伙伴档案
+        // 损坏就会让它整体返回 500，降级为空绑定集后 Soul 注册表仍能正常展示与选择。
+        sdk.client.companion.list({ throwOnError: true }).catch(() => ({ data: [] as CompanionInfo[] })),
       ])
         .then(([list, fallback, issues, companions]) => {
           const bound = new Set(companions.data.map((profile) => profile.soulID))
@@ -168,8 +170,12 @@ export const {
           }
           return true
         })
-        .catch(() => {
-          toast.show({ variant: "warning", message: "Unable to load Souls. Use /soul to retry.", duration: 4000 })
+        .catch((error: unknown) => {
+          toast.show({
+            variant: "warning",
+            message: `Unable to load Souls: ${errorMessage(error)}. Use /soul to retry.`,
+            duration: 4000,
+          })
           return false
         })
     }
