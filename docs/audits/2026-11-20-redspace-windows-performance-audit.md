@@ -64,4 +64,21 @@
 - **桌面 Chat** 开、关 Code 文件树各跑一次。记录 Network 中历史页的目标会话、分页参数、响应体字节和 diff 请求数。用固定 SSE 回放追加一个 assistant 步骤，再用纯文本 delta 作对照。界面诊断 `timeline.group-build` 可用于计数。
 - **正确性** 同一份 SSE 回放前后，正文、思考折叠、模型选择、附件读取和历史滚动锚点均应一致。冷开同步额外覆盖并发编辑、切分支、断线重连和快照失败后重试。
 
-**证据范围。** 请求记录来自 Linux 无头 Chromium 运行的真实生产前端，服务端数据由仓库 smoke 夹具或明确标注的合成数据提供。TUI 使用 Bun 1.3.14 和仓库的挂载夹具。文本与时间线微基准均在 Linux 运行。尚未测量 Windows Electron/EXE 的首屏、整机 CPU、内存或帧率。以上为审计与临时原型，仓库没有生产代码改动。
+**证据范围。** 请求记录来自 Linux 无头 Chromium 运行的真实生产前端，服务端数据由仓库 smoke 夹具或明确标注的合成数据提供。TUI 使用 Bun 1.3.14 和仓库的挂载夹具。文本与时间线微基准均在 Linux 运行。尚未测量 Windows Electron/EXE 的首屏、整机 CPU、内存或帧率。以上为审计与临时原型基线（当时仓库没有生产代码改动），落地情况见下节。
+
+## 落地状态（261120）
+
+全部改动经 typecheck 与定向测试；Windows 整轮延迟与 GUI 帧率仍需实机复测。
+
+- **§1 时间线只重算所属轮次** — `82639cb5`
+  `Timeline.createTurnMessages` 按 parentID 用 `id/error/mode` 签名比较 assistant 组，组未变就返回上一份数组引用，阻断全时间线重算；组数组被就地 reconcile 时复制一份，保证下游刷新。签名不覆盖 part——part 由行构建 memo 自己跟踪。验证：`message-timeline.data` 51 pass（新增 1 条：无关轮次不失效、组变换引用、就地字段变换引用）。
+- **§3 中文流式过滤增量解析** — `297de93e`
+  `createCannedAgreementFilter` 保存已完成行输出与围栏/引号状态，每次只处理新增完整行；未结束行按当前状态预览、不提交。替换快照与切换 part 整体重建，全文首次出现触发词时回扫之前的行。TUI 正文/思考与 GUI 正文改走增量版，复制与 transcript 仍走全文版。验证：逐前缀差分覆盖 11,499 字符流（每个前缀与全文版逐字一致）；本机基准 468.0ms → 5.1ms（360 帧）。
+- **§6 供应商目录懒加载** — `c1e6b9f9`
+  去掉 bootstrap 的 `provider.list` 预取，改由 `DialogProvider` 外层发起首次加载（列表只在 ready 后挂载，不能只靠列表内部兜底）；保存自定义凭据后强制刷新，工作区切换随组件重挂失效。验证：aggregate-failures 7 pass、runtime.boot 5 pass。
+- **§2 / §5** 已在 `446af938` 落地（Chat 不拉文件树/VCS/session diff，`warmNeighbors` 关闭相邻预取）。
+
+**未做：**
+
+- **§4 冷开双份历史**：现有实现已是「单一所有者、先水位后快照」的顺序（`8a5c11ac` 与 cold-journal 四条用例）。在单测 harness 里无法复现 200→400：Bun 下 `./message-window` 与 `@/context/message-window` 是两份模块实例，reader 不进同一张表；真实 GUI 由 Vite 单实例打包，要定位得抓 Network。未改同步/游标逻辑，避免引入断线补消息回归。
+- **§7 伙伴正文搜索**：方案为新增 `GET /companion/:id/query`，复用 `SessionQuery` 的 `companionID` 过滤与 `scanLimit`/`nextCursor`；代价是 SDK/OpenAPI 重新生成、`httpapi-exercise` 覆盖场景（现有 `ctx.session` 只支持 title/parentID，需扩 mode/companionID 与伙伴种子）、客户端用单条分页查询替换逐会话循环。**待定口径**：搜索是否包含已归档会话——服务端伙伴过滤覆盖全部 chat 会话，界面列表只列当前列表。
