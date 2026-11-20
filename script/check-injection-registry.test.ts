@@ -22,9 +22,13 @@ const GOOD_REGISTRY = `{
   ]
 }`
 const BROKEN_REGISTRY = GOOD_REGISTRY.replace("TOKEN_ANCHOR", "GONE_ANCHOR")
-const PROMPT = "export const x = 1 // TOKEN_ANCHOR\n"
+// 基线 40 行：锚点 TOKEN_ANCHOR 在第 1 行，末尾留足空间给「远离锚点改动」用例。
+const PROMPT =
+  "export const x = 1 // TOKEN_ANCHOR\n" +
+  Array.from({ length: 39 }, (_, i) => `const line${i} = ${i}\n`).join("")
 // 脚本里 PROMPT_TS 写死为 packages/redspace/src/session/prompt.ts，fixture 必须镜像该布局
-const SESSION_PROMPT_REL = path.join("packages", "opencode", "src", "session", "prompt.ts")
+// 261120 Red 此前误写成 packages/opencode（迁移前旧路径），导致 fixture 缺该文件、门禁必红。
+const SESSION_PROMPT_REL = path.join("packages", "redspace", "src", "session", "prompt.ts")
 
 let fixtureRoot: string
 
@@ -41,11 +45,22 @@ function runGate() {
   })
 }
 
+// commit-msg 模式：往 fixture 写消息文件后带 --commit-msg 跑门禁，返回 { exitCode, stdout }。
+async function runGateMsg(message: string) {
+  const msgPath = path.join(fixtureRoot, "COMMIT_EDITMSG")
+  await writeFile(msgPath, message)
+  const r = Bun.spawnSync(["bun", "run", scriptPath, "--commit-msg", msgPath], {
+    cwd: fixtureRoot,
+    env: { ...process.env, NODE_ENV: "test", RC_GATE_TEST_ROOT: fixtureRoot },
+  })
+  return { exitCode: r.exitCode, stdout: r.stdout.toString() }
+}
+
 beforeAll(async () => {
   fixtureRoot = await mkdtemp(path.join(scratchRoot, "injection-gate-test-"))
   await mkdir(path.join(fixtureRoot, "src"), { recursive: true })
   await mkdir(path.join(fixtureRoot, "docs"), { recursive: true })
-  await mkdir(path.join(fixtureRoot, "packages", "opencode", "src", "session"), { recursive: true })
+  await mkdir(path.join(fixtureRoot, "packages", "redspace", "src", "session"), { recursive: true })
   await writeFile(path.join(fixtureRoot, "src", "prompt.ts"), PROMPT)
   await writeFile(path.join(fixtureRoot, SESSION_PROMPT_REL), "// no system.push in fixture\n")
   await writeFile(path.join(fixtureRoot, "docs", "injection-registry.jsonc"), GOOD_REGISTRY)
@@ -110,4 +125,40 @@ test("staged 删除登记面文件时红，不留静默缺口", async () => {
   expect(r.stdout.toString()).toContain("file 不存在")
   // 复位
   git(["checkout", "-q", "HEAD", "--", "src/prompt.ts"])
+})
+
+// 261120 Red 假阳性消除：登记项文件里改动远离注入锚点时不该要求四问。
+test("commit-msg 模式：改动远离锚点放行，不要求四问", async () => {
+  // 基线 40 行、锚点在第 1 行；只改最后一行（第 40 行），距锚点 39 行——应放行。
+  await writeFile(path.join(fixtureRoot, "src", "prompt.ts"), PROMPT.replace("const line38 = 38", "const line38 = 38 // touched"))
+  git(["add", "src/prompt.ts"])
+  const r = await runGateMsg("chore: 远离锚点的普通改动")
+  expect(r.exitCode).toBe(0)
+
+  // 复位
+  git(["checkout", "-q", "HEAD", "--", "src/prompt.ts"])
+})
+
+test("commit-msg 模式：改动命中锚点要求四问", async () => {
+  // 直接改锚点所在行。
+  await writeFile(path.join(fixtureRoot, "src", "prompt.ts"), PROMPT.replace("TOKEN_ANCHOR", "TOKEN_ANCHOR_CHANGED"))
+  git(["add", "src/prompt.ts"])
+  const r = await runGateMsg("chore: 改了锚点附近的文本")
+  expect(r.exitCode).toBe(1)
+  expect(r.stdout).toContain("模型可见四问")
+
+  // 复位
+  git(["checkout", "-q", "HEAD", "--", "src/prompt.ts"])
+})
+
+test("commit-msg 模式：登记表/中枢文件改动一律要求四问", async () => {
+  // 改动登记表本身（加个注释），但不碰锚点——中枢改动是白名单，必须要求四问。
+  await writeFile(path.join(fixtureRoot, "docs", "injection-registry.jsonc"), GOOD_REGISTRY + "\n// touched\n")
+  git(["add", "docs/injection-registry.jsonc"])
+  const r = await runGateMsg("chore: 改登记表加注释")
+  expect(r.exitCode).toBe(1)
+  expect(r.stdout).toContain("模型可见四问")
+
+  // 复位
+  git(["checkout", "-q", "HEAD", "--", "docs/injection-registry.jsonc"])
 })

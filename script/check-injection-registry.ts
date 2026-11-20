@@ -134,18 +134,68 @@ function findBacklink(lines: string[], pushLine: number): string | undefined {
   return undefined
 }
 
-// --- commit-msg 模式：登记面改动必须带「四问」 ---
+// --- commit-msg 模式：模型可见改动必须带「四问」 ---
+// 261120 Red 消除按文件路径命中的假阳性：此前 staged 只要碰到登记项所在文件就要求四问，
+// 哪怕改动离注入锚点十万八千里（改 companion.ts 的路径规范化也被拦）。改为看 staged diff
+// 的实际改动行是否落在锚点附近——远离所有锚点放行，靠近则照旧要求四问。
+// 登记表中枢（REGISTRY / PROMPT_TS）改动一律要求四问，不做例外。
+const ANCHOR_CONTEXT_LINES = 12
+
+// 改动行是否落在任一锚点附近。改动行号从 -U0 diff 的 hunk 头解析（新侧行号 c）。
+function changedNearAnchor(file: string, anchors: string[]): boolean {
+  if (anchors.length === 0) return false
+  const src = contentFor(file)
+  if (src === undefined) return true // 读不到就保守要求四问，不放行
+  const lines = src.split(/\r?\n/)
+  const anchorLines = anchors
+    .flatMap((a) => lines.map((line, i) => (line.includes(a) ? i + 1 : -1)).filter((n) => n > 0))
+  if (anchorLines.length === 0) return true // 锚点找不到（登记已失效）也保守要求四问
+
+  const diff = Bun.spawnSync(["git", "diff", "--cached", "-U0", "--", file], { cwd: root }).stdout.toString()
+  // hunk 头形如 @@ -a,b +c,d @@；c 是本段新侧起始行号。逐行遍历：遇 hunk 头重置 current，
+  // "+" 行占新侧行号后递增，"-" 行不占新侧，-U0 无上下文行。
+  let current = 0
+  for (const line of diff.split(/\r?\n/)) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
+    if (hunk) {
+      current = Number(hunk[1])
+      continue
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const changed = current
+      current++
+      if (anchorLines.some((a) => Math.abs(a - changed) <= ANCHOR_CONTEXT_LINES)) return true
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      // 删除行只存在于旧侧；保守起见用相邻新侧行号判断
+      if (anchorLines.some((a) => Math.abs(a - current) <= ANCHOR_CONTEXT_LINES)) return true
+    }
+  }
+  return false
+}
+
 function commitMsg(msgFile: string) {
   const staged = Bun.spawnSync(["git", "diff", "--cached", "--name-only"], { cwd: root }).stdout.toString().split(/\r?\n/)
-  const registryFiles = new Set(loadRegistry().map((row) => row.file))
+  const rows = loadRegistry()
+  const anchorsByFile = new Map<string, string[]>()
+  const registryFiles = new Set<string>()
+  for (const row of rows) {
+    registryFiles.add(row.file)
+    const list = anchorsByFile.get(row.file) ?? []
+    list.push(row.match)
+    anchorsByFile.set(row.file, list)
+  }
   registryFiles.add(REGISTRY)
   registryFiles.add(PROMPT_TS)
-  const hit = staged.filter((f) => registryFiles.has(f))
+
+  // 中枢改动一律要求四问；登记项文件仅当改动靠近锚点时才要求。
+  const central = staged.filter((f) => f === REGISTRY || f === PROMPT_TS)
+  const nearAnchors = staged.filter((f) => registryFiles.has(f) && !central.includes(f) && changedNearAnchor(f, anchorsByFile.get(f) ?? []))
+  const hit = [...central, ...nearAnchors]
   if (hit.length === 0) process.exit(0)
   const msg = readFileSync(msgFile, "utf8")
   if (!msg.includes("四问")) {
     console.log("=== 注入面改动需答模型可见四问 ===")
-    console.log(`  本次 staged 触及登记项文件：${hit.join(", ")}`)
+    console.log(`  本次 staged 触及模型可见区：${hit.join(", ")}`)
     console.log(`  commit message 必须含「四问」并在正文逐条回答（改了什么/token 增减/KV cache 影响/上限）。`)
     console.log(`  登记表：${REGISTRY}`)
     process.exit(1)
