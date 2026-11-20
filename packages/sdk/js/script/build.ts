@@ -9,7 +9,8 @@ import path from "path"
 
 import { generateSdk } from "./codegen"
 
-// 261117 Red 共享引擎目录已从 packages/opencode 迁到 packages/redspace（0.19.1）。
+// 261117 Red 共享引擎目录已迁到 packages/redspace（0.19.1，旧引擎目录已删）。
+// 旧路径字面量被 layout 检查禁止出现在任何源码（含注释），故不写出。
 // 这里必须指向真实存在的目录，否则 $.cwd() 抛 "No such file or directory"，SDK 构建失败；
 // 它是 test 任务的前置依赖，CI 上 unit 作业会在跑测试前整体中止。
 const redcode = path.resolve(dir, "../../redspace")

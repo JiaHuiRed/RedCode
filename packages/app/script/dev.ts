@@ -5,7 +5,7 @@ import { join } from "node:path"
 
 const appRoot = join(import.meta.dir, "..")
 const repoRoot = join(appRoot, "..", "..")
-// 261119 Red 后端在 packages/redspace（旧路径 packages/opencode 已不存在，GUI dev 一直起不来后端）。
+// 261119 Red 后端在 packages/redspace（旧引擎目录已删，此前 GUI dev 一直起不来后端）。
 const backendDir = join(repoRoot, "packages", "redspace")
 
 const VITE_PORT = process.env.RC_VITE_PORT ?? "5173"

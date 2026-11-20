@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // RedSpace core-layout safety check. No network access or dependencies required.
+// 路径扫描不区分注释与代码：被扫文件（含注释）出现旧引擎目录字面量一律失败，
+// 写迁移历史注释时请勿写出旧路径字面量。
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
