@@ -618,6 +618,9 @@ export function MessageTimeline(props: {
     mapArray(
       () => props.userMessages,
       (userMessage, indexAccessor) => {
+        // 261120 Red 只让变化的轮次重算：assistantMessagesByParent 在任意新消息到达时整体替换，
+        // 直接读它会让全部轮次一起重建行。createTurnMessages 用组签名把未变轮次钉在上一份数组上。
+        const turnMessages = Timeline.createTurnMessages(assistantMessagesByParent, userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const active = isActiveMessage(userMessage.id)
           // 261011 Red B0.1: 单条 user message 的真实行构建耗时（ZW-02 归位）——含
@@ -626,7 +629,7 @@ export function MessageTimeline(props: {
           const rows = Timeline.constructMessageRows(
             userMessage,
             getMsgParts,
-            assistantMessagesByParent().get(userMessage.id) ?? emptyAssistantMessages,
+            turnMessages(),
             indexAccessor(),
             settings.general.showReasoningSummaries(),
             active ? sessionStatus().type : "idle",

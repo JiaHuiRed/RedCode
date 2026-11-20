@@ -665,3 +665,41 @@ describe("AssistantPart.repeatSignature — 连续工作段", () => {
     expect(rows.map((row) => row.repeatSignature)).toEqual([false])
   })
 })
+
+describe("Timeline.createTurnMessages — 只让变化的轮次失效", () => {
+  test("组未变时复用上一份数组，组变或消息字段变时换新引用", () => {
+    const a1 = assistantMessage("a1", 2, "u1")
+    const b1 = assistantMessage("b1", 2, "u2")
+    const b2 = assistantMessage("b2", 4, "u2")
+    const groups = () => new Map([["u1", [a1]], ["u2", [b1, b2]]])
+    const [map, setMap] = createSignal(groups())
+    const dispose = createRoot((dispose) => {
+      const turnA = Timeline.createTurnMessages(map, "u1")
+      const turnB = Timeline.createTurnMessages(map, "u2")
+      const firstA = turnA()
+      const firstB = turnB()
+
+      // 新 Map、同样的组：两轮都不该重算
+      setMap(groups())
+      expect(turnA()).toBe(firstA)
+      expect(turnB()).toBe(firstB)
+
+      // 无关轮次新增消息：A 不动，B 换引用
+      const b3 = assistantMessage("b3", 6, "u2")
+      setMap(new Map([["u1", [a1]], ["u2", [b1, b2, b3]]]))
+      expect(turnA()).toBe(firstA)
+      expect(turnB()).not.toBe(firstB)
+      expect(turnB()).toHaveLength(3)
+
+      // 数组引用没换、message 字段就地变（reconcile 保留引用）：必须换新数组让下游刷新
+      const withError = turnB()
+      b2.error = { name: "MessageAbortedError" } as AssistantMessage["error"]
+      setMap(new Map([["u1", [a1]], ["u2", [b1, b2, b3]]]))
+      expect(turnA()).toBe(firstA)
+      expect(turnB()).not.toBe(withError)
+      expect(turnB()[1]?.error?.name).toBe("MessageAbortedError")
+      return dispose
+    })
+    dispose()
+  })
+})

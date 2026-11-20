@@ -2,6 +2,7 @@ import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@redcode-ai/sdk/v2"
 import { groupParts, PartGroup, renderable } from "@redcode-ai/ui/message-part"
 import { Data, Equal } from "effect"
+import { createMemo } from "solid-js"
 import { resolveCompactionState, type CompactionState } from "./compaction-state"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
@@ -262,6 +263,27 @@ export namespace TimelineRow {
 }
 
 export namespace Timeline {
+  const EMPTY_ASSISTANT_MESSAGES: AssistantMessage[] = []
+
+  /**
+   * 261120 Red 每轮 assistant 组未变时返回同一数组引用，阻断「一处流式更新 → 全部轮次重建行」。
+   * 签名只覆盖行构建真正读的 message 字段（id/error/mode）；part 由调用方的行构建 memo
+   * 自己跟踪。组数组本身被就地 reconcile 时要复制一份，否则下游看到同一引用不刷新。
+   * 依据 → docs/audits/2026-11-20-redspace-windows-performance-audit.md §1
+   */
+  export function createTurnMessages(groups: () => Map<string, AssistantMessage[]>, parentID: string) {
+    let previous = EMPTY_ASSISTANT_MESSAGES
+    let signature = "\u0000"
+    return createMemo(() => {
+      const next = groups().get(parentID) ?? EMPTY_ASSISTANT_MESSAGES
+      const nextSignature = next.map((message) => `${message.id}:${message.error?.name ?? ""}:${message.mode ?? ""}`).join("|")
+      if (nextSignature === signature) return previous
+      signature = nextSignature
+      previous = next === previous ? next.slice() : next
+      return previous
+    })
+  }
+
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],
