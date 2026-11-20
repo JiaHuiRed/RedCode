@@ -275,6 +275,7 @@ export namespace Timeline {
     // 登记 session store 依赖——260903 cc 把 status 改成只在活动轮读是同一个约定。
     getSessionCompacting?: () => number | undefined,
     getIsLatestMarker?: () => boolean,
+    companionChat = false,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -418,7 +419,15 @@ export namespace Timeline {
       rows.push(new TimelineRow.AssistantPending({ userMessageID: userMessage.id }))
     }
 
-    if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (companionChat && isActive && status === "busy" && !error && !interrupted && assistantPartRefs.length === 0) {
+      rows.push(new TimelineRow.Thinking({ userMessageID: userMessage.id, awaiting: true }))
+    } else if (
+      !companionChat &&
+      isActive &&
+      status === "busy" &&
+      !error &&
+      (showReasoning ? assistantPartRefs.length === 0 : true)
+    ) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" ? reasoningHeadingOf(part) : undefined))
