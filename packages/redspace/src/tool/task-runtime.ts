@@ -51,7 +51,7 @@ export function decodeTaskPacket(input: unknown): TaskPacket | undefined {
 export const ResultStatus = Schema.Literals(["ready_for_review", "blocked", "failed", "uncertain", "cancelled"])
 export type ResultStatus = Schema.Schema.Type<typeof ResultStatus>
 
-// 261107 Red D3（docs/agent-dispatch-plan.md）：删除运行时永远采集不到的占位字段
+// 261107 Red D3（docs/plans/agent-dispatch-plan.md）：删除运行时永远采集不到的占位字段
 // （changedFiles 恒 []、verification 全部伪造 not_run、toolCalls 从未上报）——落盘
 // 假数据会误导后续审计，宁可没有；未核验事实靠 uncertainties 的诚实声明与父线程复核。
 export const ResultPacketSchema = Schema.Struct({

@@ -15,7 +15,7 @@ model: opencode-go/glm-5.3-flash
 # 提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用 gray-matter
 # 剥出来 —— 不是读盘（src 不进发布包）。这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里
 # 躺着同名副本，ConfigAgent.load 会把同一段白名单再 concat 到用户全局 permission 之后，findLast 下把
-# 它和 agent.ts 补的 external_directory 一起作废。详见 docs/agent-roles-plan.md 修正九。
+# 它和 agent.ts 补的 external_directory 一起作废。详见 docs/plans/agent-roles-plan.md 修正九。
 #
 # 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、evaluate 是 findLast
 # （packages/core/src/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny 会把前一个块的

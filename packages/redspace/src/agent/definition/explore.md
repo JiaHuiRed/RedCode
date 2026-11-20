@@ -24,7 +24,7 @@ model: stepfun-step-plan/step-3.7-flash
 #
 # 这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里躺着同名副本，ConfigAgent.load 会把
 # 同一段白名单再 concat 到用户全局 permission 之后，findLast 下把它和 agent.ts 补的 external_directory
-# 一起作废。详见 docs/agent-roles-plan.md 修正九。
+# 一起作废。详见 docs/plans/agent-roles-plan.md 修正九。
 #
 # 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、evaluate 是 findLast
 # （packages/core/src/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny 会把前一个块的
@@ -37,7 +37,7 @@ model: stepfun-step-plan/step-3.7-flash
 # 仅六个 git 只读子命令（log/show/diff/blame/rev-parse/ls-files/branch），其余命令 pattern 未命中
 # "*" deny 硬失败。260929 曾经的 bash: allow 假门票（443c92b1 guard 在 findLast 末位掀翻声明）
 # 那次是只改了 md、guard 没动；本次是 guard 与白名单同步摘/加，两侧缺一则另一侧失效。
-# 决策：docs/agent-dispatch-plan.md D4。
+# 决策：docs/plans/agent-dispatch-plan.md D4。
 permission:
   "*": deny
   # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），

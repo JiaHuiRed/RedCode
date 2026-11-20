@@ -169,7 +169,7 @@ it.instance("explore agent denies edit and write", () =>
 
 // 261011 Red explore 的 bash 从运行层 guard 摘除（task.ts），改由 md 白名单收口为六个 git
 // 只读子命令。guard 与白名单同步摘/加，缺一则另一侧失效（260929 假门票的教训）。
-// 决策：docs/agent-dispatch-plan.md D4。
+// 决策：docs/plans/agent-dispatch-plan.md D4。
 it.instance("explore agent bash is restricted to read-only git subcommands", () =>
   Effect.gen(function* () {
     const explore = yield* load((svc) => svc.get("explore"))

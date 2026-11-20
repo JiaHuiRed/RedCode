@@ -2,7 +2,7 @@
 
 日期：2026-11-10
 来源：2026-11-09 会话对 UX-01 / 02 / 04 / 08 落地代码的交互审计（基线 `b23d10ec`）。审计原文是对话产出、仓库无存档，**本文收录全量条目**，后续接力以本文为准。
-配套文档：UX 任务书进度看 `2026-11-09-ui-ux-progress.md`；harness 任务线（RC-01~07）看 `2026-11-09-harness-optimization-audit.md`。
+配套文档：UX 任务书进度看 `docs/experience/2026-11-09-ui-ux-progress.md`；harness 任务线（RC-01~07）看 `docs/audits/2026-11-09-harness-optimization-audit.md`。
 2026-11-10 逐项核实结论：7 项（4 P1 + 3 P2）在 `b23d10ec..c22c11bc` 间**零修复**（相关文件整批未动），随后当日开始逐项收口。
 
 ## 审计条目与修复状态

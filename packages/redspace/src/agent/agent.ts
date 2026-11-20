@@ -40,7 +40,7 @@ import { type DeepMutable } from "@redcode-ai/core/schema"
 //
 // 这三份也**不进 sync-home**（script/sync-home.bat 的 agent 块已删）：~/.redcode/agent/ 里一旦躺着
 // 同名副本，ConfigAgent.load 会把同一段扁平白名单再 concat 到 `user` 之后，findLast 之下把下面补的
-// external_directory 和用户全局 permission 一起作废。详见 docs/agent-roles-plan.md 修正八 / 修正九。
+// external_directory 和用户全局 permission 一起作废。详见 docs/plans/agent-roles-plan.md 修正八 / 修正九。
 //
 // ⚠ gray-matter 按内容缓存：同一份字符串两次 matter() 返回**同一个对象**，解出来的 data 绝不能就地改。
 type Definition = { data: Record<string, any>; prompt: string }
@@ -59,7 +59,7 @@ const DEFINITIONS = {
 // live 库里 assistant 消息 agent="build" 17607 条、"general" 197 条。
 //
 // 解析顺序必须是**「直查优先、别名兜底」**：下面的配置循环对任何未知 key 都会凭空造出一个真角色，
-// 别名优先就会把用户显式定义的同名角色劫持掉。详见 docs/agent-roles-plan.md 修正十 / 修正十二。
+// 别名优先就会把用户显式定义的同名角色劫持掉。详见 docs/plans/agent-roles-plan.md 修正十 / 修正十二。
 export const ALIAS: Record<string, string> = {
   build: "redmind",
   general: "execute",
@@ -206,7 +206,7 @@ export const layer = Layer.effect(
               // defaults 里**对象型**的 external_directory 整段作废 —— 而这份白名单依赖 ctx.directory 与
               // skill.dirs()，md 里静态表达不了，只能在这里重新宣告一遍。
               // 位置必须是「md 之后、user 之前」：挪到下面 Truncate.GLOB 那个循环后补丁里，会把用户自己在
-              // permission.external_directory 配的白名单从 allow 压成 ask（docs/agent-roles-plan.md 修正八）。
+              // permission.external_directory 配的白名单从 allow 压成 ask（docs/plans/agent-roles-plan.md 修正八）。
               Permission.fromConfig({ external_directory: readonlyExternalDirectory }),
               user,
             ),

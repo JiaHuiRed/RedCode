@@ -27,7 +27,7 @@ export function StatusIndicator(props: { onClick?: () => void }) {
   const triggerLabel = () =>
     streamDown() ? language.t("status.connection.reconnecting") : language.t("status.popover.trigger")
 
-  // 261027 Red UX-002（docs/2026-10-26-interaction-friction-audit.md）：悬停直接给出"哪一项不对"，
+  // 261027 Red UX-002（docs/audits/2026-10-26-interaction-friction-audit.md）：悬停直接给出"哪一项不对"，
   // 异常项排前面；三路信号全部来自已就绪的 store，不加任何轮询。未初始化按"获取中"说，不报失败。
   const issues = createMemo(() => {
     const list: string[] = []

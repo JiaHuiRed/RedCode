@@ -2,7 +2,7 @@
 
 状态:implemented
 
-审计原文：`docs/2026-10-21-third-party-audit.md` 的 RC21-05「大 diff 限制上下文、按需请求」。
+审计原文：`docs/audits/2026-10-21-third-party-audit.md` 的 RC21-05「大 diff 限制上下文、按需请求」。
 本轮先把正文与媒体分支的读取上限做完（`2026-10-21-audit-rc21-batch.md`），把 diff 部分单独
 留作评估——它会动 GUI 的 diff 展示面。
 

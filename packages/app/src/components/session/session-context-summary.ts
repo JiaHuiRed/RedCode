@@ -42,7 +42,7 @@ export const quotaDuration = (minutes: number) =>
       ? `${minutes / 60}h`
       : `${minutes}m`
 
-// 261027 Red UX-001（docs/2026-10-26-interaction-friction-audit.md）：模型按钮悬停复用同一格式，
+// 261027 Red UX-001（docs/audits/2026-10-26-interaction-friction-audit.md）：模型按钮悬停复用同一格式，
 // 与 Context tab 的额度摘要保持一致，避免两处格式漂移。
 export const quotaCompactSummary = (quota: ProviderQuota, locale: string) => {
   const windows = [quota.primary, quota.secondary].filter((window): window is QuotaWindowData => !!window)

@@ -6,7 +6,7 @@
 
 `tool/truncate.ts` 的工具输出截断只保留单端(`direction: "head" | "tail"`,默认 head),尾部被整体裁掉——而**尾部往往才是结论**:命令错误栈、测试结果、构建失败原因都在末尾。模型看到的是"开头完整、结尾被切"的半截输出,常常被迫再调一次工具重看尾部,浪费一轮请求。
 
-对标 deepseek-harness(spill 机制 + compaction-tool-result-pruner)确认差距:DSH 的 pruner 是 head 4096 + tail 1024(4:1)双端保留。RedCode 压缩摘要已在 17a7304a(0.8.17)落地 4:1 双端(`message-v2.ts` `truncateToolOutput`),但**同一教训没有同步到工具输出截断**——`truncate.ts` 仍是单端。DSH 采纳路线图(`docs/dsh-adoption-plan.md`)"已落地"表也记了压缩摘要侧,工具输出侧漏了。
+对标 deepseek-harness(spill 机制 + compaction-tool-result-pruner)确认差距:DSH 的 pruner 是 head 4096 + tail 1024(4:1)双端保留。RedCode 压缩摘要已在 17a7304a(0.8.17)落地 4:1 双端(`message-v2.ts` `truncateToolOutput`),但**同一教训没有同步到工具输出截断**——`truncate.ts` 仍是单端。DSH 采纳路线图(`docs/plans/dsh-adoption-plan.md`)"已落地"表也记了压缩摘要侧,工具输出侧漏了。
 
 顺带核实:RedCode 的 truncate 本身就是 DSH spill 的等价实现(保存全量到 `tool_*` 文件 + head 预览 + 路径提示 + read/grep 取回 + 7 天 retention + task 委派提示),且覆盖比 DSH 更彻底(define 包装层 `tool/tool.ts:156` + MCP 层 `session/tools.ts:227` 双重全局),**无需引入新的 spill 子系统**。
 

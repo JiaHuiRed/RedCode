@@ -2,7 +2,7 @@
 
 状态:implemented
 
-审计原文：`docs/2026-10-21-third-party-audit.md` 的 RC21-07。
+审计原文：`docs/audits/2026-10-21-third-party-audit.md` 的 RC21-07。
 
 ## 问题
 

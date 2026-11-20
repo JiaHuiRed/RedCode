@@ -50,7 +50,7 @@ rem 260828 no agent seeding on purpose: the two built-in subagents (explore/exec
 rem defined in packages/redspace/src/agent/definition/*.md and inlined at BUILD time. Seeding a
 rem byte-identical copy into ~/.redcode/agent/ would make ConfigAgent.load append the same flat
 rem whitelist AFTER the user's global permission - findLast then voids both that and the engine's
-rem external_directory patch. See docs/agent-roles-plan.md, correction 9. Hand-written agent md
+rem external_directory patch. See docs/plans/agent-roles-plan.md, correction 9. Hand-written agent md
 rem in ~/.redcode/agent/ still works; we just no longer ship one.
 
 rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)

@@ -4,7 +4,7 @@
 
 ## 问题
 
-Harness 任务书 RC-04 要求 `redcode doctor` 具备真实模型/MCP 连通性探测（`--probe`），验收属性：显式 opt-in、限次、费用提示。落地审计（`docs/2026-11-09-harness-optimization-audit.md`）把「补 `--probe` 与输出形状测试」列为收口第一项。此前的 doctor 全是静态检查：`providers` 只数 auth 凭据，`mcp` 只读状态——「配了 key 的到底通不通」没有任何一条命令能回答。
+Harness 任务书 RC-04 要求 `redcode doctor` 具备真实模型/MCP 连通性探测（`--probe`），验收属性：显式 opt-in、限次、费用提示。落地审计（`docs/audits/2026-11-09-harness-optimization-audit.md`）把「补 `--probe` 与输出形状测试」列为收口第一项。此前的 doctor 全是静态检查：`providers` 只数 auth 凭据，`mcp` 只读状态——「配了 key 的到底通不通」没有任何一条命令能回答。
 
 ## 决策
 

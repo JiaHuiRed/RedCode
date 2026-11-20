@@ -31,10 +31,10 @@
 
 ### 证据与影响
 
-- [mergeUserWins](../script/merge-home-config.ts#L55) 以用户配置为基底，只补模板缺失键；本地覆盖层用于遮蔽模板，并不执行配置退役迁移。
-- [ConfigParse.schema](../packages/opencode/src/config/parse.ts#L38) 拒绝 schema 不认识的顶层键。
+- [mergeUserWins](../../script/merge-home-config.ts#L55) 以用户配置为基底，只补模板缺失键；本地覆盖层用于遮蔽模板，并不执行配置退役迁移。
+- [ConfigParse.schema](../../packages/opencode/src/config/parse.ts#L38) 拒绝 schema 不认识的顶层键。
 - 实际故障中，新版移除 `image` 工具及配置字段，本机 `redcode.local.jsonc` 仍含 `image`。服务端抛出 `ConfigInvalidError: Unrecognized key: image`，`config.providers`、`provider.list`、`app.agents`、`config.get` 同时失败，TUI 退出。
-- [错误中间件](../packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts#L9) 将未声明的缺陷转成带诊断编号的通用 500；[TUI 启动链](../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L510) 在阻塞请求失败后走致命退出。用户看到的汇总信息不能直接指出遗留字段。
+- [错误中间件](../../packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts#L9) 将未声明的缺陷转成带诊断编号的通用 500；[TUI 启动链](../../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L510) 在阻塞请求失败后走致命退出。用户看到的汇总信息不能直接指出遗留字段。
 
 审计前已完整备份本机配置，仅移除该遗留块，并核对其余设置不变。随后源码 doctor 的配置状态为 `ok`，安装版在 RedCode 与 RedMon 两个工作区的上述四个请求均返回 200。这证明本次故障的具体根因；不代表通用升级迁移已经补齐。
 
@@ -55,7 +55,7 @@
 
 ### 证据与复现
 
-[loadThrough](../packages/app/src/pages/session/session-history-loader.ts#L170) 只检查 `historyMore()` 并调用 `loadMore(id)`。向新消息的生产分页能力已经存在于 [directory-sync.ts](../packages/app/src/context/directory-sync.ts#L1007)，但目标跳转没有使用。
+[loadThrough](../../packages/app/src/pages/session/session-history-loader.ts#L170) 只检查 `historyMore()` 并调用 `loadMore(id)`。向新消息的生产分页能力已经存在于 [directory-sync.ts](../../packages/app/src/context/directory-sync.ts#L1007)，但目标跳转没有使用。
 
 长会话向前翻页后，400 条固定窗口会裁掉较新消息。此时点击目录中的较新轮次，目标确实存在，跳转逻辑却不能把它加载回来；仍有旧页时，还会向错误方向继续请求。
 
@@ -71,13 +71,13 @@
 - 保留 400 条上限、连续窗口、跳转期间冻结投影及切换会话后的取消约束。
 - 用 1000 条合成消息验收第 1 条→第 900 条→第 500 条的连续定位；内存窗口不超过上限，旧会话跳转不能改变新会话视口。
 
-相关现行约束：[固定窗口与双向分页](notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md)、[多页跳转的原子投影](notes/implemented/feature/2026-09-26-atomic-turn-history-projection.md)。
+相关现行约束：[固定窗口与双向分页](../notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md)、[多页跳转的原子投影](../notes/implemented/feature/2026-09-26-atomic-turn-history-projection.md)。
 
 ## RC21-03：统一分页请求的会话归属检查
 
 ### 证据与复现
 
-[fetchOlderMessages 的 catch](../packages/app/src/pages/session/session-history-loader.ts#L83) 无条件写入 `stalled=true` 和 `shift=false`。虽然会话切换会清状态，但旧请求稍后失败仍能重新污染它。相邻 [fetchNewerMessages 的失败分支](../packages/app/src/pages/session/session-history-loader.ts#L120) 已检查会话归属，存在明确不对称。
+[fetchOlderMessages 的 catch](../../packages/app/src/pages/session/session-history-loader.ts#L83) 无条件写入 `stalled=true` 和 `shift=false`。虽然会话切换会清状态，但旧请求稍后失败仍能重新污染它。相邻 [fetchNewerMessages 的失败分支](../../packages/app/src/pages/session/session-history-loader.ts#L120) 已检查会话归属，存在明确不对称。
 
 真实函数与真实 Solid store 的隔离探针按以下顺序执行：
 
@@ -99,8 +99,8 @@
 
 ### 证据与复现
 
-- [fingerprint](../packages/opencode/src/session/usage.ts#L156) 只包含消息行数及最大 `time_created`；[缓存命中](../packages/opencode/src/session/usage.ts#L190) 没有检查内容更新或日期。
-- [processor](../packages/opencode/src/session/processor.ts#L925) 会原地累计 assistant 消息的费用、token；[projector](../packages/opencode/src/session/projectors.ts#L147) 更新同一消息的数据，不必产生新行或新的创建时间。
+- [fingerprint](../../packages/opencode/src/session/usage.ts#L156) 只包含消息行数及最大 `time_created`；[缓存命中](../../packages/opencode/src/session/usage.ts#L190) 没有检查内容更新或日期。
+- [processor](../../packages/opencode/src/session/processor.ts#L925) 会原地累计 assistant 消息的费用、token；[projector](../../packages/opencode/src/session/projectors.ts#L147) 更新同一消息的数据，不必产生新行或新的创建时间。
 - 本轮检索未发现生产代码调用 `SessionUsage.invalidate`。
 - `range="all"` 的结果还包含依赖当前日期的 `currentStreak`，因此没有新增消息也不意味着缓存永远有效。
 
@@ -126,10 +126,10 @@
 
 ### 证据与影响
 
-- 图片、PDF 和通过 MIME 识别的图片，分别在 [527 行](../packages/opencode/src/file/index.ts#L527)、[557 行](../packages/opencode/src/file/index.ts#L557)、[583 行](../packages/opencode/src/file/index.ts#L583) 先完整 `readFile`，再比较 20 MiB 内联限额。该限额不能限制读取峰值。
-- [文本分支](../packages/opencode/src/file/index.ts#L596) 没有单文件读取上限。
-- 有 Git 改动时还读取原文件，并以 [context: Infinity](../packages/opencode/src/file/index.ts#L608) 生成 patch，可能同时持有正文、原文、patch 和格式化 diff。
-- [HTTP 处理器](../packages/opencode/src/server/routes/instance/httpapi/handlers/file.ts#L39) 直接调用 `svc.read(path)`；[GUI 文件加载](../packages/app/src/context/file.tsx#L175) 没有读取前大小检查。响应到达后才计量的前端 LRU 不能约束单次服务端读取、传输和解析峰值。
+- 图片、PDF 和通过 MIME 识别的图片，分别在 [527 行](../../packages/opencode/src/file/index.ts#L527)、[557 行](../../packages/opencode/src/file/index.ts#L557)、[583 行](../../packages/opencode/src/file/index.ts#L583) 先完整 `readFile`，再比较 20 MiB 内联限额。该限额不能限制读取峰值。
+- [文本分支](../../packages/opencode/src/file/index.ts#L596) 没有单文件读取上限。
+- 有 Git 改动时还读取原文件，并以 [context: Infinity](../../packages/opencode/src/file/index.ts#L608) 生成 patch，可能同时持有正文、原文、patch 和格式化 diff。
+- [HTTP 处理器](../../packages/opencode/src/server/routes/instance/httpapi/handlers/file.ts#L39) 直接调用 `svc.read(path)`；[GUI 文件加载](../../packages/app/src/context/file.tsx#L175) 没有读取前大小检查。响应到达后才计量的前端 LRU 不能约束单次服务端读取、传输和解析峰值。
 
 大型 JSON、日志、生成文件或 PDF 会进入这条路径，修改过的大文本成本更高。这是源码确认的资源边界缺口；本轮没有大文件压测，不能据此声称已复现 OOM 或实机闪退。
 
@@ -138,7 +138,7 @@
 - 读取前检查文件大小，读取中仍按 `limit + 1` 有界读取，处理检查后文件继续增长的情况。
 - 文本提供明确的截断或分页契约；大 diff 限制上下文、按需请求，前端展示超限原因和后续操作。
 - 三条媒体读取分支统一预算执行方式，避免只修其中一条。
-- [AppFileSystem.Interface](../packages/core/src/filesystem.ts#L24) 已继承 Effect FileSystem，已有 `stat`；相关旧注释应随修复校正，无需先为此扩大接口。
+- [AppFileSystem.Interface](../../packages/core/src/filesystem.ts#L24) 已继承 Effect FileSystem，已有 `stat`；相关旧注释应随修复校正，无需先为此扩大接口。
 - 验证超限媒体不会被全量读入，大文本响应有界，文件增长仍不能绕过上限；记录代表性大文件的响应字节、峰值内存和事件循环延迟。
 
 ## RC21-06：统一 sidecar 恢复的状态所有权
@@ -147,10 +147,10 @@
 
 触发条件是：重启的 sidecar 已发出 `ready`，但尚未通过健康检查就退出。
 
-1. [server.ts 的退出回调](../packages/desktop/src/main/server.ts#L107) 调用 `onExit`。
-2. [handleSidecarExit](../packages/desktop/src/main/index.ts#L345) 清引用并调用 `respawnSidecar`。
-3. 同一次退出又使 [健康检查的 getFailure](../packages/desktop/src/main/server.ts#L195) 产生失败，原重启流程走到 [健康失败恢复](../packages/desktop/src/main/index.ts#L453)，再次请求重启。
-4. 每次调用都在延时与现有 server 检查之前 [计入恢复预算](../packages/desktop/src/main/index.ts#L408)，因此同一次失败可消耗两个名额。
+1. [server.ts 的退出回调](../../packages/desktop/src/main/server.ts#L107) 调用 `onExit`。
+2. [handleSidecarExit](../../packages/desktop/src/main/index.ts#L345) 清引用并调用 `respawnSidecar`。
+3. 同一次退出又使 [健康检查的 getFailure](../../packages/desktop/src/main/server.ts#L195) 产生失败，原重启流程走到 [健康失败恢复](../../packages/desktop/src/main/index.ts#L453)，再次请求重启。
+4. 每次调用都在延时与现有 server 检查之前 [计入恢复预算](../../packages/desktop/src/main/index.ts#L408)，因此同一次失败可消耗两个名额。
 
 上述重复计数由控制流确认。多个计时器进一步导致并发启动的后果尚未做调度复现，不作为已发生事故报告。
 
@@ -163,15 +163,15 @@
 - 向界面发布 `starting / running / recovering / failed`、最后错误及诊断入口，失败后允许用户显式重试。
 - 调度测试覆盖“ready→健康检查等待→退出”，断言一次失败只记一次预算，最多存在一个恢复计时器和一个启动任务；重试按钮不能产生第二个并行恢复任务。
 
-相关决策：[sidecar 健康契约](notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md)。现有健康检查测试通过，不等于 supervisor 的组合时序已被覆盖。
+相关决策：[sidecar 健康契约](../notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md)。现有健康检查测试通过，不等于 supervisor 的组合时序已被覆盖。
 
 ## RC21-07：移除 Electron 主进程中的同步 WSL 等待
 
 ### 证据与影响
 
-[wslPath](../packages/desktop/src/main/apps.ts#L24) 的两个分支均使用无超时的 `execFileSync("wsl", ...)`。它由 [主进程 IPC 入口](../packages/desktop/src/main/index.ts#L700) 调用，外层 `async` 不会让同步子进程等待异步化。
+[wslPath](../../packages/desktop/src/main/apps.ts#L24) 的两个分支均使用无超时的 `execFileSync("wsl", ...)`。它由 [主进程 IPC 入口](../../packages/desktop/src/main/index.ts#L700) 调用，外层 `async` 不会让同步子进程等待异步化。
 
-启用 WSL 后，[目录选择器出现前](../packages/desktop/src/renderer/index.tsx#L157) 会先转换 WSL home；选择文件或在外部程序打开路径也可能走转换。WSL 冷启动或挂起期间，主进程事件循环被阻塞，其他窗口操作与 IPC 受影响。本轮未测具体延迟，不把静态路径等同于已发生的用户卡死。
+启用 WSL 后，[目录选择器出现前](../../packages/desktop/src/renderer/index.tsx#L157) 会先转换 WSL home；选择文件或在外部程序打开路径也可能走转换。WSL 冷启动或挂起期间，主进程事件循环被阻塞，其他窗口操作与 IPC 受影响。本轮未测具体延迟，不把静态路径等同于已发生的用户卡死。
 
 ### 建议与验收
 

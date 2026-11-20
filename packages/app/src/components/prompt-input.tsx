@@ -1568,7 +1568,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     </Show>
   )
 
-  // 261027 Red UX-001（docs/2026-10-26-interaction-friction-audit.md）：模型按钮悬停第二行。
+  // 261027 Red UX-001（docs/audits/2026-10-26-interaction-friction-audit.md）：模型按钮悬停第二行。
   // 有窗口额度的供应商（GPT / GLM Coding Plan）直接给窗口占用；DeepSeek / Step Plan 这类
   // 没有 quota API 的供应商回退本会话消耗（含子会话，口径与 Context tab 成本行一致）。
   // 数据全部来自已就绪的 store，悬停不产生任何请求。多账号时判定不了归属，不猜数字。

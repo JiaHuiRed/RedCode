@@ -2,7 +2,7 @@
 
 日期：2026-08-25 · 状态：implemented · 来源：dsh-routing-suite（`E:\AI\dsh-routing-suite`，本轮从 `c442950` 拉到 `21a7260`）
 
-> 注意来源与 `docs/dsh-adoption-plan.md` 不同：那份的底本是官方 harness（deepseek-harness）；本条来自 **harness 的一个插件**——注入器 × 思维模式路由预设（`dsh-router-standard`）。0.8.x 的 flash/step 三锚就是从它的 WEAK_FLASH 实测（P10/P14/P19/P20/P22/P23）搬来的，本条是同一条线的续。
+> 注意来源与 `docs/plans/dsh-adoption-plan.md` 不同：那份的底本是官方 harness（deepseek-harness）；本条来自 **harness 的一个插件**——注入器 × 思维模式路由预设（`dsh-router-standard`）。0.8.x 的 flash/step 三锚就是从它的 WEAK_FLASH 实测（P10/P14/P19/P20/P22/P23）搬来的，本条是同一条线的续。
 
 ## 问题
 

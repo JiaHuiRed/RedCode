@@ -620,7 +620,7 @@ export const TaskTool = Tool.define(
       }
       const isExplore = next.name === "explore"
       const isolated = params.isolation === "worktree"
-      // 261107 Red D1（docs/agent-dispatch-plan.md D1，本方案核心）：explore+isolation
+      // 261107 Red D1（docs/plans/agent-dispatch-plan.md D1，本方案核心）：explore+isolation
       // 参数校验直接拒绝——只读工种与文件隔离正交，唯一「效果」是读到过时代码视图；
       // 文案写明原因防模型重试。execute+isolation 保留（并行实验分支），其边界在
       // schema description 里声明。
@@ -687,7 +687,7 @@ export const TaskTool = Tool.define(
           permission: item,
         })) ?? []),
         // 261011 Red bash 从硬 deny 摘除：explore 的 bash 改由 md 白名单收口（仅六个 git
-        // 只读子命令，docs/agent-dispatch-plan.md D4）。运行层仍硬 deny 其余写类工具——
+        // 只读子命令，docs/plans/agent-dispatch-plan.md D4）。运行层仍硬 deny 其余写类工具——
         // 只读红线不依赖权限层单一闸门。曾经 bash: allow 是假门票（443c92b1 的 guard 在
         // findLast 末位掀翻声明），本次是 guard 与白名单同步摘/加，缺一则另一侧失效。
         ...(explorePacket

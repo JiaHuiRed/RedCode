@@ -4,7 +4,7 @@
 
 ## 问题
 
-`docs/2026-11-20-redspace-chat-behavior-contract.md`（V2.0）与 `.redcode/temp/RedSpace-Chat-V3.0.md`（产品定稿）都要求 Chat 先做减法：只留 Soul、档案摘录与必要边界，看人格是不是本来就够。此前的 `2026-11-20-companion-agents.md` 只解决了「不注入工程 AGENTS」，Chat 仍带着三份 V2.0 产物的全部重量：`chat.md` 1764 字节七段、`companion-agents.md` 1723 字节四节行为脚本、`conversation.md` 1717 字节共享契约，外加 `WORK_RULES` 308 字节。
+`docs/prompt/2026-11-20-redspace-chat-behavior-contract.md`（V2.0）与 `.redcode/temp/RedSpace-Chat-V3.0.md`（产品定稿）都要求 Chat 先做减法：只留 Soul、档案摘录与必要边界，看人格是不是本来就够。此前的 `2026-11-20-companion-agents.md` 只解决了「不注入工程 AGENTS」，Chat 仍带着三份 V2.0 产物的全部重量：`chat.md` 1764 字节七段、`companion-agents.md` 1723 字节四节行为脚本、`conversation.md` 1717 字节共享契约，外加 `WORK_RULES` 308 字节。
 
 ## 实测
 

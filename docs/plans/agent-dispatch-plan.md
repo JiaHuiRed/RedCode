@@ -1,6 +1,6 @@
 # 派发机制收口方案（agent-roles-plan 续篇）
 
-> 2026-10-11 起草。权威底本 `docs/agent-roles-plan.md`（08-28）已完成角色收口：9 → 4（redmind/plan 姿态 + explore/execute 工种）+ 3 机件，三构造器互不可污染。但那份底本「明确不做的」里刻意划走了 **task 工具调用面**——四个月缝缝补补后，所有新痛点恰好都聚在这块空白里。本文件收口调用层，与底本互为回链。
+> 2026-10-11 起草。权威底本 `docs/plans/agent-roles-plan.md`（08-28）已完成角色收口：9 → 4（redmind/plan 姿态 + explore/execute 工种）+ 3 机件，三构造器互不可污染。但那份底本「明确不做的」里刻意划走了 **task 工具调用面**——四个月缝缝补补后，所有新痛点恰好都聚在这块空白里。本文件收口调用层，与底本互为回链。
 >
 > 起因是实证三犯：① 只读调查任务误带 `isolation:"worktree"`（白隔离 + 读到旧代码 + worktree 垃圾）；② execute 带隔离派「往主仓写文件」任务，子代理被 `external-directory.ts:40-49` 硬 die 挡死（"refusing to write outside it"，设计如此，三犯）；③ explore 不能续跑，任何追问都是全新上下文重付全量调查成本。机制现状全部实测定位于 2026-10-11，锚点 HEAD `060b1ebd`。
 

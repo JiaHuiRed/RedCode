@@ -70,7 +70,7 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
   // 照它们的文档下的判断。
   //
   // 标记而不是删除：specs/v2/api.ts 描述的目标 API 恰好就是这几个，删掉等于把「备将来」
-  // 那条路的桩一起拆了。去留是独立决定，见 docs/parallel-systems-plan.md。
+  // 那条路的桩一起拆了。去留是独立决定，见 docs/plans/parallel-systems-plan.md。
   .add(
     HttpApiEndpoint.post("prompt", "/api/session/:sessionID/prompt", {
       params: { sessionID: SessionID },

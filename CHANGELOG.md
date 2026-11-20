@@ -128,7 +128,7 @@
 - **0.18.7 复审修复**：关闭后台终端查看标签只分离视图，不再终止原进程；子任务补充要求的父会话留痕不再抢占真实用户回合。TUI 后台输出支持持续刷新、失败恢复支持键盘操作，Markdown 源码首次打开时的查找焦点也已修复。定向测试与未完成的实机验收见 `docs/reviews/0.18.7-review-closeout.md`。
 - **GUI 本轮成果卡片**：每轮回答末尾集中展示成功写入/修改的文档、网页、图片和其他文件；文档与预览文件优先，默认四张并可展开更多。点击复用现有文件查看器与预览槽，可返回产生它的工具，也可直接查看来源；同路径合并、补丁删除移除、移动更新目标，保留当前工作区版本说明。历史会话可从已有工具记录生成，不额外调用模型。展开侧栏按实际宽度为聊天内容让位，修复新文件标签被自动切回 Review 的问题。范围与验证见 `docs/notes/implemented/feature/2026-11-16-turn-deliverables.md`。
 
-> 依据 `docs/2026-11-16-experience-roadmap-v2.md`（原 HTML 导出）实施 0.18.7 体验包，决策、取舍与验证边界见 `docs/notes/implemented/feature/2026-11-16-experience-roadmap-v2.md`。
+> 依据 `docs/experience/2026-11-16-experience-roadmap-v2.md`（原 HTML 导出）实施 0.18.7 体验包，决策、取舍与验证边界见 `docs/notes/implemented/feature/2026-11-16-experience-roadmap-v2.md`。
 
 - **A03 用户可对运行中子任务补充要求**（`packages/opencode/src/tool/{task,task_status}.ts`、`server/routes/instance/httpapi/{groups,handlers}/background.ts`、`packages/app/src/components/task-steering.tsx`、`packages/opencode/src/cli/cmd/tui/component/{dialog-subagent-steer,subagent-steer}.ts`）：新增 `POST /background/tasks/:sessionID/steer`（`{message, requestID}` → `{messageID, state}`），`requestID` 是幂等键（同 ID 同正文重放、同 ID 不同正文拒绝）。子消息带 `source=user` / `priority=user_override` 与来源前缀，**不伪装成父代理规划**；父会话在子消息落库后立刻写入 synthetic `noReply` 记录（在父真实实例下执行，isolated 子任务不会把记录写进子 worktree），不触发新的模型轮次。修掉两处竞态：queued→delivered 原先靠 `forkChild` 轮询、`send` 返回即关 scope，子回合最后一步结束时父记录会永久停在 queued，现于 join 后同步读最终 delivery；父记录写失败但子消息已落库时，同 `requestID` 重试只补父记录、不重复子消息。任务结束不接受引导，也不自动续跑。TUI / GUI 均把内联大表单改为紧凑入口（GUI 实测原布局的发送按钮会被右侧浮动工作台遮挡），草稿按会话保留、失败可重试、`delivered` 明示只代表投递成功。验证：task-steering 4、真实 SessionPrompt 时序集成 1（先复现「父记录未更新为 delivered」再修）、pty/httpapi 相关套件、Playwright 冒烟覆盖同 ID 重试与双会话草稿隔离。
 - **A02 运行中与已退出终端可只读查看**（`packages/opencode/src/pty/index.ts`、`httpapi/{groups,handlers}/pty.ts`、`packages/app/src/{context/terminal.tsx,pages/session/terminal-panel.tsx}`）：新增 `GET /pty/:ptyID/output`，只切既有有界缓冲（末尾 32,000 字符 + `truncated`），不 attach socket、不 resize、不写入、不创建。自然退出的终端保留最近 20 条尾部并进 `list`/`get`（`status: "exited"`），显式 `remove` 只删自己——否则短命令一跑完就从列表消失。孤儿记录仍只读、不可终止（PID 可能已复用）。TUI 后台面板默认动作从「终止」改为按真实 `sessionID` 导航（任意状态均有入口，无会话 ID 时明示而不拿 job ID 冒充），终止独立且二次确认，列表刷新按稳定 ID 保持选中。GUI 终端新增 attach / 命令与目录头部 / 退出快照对话框 / 选区引用。验证：pty-output 6、pty-session / pty-orphans、httpapi 覆盖对账 185 场景 0 缺失，GUI 实测自动创建终端并连上真实 PowerShell 7.6.7。
@@ -150,7 +150,7 @@
 
 ### [0.18.5] - 2026-11-15
 
-- **0.18.5 体验包（GUI/core）**：体验优先审查报告（`docs/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.5 包 8 项全部落地（分阶段口径下不依赖后端写入接口的部分先行）——
+- **0.18.5 体验包（GUI/core）**：体验优先审查报告（`docs/experience/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.5 包 8 项全部落地（分阶段口径下不依赖后端写入接口的部分先行）——
   - **UX-16 Diff 连续审阅**（`packages/ui/src/components/session-review.tsx`）：审查头部新增「全部/未审阅」筛选（进度仍按全部文件计）与「标记并下一个」（目标在标记生效前用旧 reviewed 集合算好，`nextUnreviewedTarget` 纯函数尾部环绕、current 恒排除，全审完置灰）；全批已审时进度换「已全部审阅」，未审筛选清空列表时正文给完成态而非宿主「无改动」空态。指纹失效规则不变。
   - **UX-18 文件预览 tab**（`packages/app/src/pages/session/{helpers,file-tabs,session-side-panel}.tsx`、`context/layout.tsx`）：diff「打开文件」与工具输出点文件名改为先开 tab + 激活、加载异步（点击的下一次绘制即见目标标签与 Loading 态）；一次性浏览共用可替换预览槽（`sessionView.previewTab`），连看多个文件只占一个标签位，标签条「固定」按钮（新 pin 图标）清标记后不再被顶掉，文件树普通打开命中槽位同样清标记；审查来源打开的文件在内容上方带「返回变更」入口，一次点击回 review 面板/标签并按 activeDiff 重新定位。
   - **UX-14 Agent 选择说清用途与联动**（`packages/app/src/components/prompt-input.tsx`、`context/local.tsx`）：选择行改富行（名字 + 描述 + 绑定模型·推理档），Select 换 DropdownMenu（触发钮观感不变、cycle 快捷键保留）；带绑定模型的 Agent 走子菜单「跟随 Agent 配置 / 保留当前模型」二选一，`local.agent.set` 加 `keepModel`（无可保留时退回 Agent 配置，model 链不断），`agent.cycle` 等默认语义不变。
@@ -174,7 +174,7 @@
 - **TUI 断线重连补拉权限与状态快照**（`packages/opencode/src/cli/cmd/tui/context/`）：重连后权限与 question/permission 快照经恢复合并门禁重新播种，不再停留在断线前状态。
 - **TUI 朱印配色与阅读排版**（`packages/ui`、TUI 侧栏）：朱印主题配色、阅读排版与连续工作段署名；侧栏次序改为上下文/配额优先。决策记录见 `docs/notes/`（视觉改版 1+2 配色 seed 反解）。
 - **GPT 家族交付纪律与 prompt-eval 实证**（`packages/opencode/src/session/prompt/gpt.md`、`script/prompt-eval*`）：GPT 提示词重写后把「自有本地 UI 验证」纳入交付动作而非免责声明；prompt-eval 覆盖 live UI 交付、无关服务边界与自有 dev 重启场景断言。
-- **0.18.4 体验包（GUI）**（`packages/app`、`packages/ui`）：体验优先审查报告（`docs/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.4 包全部落地——
+- **0.18.4 体验包（GUI）**（`packages/app`、`packages/ui`）：体验优先审查报告（`docs/experience/2026-11-14-experience-review-0.18.4-0.18.5.md`）的 0.18.4 包全部落地——
   - **UX-01/02/12**：设置窗口可调大小/最大化/还原（尺寸持久化、主窗口变小时钳制、窄容器导航横排翻折）；新建 Soul 默认收起阵容回首屏；终端一键最大化/恢复（不新建 PTY）。
   - **UX-03/04**：新会话输入区快选 Soul（本次选择覆盖设置默认、`?soul=` 参数接设置页「以此 Soul 新建」）；Soul 阵容详情工作区（默认/上次所选直开、宽窄双布局、可读 Markdown 正文优先、工程字段收进高级信息）。
   - **UX-05**：模型名直开列表（两次点击完成换模型）+ 档位独立点击区 + 最近使用分组恒排最前。
@@ -205,7 +205,7 @@
 - **桌宠命中区域收敛到椭圆热点**（`app/src/pet/pet-layer.css`、`pet-layer.tsx`）：184px 全矩形按钮的 `pointer-events: auto` 让透明空白也挡住底下控件的点击。按钮本体改 `pointer-events: none`，新增单个椭圆热点 `.pet-layer-hotspot`——几何取自 13 张姿态 alpha 包围盒并集（实测 x 6~95% / y 10~91%），收透明边距定为 7.5%/10.5%/85.5%×79%。摸头、拖拽、键盘移动与关闭逻辑零改动：实测 `pointer-events: none` 的按钮作 `setPointerCapture` 目标照常成立（拖出元素框后事件仍送达）。验证：pet-lines 24 pass；app typecheck 0；Chromium 实测透明角穿透、本体点击与拖拽捕获。
 - **后台活动摘要启动快照与当前工作区切换短路**（`opencode/src/cli/cmd/tui/context/sync.tsx`、`project-navigation.tsx`、`component/dialog-project-select.tsx`）：① 工作区选择器的「N 项等待确认 / 运行中」徽标此前只吃 SSE 增量，启动后为空；bootstrap 可选阶段全量拉取的 `session.status` / `permission.list` / `question.list` 现在在恢复合并后同步播种给 Navigation（新增 `seedActivity`，同步构建同步推送无事件空窗；目录已切换的迟到播种守卫作废，只覆盖实际进入的目录）。② `session.status` 快照原为裸 reconcile，而服务端 idle 会从状态表删除（快照只含非 idle），拉取期间已变 idle 的会话会被旧快照复活成 busy；补上 question/permission 同款快照/实时合并门禁 `sessionStatusRecovery`。③ 选择器里选「当前工作区」不再走 `switchTo`：同目录且有等待确认会话只 `route.navigate` 跳转（已在该会话上则不动），否则只关弹窗——不再重跑插件清理与 `setCurrent` 把整个 ProjectScreen 推倒重建；目录不同才走完整切换。验证：`project-navigation` 4 pass（新增）、`bootstrap-optional` 竞态 1 pass、`sync` 8 + `question-recovery` 7 回归 pass；opencode typecheck 0。
 - **TUI 项目导航三处收尾修复**（`opencode/src/cli/cmd/tui/context/project-navigation.tsx`、`project-history.ts`、`routes/session/index.tsx`，`validate-session.ts` 导出 `sameDirectory`）：① 切换工作区恢复历史会话时只验存在、不验归属，服务端 `session.get` 按 ID 查库，历史里残留别的项目的 SessionID 会直接打开它；现在复用 `--session` 的目录归属判定，不符落回目标工作区首页（`dialog-project-select` 的两条 `switchTo` 是唯一入口）。② 启动与回首页的访问记录不带 SessionID，`recordProjectVisit` 用新记录整体替换旧记录，把「最后查看会话」抹掉；改为锁内继承旧 sessionID，只有真正切到另一段会话才更新，`forget` 后重新访问不继承。③ 阅读锚点补页时，一页里既有压缩摘要边界又有边界后的有效消息时消息已前置进 store，`loadEarlier` 却因边界返回 false，调用方先 `break` 再查锚点，明明补到了仍退回像素位置；改为每次补取后先查锚点是否已进入，再按返回值决定是否继续。验证：`project-history` 3 pass；`validate-session` + `sync` 7 pass；opencode typecheck exit 0。决策与验证见 `docs/notes/implemented/feature/2026-11-10-tui-project-navigation.md`。
-- **提示词修订第一包：表达规则与 GPT / 工作风格重写**（`packages/opencode/src/session/prompt/default.md`、`gpt.md`、`working-style.md`，提案归档 `docs/2026-11-11-prompt-revision-proposal.md`）：default.md 身份段改为运行环境事实、声线明确归 Soul，「一律首句给结论」等七条表达规则合并为 Conversation 段，允许对笑话、挫折、庆祝做自然反应；「最后一段是计划就算没做完」收窄到已授权的执行任务。gpt.md 3758→1041 字符重写为四项纠偏（最小完整方案、复用验证、调查收敛、`edit` 优先），删掉逐句自我审查与反套话章节；working-style.md 3532→1110 字符收敛为五条交付与执行契约，删掉人格编排、称呼节奏与机械验证清单。模型可见四问：三份文件合计 -5462 字符；GPT 家族固定前缀约 -1.4k token/请求，公共基线 -323 字符；default.md 属公共基线，所有模型从该段起前缀失效一次，gpt.md 与 working-style.md 只影响 GPT / Step 路由；无新增注入源，只是静态内联文件变短，总量仍在既有预算内。验证：system-prompt-routing 16 pass；opencode typecheck 0。
+- **提示词修订第一包：表达规则与 GPT / 工作风格重写**（`packages/opencode/src/session/prompt/default.md`、`gpt.md`、`working-style.md`，提案归档 `docs/prompt/2026-11-11-prompt-revision-proposal.md`）：default.md 身份段改为运行环境事实、声线明确归 Soul，「一律首句给结论」等七条表达规则合并为 Conversation 段，允许对笑话、挫折、庆祝做自然反应；「最后一段是计划就算没做完」收窄到已授权的执行任务。gpt.md 3758→1041 字符重写为四项纠偏（最小完整方案、复用验证、调查收敛、`edit` 优先），删掉逐句自我审查与反套话章节；working-style.md 3532→1110 字符收敛为五条交付与执行契约，删掉人格编排、称呼节奏与机械验证清单。模型可见四问：三份文件合计 -5462 字符；GPT 家族固定前缀约 -1.4k token/请求，公共基线 -323 字符；default.md 属公共基线，所有模型从该段起前缀失效一次，gpt.md 与 working-style.md 只影响 GPT / Step 路由；无新增注入源，只是静态内联文件变短，总量仍在既有预算内。验证：system-prompt-routing 16 pass；opencode typecheck 0。
 - **提示词修订第二包：项目规则与子代理定义对齐**（根 `AGENTS.md`、`packages/opencode/src/agent/definition/explore.md`、`execute.md`、`src/session/prompt/kimi.md`）：版本一致性检查收窄到版本、徽章、发布清单文档；diagnose 指针去掉 Phase 编号改为按 skill 当前步骤执行；注释署名只在有长期解释价值时写；缓存纪律改为「运行时稳定装配、版本化修订允许移动删除」。explore 研究流程从固定顺序改为按问题选工具，删除退役 typegraph 指令与机械 3/4 打分；execute 验证改为逻辑批次完成后；kimi 工具段只留 jcodemunch。包级 AGENTS 的 TS 导航段同步改用 jcodemunch 并清掉 typegraph 死引用。模型可见四问：三份提示词合计删约 1.6k 字符；explore 每次派单少约 400 字符、execute 约 200、kimi 约 120；子代理定义是独立请求前缀，只在其自身会话首轮重建，kimi.md 只影响 Kimi 路由；无新增注入源。验证：agent.test 53 pass、system-prompt-routing 16 pass。
 - **MCP 热重载不再绕过懒启动**（`packages/opencode/src/mcp/index.ts`）：配置热重载的 `reconcile` 原先只判断 `s.clients[name]` 不存在就 `createAndStore`，而 `startup:"lazy"` 的 deferred 服务器本来就没有 client——改一次项目 `redcode.jsonc` 会把所有「首次调用才连」的服务一起拉起。现在仍满足 `shouldDeferStartup` 就保持 deferred（状态从 failed 变回 deferred 时广播 `ToolsChanged`），改成 eager 或缓存消失才连接。验证：opencode typecheck 0；`test/mcp/lifecycle.test.ts` 34 pass；热重载路径未做运行时复现。
 - **seed 漂移门禁：jsonc 与模板未同步即失败**（`script/check-config-shadowing.ts`、`seed/redcode.home.jsonc`、`.husky/pre-push`）：原先只列不判、退出码恒 0，live 改模板没跟时 CI 与预推送都不响；改为 key 集合双向比对 + 值逐条比对，确有本机理由的登记到 `LOCAL_OVERRIDES`（venv 绝对路径、本机禁用列表、本机代理端口），登记失效时提示删除但不算失败。模板补上 live 已有的 lsp、shell=pwsh、goal_auto_continue、mcp-process-mgmt 的 disabledTools，以及 jcodemunch 白名单与 su-prememory 现状。门禁挂 pre-push；缺 `~/.redcode/redcode.jsonc` 时显式跳过并 exit 0，全新 clone 不会因个人环境缺失被拦。seed 的 memory skill 同步补上删除总判据一句。验证：门禁 exit 0；负控制注入假键 exit 1 并定位「只在 seed」；伪造空 HOME 跳过 exit 0。
@@ -254,7 +254,7 @@
 - **GPT 反防御写作调优 + 通用基线禁仪式性认同**（`opencode/src/session/prompt/{gpt,default}.md`、`test/session/system-prompt-routing.test.ts`）：GPT 真实会话反复出现「你说得对，我会……」仪式性确认、预防性自证清白（用户只要求调布局，回复却补「业务逻辑都没动」——回答没人提出的问题）、叠加保留措辞、「不是X而是Y」模板句式，伴生测试当护甲与人格塌缩（同 soul 下防御语域压扁人格）。gpt.md 新增 Anti-defensive writing 八条 bullet，判据导向、不列句式清单（句式层出不穷，列举会被当白名单绕过），只绑定有失效证据的 GPT 家族；default.md 公共基线新增 No agreement rituals（禁「你说得对」式开场与回声复述请求，首句带内容），全模型生效。模型可见：gpt.md +366 est tokens（仅 GPT）、default.md +70 est tokens（全模型），各从新增处起尾部缓存重建一次；固定源码文件有界。验证：路由 16 pass / 81 expects、typecheck exit 0；真机行为验收待 GPT 会话对照。决策记录：`docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md`。
 - **引入 cloudflare security-audit 安全审计 skill**（`seed/skill/security-audit/`，20 文件 320KB）：上游 cloudflare/security-audit-skill（c1c8a8c，MIT）原样引入、SHA256 逐文件对账，零改写以便跟进上游。六阶段结构化审计（侦察→覆盖率台账狩猎→对抗性候选验证→findings.json 机器校验→独立复核→中立报告），三态判定（confirmed/needs_validation/rejected）、severity 只给 confirmed、无 OS 沙箱时自动降级为纯静态 + needs_validation。「security audit / 找漏洞 / pen test」触发，与 ce-code-review 边界不撞；home 无同名，下会话 bootstrap 自动播种。模型可见：skills 清单固定前缀 +1 行（≈70 est tokens），SKILL.md 22KB 仅触发式注入。
 - **引导与真实能力对齐：Plan 派单、plan_exit、explore 续跑三处失配修正**（`opencode/src/session/prompt/`、tool task、seed 命令描述）：实验性 Plan 设计阶段从派 execute（执行者）改为 explore（只读、description 明确支持 DESIGN）；plan_exit 仅 CLI 注册，非 CLI 客户端退回非实验路径，引导与工具表一致；explore 结果头不再承诺 task_id 续跑（实际校验明确拒绝），改提示派发新任务；/goal 文档补 REDCODE_ENABLE_GOAL_TOOLS=true 依赖说明。模型可见：plan-mode.md 固定文件改写、task 结果头固定一行改写、命令描述固定。验证：opencode typecheck exit 0。
-- **审计文档对齐现状**（`MANUAL.md`、`packages/opencode/README.md`、`docs/agent-dispatch-plan.md`）：/goal 落库依赖 REDCODE_ENABLE_GOAL_TOOLS=true（默认关）、/subtask 为隔离子会话同步执行而非后台；`bun run index.ts` 不存在，改为 `bun run dev` 等真实命令；agent 派发方案实施批次状态改为真实落地状态。
+- **审计文档对齐现状**（`MANUAL.md`、`packages/opencode/README.md`、`docs/plans/agent-dispatch-plan.md`）：/goal 落库依赖 REDCODE_ENABLE_GOAL_TOOLS=true（默认关）、/subtask 为隔离子会话同步执行而非后台；`bun run index.ts` 不存在，改为 `bun run dev` 等真实命令；agent 派发方案实施批次状态改为真实落地状态。
 
 ### [0.17.2] - 2026-11-08
 
@@ -286,7 +286,7 @@
 - **MCP 失败后重连成功补一条可见日志**（`opencode/src/mcp/index.ts`）：重连成功路径此前全静默，`failed → connected` 的状态迁移在日志里无迹可循——"到底连上没"只能开界面看状态板指认（261107 fff 事件：19:13 握手瞬时死亡，之后无日志自证）。`storeClient`（所有成功连接的共同漏斗）在检测到前一状态为 `failed` 时打一条 `mcp reconnected after failure`（含 server 名与原错误）；只记恢复、不记首次连接，避免噪音。验证：opencode typecheck exit 0，mcp lifecycle/health/reconnect-policy 42 pass。
 - **排队消息的 agent 失效当场响，不再深入下游炸 defect**（`opencode/src/session/prompt.ts`）：入队时合法、晋升时已失效（config 改动删掉了 agent）的消息，此前在 runLoop 组装 stepSettings 时不检查 `agents.get` 的 undefined，带着无效 agent 深入下游才以 defect 形态失败，UI 只看到一个莫名的报错。现在与 `createUserMessage`/命令入口/task 派发同用一份 `agentNotFound`（发布 `Session.Event.Error`，带可用 agent 清单）在解析当场失败，消息保持 queued 等用户修正后显式重跑。主路径（提交/编辑/派发）本就当场校验，本次补的是唯一漏网的晋升路径。验证：opencode typecheck exit 0；既有「preparation failure releases a queued reservation」测试扩展断言错误含 `Agent not found: "missing-agent"`，全文件回归通过。
 - **TUI 新增 `/instructions` 注入清单**（`opencode/src/session/instruction.ts`、server instance 路由、`tui/component/dialog-instructions.tsx`）：把"引擎到底注入了什么"从猜测变成一条命令——列出实际进入 system 的指令来源（全局/项目 AGENTS.md、MEMORY.md、config.instructions）、各自的原始与最终字节数、被 `instruction_budget` 单源跳过/总量丢弃/独苗截断的命运，以及当前预算水位。实现上把 `system()` 的预算管线抽成 `evaluate()` 供 `system()`（注入文本，行为逐字节不变）与 `describe()`（注入清单）共用，防两处语义漂移；清单经 `GET /instructions`（`app.instructions`）出 HTTP 面，TUI 对话框只读展示。注入清单不进模型上下文，固定前缀与 KV cache 零变化。验证：opencode typecheck exit 0、instruction 套件 26 pass（含新增 describe 命运两测）、httpapi-sdk parity 采集 `app.instructions`、check:openapi-drift 一致。
-- **子代理派发守门与 explore 结果去 JSON 信封**（`opencode/src/tool/task.ts`、`task-runtime.ts`）：①explore 配 `isolation:"worktree"` 此前畅通无阻——只读工种配文件隔离，唯一效果是读到过时代码视图、整个子代理 run 白跑，现在参数校验派发即拒、文案写明原因防模型重试；isolation 的 schema description 同步写明唯一适用场景（可丢弃的并行实验分支）与两条边界（隔离内写不了主仓绝对路径、结果不合回）。②explore 结果此前被包成 ResultPacket JSON 信封投影给父会话（6 个恒空/样板字段白付 token、报告埋在 summary 字符串里吃转义），改纯文本并保留 32KB 字节帽、截断走 UTF-8 字节边界；ResultPacket 删除运行时永远采集不到的占位字段（`changedFiles` 恒 `[]`、`verification` 全部伪造 `not_run`、`toolCalls` 从未上报）——落盘假数据会误导后续审计，宁可没有。顺带如实修正 explore 续跑拒绝文案（旧文案指向不存在的「canonical task packet」机制）。验证：task-runtime 10 pass、parameters 57 pass（快照更新）、opencode typecheck 0 错、check:openapi-drift 一致。决策：`docs/agent-dispatch-plan.md` D1/D3（D2 explore 续跑缓办，待观察追问式续查频率）。
+- **子代理派发守门与 explore 结果去 JSON 信封**（`opencode/src/tool/task.ts`、`task-runtime.ts`）：①explore 配 `isolation:"worktree"` 此前畅通无阻——只读工种配文件隔离，唯一效果是读到过时代码视图、整个子代理 run 白跑，现在参数校验派发即拒、文案写明原因防模型重试；isolation 的 schema description 同步写明唯一适用场景（可丢弃的并行实验分支）与两条边界（隔离内写不了主仓绝对路径、结果不合回）。②explore 结果此前被包成 ResultPacket JSON 信封投影给父会话（6 个恒空/样板字段白付 token、报告埋在 summary 字符串里吃转义），改纯文本并保留 32KB 字节帽、截断走 UTF-8 字节边界；ResultPacket 删除运行时永远采集不到的占位字段（`changedFiles` 恒 `[]`、`verification` 全部伪造 `not_run`、`toolCalls` 从未上报）——落盘假数据会误导后续审计，宁可没有。顺带如实修正 explore 续跑拒绝文案（旧文案指向不存在的「canonical task packet」机制）。验证：task-runtime 10 pass、parameters 57 pass（快照更新）、opencode typecheck 0 错、check:openapi-drift 一致。决策：`docs/plans/agent-dispatch-plan.md` D1/D3（D2 explore 续跑缓办，待观察追问式续查频率）。
 - **429 容量拒绝提示与额度错误分开**（`opencode/src/provider/error.ts`、TUI prompt）：`prefill_cap_refused` 显示为上游预填充容量暂满，仍按瞬时故障重试，不再与套餐额度耗尽混淆；同时修正重试预览超过 80 字符时截断但没有展开入口的问题。详见 `docs/notes/implemented/bug-fix/2026-11-03-subscription-usage-limit-terminal.md`。
 - **修复 GUI「停止生成」必然 500**（`opencode/src/background/store.ts`）：后台任务快照文件名用 `Bun.hash(workspace)`，而 GUI 的 sidecar 是 Node、没有 `Bun` 全局——`BackgroundJob` 的 InstanceState 初始化直接成 defect，取消会话（`SessionRunState.cancel` → `background.cancelTree` → `list`）与后台面板轮询一起返回 `Unexpected server error`。改用 `node:crypto` 的 sha1 前 16 位；测试跑在 Bun 上永远发现不了这个问题，补了 node 侧打包后的读写往返验证。文件名随之改变，旧快照不再被读取（只影响重启后的历史可见性）。验证：opencode typecheck exit 0，background store 7 pass，Node 下 read/write 往返通过。
 - **GUI 里 `github` 工具不再恒报「gh CLI 未安装」**（`opencode/src/tool/github.ts`）：`runGh` 用 `Bun.spawn`，sidecar 是 Node，ReferenceError 被 catch 成 PATH 错误。改用 `node:child_process` + `Readable.toWeb` 保留有界读取；ENOENT 只有异步 `error` 事件（同步 throw 分支抓不到），现在先等 `spawn`/`error` 再读流；超时 kill、512KB 截断、非零退出语义不变。验证：github 工具 16 pass（含真进程超时/截断），node 侧打包后真实 `runGh` 跑正常输出、超时、截断、非零退出、缺 CLI 五条路径。
@@ -480,10 +480,10 @@
 - **Memory V4 正文归属与库级清理口径收口**：项目 MEMORY 保留当前进度摘要、相关教训和工作流索引，完整项目文档按需读取；已有权威文档不再向数据库复制全文，未文档化的独立长期教训仍双写。memory skill 区分日常索引整理与用户授权的完整库清理，不再用「教训一条不删」永久保留失效正文；seed 与本机 skill 同步，不改召回插件或数据库结构。说明与模型可见四问见 [Memory V4](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。后续补「低频深坑迁 docs」索引瘦身口径：MEMORY 只留每轮要被看见的触发器，低频深坑与长状态正文整条迁 `.redcode/docs/<主题>.md` 留指针，只迁不删（redcode 项目实测 6800→3140 字符）。
 - **入口静态依赖预算与隔离启动基准**（`script/check-entry-graphs.ts`、`script/bench-startup.ts`、`.husky/pre-commit`）：用 Bun 导入扫描与按 importer 解析替代 TypeScript 7 中已不可用的旧 compiler API；budget 覆盖 CLI index、Windows job-runner、record utility 三条轻量入口，显式检查静态源码数、forbid 路径和外部依赖。Windows runner guard 顺序与静态依赖分别有门禁；启动基准在隔离 scratch cwd、home、配置与 DB 下以 CLI 数字 marker 和真实 `/global/health` 健康响应判 ready，不读取 live 配置或数据。决策见 [入口启动预算](docs/notes/implemented/architecture/2026-10-26-entry-graph-startup-budgets.md)。
 - **通用工具显示正文输出**（`packages/ui/src/components/basic-tool.tsx`）：没有专用 renderer 的工具（插件工具、自定义工具）此前只显示「called <tool>」一行，正文完全看不到；折叠区现在渲染 output 并带 20000 字符截断，避免一次挂载整段大输出。插件可通过 `ToolResult.view` 提供声明式摘要与分段，宿主映射进 metadata（8KB 上限、超限丢弃），未知 section 类型退回原始 output；决策见 [插件结果展示](docs/notes/implemented/feature/2026-10-26-plugin-tool-view.md)。
-- **Queue/Steer 按钮文案对齐真实调度语义**（`packages/app/src/i18n/zh.ts`、`en.ts`）：原「本条排队 / 本条立即送达」的「立即送达」会被读成打断当前轮，实际 steer 只是在下一个 step 以 reminder 注入进行中的这一轮；改为「轮末排队 / 轮内插话」（en `Next turn` / `Mid-turn`），与设置项既有术语一致。见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
+- **Queue/Steer 按钮文案对齐真实调度语义**（`packages/app/src/i18n/zh.ts`、`en.ts`）：原「本条排队 / 本条立即送达」的「立即送达」会被读成打断当前轮，实际 steer 只是在下一个 step 以 reminder 注入进行中的这一轮；改为「轮末排队 / 轮内插话」（en `Next turn` / `Mid-turn`），与设置项既有术语一致。见 [交互摩擦审计](docs/audits/2026-10-26-interaction-friction-audit.md)。
 - **忙时投递默认统一为插话（steer）**（`packages/app/src/components/prompt-input.tsx`、`prompt-input/submit.ts`）：GUI 本地默认 queue 与服务端 `busy_enter` 默认 steer 不一致，忙时发消息的行为取决于入口；现在 GUI 默认（初始值、忙闲重置、提交后 reset、submit 兜底）全部对齐 steer——忙时插话大多数是调整方向或纠正，进当前轮比排到轮末有用。显式选「轮末排队」不受影响。
-- **健康灯悬停给出异常项摘要**（`packages/app/src/components/status-indicator.tsx`、`titlebar.tsx`）：状态灯此前只有色点，要知道哪一项不对得点开 Status 面板；现在悬停直接按状态拼摘要（服务器连接失败 / MCP 服务异常 / MCP 需要授权 / 事件流重连，异常项排前面，正常时一句话），tooltip 移入 StatusIndicator 与色点共用同一套判定，未初始化显示「获取中」不报失败。数据全部来自已就绪的 store，无新增请求与轮询。见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
-- **模型按钮悬停显示额度或会话消耗**（`packages/app/src/components/prompt-input.tsx`、`session/session-context-summary.ts`）：额度信息此前只在右侧「上下文」tab，看一次要切面板；现在模型按钮悬停第二行直接给出——GPT / GLM Coding Plan 显示窗口占用（格式与 Context tab 同一函数，不漂移），DeepSeek / Step Plan 这类没有 quota API 的供应商回退「本会话已消耗」（父会话 + 子会话的成本桶，¥/$ 分币种显示）；多账号判定不了归属时显示引导文案，不猜单个账号的数字。悬停不产生任何请求，无 schema 改动。见 [交互摩擦审计](docs/2026-10-26-interaction-friction-audit.md)。
+- **健康灯悬停给出异常项摘要**（`packages/app/src/components/status-indicator.tsx`、`titlebar.tsx`）：状态灯此前只有色点，要知道哪一项不对得点开 Status 面板；现在悬停直接按状态拼摘要（服务器连接失败 / MCP 服务异常 / MCP 需要授权 / 事件流重连，异常项排前面，正常时一句话），tooltip 移入 StatusIndicator 与色点共用同一套判定，未初始化显示「获取中」不报失败。数据全部来自已就绪的 store，无新增请求与轮询。见 [交互摩擦审计](docs/audits/2026-10-26-interaction-friction-audit.md)。
+- **模型按钮悬停显示额度或会话消耗**（`packages/app/src/components/prompt-input.tsx`、`session/session-context-summary.ts`）：额度信息此前只在右侧「上下文」tab，看一次要切面板；现在模型按钮悬停第二行直接给出——GPT / GLM Coding Plan 显示窗口占用（格式与 Context tab 同一函数，不漂移），DeepSeek / Step Plan 这类没有 quota API 的供应商回退「本会话已消耗」（父会话 + 子会话的成本桶，¥/$ 分币种显示）；多账号判定不了归属时显示引导文案，不猜单个账号的数字。悬停不产生任何请求，无 schema 改动。见 [交互摩擦审计](docs/audits/2026-10-26-interaction-friction-audit.md)。
 - **接入 GPT-6.1 Terra**（`packages/opencode/src/plugin/codex.ts`）：models.dev 已收录、账号 Codex 目录也已返回 `gpt-6.1-terra`，但订阅白名单仍停在 6.1 Sol，导致新型号在模型列表中被过滤。补白名单并覆盖推理档位与 freeform 兼容测试；源码模型列表已出现标准版、fast、pro，账号后端 high 与 max + priority 请求均返回 200。不改默认模型或全局配置。
 - **修复压缩摘要整块复述到正文并提前结束**（`session/instruction-echo.ts`、`session/processor.ts`）：流式拦截此前只删摘要标题，在第一个 `]` 后重新放行了 `[block:…]`、摘要正文及 `Original …` 原文。整块摘要改为丢弃至当前 text part 结束，仅保存常量锚点、不累积被丢弃正文；短引用标记后正常正文仍保留，下一 text part 重新武装。剥净的空回复走既有一次重试，真实会话循环回放已验证恢复正常回答、无新增压缩。现场只有一次成功原生压缩，所谓第二次是模型复述；证据与边界见 [压缩标记回声](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。
 - **代码规范补充推测性防御边界**（`AGENTS.md`，`2343d02d`）：为理论竞态或安全边界增加复杂度前，先说明具体失败模式、概率和成本并取得确认；内部已由类型或拥有方校验过的值不重复防御，不触发存量代码清理。
@@ -717,7 +717,7 @@
 
 ### [0.12.6] - 2026-10-11
 
-- **explore 子代理获得受限 bash：git 只读子命令白名单**（`packages/opencode/src/agent/definition/{explore,execute}.md`、`src/tool/task.ts`、`test/agent/agent.test.ts`）：explore 此前完全无 bash（运行层 guard 硬 deny；260929 曾试过只加白名单，被 guard 在 findLast 末位掀翻成"假门票"后撤下），git 历史考古（log/blame/show/churn）只能写进报告让调用方代跑。本次 guard 与白名单**同批摘/加**：白名单收口为 `git log/show/diff/blame/rev-parse/ls-files/branch` 七个只读 pattern，未命中即 deny（含 `git push`/`git commit`）；分隔符与 `$(...)` 的安全由 tree-sitter 按命令节点拆分独立授权结构性保证（既有 shell 测试已覆盖）。同时补索引陈旧刷新指引（`indexed_at` 早于会话日期先增量重建再查）、execute.md 补 worktree 隔离场景说明（隔离内写不了主仓、回传不含合并、发现任务不符立即停止）。模型可见四问：① explore 工具表新增 bash（七个 pattern），提示词多处改写；② 固定前缀约 +120 token；③ 前缀从工具表起失效一次属预期；④ 新增内容皆有界。验证：agent/task 测试 71 pass（新增白名单 14 断言）、shell 110 pass、typecheck 绿。决策与批次：`docs/agent-dispatch-plan.md` D4/B1。
+- **explore 子代理获得受限 bash：git 只读子命令白名单**（`packages/opencode/src/agent/definition/{explore,execute}.md`、`src/tool/task.ts`、`test/agent/agent.test.ts`）：explore 此前完全无 bash（运行层 guard 硬 deny；260929 曾试过只加白名单，被 guard 在 findLast 末位掀翻成"假门票"后撤下），git 历史考古（log/blame/show/churn）只能写进报告让调用方代跑。本次 guard 与白名单**同批摘/加**：白名单收口为 `git log/show/diff/blame/rev-parse/ls-files/branch` 七个只读 pattern，未命中即 deny（含 `git push`/`git commit`）；分隔符与 `$(...)` 的安全由 tree-sitter 按命令节点拆分独立授权结构性保证（既有 shell 测试已覆盖）。同时补索引陈旧刷新指引（`indexed_at` 早于会话日期先增量重建再查）、execute.md 补 worktree 隔离场景说明（隔离内写不了主仓、回传不含合并、发现任务不符立即停止）。模型可见四问：① explore 工具表新增 bash（七个 pattern），提示词多处改写；② 固定前缀约 +120 token；③ 前缀从工具表起失效一次属预期；④ 新增内容皆有界。验证：agent/task 测试 71 pass（新增白名单 14 断言）、shell 110 pass、typecheck 绿。决策与批次：`docs/plans/agent-dispatch-plan.md` D4/B1。
 - **GUI 输入框支持压缩包附件**（`packages/app/src/{constants/file-picker.ts,components/prompt-input/{files,attachments,submit}.ts,src/i18n/{zh,en,ja}.ts}`、`packages/opencode/src/provider/transform.ts`）：此前 zip/7z/rar/tar/gz 一律被前端分类器当二进制拒收。现压缩包只在桌面端收——落盘到 `.attachments/`（原始扩展名、沿用现有预算），**绝不作 base64 dataUrl**（不进 localStorage 也不进请求体，规避 OOM 风险面），发送走既有 path 优先链生成 `file://` part；浏览器端无落盘通道时明确 toast 拒绝，不静默降级。服务端把 `file://` 压缩包 part 换成稳定文本占位（含磁盘路径，uuid 固定逐字节一致，前缀缓存安全）——原样透传会被 AI SDK 对非 pdf 的 `application/*` 直接 throw 掉整个请求。mime 与扩展名双判（Windows 资源管理器常报 `x-zip-compressed` 变体）；不自动解压，模型按占位文本里的路径用子代理按需读。测试：app 附件/请求构建 26 pass、opencode transform 244 pass（新增压缩包占位与未知 mime 不扩大面用例）、双包 typecheck 绿。模型可见四问：① 无附件会话零变化；有压缩包时 user 消息内多一段占位文本（路径固定）；② token 增量仅为该占位文本；③ 占位逐字节稳定，缓存从该消息起正常延伸；④ 无新增注入项。
 - **GUI 压缩摘要默认折叠**（`packages/ui/src/components/{message-part.tsx,message-part.css}`）：压缩产物（`summary=true` 的 assistant 消息）此前与普通回复同构全量铺开，几百行文件清单直接糊满聊天区。现对齐思考链折叠模式：默认收起一行「会话已压缩 · 211,595 → 194,059 · 模型 · 耗时」，点击展开全文；token 收益取自同消息 compaction part（`tokens_before/after`），数据不全时整段隐藏。纯展示层。模型可见四问：① 无提示词/工具 schema 改动；② token 零增量；③ 前缀缓存不受影响；④ 无新增注入项。
 
@@ -1554,7 +1554,7 @@
 
   **顺带**：`from === to` 直接给空 diff，不再起 2 个 git 进程去证明恒等式。
 
-  验证：`capPatches` 4 条（不超限原样返回 / 最大优先清空 / 连清多个 / 按字节不按码元）、`diff({patch:false})` 去正文留元数据、`Session.remove` 删文件、TUI sync 断言改成「只请求不带正文的那种」；summary-snapshot-parts / snapshot-tool-race / snapshot / httpapi-session 全过；`revert-compact` 那两条红是基线就红的存量（stash 对照过，`docs/agent-roles-plan.md` 也记着）；opencode + sdk typecheck 干净。live 上跑了一次 sweep：615 → 437 个文件。**未做的**：UI 对被清空的 patch 没有专门提示（展开就是空 diff，与超大文件今天的表现一致）；4MB 会话级上限会让「大会话 review 面板里最大的几个文件没正文」，要提示得动 `FileDiff` schema，本批不做。
+  验证：`capPatches` 4 条（不超限原样返回 / 最大优先清空 / 连清多个 / 按字节不按码元）、`diff({patch:false})` 去正文留元数据、`Session.remove` 删文件、TUI sync 断言改成「只请求不带正文的那种」；summary-snapshot-parts / snapshot-tool-race / snapshot / httpapi-session 全过；`revert-compact` 那两条红是基线就红的存量（stash 对照过，`docs/plans/agent-roles-plan.md` 也记着）；opencode + sdk typecheck 干净。live 上跑了一次 sweep：615 → 437 个文件。**未做的**：UI 对被清空的 patch 没有专门提示（展开就是空 diff，与超大文件今天的表现一致）；4MB 会话级上限会让「大会话 review 面板里最大的几个文件没正文」，要提示得动 `FileDiff` schema，本批不做。
 
 ### [0.10.14] - 2026-09-04
 
@@ -1751,7 +1751,7 @@
 
 ### [0.10.9] - 2026-09-03
 
-> deepseek-harness 第五轮反哺（上游 08-31 后新增 341 提交）。扫完只有三条真缺口——其余候选全被本仓已有的东西挡掉，逐条核实的记录在 `docs/dsh-adoption-plan.md`。
+> deepseek-harness 第五轮反哺（上游 08-31 后新增 341 提交）。扫完只有三条真缺口——其余候选全被本仓已有的东西挡掉，逐条核实的记录在 `docs/plans/dsh-adoption-plan.md`。
 
 - **工具读到的图片直接画在卡片里**（`packages/ui/src/components/message-part.tsx`）：`tool/read.ts` 读图时早就返回 `attachments: [{type:"file", mime, url:"data:..."}]`，`processor.ts` 写进 `part.state.attachments`，SDK 的 `ToolStateCompleted.attachments` 也一路带到了客户端——**生产者和管道一直都在，缺的只是渲染器**。客户端唯一消费 attachments 的地方是用户消息那条路，工具卡片只显示一行 "Image read successfully"：模型看得见图，用户看不见。查本机 live 库确认过，`part` 表里已有 14 条带 `image/png` 附件的记录。
 
@@ -2190,7 +2190,7 @@
 
 - **web 的 `agents.mdx` 三语同步**（`packages/web`）：内建清单（Build/Plan + General/Explore/Scout → RedMind/Plan + Explore/Execute）、Explore 的三段职能、Execute、「老名字」一节（写明别名**长期保留**、不承诺过渡后删除）、JSON 一节改成「只能覆写或禁用已存在的角色」、`@general` → `@explore`。**不改 `Share.tsx`**：它那两处 `agent: "build"` 在 v1→v2 消息迁移里给**历史**共享会话补字段，那些消息当年确实跑在 build 上，如实记录历史不是活引用，改成 redmind 反而是篡改。
 - **`customize-redcode.md` 两处硬错**（`skill/prompt/`）：escape hatches 一节的七个环境变量写成 `OPENCODE_` 前缀，逐条对着 `flag.ts` 与 `runtime-flags.ts` 验过，引擎只认 `REDCODE_`，一个都不认；全局路径表写 `~/.config/redcode/` 还特意标注「NOT `~/.redcode/`」，而本 fork 的 `core/global.ts` 把 XDG 目录统一到了 `~/.redcode`（`config: () => root()`），**标反了**。这是进模型上下文的提示词，说错直接误导模型给用户错命令。
-- **`docs/agent-roles-plan.md`** 补到修正十六，迁移步骤 1~6 与八条独立项全部标注落地。
+- **`docs/plans/agent-roles-plan.md`** 补到修正十六，迁移步骤 1~6 与八条独立项全部标注落地。
 
 ---
 
@@ -2421,7 +2421,7 @@
 
 #### 文档
 
-- **五个 v2 空壳端点标 deprecated**（`docs/parallel-systems-plan.md`、`sdk.gen.ts`、`openapi.json`），记下删除前必读的地雷。
+- **五个 v2 空壳端点标 deprecated**（`docs/plans/parallel-systems-plan.md`、`sdk.gen.ts`、`openapi.json`），记下删除前必读的地雷。
 - **seed 模板同步**：opencode 白名单、解除禁用、vision 双路径、fixer 观察期注释、browsermcp 残留清理。
 - **help 快照测试基线**：34 条 key 停在 opencode 时代、doctor 不在名单里——快照从没比对过基线，补上。
 
@@ -2453,7 +2453,7 @@
 
 #### 文档
 
-- **`docs/parallel-systems-plan.md` 的「记下防复述」里有一句是错的**：「/v2 路由组不在 openapi 里，SDK 没有对应方法，客户端无法调用」。实测 openapi.json 里有 9 个 `v2.*` 操作，SDK 也照常生成了 `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`）。成立的只有「没有客户端在**调用**」——零调用方不是零能力。这条写在防复述段落里，反而成了最容易被复述的错误。同时记入后续事实：`GET /api/session/:id/context` 已确认是空壳（摘除双写后 `session_message` 表只剩 `model-switched` / `agent-switched` 两类行，实测 live 库 782 行里一条对话都没有），其去留仍未决。
+- **`docs/plans/parallel-systems-plan.md` 的「记下防复述」里有一句是错的**：「/v2 路由组不在 openapi 里，SDK 没有对应方法，客户端无法调用」。实测 openapi.json 里有 9 个 `v2.*` 操作，SDK 也照常生成了 `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`）。成立的只有「没有客户端在**调用**」——零调用方不是零能力。这条写在防复述段落里，反而成了最容易被复述的错误。同时记入后续事实：`GET /api/session/:id/context` 已确认是空壳（摘除双写后 `session_message` 表只剩 `model-switched` / `agent-switched` 两类行，实测 live 库 782 行里一条对话都没有），其去留仍未决。
 
 - **`AGENTS.md` 的 SDK 重新生成指令不完整**：`./packages/sdk/js/script/build.ts` 自己也会生成一份 openapi，但落在 `packages/sdk/js/` 下当临时输入、末尾 `rm` 掉，**不碰仓库里那份 `packages/sdk/openapi.json`**。改成两条命令并注明别跑 `script/generate.ts` 整脚本（最后一步是 prettier 全仓 `--write`）。
 
@@ -2594,7 +2594,7 @@
 
 ### [0.8.17] - 2026-08-14
 
-> DSH 采纳第一批落地：重复调用递进提醒软层、工具级 cooperative 超时、繁忙时插话/排队可选（stall nudge 随之退役）、压缩摘要截断保尾；决策记录制度（`docs/notes/`）与采纳路线图（`docs/dsh-adoption-plan.md`）建制。
+> DSH 采纳第一批落地：重复调用递进提醒软层、工具级 cooperative 超时、繁忙时插话/排队可选（stall nudge 随之退役）、压缩摘要截断保尾；决策记录制度（`docs/notes/`）与采纳路线图（`docs/plans/dsh-adoption-plan.md`）建制。
 
 #### 新增
 
@@ -2611,7 +2611,7 @@
 #### 文档与制度
 
 - **决策记录制度落地**（`docs/notes/`，引自 DSH `.agents/notes/` 四态实践）：非平凡改动同 commit 附 note，写/查/链三向规则入 AGENTS.md；notes 记 why、CHANGELOG 记 what、agent memory 记协作层。
-- **DSH 采纳路线图**（`docs/dsh-adoption-plan.md`）：权威底本，已落地/二三批/记账区分层，保留特色明确不搬清单（毛玻璃/中文/多模型/Effect）。
+- **DSH 采纳路线图**（`docs/plans/dsh-adoption-plan.md`）：权威底本，已落地/二三批/记账区分层，保留特色明确不搬清单（毛玻璃/中文/多模型/Effect）。
 - **测试纪律入规**（AGENTS.md）：证据面匹配、永不默认全量（260810 事故制度化）；带包脚本超时 `--timeout 30000`（260808 在案 260814 复踩后补）。
 - **升版流程适配单一版本线**：`bump-version` skill 重写（不问 scope、15 包同号、合并线区域插条目、体检必跑）。
 

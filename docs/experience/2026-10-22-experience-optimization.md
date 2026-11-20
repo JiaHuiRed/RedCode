@@ -8,7 +8,7 @@
 - 用户目标：打开 TUI/GUI 后更早开始操作，文字输出和会话切换更流畅，首页第一眼更清晰、美观。
 - 方法：在 RC21 修复之后重新核对启动、渲染和布局源码，结合已有性能记录筛选切入点。本轮未启动或重启用户程序，未修改产品代码。
 
-此前的 [第三方审计](2026-10-21-third-party-audit.md) 重点是正确性、资源上限与恢复能力。本轮聚焦用户能直接感知的体验，候选收益仍需通过同条件对比确认，不承诺尚未测得的提速比例。
+此前的 [第三方审计](../audits/2026-10-21-third-party-audit.md) 重点是正确性、资源上限与恢复能力。本轮聚焦用户能直接感知的体验，候选收益仍需通过同条件对比确认，不承诺尚未测得的提速比例。
 
 ## 推荐顺序
 
@@ -27,9 +27,9 @@
 
 ### 当前机制
 
-- [sync.tsx:518](../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L518) 启动时立即请求 `provider.list`。
-- [sync.tsx:527](../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L527) 把它列为阻塞请求；随后与已连接模型、Agent、配置等结果一起等待和写入状态。
-- 全目录保存在 `provider_next`，其业务消费位于 [供应商弹窗](../packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx#L114)。普通聊天所需的已连接供应商已有单独的 `config.providers` 来源。
+- [sync.tsx:518](../../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L518) 启动时立即请求 `provider.list`。
+- [sync.tsx:527](../../packages/opencode/src/cli/cmd/tui/context/sync.tsx#L527) 把它列为阻塞请求；随后与已连接模型、Agent、配置等结果一起等待和写入状态。
+- 全目录保存在 `provider_next`，其业务消费位于 [供应商弹窗](../../packages/opencode/src/cli/cmd/tui/component/dialog-provider.tsx#L114)。普通聊天所需的已连接供应商已有单独的 `config.providers` 来源。
 
 因此，全目录的处理、传输及前端接收可能延后必要数据发布，即使用户并不打算打开供应商弹窗。机制已经确认；当前缺少从启动到首次可发送的完整计时，不能据此直接承诺节省多少秒。
 
@@ -53,7 +53,7 @@
 
 ### 当前机制
 
-[PacedMarkdown](../packages/ui/src/components/message-part.tsx#L170) 的提交间隔为：
+[PacedMarkdown](../../packages/ui/src/components/message-part.tsx#L170) 的提交间隔为：
 
 ```ts
 Math.max(120, renderMs * 1.5)
@@ -61,9 +61,9 @@ Math.max(120, renderMs * 1.5)
 
 最低 120ms 意味着内容提交频率最多约 8.3 次/秒。对于快速、连续到达的模型输出，这个门槛可能让文字表现为一截一截更新。
 
-底层已经实现分块 DOM 更新与稳定前缀增量处理，见 [Markdown 渲染决策及 2026-10-20 更新](notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md)。上层刷新节奏值得在当前实现上重新校准，不能继续用旧版全文解析成本直接推导刷新预算。
+底层已经实现分块 DOM 更新与稳定前缀增量处理，见 [Markdown 渲染决策及 2026-10-20 更新](../notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md)。上层刷新节奏值得在当前实现上重新校准，不能继续用旧版全文解析成本直接推导刷新预算。
 
-[当前 renderMs 的测量](../packages/ui/src/components/message-part.tsx#L197) 是提交到下一次 rAF 的间隔，不等于异步 Markdown 完成解析、清洗与 DOM 更新的真实成本。既有合成预处理基准也不包含完整界面渲染，不能直接当作整帧耗时。
+[当前 renderMs 的测量](../../packages/ui/src/components/message-part.tsx#L197) 是提交到下一次 rAF 的间隔，不等于异步 Markdown 完成解析、清洗与 DOM 更新的真实成本。既有合成预处理基准也不包含完整界面渲染，不能直接当作整帧耗时。
 
 ### 建议方案
 
@@ -83,9 +83,9 @@ Math.max(120, renderMs * 1.5)
 
 ### 当前机制
 
-- [HomeUsagePanel](../packages/app/src/pages/home-usage.tsx#L277) 每次挂载默认 `collapsed: false`。
-- [USAGE_SURFACE](../packages/app/src/pages/home-usage.tsx#L214) 在宽屏固定占 620px。
-- [首页布局](../packages/app/src/pages/home.tsx#L375) 将统计放在会话区前方：宽屏并排、较窄窗口堆在上方。
+- [HomeUsagePanel](../../packages/app/src/pages/home-usage.tsx#L277) 每次挂载默认 `collapsed: false`。
+- [USAGE_SURFACE](../../packages/app/src/pages/home-usage.tsx#L214) 在宽屏固定占 620px。
+- [首页布局](../../packages/app/src/pages/home.tsx#L375) 将统计放在会话区前方：宽屏并排、较窄窗口堆在上方。
 
 因此，打开首页时大量空间分配给统计详情，会话标题、卡片和主操作的空间受到挤压。现有组件已经有折叠、骨架及旧数据保留机制，优化重点是默认层级、宽度和操作入口。
 
@@ -113,9 +113,9 @@ Math.max(120, renderMs * 1.5)
 
 ### 当前机制与证据边界
 
-- [强制模式预算](../packages/app/src/pages/session/message-timeline.tsx#L1004) 为 90 次。
-- [强制模式](../packages/app/src/pages/session/message-timeline.tsx#L1097) 不采用普通模式的沉降提前退出。
-- [隔帧调度](../packages/app/src/pages/session/message-timeline.tsx#L1111) 使每次纠偏之间跨过两个 rAF；每次底部锚定涉及高度读取和滚动位置写入。
+- [强制模式预算](../../packages/app/src/pages/session/message-timeline.tsx#L1004) 为 90 次。
+- [强制模式](../../packages/app/src/pages/session/message-timeline.tsx#L1097) 不采用普通模式的沉降提前退出。
+- [隔帧调度](../../packages/app/src/pages/session/message-timeline.tsx#L1111) 使每次纠偏之间跨过两个 rAF；每次底部锚定涉及高度读取和滚动位置写入。
 
 在 60Hz 条件下，完整预算大致覆盖约 3 秒，但不等于主线程被阻塞 3 秒，也不能把全部入场时间归因于这个循环。现有策略用于应对虚拟列表尚未完成行高实测的问题，直接减少次数可能重新出现落在历史中间的回归。
 

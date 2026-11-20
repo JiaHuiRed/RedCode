@@ -75,10 +75,10 @@
 
 | 位置                                                                     | 引用的文件                                                             | 事实                                                                                                                                                                                     |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/dsh-adoption-plan.md:5`、`docs/parallel-systems-plan.md:3`、`:197` | `tauri-migration-plan.md`                                              | 全仓不存在（`git ls-files` 零命中）                                                                                                                                                      |
-| `docs/parallel-systems-plan.md:93`、`:100`、`:107`                       | `provider-parity-checklist.md` / `src/v2/provider-parity-checklist.md` | 全仓不存在                                                                                                                                                                               |
-| `docs/agent-roles-plan.md:106`                                           | `seed/agent/plan.md`                                                   | `seed/agent/` 目录已撤（260828 起不播种 agent）                                                                                                                                          |
-| ~~`docs/agent-roles-plan.md:370`~~                                       | `src/agent/definition/execute.md`                                      | **误报，不改**：该文档内部同时使用 `src/...`（相对 `packages/opencode`）与 `packages/opencode/src/...` 两种写法（前者如 `agent/agent.ts`、`session/llm.ts`），此处与前者一致，不构成错误 |
+| `docs/plans/dsh-adoption-plan.md:5`、`docs/plans/parallel-systems-plan.md:3`、`:197` | `tauri-migration-plan.md`                                              | 全仓不存在（`git ls-files` 零命中）                                                                                                                                                      |
+| `docs/plans/parallel-systems-plan.md:93`、`:100`、`:107`                       | `provider-parity-checklist.md` / `src/v2/provider-parity-checklist.md` | 全仓不存在                                                                                                                                                                               |
+| `docs/plans/agent-roles-plan.md:106`                                           | `seed/agent/plan.md`                                                   | `seed/agent/` 目录已撤（260828 起不播种 agent）                                                                                                                                          |
+| ~~`docs/plans/agent-roles-plan.md:370`~~                                       | `src/agent/definition/execute.md`                                      | **误报，不改**：该文档内部同时使用 `src/...`（相对 `packages/opencode`）与 `packages/opencode/src/...` 两种写法（前者如 `agent/agent.ts`、`session/llm.ts`），此处与前者一致，不构成错误 |
 
 - **性质**：这几份是「权威底本」类文档，被 `sync-home.bat` 注释和彼此互相引用。指向不存在的文件会让后来者以为丢了东西。
 - **建议**：历史文档按 `docs/notes/README.md` 的四态规则处理——若已落定，挪 `archived/`（冻结、不再引为现行权威）；若还要留，把死引用改成「原计划文件名（已移除）」并说明。
@@ -201,10 +201,10 @@
 
 ### 批次 3：docs 历史文档死引用（A8–A10）
 
-- `docs/dsh-adoption-plan.md:5`、`docs/parallel-systems-plan.md:3`、`:197`：`tauri-migration-plan.md` 标注「已从仓库移除」。
-- `docs/parallel-systems-plan.md:93`、`:100`：`provider-parity-checklist.md` 标注「已移除」。
-- `docs/agent-roles-plan.md:106`：`seed/agent/plan.md` 标注「`seed/agent/` 目录已撤」。
-- `docs/agent-roles-plan.md:370`：**误报，未改**（见 A8 表末行）。
+- `docs/plans/dsh-adoption-plan.md:5`、`docs/plans/parallel-systems-plan.md:3`、`:197`：`tauri-migration-plan.md` 标注「已从仓库移除」。
+- `docs/plans/parallel-systems-plan.md:93`、`:100`：`provider-parity-checklist.md` 标注「已移除」。
+- `docs/plans/agent-roles-plan.md:106`：`seed/agent/plan.md` 标注「`seed/agent/` 目录已撤」。
+- `docs/plans/agent-roles-plan.md:370`：**误报，未改**（见 A8 表末行）。
 - `docs/plans/computer-use-proposal.md:5`：删掉本机绝对路径 `E:\dwonload\...`，改为「原始 review 为维护者本机的外部文件，未随仓库分发」。
 - `docs/notes/README.md:20`：主题子目录清单补 `refactor/`、`testing/`，并改为「按需增删」。
 
@@ -216,7 +216,7 @@
 ### 验证
 
 - 相对链接 / 锚点全量重跑：**0 问题**（含新加的 `#21-添加-ai-模型`、`#52-选择-soul`）。
-- `bunx prettier --check`：`MANUAL.md`、`docs/parallel-systems-plan.md` 原本规范、被我改乱后已 prettier 复位；`README.md` / `README.en.md` 在 HEAD 上本就不规范（「核心能力」表列宽，与本轮无关），**故意不跑 prettier**，以免制造无关 diff。
+- `bunx prettier --check`：`MANUAL.md`、`docs/plans/parallel-systems-plan.md` 原本规范、被我改乱后已 prettier 复位；`README.md` / `README.en.md` 在 HEAD 上本就不规范（「核心能力」表列宽，与本轮无关），**故意不跑 prettier**，以免制造无关 diff。
 
 ### 仍未动（批次 5，需先拍板）
 

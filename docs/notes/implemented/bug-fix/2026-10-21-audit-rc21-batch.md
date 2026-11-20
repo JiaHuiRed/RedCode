@@ -2,7 +2,7 @@
 
 状态:implemented
 
-审计原文：`docs/2026-10-21-third-party-audit.md`（基准 `a191033a`）。本 note 只记这四项的取舍；
+审计原文：`docs/audits/2026-10-21-third-party-audit.md`（基准 `a191033a`）。本 note 只记这四项的取舍；
 RC21-01（退役配置迁移）随后单独完成，见 `2026-10-21-config-retired-migration.md`；
 RC21-06（sidecar 恢复所有权）、RC21-07（WSL 同步等待）仍未动。
 

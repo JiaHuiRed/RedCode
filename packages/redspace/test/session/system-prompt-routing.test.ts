@@ -25,7 +25,7 @@ describe("system prompt routing", () => {
 
   test("GPT 系走 default.md + gpt.md", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT, PROMPT_WORKING_STYLE])
-    // 261111 Red 逐句自我审查与强制结果开场已删（docs/2026-11-11-prompt-revision-proposal.md §4），
+    // 261111 Red 逐句自我审查与强制结果开场已删（docs/prompt/2026-11-11-prompt-revision-proposal.md §4），
     // 这里只钉保留下来的四项行为纠偏。
     expect(PROMPT_GPT).toContain("Prefer the smallest complete solution")
     expect(PROMPT_GPT).toContain("Reuse successful checks unless changed state invalidates them")

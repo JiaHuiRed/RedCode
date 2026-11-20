@@ -480,7 +480,7 @@ export type Info = DeepMutable<Schema.Schema.Type<typeof Info>> & {
   plugin_origins?: ConfigPlugin.Origin[]
   // 260828 cc 同样是派生状态：哪些 agent 条目是从 `agent/*.md` 文件来的。md 与 jsonc 的 `agent.<name>`
   // 落进同一个 `agent` 记录，光看值分不出来源，而这两者的**权力不一样**：md 文件可以定义一个新角色，
-  // jsonc 只能覆写/禁用已存在的（见 docs/agent-roles-plan.md 第 6 步）。Agent 服务靠这张名单区分。
+  // jsonc 只能覆写/禁用已存在的（见 docs/plans/agent-roles-plan.md 第 6 步）。Agent 服务靠这张名单区分。
   agent_origins?: string[]
 }
 

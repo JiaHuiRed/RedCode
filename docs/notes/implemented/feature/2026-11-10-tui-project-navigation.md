@@ -4,7 +4,7 @@
 
 ## 问题
 
-启动选择器只能在 Renderer 启动前选择目录；SDK、草稿与插件 API 绑定启动项目，不能通过修改标题或反复 `process.chdir()` 实现运行中的跨项目切换。实施依据为 `docs/2026-11-10-tui-multi-project-workspace-switch.md`，源码核对基线为 `5ec4e376`。
+启动选择器只能在 Renderer 启动前选择目录；SDK、草稿与插件 API 绑定启动项目，不能通过修改标题或反复 `process.chdir()` 实现运行中的跨项目切换。实施依据为 `docs/audits/2026-11-10-tui-multi-project-workspace-switch.md`，源码核对基线为 `5ec4e376`。
 
 ## 决策
 

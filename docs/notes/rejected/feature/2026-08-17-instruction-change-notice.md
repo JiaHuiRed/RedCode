@@ -36,5 +36,5 @@ DSH agent-instructions 在会话进行中指令文件变化时，给模型注入
 ## 后果
 
 - commit 19b2bed 整体回退（revert），prompt.ts 检测块/通知注入/diffInstructionNotice 及 5 个测试全部移除。
-- `docs/dsh-adoption-plan.md` 勾选项改回并注明回退。
+- `docs/plans/dsh-adoption-plan.md` 勾选项改回并注明回退。
 - 未来若重做：通知形态必须持久化（变化后每轮都带，或走 user 消息且进 msgPin），不能是"只出现一轮"的一次性尾巴。
