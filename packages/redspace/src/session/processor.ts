@@ -1373,14 +1373,16 @@ export const layer = Layer.effect(
             const part = match.part
             const end = Date.now()
             const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+            // 261120 Red task 工具同步模式被中断时拼上子会话句柄，避免盲目重派。
+            const childHint = interruptedChildHint(metadata)
             yield* session.updatePart({
               ...part,
               state: {
                 ...part.state,
                 status: "error",
-                error: stopped
+                error: `${stopped
                   ? `${interruptedText}（第 ${interruptCount}/${interruptLimit} 次中断；达到上限，停止本轮自动续跑）`
-                  : `${interruptedText}（第 ${interruptCount}/${interruptLimit} 次中断；达到上限将停止本轮自动续跑）`,
+                  : `${interruptedText}（第 ${interruptCount}/${interruptLimit} 次中断；达到上限将停止本轮自动续跑）`}${childHint}`,
                 metadata: {
                   ...metadata,
                   interrupted: true,
@@ -1718,6 +1720,15 @@ export const defaultLayer = Layer.suspend(() =>
 // 决策：docs/notes/implemented/feature/2026-11-12-mcp-image-trust-tiering.md
 export function shouldNormalizeToolImage(attachment: { mime: string; metadata?: Record<string, unknown> }) {
   return attachment.mime.startsWith("image/") && attachment.metadata?.trust !== "untrusted"
+}
+
+// 261120 Red task 工具同步模式被中断时，子会话已创建并可能干了活，但调用方拿不到
+// 句柄就会盲目重派（当日 8 个 execute 子代理短命会话的根因）。task.ts 早把 sessionId
+// 写进 part metadata，这里据此拼出句柄与查询指引；非 task 工具（无 sessionId）返回空串。
+export function interruptedChildHint(metadata: Record<string, unknown>) {
+  return typeof metadata.sessionId === "string"
+    ? ` 子会话 ${metadata.sessionId} 已创建；用 task_status(task_id) 查其状态与结果，不要盲目重派。`
+    : ""
 }
 
 export * as SessionProcessor from "./processor"

@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { expect } from "bun:test"
+import { expect, test } from "bun:test"
 import { tool } from "ai"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
@@ -2029,3 +2029,12 @@ it.live("session.processor effect tests stall-cuts a reasoning-only stream", () 
     { config: (url) => providerCfg(url, { reasoningStall: { maxChars: 30_001 } }) },
   ),
 )
+
+// 261120 Red task 同步中断句柄提示：只有带 sessionId 的 part 才拼指引，其余工具不受影响。
+test("interruptedChildHint adds task_status pointer only when child session id is present", () => {
+  const hint = SessionProcessor.interruptedChildHint({ sessionId: "ses_child_123", parentSessionId: "ses_parent" })
+  expect(hint).toContain("ses_child_123")
+  expect(hint).toContain("task_status")
+  expect(SessionProcessor.interruptedChildHint({ source: "test" })).toBe("")
+  expect(SessionProcessor.interruptedChildHint({})).toBe("")
+})
