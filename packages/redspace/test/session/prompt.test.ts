@@ -67,6 +67,7 @@ import { Soul } from "@/soul"
 import { Companion } from "@/companion/companion"
 import { Commitment } from "@/companion/commitment"
 import CONVERSATION from "@/session/prompt/conversation.md" with { type: "text" }
+import CHAT_PROMPT from "@/session/prompt/chat.md" with { type: "text" }
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
 import { runSteerableTask, steerTask, steerTaskFromUser, TaskTool, type TaskPromptOps } from "@/tool/task"
@@ -1153,8 +1154,10 @@ it.live("companion Chat recalls history, selectively saves a memory, and keeps C
         const requests = yield* llm.inputs
         const prefix = (requests[0].messages as { role: string; content: string }[])[0]
         expect(prefix.role).toBe("system")
-        expect(prefix.content).toContain(CONVERSATION)
-        expect(prefix.content.split(CONVERSATION)).toHaveLength(2)
+        // 261120 Red Chat 最小前缀：主 Chat 不再注入共享交流契约，规则收敛到 chat.md。
+        // docs/notes/implemented/architecture/2026-11-20-companion-prefix-v3.md
+        expect(prefix.content).not.toContain(CONVERSATION)
+        expect(prefix.content.split(CHAT_PROMPT)).toHaveLength(2)
         expect(prefix.content).not.toContain("Search: query and limit")
         expect(JSON.stringify(requests[0].tools)).toContain("then read the needed source lines")
         for (const request of requests.slice(1, 4)) {
