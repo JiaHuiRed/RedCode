@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **Chat 固定前缀降到 V3.0 最小基线**：`chat.md` 从七段技术契约收敛为两段行为边界加两句回复纪律（只描述真实存在的能力、不把心里推演写进回复）；`companion-agents.md` 按 A3 只留家、记忆位置与交接 Code，删掉 `Waking up`/`Company`/`Work` 行为脚本；绑定主 Chat 不再注入共享交流契约 `conversation.md` 与 `WORK_RULES`。模型可见四问：Chat 侧替换 `chat.md` 与伙伴 AGENTS 两段、删掉共享契约与 WORK RULES，Code 与子任务逐字节不变；净减约 4,267 字节（实测口径约 1.2K token/轮，两版缓存命中均 98% 以上）；仅绑定主 Chat 从 `chat.md` 起前缀作废一次；`chat.md` 与伙伴 AGENTS 仍受固定源码大小与 16 KiB 覆盖上限约束。依据是一轮 36 次真实供应商请求的盲读回放，用户判定多数场景更喜欢最小版，rate 与发群两处补了能力真实性一句。验证：redspace typecheck 通过，`companion-context` 3 pass，注入登记表 42 项有效。详见 [V3 最小前缀决策](docs/notes/implemented/architecture/2026-11-20-companion-prefix-v3.md)。
+
 ### [0.19.5] - 2026-11-20
 
 - **Chat 伙伴专属 AGENTS**：Chat 主会话不再读取全局/项目工程 `AGENTS.md` 与工程 `MEMORY.md`，改为注入唯一一份 `session/prompt/companion-agents.md`——伙伴自己的「家规」，写记忆、陪伴分寸、轻干活与安全边界；支持 `~/.redcode/companion-agents.md` 用户覆盖（非空且不超过 16 KiB 时生效，否则回退内置）；`chat.md` 同步删掉与伙伴 AGENTS 重叠的陪伴/日记段落，只保留 Chat 模式契约。Code 仍读原有的两份 AGENTS 与工程 MEMORY，两条路径互不影响。模型可见四问：Chat 固定前缀移除全局工程 AGENTS（本机约 2.1K token）、新增伙伴 AGENTS（约 0.4K token），净减约 1.7K；Code 前缀逐字节不变；仅绑定伙伴的主 Chat 按 `personalChat` 条件注入，会话缓存内稳定；内置文件与覆盖文件均受 16 KiB 上限约束，超限回退并告警。验证：typecheck 通过，instruction 单测 42 pass（含新增「`agents:false` 同时挡掉 AGENTS/MEMORY」用例），注入登记表自检 40 项全部有效。详见 [伙伴 AGENTS 决策](docs/notes/implemented/architecture/2026-11-20-companion-agents.md)。

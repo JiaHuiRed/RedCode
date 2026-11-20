@@ -2340,7 +2340,9 @@ export const layer = Layer.effect(
             // 261117 Red 主会话共享相处契约，身份仍只取绑定 Soul；工具循环不重复追加。
             // docs/notes/implemented/architecture/2026-11-17-soul-conversation-continuity.md
             // injection-registry: conversation-contract
-            ...(!stepSettings.session.parentID ? [CONVERSATION] : []),
+            // 261120 Red Chat 最小前缀：绑定主 Chat 不再注入共享交流契约，规则收敛到 chat.md。
+            // docs/notes/implemented/architecture/2026-11-20-companion-prefix-v3.md
+            ...(personalChat || stepSettings.session.parentID ? [] : [CONVERSATION]),
             ...(companion ? [companion] : []),
             ...(mcpGuide ? [mcpGuide] : []),
             ...(skills ? [skills] : []),
@@ -2362,8 +2364,10 @@ export const layer = Layer.effect(
           // 事实准确职责）与 #2 两次失败转向（owner: 全局 AGENTS 连续失败规则 + diagnose skill）
           // 移出运行时；#3 保留意图改写为「尊重用户对任务的控制权」。261112 三家族 × 7 用例
           // A/B（prompt-eval --runtime，基线/候选各一轮）实证后统一收敛，结果见台账。
+          // 261120 Red Chat 最小前缀：工程工作规则不进伙伴主 Chat（V3.0 §5）。
+          // docs/notes/implemented/architecture/2026-11-20-companion-prefix-v3.md
           // injection-registry: work-rules
-          system.push(WORK_RULES)
+          if (!personalChat) system.push(WORK_RULES)
           // 260929 Red 收窄到 step-3.x：铁律本是 step-3.7-flash 实测坑（无视 compress nudge
           // 不调用 compress）；step-5-preview 指令遵循已跟上，1M 窗口 + DCP 新线
           // （min 140k / max 220k）下不需要 MUST 级压迫，absoluteNudge 16k 收益档兜底。

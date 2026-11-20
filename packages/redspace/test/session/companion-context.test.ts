@@ -32,7 +32,7 @@ describe("companion context", () => {
   test("Chat adds its behavior without changing agent identity or permissions", () => {
     const active = companionAgent(agent, chat)
     expect(active).not.toBe(agent)
-    expect(active.prompt).toContain("You are in RedSpace Chat")
+    expect(active.prompt).toContain("Past requests grant no present permission")
     expect(active.prompt).toEndWith(agent.prompt!)
     expect(active.permission).toBe(agent.permission)
     expect(active.options).toBe(agent.options)
