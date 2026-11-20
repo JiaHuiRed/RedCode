@@ -1,10 +1,9 @@
 import { createStore, produce } from "solid-js/store"
 import {
-  applyPetEvent,
+  applyDirectoryPetEvent,
   beginPetBootstrap,
   createPetState,
   finishPetBootstrap,
-  recordPetBootstrapEvent,
   settlePetBootstrap as settlePetBootstrapState,
   type PetEvent,
   type PetState,
@@ -21,18 +20,7 @@ export function petState() {
 /** server-sync 事件流唯一入口。所有事件（global 与 directory 级）都可喂入，reducer 自行过滤。 */
 export function feedPetEvent(event: PetEvent, directory: string) {
   const now = Date.now()
-  setState(
-    produce((draft) => {
-      applyPetEvent(draft, event, now)
-      recordPetBootstrapEvent(draft, directory, event)
-      const props = (event.properties ?? {}) as { sessionID?: string; part?: { sessionID?: string } }
-      const id = props.sessionID ?? props.part?.sessionID
-      if (!id) return
-      if (draft.flash?.sessionID === id && draft.flash.at === now) draft.flash.directory = directory
-      if (draft.sessions[id] || draft.blockers[id]) draft.owners[id] = directory
-      else delete draft.owners[id]
-    }),
-  )
+  setState(produce((draft) => applyDirectoryPetEvent(draft, event, directory, now)))
 }
 
 export function startPetBootstrap(directory: string) {

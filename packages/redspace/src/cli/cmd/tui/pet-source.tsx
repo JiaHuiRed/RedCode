@@ -1,9 +1,17 @@
 import { createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
+import { createStore, produce } from "solid-js/store"
 import * as Log from "@redcode-ai/core/util/log"
 import { createPetHostClient } from "@redcode-ai/ui/pet-host-client"
 import { resolvePetBehavior } from "@redcode-ai/ui/pet-lines"
-import { feedPetEvent, petState } from "@redcode-ai/ui/pet-store"
-import { outfitFor, resolvePet, resolveSessionPet } from "@redcode-ai/ui/pet-state"
+import {
+  applyDirectoryPetEvent,
+  createPetState,
+  outfitFor,
+  resolvePet,
+  resolveSessionPet,
+  type PetEvent,
+  type PetState,
+} from "@redcode-ai/ui/pet-state"
 import { projectDirectoryKey } from "./context/project-navigation"
 import { useRoute } from "./context/route"
 import { useSDK } from "./context/sdk"
@@ -18,6 +26,21 @@ import { useSync } from "./context/sync"
 const log = Log.create({ service: "tui.pet" })
 
 const behavior = resolvePetBehavior()
+
+// 261120 Red TUI 用自己的 Solid 运行时持有桌宠状态：共用 store（@redcode-ai/ui/pet-store）
+// 会再从 ui 包加载 catalog 的 solid-js（TUI 锁 1.9.14），启动时打 duplicate-instances 警告。
+// 规则仍走 pet-state 纯函数，与桌面端同口径；store 放模块级，切工作区重挂载不丢会话状态。
+// 决策 → docs/plans/2026-11-20-redspace-tui-solid-fix.md
+const [petStore, setPetStore] = createStore<PetState>(createPetState())
+
+function petState() {
+  return petStore
+}
+
+function feedPetEvent(event: PetEvent, directory: string) {
+  const now = Date.now()
+  setPetStore(produce((draft) => applyDirectoryPetEvent(draft, event, directory, now)))
+}
 
 export function PetSource() {
   if (process.platform !== "win32") return null

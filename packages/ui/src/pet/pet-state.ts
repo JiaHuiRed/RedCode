@@ -462,3 +462,22 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       return
   }
 }
+
+/**
+ * 按目录归属处理一条事件：状态归一化 + bootstrap journal + 会话 owner/flash 归属。
+ *
+ * 261120 Red 抽成纯函数供两处 store 共用——桌面端用 ui/pet-store 的模块级 store，TUI 必须用
+ * 自己那份 Solid（redspace 锁 1.9.14，跨包引 pet-store 会加载 catalog 的 1.9.17，启动时打
+ * 「multiple instances of Solid」）。两边的规则必须一致，所以只让 store 的实现不同。
+ * 决策：docs/plans/2026-11-20-redspace-tui-solid-fix.md
+ */
+export function applyDirectoryPetEvent(state: PetState, event: PetEvent, directory: string, now: number): void {
+  applyPetEvent(state, event, now)
+  recordPetBootstrapEvent(state, directory, event)
+  const props = (event.properties ?? {}) as { sessionID?: string; part?: { sessionID?: string } }
+  const id = props.sessionID ?? props.part?.sessionID
+  if (!id) return
+  if (state.flash?.sessionID === id && state.flash.at === now) state.flash.directory = directory
+  if (state.sessions[id] || state.blockers[id]) state.owners[id] = directory
+  else delete state.owners[id]
+}
