@@ -487,6 +487,7 @@ export default function Layout(props: ParentProps) {
     globalSync,
     globalSDK,
     route,
+    warmNeighbors: () => mode() !== "chat",
   })
 
   function navigateSessionByOffset(offset: number) {

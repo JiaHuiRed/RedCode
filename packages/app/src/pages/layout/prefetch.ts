@@ -28,8 +28,11 @@ export function createPrefetch(deps: {
   globalSync: ReturnType<typeof import("@/context/server-sync").useServerSync>
   globalSDK: ReturnType<typeof import("@/context/global-sdk").useGlobalSDK>
   route: () => unknown
+  /** 261120 Red 相邻会话预热开关：伙伴 Chat 的历史栏只要标题/日期，不表达切换意图就不该下载正文。 */
+  warmNeighbors?: () => boolean
 }) {
   const { visibleSessionDirs, sessionId, sessions, globalSync, globalSDK, route } = deps
+  const warmNeighbors = deps.warmNeighbors ?? (() => true)
 
   // 260907 ZCode 预取降载（GUI 性能审计问题 6）：chunk 从 200 降到 40。
   // 预取的职责是「点开秒有内容」——40 条足够首屏 paint，且载荷与前台刷新页同量级；
@@ -239,6 +242,7 @@ export function createPrefetch(deps: {
   }
 
   const warm = (sessions: Session[], index: number) => {
+    if (!warmNeighbors()) return
     for (let offset = 1; offset <= span; offset++) {
       const next = sessions[index + offset]
       if (next) prefetchSession(next, offset === 1 ? "high" : "low")
@@ -257,7 +261,7 @@ export function createPrefetch(deps: {
 
     if (!sessionId()) {
       const first = list[index]
-      if (first) prefetchSession(first, "high")
+      if (first && warmNeighbors()) prefetchSession(first, "high")
     }
 
     warm(list, index)

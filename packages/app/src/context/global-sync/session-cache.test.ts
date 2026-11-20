@@ -342,4 +342,56 @@ describe("app session cache", () => {
     expect(store.part[m.id]).toBeUndefined()
   })
 
+  // 261120 Red 伙伴 Chat 的历史栏只要标题/日期，相邻会话正文不该在打开一条时被顺带下载。
+  test("warm skips neighbour prefetch when the surface does not need history", async () => {
+    const directory = "C:\\Work\\warm-gate"
+    let requests = 0
+    const [store, setStore] = createStore({
+      message: {} as Record<string, Message[] | undefined>,
+      part: {} as Record<string, Part[] | undefined>,
+    })
+    const globalSync = {
+      child: () => [store, setStore],
+      sessionCache: { canPrefetch: () => true, prefetch: () => [], evict: () => {} },
+    } as unknown as Parameters<typeof createPrefetch>[0]["globalSync"]
+    const globalSDK = {
+      url: "http://localhost",
+      client: {
+        session: {
+          messages: async () => {
+            requests += 1
+            return { data: [], response: { headers: new Headers() } }
+          },
+        },
+      },
+    } as unknown as Parameters<typeof createPrefetch>[0]["globalSDK"]
+    const list = Array.from({ length: 9 }, (_, index) => ({ id: `ses_${index}`, directory }) as Session)
+    const [enabled, setEnabled] = createSignal(false)
+    let warm!: (sessions: Session[], index: number) => void
+    const dispose = createRoot((dispose) => {
+      warm = createPrefetch({
+        visibleSessionDirs: () => [directory],
+        currentDir: () => directory,
+        sessionId: () => "ses_4",
+        sessions: () => list,
+        globalSync,
+        globalSDK,
+        route: () => undefined,
+        warmNeighbors: enabled,
+      }).warm
+      return dispose
+    })
+    warm(list, 4)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(requests).toBe(0)
+
+    setEnabled(true)
+    warm(list, 4)
+    for (let attempt = 0; attempt < 200 && requests < 8; attempt++) await new Promise((resolve) => setTimeout(resolve, 1))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    dispose()
+    expect(requests).toBe(8)
+  })
+
 })
+

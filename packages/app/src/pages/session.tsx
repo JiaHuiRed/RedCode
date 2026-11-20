@@ -243,6 +243,13 @@ export default function Page() {
     const session = info()
     return session?.mode === "chat" ? session : undefined
   })
+  // 261120 Red Chat 没有文件树与审查面板：Code 布局持久化的开关不该为 Chat 发数据请求。
+  // 身份未返回（info 仍是 undefined）时先不发，等会话类型确定再决定。
+  // 依据 → docs/audits/2026-11-20-redspace-windows-performance-audit.md §2
+  const codeSession = createMemo(() => {
+    const session = info()
+    return session && session.mode !== "chat" ? session : undefined
+  })
   createEffect(() => {
     const session = chatSession()
     const selection = local.session.selection()
@@ -431,9 +438,10 @@ export default function Page() {
   })
   const mobileChanges = createMemo(() => !isDesktop() && store.mobileTab === "changes")
   const wantsReview = createMemo(() =>
-    isDesktop()
+    !!codeSession() &&
+    (isDesktop()
       ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")
-      : store.mobileTab === "changes",
+      : store.mobileTab === "changes"),
   )
   const vcsMode = createMemo<VcsMode | undefined>(() => {
     if (store.changes === "git" || store.changes === "branch") return store.changes
@@ -799,6 +807,7 @@ export default function Page() {
         : undefined
     const file = typeof props?.file === "string" ? props.file : undefined
     if (!file || file.startsWith(".git/")) return
+    if (!wantsReview()) return
     refreshVcs()
   })
   onCleanup(stopVcs)
@@ -894,6 +903,7 @@ export default function Page() {
       () => sync.data.session_status[params.id ?? ""]?.type,
       (next, prev) => {
         if (next !== "idle" || prev === undefined || prev === "idle") return
+        if (!wantsReview()) return
         refreshVcs()
       },
       { defer: true },
@@ -1254,6 +1264,7 @@ export default function Page() {
   createEffect(() => {
     const dir = sdk.directory
     if (!isDesktop()) return
+    if (!codeSession()) return
     if (!layout.fileTree.opened()) return
     if (sync.status === "loading") return
 
