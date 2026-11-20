@@ -2722,6 +2722,9 @@ function CompactionSummaryMarkdown(props: { summary: string; done: () => boolean
     <markdown
       syntaxStyle={syntax()}
       streaming={streaming()}
+      // 261120 Red 流式期用 top-level 保留已完成块（摘要首行不随尾块重绘闪），完成态直接
+      // coalesced 合并节点——两全：既不闪，也不让完成态长摘要堆一堆独立布局节点。
+      internalBlockMode={props.done() ? "coalesced" : "top-level"}
       content={props.summary}
       conceal={ctx.conceal()}
       fg={theme.textMuted}
@@ -2734,9 +2737,8 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const ctx = use()
   const { theme, syntax } = useTheme()
 
-  const streaming = useStreamingLifecycle(
-    () => props.message.time.completed !== undefined || !!props.message.error,
-  )
+  const done = () => props.message.time.completed !== undefined || !!props.message.error
+  const streaming = useStreamingLifecycle(done)
 
   return (
     <Show when={isVisibleTextPart(props.part) && props.part.text.trim()}>
@@ -2744,6 +2746,10 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
         <markdown
           syntaxStyle={syntax()}
           streaming={streaming()}
+          // 261120 Red 流式期 top-level：已完成块（如标题）被 OpenTUI 复用、不随尾块重绘，
+          // 修 Karina 31ff6d7d 移除该模式后标题随 streaming 整块重建而闪的回归。完成态直接
+          // coalesced（与基线一致、保留她修的「长文档不堆大量独立节点」），不走 10ms 妥协。
+          internalBlockMode={done() ? "coalesced" : "top-level"}
           content={filterCannedAgreement(props.part.text).trim()}
           tableOptions={{ style: "grid" }}
           conceal={ctx.conceal()}
