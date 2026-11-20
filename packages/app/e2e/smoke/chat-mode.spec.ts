@@ -84,9 +84,10 @@ test("imported companion retries a deleted first-chat session and resumes the re
   })
 
   await page.goto("/chat")
-  await expect(page.locator('[data-component="chat-home"] h1')).toHaveCSS("font-size", "20px")
+  await expect(page.locator('[data-component="chat-home"] h1')).toBeVisible()
   const mode = page.locator('[data-component="product-mode-switch"]')
   await expect(mode.locator('[data-mode="chat"]')).toHaveAttribute("aria-current", "page")
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await page.getByRole("button", { name: "Companion settings" }).click()
   await page.getByRole("button", { name: "Files & data", exact: true }).click()
   await page
@@ -108,7 +109,7 @@ test("imported companion retries a deleted first-chat session and resumes the re
   const settings = page.getByRole("dialog", { name: "Settings", exact: true })
   await settings.getByRole("button", { name: "Close", exact: true }).click()
   await expect(settings).toBeHidden()
-  await expect(page.locator('[data-component="chat-home"]').getByRole("heading", { name: profile.name })).toBeVisible()
+  await expect(page.locator('[data-component="chat-home"]').getByRole("button", { name: profile.name })).toBeVisible()
   expect(imports).toEqual([{ source: "/archives/old-home.zip" }, { source: "/archives/old-home.zip" }])
 
   const home = page.locator('[data-component="chat-home"]')
@@ -274,6 +275,7 @@ test("read a companion's latest diary and switch to an earlier date", async ({ p
     return route.fallback()
   })
   await page.goto("/chat")
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await page.getByRole("button", { name: "Companion settings" }).click()
   await page.locator("section").filter({ has: page.getByRole("heading", { name: "Memory", exact: true }) })
     .getByRole("button", { name: "View details" }).click()
@@ -312,6 +314,7 @@ test("read imported dreams on demand, retry a failed read and switch companions"
   })
   await page.goto("/chat?companion=dreamer")
   const open = page.getByRole("button", { name: "Dream diary", exact: true })
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await expect(open).toBeVisible()
   expect(reads).toEqual([])
   await open.click()
@@ -320,8 +323,10 @@ test("read imported dreams on demand, retry a failed read and switch companions"
   await diary.getByRole("button", { name: "Retry" }).click()
   await expect(diary.getByRole("article")).toContainText("I dreamt of a silver boat.")
   await diary.getByRole("button", { name: "Close" }).click()
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await page.locator('[data-component="chat-home"] select').first().selectOption(second.id)
-  await expect(page.getByRole("heading", { name: second.name })).toBeVisible()
+  await expect(page.getByRole("button", { name: second.name })).toBeVisible()
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await open.click()
   await expect(diary).toContainText("No dream entries yet.")
   await expect(diary).not.toContainText("silver boat")
@@ -352,15 +357,18 @@ test("first-chat attachments follow the selected companion and the outgoing requ
   const choose = home.locator("select").first()
   const first = { name: "for-a.txt", mimeType: "text/plain", buffer: Buffer.from("A") }
   const second = { name: "for-b.txt", mimeType: "text/plain", buffer: Buffer.from("B") }
-  await expect(choose).toHaveValue("friend-a")
+  await expect(home.locator(".companion-profile")).toContainText(profiles[0]!.name)
   await pick.setInputFiles(first)
   await expect(home.getByText(first.name, { exact: true })).toBeVisible()
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await choose.selectOption("friend-b")
   await expect(home.getByText(first.name, { exact: true })).toHaveCount(0)
   await pick.setInputFiles(second)
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await choose.selectOption("friend-a")
   await expect(home.getByText(first.name, { exact: true })).toBeVisible()
   await expect(home.getByText(second.name, { exact: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Conversation options" }).click()
   await choose.selectOption("friend-b")
   await home.locator('[data-action="chat-first-message"]').fill("hello B")
   const sent = page.waitForRequest(req => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/prompt_async"))
@@ -369,4 +377,139 @@ test("first-chat attachments follow the selected companion and the outgoing requ
     { type: "text", text: "hello B" },
     { type: "file", mime: "text/plain", filename: second.name, url: "data:text/plain;base64,Qg==" },
   ])
+})
+
+test("Chat remembers each conversation's model, filters the catalogue and uses both bubble colors", async ({
+  page,
+}) => {
+  const profile = { id: "friend", soulID: "soul-friend", name: "Luna", directory: fixture.directory }
+  const models = {
+    alpha: { id: "alpha", name: "Alpha", variants: { high: {} }, limit: { context: 32_000 } },
+    beta: { id: "beta", name: "Beta", variants: {}, limit: { context: 32_000 } },
+    legacy: { id: "legacy", name: "Legacy", release_date: "2020-01-01", family: "test", limit: { context: 32_000 } },
+  }
+  const provider = { id: "studio", name: "Studio", models }
+  const retired = {
+    id: "unused",
+    name: "Disconnected",
+    models: { ghost: { ...models.beta, id: "ghost", name: "Ghost" } },
+  }
+  const sessions = fixture.sessions.map((s) => ({ ...s, mode: "chat", companionID: profile.id, soul: profile.soulID }))
+  const errors: string[] = []
+  page.on("pageerror", (e) => errors.push(e.message))
+  await mockRedCodeServer(page, {
+    ...fixture,
+    sessions,
+    provider: { all: [provider, retired], connected: ["studio"], default: { studio: "beta" } },
+    pageMessages: (id) => {
+      const user = {
+        id: "msg_a",
+        sessionID: id,
+        role: "user",
+        time: { created: 1 },
+        agent: "build",
+        model: {
+          providerID: "studio",
+          modelID: id === sessions[0]!.id ? "alpha" : "beta",
+          variant: id === sessions[0]!.id ? "high" : undefined,
+        },
+      }
+      const reply = {
+        id: "msg_b",
+        sessionID: id,
+        role: "assistant",
+        time: { created: 2, completed: 3 },
+        parentID: user.id,
+        agent: "build",
+        modelID: user.model.modelID,
+        providerID: "studio",
+        mode: "build",
+        path: { cwd: fixture.directory, root: fixture.directory },
+        cost: 0,
+        tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      }
+      return {
+        items: [user, reply].map((info, i) => ({
+          info,
+          parts: [
+            { id: "prt_" + i, messageID: info.id, sessionID: id, type: "text", text: i ? "Welcome back" : "Hello" },
+          ],
+        })),
+      }
+    },
+  })
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (url.pathname === "/companion") return json(route, [profile])
+    if (url.pathname === "/config/providers") return json(route, { providers: [provider], default: { studio: "beta" } })
+    return route.fallback()
+  })
+  await page.goto("/chat?companion=friend")
+  const homeModel = page.locator('[data-action="chat-choose-model"]')
+  await homeModel.click()
+  const menu = page.locator('[data-component="chat-model-popover"]')
+  await expect(menu.getByText("Alpha", { exact: true })).toBeVisible()
+  await expect(menu.getByText("Ghost", { exact: true })).toHaveCount(0)
+  await expect(menu.getByText("Legacy", { exact: true })).toHaveCount(0)
+  await menu.getByText("Beta", { exact: true }).click()
+  await page.reload()
+  await expect(homeModel).toContainText("Beta")
+  const first = sessions[0]!
+  await page.getByRole("link", { name: first.title }).click()
+  await expect(page.locator('[data-action="prompt-model"]')).toContainText("Alpha")
+  await expect(page.locator('[data-action="prompt-variant"]')).toContainText(/high/i)
+  for (const scheme of ["light", "dark"]) {
+    await page.evaluate((scheme) => (document.documentElement.dataset.colorScheme = scheme), scheme)
+    const mine = page.locator('[data-slot="user-message-text"]').first()
+    const theirs = page.locator('[data-slot="text-part-body"]').first()
+    await expect(mine).toHaveCSS("background-color", "rgb(255, 179, 167)")
+    await expect(theirs).toHaveCSS("background-color", "rgb(16, 174, 255)")
+    await expect(mine).toHaveCSS("color", "rgb(64, 36, 46)")
+    await expect(theirs.locator('[data-component="markdown"]')).toHaveCSS("color", "rgb(6, 39, 57)")
+  }
+  await page.locator(".companion-new").click()
+  await expect(homeModel).toContainText("Alpha")
+  await expect(page.locator('[data-action="chat-choose-variant"]')).toContainText(/high/i)
+  await page.getByRole("link", { name: sessions[1]!.title }).click()
+  await expect(page.locator('[data-action="prompt-model"]')).toContainText("Beta")
+  await page.locator(".companion-new").click()
+  await expect(homeModel).toContainText("Beta")
+  expect(errors).toEqual([])
+})
+
+test.describe("companion arrival", () => {
+  test.use({ locale: "zh-CN" })
+  test("uses the bound partner's name until a reply arrives", async ({ page }) => {
+    const partner = { id: "sky", name: "阿蓝", soulID: "sky-soul", directory: fixture.directory }
+    const session = { ...fixture.sessions[0]!, mode: "chat", companionID: partner.id, soul: partner.soulID }
+    const messages = fixture.messages[fixture.sourceID as keyof typeof fixture.messages]
+    let replied = false
+    await mockRedCodeServer(page, {
+      ...fixture,
+      sessions: [session],
+      pageMessages: () => ({ items: messages.slice(0, replied ? 2 : 1) }),
+    })
+    await page.route("**/*", (route) => {
+      const url = new URL(route.request().url())
+      if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+      if (url.pathname === "/companion") return json(route, [partner])
+      if (url.pathname === "/session/status") return json(route, { [session.id]: { type: "busy" } })
+      if (url.pathname === "/config/providers") return json(route, { providers: fixture.provider.all })
+      return route.fallback()
+    })
+    await page.goto(`/${base64Encode(fixture.directory)}/session/${session.id}`)
+    await expect(page.getByText("你的阿蓝正在赶来", { exact: true })).toBeVisible()
+    replied = true
+    await page.reload()
+    await expect(page.locator('[data-timeline-row="AssistantPart"]').first()).toBeVisible()
+    await expect(page.getByText("你的阿蓝正在赶来", { exact: true })).toHaveCount(0)
+  })
+})
+
+test("Code uses the paper-plane send icon in its existing composer", async ({ page }) => {
+  await mockRedCodeServer(page, { ...fixture, pageMessages: () => ({ items: [] }) })
+  await page.goto(`/${base64Encode(fixture.directory)}/session/${fixture.sourceID}`)
+  await expect(page.locator('[data-action="prompt-submit"] use')).toHaveAttribute("href", "#redcode-icon-paper-plane")
+  await expect(page.locator(".companion-frame")).toHaveCount(0)
 })

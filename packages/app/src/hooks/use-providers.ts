@@ -18,10 +18,10 @@ export const popularProviders = [
 ]
 const popularProviderSet = new Set(popularProviders)
 
-export function useProviders() {
+export function useProviders(directory?: () => string | undefined) {
   const globalSync = useServerSync()
   const params = useParams()
-  const dir = createMemo(() => decode64(params.dir) ?? "")
+  const dir = createMemo(() => directory?.() ?? decode64(params.dir) ?? "")
   const providers = () => {
     if (dir()) {
       const [projectStore] = globalSync.child(dir())
@@ -33,6 +33,7 @@ export function useProviders() {
   const ready = () => {
     if (dir()) {
       const [projectStore] = globalSync.child(dir())
+      if (directory) return projectStore.provider_ready
       if (!projectStore.provider_ready) return false
     }
     // 260605 Red 只检查 all.size（provider 列表是否已加载），不检查 connected.length。

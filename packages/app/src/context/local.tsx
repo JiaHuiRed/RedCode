@@ -417,6 +417,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       // 注意：createSimpleContext 的 gate=false，ready 只用作 submit 守卫，不阻塞整个 Session 树。
       ready: () => providers.ready() && model.ready() && sync.data.agent_ready,
       session: {
+        selection: scope,
         reset() {
           setStore("draft", undefined)
         },

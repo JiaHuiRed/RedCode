@@ -1,6 +1,8 @@
 import { isUserTurn } from "@redcode-ai/core/util/message-turn"
 import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
 import type { MessageVersions } from "@redcode-ai/ui/message-part"
+import { Dialog } from "@redcode-ai/ui/dialog"
+import { FileTabContent } from "@/pages/session/file-tabs"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
@@ -22,6 +24,8 @@ import {
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { useModels } from "@/context/models"
+import { SessionChatFrame } from "@/components/companion-chat-frame"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
@@ -97,6 +101,7 @@ export default function Page() {
   const globalSDK = useGlobalSDK()
   const layout = useLayout()
   const local = useLocal()
+  const models = useModels()
   const file = useFile()
   const sync = useSync()
   const queryClient = useQueryClient()
@@ -234,6 +239,23 @@ export default function Page() {
   }
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const chatSession = createMemo(() => {
+    const session = info()
+    return session?.mode === "chat" ? session : undefined
+  })
+  createEffect(() => {
+    const session = chatSession()
+    const selection = local.session.selection()
+    if (!session || !selection?.model || !local.ready()) return
+    const current = local.model.current()
+    if (!current) return
+    models.chat.set(session.directory, {
+      providerID: current.provider.id,
+      modelID: current.id,
+      variant: local.model.variant.current(),
+    })
+  })
+
   const isChildSession = createMemo(() => !!info()?.parentID)
   const diffs = createMemo(() => (params.id ? list(sync.data.session_diff[params.id]) : []))
   const canReview = createMemo(() => !!sync.project)
@@ -440,7 +462,7 @@ export default function Page() {
         : skipToken,
     }
   })
- // 260901 Red 文件变更风暴时 100ms 防抖会让 vcs diff 请求堆积成灾（单次 diff 对未跟踪文件是 O(N) git 进程）
+  // 260901 Red 文件变更风暴时 100ms 防抖会让 vcs diff 请求堆积成灾（单次 diff 对未跟踪文件是 O(N) git 进程）
   // 261028 Red 在飞时合并变更，等请求结束后补刷，避免取消耗时的 git diff。
   const refreshVcs = createVcsRefresh({
     client: queryClient,
@@ -980,6 +1002,18 @@ export default function Page() {
   const openFileFromTranscript = (input: string) => {
     const path = file.normalize(input)
     if (!path) return
+    if (chatSession()) {
+      takeFileOpenSource?.()
+      void file.load(path)
+      dialog.show(() => (
+        <Dialog title={path} size="large">
+          <div class="h-[65vh] min-h-0 overflow-auto">
+            <FileTabContent tab={file.tab(path)} />
+          </div>
+        </Dialog>
+      ))
+      return
+    }
     const panel = view().reviewPanel
     if (!panel.opened()) panel.open()
     // 261116 Red B06：工具内容打开的文件记录来源会话/消息/片段与阅读位置，供「返回工具」；
@@ -1542,8 +1576,8 @@ export default function Page() {
   const queuedFollowups = createMemo(() => {
     const id = params.id
     if (!id) return emptyFollowups
-   return followup.items[id] ?? emptyFollowups
- })
+    return followup.items[id] ?? emptyFollowups
+  })
   // 261031 Red pending_steer = 忙碌引导的待消费形态，与 queued 一起进待消费 dock
   // （编辑/撤回/立即送达三键共用，服务端 API 已同时接受两种形态）。
   // 261106 Red 补 equals: same（与上方 userMessages 同款）：新消息落地但 delivery 未变时
@@ -1553,9 +1587,13 @@ export default function Page() {
     undefined,
     { equals: same },
   )
-  const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"), undefined, {
-    equals: same,
-  })
+  const queuedMessages = createMemo(
+    () => userMessages().filter((message) => message.delivery === "queued"),
+    undefined,
+    {
+      equals: same,
+    },
+  )
 
   const editingFollowup = createMemo(() => {
     const id = params.id
@@ -1624,11 +1662,11 @@ export default function Page() {
     return `[${language.t("common.attachment")}]`
   }
 
- const followupDock = createMemo<FollowupDockItem[]>(() => [
-   ...pendingSteerMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
-   ...queuedMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
-   ...queuedFollowups().map((item) => ({ id: item.id, text: followupText(item), source: "legacy" as const })),
- ])
+  const followupDock = createMemo<FollowupDockItem[]>(() => [
+    ...pendingSteerMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
+    ...queuedMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
+    ...queuedFollowups().map((item) => ({ id: item.id, text: followupText(item), source: "legacy" as const })),
+  ])
 
   const runQueuedAction = async (id: string, action: () => Promise<unknown>) => {
     if (queuedAction()) return false
@@ -1992,9 +2030,9 @@ export default function Page() {
       revealMessage={(id) => revealMessage(id)}
       centered={placement === "dock" && centered()}
       placement={placement}
-                inputRef={(el) => {
-                  inputRef = el
-                  setComposerInput(el)
+      inputRef={(el) => {
+        inputRef = el
+        setComposerInput(el)
       }}
       newSessionWorktree={newSessionWorktree()}
       newSessionSoul={newSessionSoul}
@@ -2047,6 +2085,140 @@ export default function Page() {
     />
   )
 
+  const conversationPanel = () => (
+    <div
+      id="session-chat-panel"
+      classList={{
+        "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
+        // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色
+        "bg-background-stronger": !chatSession() && !settings.appearance.chatBackground(),
+        "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
+          !size.active() && !ui.reviewSnap,
+        "transition-[width]": !isV2NewSessionPage(),
+      }}
+      style={{
+        width: chatSession() ? "100%" : sessionPanelWidth(),
+      }}
+      // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
+      data-chat-frost={!chatSession() && settings.appearance.chatBackground() ? "" : undefined}
+    >
+      {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
+      <Show when={!chatSession() && settings.appearance.chatBackground()}>
+        {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
+        {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
+        {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
+        {/* 260823 Yuqi 0.3→深紫粉渐变：纯黑遮罩把壁纸的粉紫色调全部压灰，改用主题色相
+                的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
+        <div
+          aria-hidden="true"
+          class="absolute inset-0 z-0 pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(60,32,58,0.30) 0%, rgba(40,22,44,0.45) 45%, rgba(22,12,28,0.62) 100%)",
+          }}
+        />
+      </Show>
+      {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
+              规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
+      <div data-frost-edge={chatSession() ? undefined : ""} class="relative z-[1] flex-1 min-h-0 overflow-hidden">
+        <Show when={!chatSession() && params.id && !mobileChanges()}>
+          <SessionMessageRail
+            directory={sdk.directory}
+            sessionID={params.id!}
+            activeMessageID={store.messageId}
+            busy={jumpingTurn()}
+            onJump={(id) => void jumpToTurn(id)}
+          />
+        </Show>
+        <Switch>
+          <Match when={!chatSession() && params.id && mobileChanges()}>
+            <div class="relative h-full overflow-hidden">
+              {reviewContent({
+                diffStyle: "unified",
+                classes: {
+                  root: "pb-8",
+                  header: "px-4",
+                  container: "px-4",
+                },
+                loadingClass: "px-4 py-4 text-text-weak",
+                emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
+              })}
+            </div>
+          </Match>
+          <Match when={params.id}>
+            <Show when={messagesReady()} fallback={timelineFallback()}>
+              <MessageTimeline
+                actions={actions}
+                scroll={ui.scroll}
+                onResumeScroll={resumeLatest}
+                setScrollRef={setScrollRef}
+                onScheduleScrollState={scheduleScrollState}
+                onAutoScrollHandleScroll={() => (historyNewer() ? autoScroll.pause() : autoScroll.handleScroll())}
+                onMarkScrollGesture={markScrollGesture}
+                hasScrollGesture={hasScrollGesture}
+                onUserScroll={nav.markScroll}
+                onHistoryScroll={historyLoader.onScrollerScroll}
+                onNewerScroll={historyLoader.onNewerScroll}
+                hasNewer={historyNewer}
+                onLoadNewer={() => void historyLoader.loadNewer(true)}
+                onAutoScrollInteraction={autoScroll.handleInteraction}
+                shouldAnchorBottom={() =>
+                  !historyNewer() &&
+                  !location.hash &&
+                  !store.messageId &&
+                  !ui.pendingMessage &&
+                  !autoScroll.userScrolled()
+                }
+                centered={centered()}
+                setContentRef={(el) => {
+                  autoScroll.contentRef(el)
+
+                  const root = scroller
+                  if (root) scheduleScrollState(root)
+                }}
+                // 261108 Red 时间线在内容高度变化时上报（rAF 节流 + 同值跳过），
+                // 取代原先对 content 的 ResizeObserver。
+                onContentResize={() => {
+                  autoScroll.contentChanged()
+                  const root = scroller
+                  if (root) scheduleScrollState(root)
+                  fill()
+                }}
+                historyShift={historyLoader.shift()}
+                userMessages={historyLoader.userMessages()}
+                anchor={nav.anchor}
+                setRevealMessage={(fn) => {
+                  revealMessage = fn
+                }}
+                setRevealPart={(fn) => {
+                  revealPartTarget = fn
+                }}
+                setFileOpenSource={(fn) => {
+                  takeFileOpenSource = fn
+                }}
+                onJumpTarget={(target) => void jumpToTarget(target)}
+                setRetainViewport={(fn) => {
+                  retainViewport = fn
+                }}
+              />
+            </Show>
+          </Match>
+          <Match when={true}>
+            <NewSessionDesignView
+              worktree={newSessionWorktree()}
+              newSessionSoul={newSessionSoul}
+              onNewSessionSoulChange={setNewSessionSoul}
+            >
+              {composerRegion("inline")}
+            </NewSessionDesignView>
+          </Match>
+        </Switch>
+      </div>
+
+      <Show when={params.id}>{composerRegion("dock")}</Show>
+    </div>
+  )
+
   return (
     <FileOpenProvider onOpen={openFileFromTranscript}>
       <div
@@ -2069,188 +2241,67 @@ export default function Page() {
         <Suspense>{sessionSync() ?? ""}</Suspense>
 
         {/* 261109 Karina UX-01：布局预设切换（专注 / 开发 / 审查），挂到顶栏动作区 */}
-        <SessionLayoutPreset />
+        <Show
+          when={chatSession()}
+          fallback={
+            <>
+              <SessionLayoutPreset />
 
-        <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
-          <Show when={!isDesktop() && !!params.id}>
-            <Tabs value={store.mobileTab} class="h-auto">
-              <Tabs.List>
-                <Tabs.Trigger
-                  value="session"
-                  class="!w-1/2 !max-w-none"
-                  classes={{ button: "w-full" }}
-                  onClick={() => setStore("mobileTab", "session")}
-                >
-                  {language.t("session.tab.session")}
-                </Tabs.Trigger>
-                <Tabs.Trigger
-                  value="changes"
-                  class="!w-1/2 !max-w-none !border-r-0"
-                  classes={{ button: "w-full" }}
-                  onClick={() => setStore("mobileTab", "changes")}
-                >
-                  {hasReview()
-                    ? language.t("session.review.filesChanged", { count: reviewCount() })
-                    : language.t("session.review.change.other")}
-                </Tabs.Trigger>
-              </Tabs.List>
-            </Tabs>
-          </Show>
+              <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
+                <Show when={!isDesktop() && !!params.id}>
+                  <Tabs value={store.mobileTab} class="h-auto">
+                    <Tabs.List>
+                      <Tabs.Trigger
+                        value="session"
+                        class="!w-1/2 !max-w-none"
+                        classes={{ button: "w-full" }}
+                        onClick={() => setStore("mobileTab", "session")}
+                      >
+                        {language.t("session.tab.session")}
+                      </Tabs.Trigger>
+                      <Tabs.Trigger
+                        value="changes"
+                        class="!w-1/2 !max-w-none !border-r-0"
+                        classes={{ button: "w-full" }}
+                        onClick={() => setStore("mobileTab", "changes")}
+                      >
+                        {hasReview()
+                          ? language.t("session.review.filesChanged", { count: reviewCount() })
+                          : language.t("session.review.change.other")}
+                      </Tabs.Trigger>
+                    </Tabs.List>
+                  </Tabs>
+                </Show>
 
-          <FileTreePanel
-            diffsReady={reviewReady}
-            diffs={reviewDiffs}
-            reviewCount={reviewCount}
-            hasReview={hasReview}
-            activeDiff={tree.activeDiff}
-            focusReviewDiff={focusReviewDiff}
-            size={size}
-          />
-          <div
-            id="session-chat-panel"
-            classList={{
-              "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
-              // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色
-              "bg-background-stronger": !settings.appearance.chatBackground(),
-              "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                !size.active() && !ui.reviewSnap,
-              "transition-[width]": !isV2NewSessionPage(),
-            }}
-            style={{
-              width: sessionPanelWidth(),
-            }}
-            // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
-            data-chat-frost={settings.appearance.chatBackground() ? "" : undefined}
-          >
-            {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
-            <Show when={settings.appearance.chatBackground()}>
-              {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
-              {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
-              {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
-              {/* 260823 Yuqi 0.3→深紫粉渐变：纯黑遮罩把壁纸的粉紫色调全部压灰，改用主题色相
-                的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
-              <div
-                aria-hidden="true"
-                class="absolute inset-0 z-0 pointer-events-none"
-                style={{
-                  background:
-                    "linear-gradient(180deg, rgba(60,32,58,0.30) 0%, rgba(40,22,44,0.45) 45%, rgba(22,12,28,0.62) 100%)",
-                }}
-              />
-            </Show>
-            {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
-              规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
-            <div data-frost-edge="" class="relative z-[1] flex-1 min-h-0 overflow-hidden">
-              <Show when={params.id && !mobileChanges()}>
-                <SessionMessageRail
-                  directory={sdk.directory}
-                  sessionID={params.id!}
-                  activeMessageID={store.messageId}
-                  busy={jumpingTurn()}
-                  onJump={(id) => void jumpToTurn(id)}
+                <FileTreePanel
+                  diffsReady={reviewReady}
+                  diffs={reviewDiffs}
+                  reviewCount={reviewCount}
+                  hasReview={hasReview}
+                  activeDiff={tree.activeDiff}
+                  focusReviewDiff={focusReviewDiff}
+                  size={size}
                 />
-              </Show>
-              <Switch>
-                <Match when={params.id && mobileChanges()}>
-                  <div class="relative h-full overflow-hidden">
-                    {reviewContent({
-                      diffStyle: "unified",
-                      classes: {
-                        root: "pb-8",
-                        header: "px-4",
-                        container: "px-4",
-                      },
-                      loadingClass: "px-4 py-4 text-text-weak",
-                      emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
-                    })}
-                  </div>
-                </Match>
-                <Match when={params.id}>
-                  <Show when={messagesReady()} fallback={timelineFallback()}>
-                    <MessageTimeline
-                      actions={actions}
-                      scroll={ui.scroll}
-                      onResumeScroll={resumeLatest}
-                      setScrollRef={setScrollRef}
-                      onScheduleScrollState={scheduleScrollState}
-                      onAutoScrollHandleScroll={() => (historyNewer() ? autoScroll.pause() : autoScroll.handleScroll())}
-                      onMarkScrollGesture={markScrollGesture}
-                      hasScrollGesture={hasScrollGesture}
-                      onUserScroll={nav.markScroll}
-                      onHistoryScroll={historyLoader.onScrollerScroll}
-                      onNewerScroll={historyLoader.onNewerScroll}
-                      hasNewer={historyNewer}
-                      onLoadNewer={() => void historyLoader.loadNewer(true)}
-                      onAutoScrollInteraction={autoScroll.handleInteraction}
-                      shouldAnchorBottom={() =>
-                        !historyNewer() &&
-                        !location.hash &&
-                        !store.messageId &&
-                        !ui.pendingMessage &&
-                        !autoScroll.userScrolled()
-                      }
-                      centered={centered()}
-                      setContentRef={(el) => {
-                        autoScroll.contentRef(el)
+                {conversationPanel()}
 
-                        const root = scroller
-                        if (root) scheduleScrollState(root)
-                      }}
-                      // 261108 Red 时间线在内容高度变化时上报（rAF 节流 + 同值跳过），
-                      // 取代原先对 content 的 ResizeObserver。
-                      onContentResize={() => {
-                        autoScroll.contentChanged()
-                        const root = scroller
-                        if (root) scheduleScrollState(root)
-                        fill()
-                      }}
-                      historyShift={historyLoader.shift()}
-                      userMessages={historyLoader.userMessages()}
-                      anchor={nav.anchor}
-                      setRevealMessage={(fn) => {
-                        revealMessage = fn
-                      }}
-                      setRevealPart={(fn) => {
-                        revealPartTarget = fn
-                      }}
-                      setFileOpenSource={(fn) => {
-                        takeFileOpenSource = fn
-                      }}
-                      onJumpTarget={(target) => void jumpToTarget(target)}
-                      setRetainViewport={(fn) => {
-                        retainViewport = fn
-                      }}
-                    />
-                  </Show>
-                </Match>
-                <Match when={true}>
-                  <NewSessionDesignView
-                    worktree={newSessionWorktree()}
-                    newSessionSoul={newSessionSoul}
-                    onNewSessionSoulChange={setNewSessionSoul}
-                  >
-                    {composerRegion("inline")}
-                  </NewSessionDesignView>
-                </Match>
-              </Switch>
-            </div>
+                <SessionSidePanel
+                  canReview={canReview}
+                  reviewPanel={reviewPanel}
+                  outlinePanel={outlinePanel}
+                  reviewSnap={ui.reviewSnap}
+                  size={size}
+                  docked={workbenchDocked}
+                  dockWidth={reviewWidth}
+                  onFileReturn={returnToFileSource}
+                />
+              </div>
 
-            <Show when={params.id}>{composerRegion("dock")}</Show>
-          </div>
-
-          <SessionSidePanel
-            canReview={canReview}
-            reviewPanel={reviewPanel}
-            outlinePanel={outlinePanel}
-            reviewSnap={ui.reviewSnap}
-            size={size}
-            docked={workbenchDocked}
-            dockWidth={reviewWidth}
-            onFileReturn={returnToFileSource}
-          />
-        </div>
-
-        <TerminalPanel />
+              <TerminalPanel />
+            </>
+          }
+        >
+          {(session) => <SessionChatFrame session={session()}>{conversationPanel()}</SessionChatFrame>}
+        </Show>
       </div>
     </FileOpenProvider>
   )

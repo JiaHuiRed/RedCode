@@ -1425,9 +1425,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     (p) => p,
   )
 
+  const companionChat = () => info()?.mode === "chat"
   const designPlaceholder = () => {
     if (store.mode === "shell") return placeholder()
-    return language.t("prompt.placeholder.hints")
+    return language.t(companionChat() ? "chat.native.placeholder" : "prompt.placeholder.hints")
   }
 
   // 260731 Karina GUI 输入框一直没有主 agent 切换入口 —— 工具栏只有模型和推理强度两个
@@ -1937,14 +1938,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 />
               </div>
             </Show>
-            {agentControl()}
+            <Show when={!companionChat()}>{agentControl()}</Show>
             {modelControl()}
             {/* 260819 cc 上下文窗口指示器紧跟模型/档位——用户真正在看的位置（选模型的那一行）。
                组件自带 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。
                261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
                开上下文面板走右侧常驻 tab。 */}
-            <SessionContextUsage placement="top" />
-            {props.backgroundActivity}
+            <Show when={!companionChat()}>
+              <SessionContextUsage placement="top" />
+              {props.backgroundActivity}
+            </Show>
             <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
               {/* 261116 Red C01：显示的是真正生效的投递方式（临时覆盖优先，否则取
                  busy_enter 默认）。点一下只改这一条，提交成功后回到默认。 */}
@@ -1968,7 +1971,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             {/* 261031 Red 忙碌且输入非空：打断发送——立即停止当前执行，以当前输入开新一轮。
                纯停止（忙碌 + 空输入）仍是主按钮的 stop 形态；引导发送照走主按钮/Enter。 */}
             {/* 261114 Red UX-06：展开/收起编辑区。 */}
-            <Show when={store.mode === "normal"}>
+            <Show when={!companionChat() && store.mode === "normal"}>
               <Tooltip
                 placement="top"
                 value={language.t(promptSize.expanded ? "prompt.editor.collapse" : "prompt.editor.expand")}
@@ -2004,7 +2007,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 type="submit"
                 disabled={!working() && blank()}
                 tabIndex={store.mode === "normal" ? undefined : -1}
-                icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "paper-plane"}
                 variant="primary"
                 class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
                 style={{

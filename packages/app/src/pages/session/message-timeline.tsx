@@ -554,6 +554,12 @@ export function MessageTimeline(props: {
     if (!profile || profile.soulID !== session.soul) return soul
     return { ...soul, id: profile.soulID, name: profile.name, displayName: profile.name }
   })
+  const companionChat = () => info()?.mode === "chat"
+  const arrival = () => {
+    const profile = companions.data?.find((item) => item.id === info()?.companionID)
+    const name = profile?.name || assistantIdentity()?.displayName || assistantIdentity()?.name
+    return name ? language.t("chat.ui.arriving", { name }) : language.t("chat.ui.arrivingUnknown")
+  }
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
@@ -629,6 +635,7 @@ export function MessageTimeline(props: {
             // store 或最新 marker（260903 cc 约定），避免新 marker 使全部历史轮重算。
             () => info()?.time.compacting,
             () => userMessage.id === latestCompactionMarkerID(),
+            companionChat(),
           )
 
           const merged = reuseTimelineRows(previous, rows)
@@ -2494,10 +2501,10 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <Show when={activeSticker() === "thinking"}>
+              <Show when={!companionChat() && activeSticker() === "thinking"}>
                 <ChiThinkingSticker />
               </Show>
-              <Show when={activeSticker() === "coding"}>
+              <Show when={!companionChat() && activeSticker() === "coding"}>
                 <ChiCodingSticker />
               </Show>
               <div data-slot="session-turn-assistant-row">
@@ -2537,19 +2544,32 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={thinkingRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              {/* 260902 cc 看板娘只在会话第一轮的等待期露面：每轮都放就成了周期性闪动 */}
-              <Show when={thinkingRow().awaiting && thinkingRow().userMessageID === props.userMessages[0]?.id}>
-                <ChiTaskSticker />
+              <Show
+                when={companionChat()}
+                fallback={
+                  <>
+                    {/* 260902 cc 看板娘只在会话第一轮的等待期露面：每轮都放就成了周期性闪动 */}
+                    <Show when={thinkingRow().awaiting && thinkingRow().userMessageID === props.userMessages[0]?.id}>
+                      <ChiTaskSticker />
+                    </Show>
+                    <Show
+                      when={!thinkingRow().awaiting && activeStickerForTurn(thinkingRow().userMessageID) !== "coding"}
+                    >
+                      <ChiThinkingSticker />
+                    </Show>
+                    <TimelineThinkingRow
+                      reasoningHeading={thinkingRow().reasoningHeading}
+                      showReasoningSummaries={settings.general.showReasoningSummaries()}
+                      startedAt={thinkingRow().startedAt}
+                      awaiting={thinkingRow().awaiting}
+                    />
+                  </>
+                }
+              >
+                <p role="status" class="companion-arrival">
+                  {arrival()}
+                </p>
               </Show>
-              <Show when={!thinkingRow().awaiting && activeStickerForTurn(thinkingRow().userMessageID) !== "coding"}>
-                <ChiThinkingSticker />
-              </Show>
-              <TimelineThinkingRow
-                reasoningHeading={thinkingRow().reasoningHeading}
-                showReasoningSummaries={settings.general.showReasoningSummaries()}
-                startedAt={thinkingRow().startedAt}
-                awaiting={thinkingRow().awaiting}
-              />
             </div>
           </TimelineRowFrame>
         )

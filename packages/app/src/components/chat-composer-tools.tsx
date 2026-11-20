@@ -5,10 +5,8 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { List } from "@redcode-ai/ui/list"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { EffortSliderV2, availableEffortSteps } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
-import { useProviders } from "@/hooks/use-providers"
+import type { useModels, ModelKey } from "@/context/models"
 import { useLanguage } from "@/context/language"
-
-export type ChatModelChoice = { providerID: string; modelID: string }
 
 type Entry = {
   providerID: string
@@ -18,42 +16,29 @@ type Entry = {
   variants: string[]
 }
 
-/**
- * 261119 Red Chat 首页的模型/档位入口。
- *
- * Chat 不把模型绑到伙伴身份上——换模型只换下一次请求用哪颗脑子，Soul 与记忆不动，
- * 所以这里是会话草稿级的临时选择，不写进伙伴档案。未选择时不向请求传 model/variant，
- * 由服务端按 agent 与默认值解析，保持与改动前完全一致的行为。
- *
- * 模型列表复用 ui 的虚拟化 List（几百个模型全量渲染是热路径，见 dialog-select-model
- * 的同款注释），不经过 useLocal——/chat 路由不在 LocalProvider 内。
- */
 export const ChatComposerTools: Component<{
+  catalog: ReturnType<ReturnType<typeof useModels>["catalog"]>
   disabled?: boolean
-  model: ChatModelChoice | undefined
+  model: ModelKey | undefined
   variant: string | undefined
-  onModelChange: (value: ChatModelChoice | undefined) => void
+  onModelChange: (value: ModelKey | undefined) => void
   onVariantChange: (value: string | undefined) => void
   class?: string
 }> = (props) => {
-  const providers = useProviders()
   const language = useLanguage()
   const [open, setOpen] = createSignal<"model" | "variant" | null>(null)
 
   const entries = createMemo((): Entry[] => {
-    const out: Entry[] = []
-    for (const provider of providers.all().values()) {
-      for (const model of Object.values(provider.models ?? {})) {
-        out.push({
-          providerID: provider.id,
-          providerName: provider.name ?? provider.id,
-          modelID: model.id,
-          name: model.name ?? model.id,
-          variants: Object.keys(model.variants ?? {}),
-        })
-      }
-    }
-    return out.sort((a, b) => a.providerName.localeCompare(b.providerName) || a.name.localeCompare(b.name))
+    return props.catalog
+      .list()
+      .filter((model) => props.catalog.visible({ providerID: model.provider.id, modelID: model.id }))
+      .map((model) => ({
+        providerID: model.provider.id,
+        providerName: model.provider.name,
+        modelID: model.id,
+        name: model.name,
+        variants: Object.keys(model.variants ?? {}),
+      }))
   })
 
   const current = createMemo(() =>
@@ -66,10 +51,7 @@ export const ChatComposerTools: Component<{
 
   const select = (entry: Entry | undefined) => {
     if (!entry) return
-    const changed = current()?.modelID !== entry.modelID || current()?.providerID !== entry.providerID
     props.onModelChange({ providerID: entry.providerID, modelID: entry.modelID })
-    // 档位属于具体模型：换了模型后旧档位可能在新模型里不存在，显式清回模型默认。
-    if (changed) props.onVariantChange(undefined)
     setOpen(null)
   }
 
@@ -131,7 +113,6 @@ export const ChatComposerTools: Component<{
                   class="w-full justify-start text-12-regular text-text-weak"
                   onClick={() => {
                     props.onModelChange(undefined)
-                    props.onVariantChange(undefined)
                     setOpen(null)
                   }}
                 >
