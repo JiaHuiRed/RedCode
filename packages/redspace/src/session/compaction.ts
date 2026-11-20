@@ -844,8 +844,8 @@ export const layer = Layer.effect(
       if (info.mode !== "chat" || !info.companionID || info.parentID) return
       const agent = yield* agents.get("memory-flush")
       if (!agent) return
-      const text = MemoryFlush.contextText(input.messages)
-      if (Buffer.byteLength(text) < MemoryFlush.MIN_CONTEXT_BYTES) return
+      const excerpt = MemoryFlush.context(input.messages)
+      if (excerpt.contentBytes < MemoryFlush.MIN_CONTEXT_BYTES) return
       const user = input.messages.findLast((message) => message.info.id === input.parentID)
       if (!user || user.info.role !== "user") return
       const raw = yield* llm
@@ -860,7 +860,7 @@ export const layer = Layer.effect(
           messages: [
             {
               role: "user",
-              content: `Current time: ${new Date().toISOString()}\n\nConversation excerpt:\n${text}`,
+              content: `Current time: ${new Date().toISOString()}\n\nConversation excerpt (JSON lines):\n${excerpt.text}`,
             },
           ],
         })

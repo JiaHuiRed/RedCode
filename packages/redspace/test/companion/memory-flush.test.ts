@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { MAX_ENTRIES, MAX_ENTRY_BYTES, contextText, parse } from "../../src/companion/memory-flush"
+import { MAX_ENTRIES, MAX_ENTRY_BYTES, context, parse } from "../../src/companion/memory-flush"
+import { MessageID } from "../../src/session/schema"
 
-const messages = (...texts: (string | undefined)[]) =>
-  texts.flatMap((text) => (text ? [{ parts: [{ type: "text", text }] }] : []))
+const message = (id: string, text: string) => ({
+  info: { role: "user" as const, id: MessageID.make(id), time: { created: 1000 } },
+  parts: [{ type: "text", text }],
+})
 
 describe("memory flush parse", () => {
   test("reads entries as strings or objects", () => {
@@ -28,13 +31,35 @@ describe("memory flush parse", () => {
 
 describe("memory flush context", () => {
   test("keeps the most recent text within the byte budget", () => {
-    const text = contextText(messages("第一段", "第二段", "第三段"), 12)
-    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(12)
-    expect(text).toContain("第三")
+    const { text } = context([message("msg_first", "第一段"), message("msg_recent", '第三段\n"'.repeat(30))], 140)
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(140)
+    expect(text).not.toContain("第一段")
+    expect(JSON.parse(text)).toMatchObject({ messageID: "msg_recent", role: "user" })
+    expect(JSON.parse(text).text).toStartWith('第三段\n"')
   })
 
-  test("skips synthetic parts", () => {
-    const text = contextText([{ parts: [{ type: "text", text: "隐藏", synthetic: true }] }])
+  test("preserves original speaker, message ID and time and distinguishes summaries", () => {
+    const user = message("msg_user", "我不喜欢跑步")
+    const assistant = message("msg_assistant", "我喜欢跑步")
+    const summary = message("msg_summary", "曾提到跑步")
+    const { text } = context([
+      user,
+      { ...assistant, info: { ...assistant.info, role: "assistant", time: { created: 2000 } } },
+      { ...summary, info: { ...summary.info, role: "assistant", summary: true, time: { created: 3000 } } },
+    ])
+    expect(text.split("\n").map((line) => JSON.parse(line))).toEqual([
+      { role: "user", messageID: "msg_user", createdAt: 1000, text: "我不喜欢跑步" },
+      { role: "assistant", messageID: "msg_assistant", createdAt: 2000, text: "我喜欢跑步" },
+      { role: "summary", messageID: "msg_summary", createdAt: 3000, text: "曾提到跑步" },
+    ])
+  })
+
+  test("skips queued messages and synthetic or ignored parts", () => {
+    const user = message("msg_user", "未投递")
+    const { text } = context([
+      { ...user, info: { ...user.info, delivery: "queued" } },
+      { ...user, parts: [{ type: "text", text: "隐藏", synthetic: true }, { type: "text", text: "忽略", ignored: true }] },
+    ])
     expect(text).toBe("")
   })
 })

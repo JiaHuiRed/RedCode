@@ -77,7 +77,7 @@ import { sessionSoul, sessionTitlePrefix } from "./soul"
 import * as Soul from "@/soul"
 import { Companion } from "@/companion/companion"
 import { Commitment } from "@/companion/commitment"
-import { companionContinuity } from "./companion-continuity"
+import { companionContinuity, MAX_PERSONAL_CONTEXT_BYTES } from "./companion-continuity"
 import { companionAgent, isCompanionChat } from "./companion"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
@@ -582,7 +582,7 @@ export const layer = Layer.effect(
 
     // 261119 Red 隐藏提取 pass：一轮真正结束后，从最近一次交换里找「用户没明说、但值得之后
     // 问一句」的跟进。默认关（REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS=1），只在绑定主 Chat
-    // 运行；到期提示走 companionContinuity，创建后至少静默 MIN_DELAY_MS。
+    // 运行；到期提示由主回合领取，创建后至少静默 MIN_DELAY_MS。
     const extractCommitments = Effect.fn("SessionPrompt.extractCommitments")(function* (input: {
       session: Session.Info
       user: MessageV2.User
@@ -705,7 +705,7 @@ export const layer = Layer.effect(
       const taskAbort = new AbortController()
       const result = yield* taskTool
         .execute(taskArgs, {
-          agent: task.agent,
+          agent: lastUser.agent,
           messageID: assistantMessage.id,
           sessionID,
           abort: taskAbort.signal,
@@ -1463,9 +1463,24 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    type TurnOwnership = {
+      messageID?: MessageID
+      commitment?: { userID: MessageID; claim: Commitment.Claim }
+    }
+
+    const settleCommitment = (ownership: TurnOwnership, deliveredAt?: number) =>
+      Effect.sync(() => {
+        if (!ownership.commitment) return
+        Commitment.settle(ownership.commitment.claim, deliveredAt)
+        ownership.commitment = undefined
+      }).pipe(
+        Effect.catchCause((cause) => elog.warn("commitment settlement failed", { error: Cause.squash(cause) })),
+      )
+
     const runLoop = (sessionID: SessionID) => {
-      const ownership: { messageID?: MessageID } = {}
+      const ownership: TurnOwnership = {}
       return runLoopImpl(sessionID, ownership).pipe(
+        Effect.ensuring(settleCommitment(ownership)),
         Effect.ensuring(
           Effect.suspend(() => {
             if (!ownership.messageID) return Effect.void
@@ -1479,7 +1494,7 @@ export const layer = Layer.effect(
 
     const runLoopImpl = Effect.fn("SessionPrompt.run")(function* (
       sessionID: SessionID,
-      ownership: { messageID?: MessageID },
+      ownership: TurnOwnership,
     ) {
       const ctx = yield* InstanceState.context
       const slog = elog.with({ sessionID })
@@ -1724,6 +1739,17 @@ export const layer = Layer.effect(
                 text: OutputLoss.notice(),
               })
             }
+            if (
+              ownership.commitment?.userID === lastUser.id &&
+              lastAssistant.parentID === lastUser.id &&
+              lastAssistant.finish === "stop" &&
+              lastAssistant.time.completed &&
+              !lastAssistant.error &&
+              !lastAssistant.summary &&
+              hasVisibleText &&
+              !outputLoss
+            )
+              yield* settleCommitment(ownership, Date.now())
             const lastUserMsg = msgs.findLast((msg) => msg.info.id === lastUser.id)
             yield* extractCommitments({
               session: yield* sessions.get(sessionID).pipe(Effect.orDie),
@@ -2512,6 +2538,7 @@ export const layer = Layer.effect(
           // 260820 cc 提出来成变量：上下文快照要记的是**真正发出去的那一份**，包含下面
           // 这三条临时注入。留在参数位上就只能记 stabilizedMsgs，差的正是每轮变动的部分。
           if (personalChat && personalRecall?.userID !== lastUser.id) {
+            yield* settleCommitment(ownership)
             const recalled = yield* companionContinuity({
               companions, sessions, session: stepSettings.session, history: msgs, user: lastUser,
               rules: Permission.merge(agent.permission, stepSettings.session.permission ?? []),
@@ -2519,10 +2546,28 @@ export const layer = Layer.effect(
               historyTool: !!sortedTools.session_query && lastUser.tools?.session_query !== false,
             }).pipe(Effect.timeout("400 millis"), Effect.catch(() => Effect.succeed(undefined)))
             personalRecall = { userID: lastUser.id, text: recalled }
+            const companionID = stepSettings.session.companionID
+            const userInput =
+              Commitment.enabled() &&
+              msgs.find((message) => message.info.id === lastUser.id)?.parts.some(
+                (part) =>
+                  part.type === "file" ||
+                  (part.type === "text" && !part.synthetic && !part.ignored && !!part.text.trim()),
+              )
+            if (companionID && userInput) {
+              const claim = Commitment.claim({ companionID, nowMs: Date.now() })
+              if (claim) ownership.commitment = { userID: lastUser.id, claim }
+            }
           }
+          const followUp = ownership.commitment?.userID === lastUser.id ? ownership.commitment.claim : undefined
+          const claimed = followUp && Commitment.renew(followUp, Date.now())
+          if (followUp && !claimed) yield* settleCommitment(ownership)
+          const recall = personalRecall?.userID === lastUser.id ? personalRecall.text : undefined
+          const personalContext = claimed
+            ? Companion.bounded(Commitment.prompt(followUp) + (recall ? "\n" + recall : ""), MAX_PERSONAL_CONTEXT_BYTES)
+            : recall
           const requestTail: ModelMessage[] = [
-            ...(personalRecall?.userID === lastUser.id && personalRecall.text
-              ? [{ role: "user" as const, content: personalRecall.text }] : []),
+            ...(personalContext ? [{ role: "user" as const, content: personalContext }] : []),
             ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
             // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
             ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),

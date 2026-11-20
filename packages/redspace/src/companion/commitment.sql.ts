@@ -21,6 +21,8 @@ export const CommitmentTable = sqliteTable(
     // pending | delivered | dismissed | expired
     status: text().notNull(),
     delivered_at: integer(),
+    claim_id: text(),
+    claim_until: integer(),
     ...Timestamps,
   },
   (table) => [

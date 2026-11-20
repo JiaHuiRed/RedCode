@@ -65,6 +65,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
 import { Companion } from "@/companion/companion"
+import { Commitment } from "@/companion/commitment"
 import CONVERSATION from "@/session/prompt/conversation.md" with { type: "text" }
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
@@ -819,6 +820,132 @@ it.live("native Chat starts before setup and refreshes saved USER across model c
         expect((yield* companions.get(initialized.profile.id))?.introduction).toBe("paused")
         expect(PromptCaches.souls.get(chat.id)).toBe(soul)
       }).pipe(provideInstance(initialized.profile.directory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
+
+it.live("companion commits one due follow-up only after a successful visible response", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    const flag = "REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS"
+    const previous = process.env[flag]
+    process.env[flag] = "1"
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      if (previous === undefined) delete process.env[flag]
+      else process.env[flag] = previous
+    }))
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const { profile } = yield* companions.initialize()
+      yield* ensureDir(path.join(profile.directory, ".git"))
+      yield* writeConfig(profile.directory, providerCfg(llm.url))
+      yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const chat = yield* sessions.create({ title: "Follow-up delivery", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+        const now = Date.now()
+        const created = now - 2 * Commitment.MIN_DELAY_MS
+        const texts = ["first topic", "second topic", "third topic", "fourth topic"]
+        const input = { companionID: profile.id, nowMs: now }
+        Commitment.record({
+          ...input,
+          sessionID: chat.id,
+          nowMs: created,
+          candidates: Commitment.validate({
+            nowMs: created,
+            candidates: texts.map((text, index) => ({
+              kind: "open_loop", sensitivity: "routine", source: "agent_promise",
+              text, reason: "Follow up once", dedupeKey: text, confidence: 0.9,
+              earliest: new Date(now - 1000 + index).toISOString(),
+            })),
+          }),
+        })
+        const send = (text: string) => prompt.prompt({ sessionID: chat.id, model: ref, parts: [{ type: "text", text }] })
+        const lastRequest = Effect.map(llm.inputs, (inputs) =>
+          inputs.map((body) => JSON.stringify(body.messages)).filter((body) => !body.includes("Existing pending commitments:")).at(-1),
+        )
+        const pending = () => Commitment.pending({ ...input, nowMs: Date.now() }).map((row) => row.dedupe_key)
+
+        yield* llm.error(400, { error: { message: "provider rejected request" } })
+        yield* send("First attempt")
+        expect(yield* lastRequest).toContain(texts[0])
+        expect(yield* lastRequest).not.toContain(texts[1])
+        expect(pending()).toEqual(texts)
+
+        yield* llm.hang
+        const running = yield* send("Interrupted attempt").pipe(Effect.forkScoped)
+        yield* llm.wait(2)
+        expect(yield* lastRequest).toContain(texts[0])
+        expect(Commitment.claim({ ...input, nowMs: Date.now() })).toBeUndefined()
+        yield* prompt.cancel(chat.id)
+        yield* Fiber.await(running)
+        expect(pending()).toEqual(texts)
+
+        for (let index = 0; index < Commitment.MAX_PER_DAY; index++) {
+          yield* llm.textMatch((hit) => JSON.stringify(hit.body).includes("Existing pending commitments:"), '{"candidates":[]}')
+          yield* llm.text("A complete reply.")
+          yield* send(`Successful attempt ${index + 1}`)
+          expect(yield* lastRequest).toContain(texts[index])
+          expect(yield* lastRequest).not.toContain(texts[index + 1])
+          expect(pending()).toEqual(texts.slice(index + 1))
+        }
+        expect(Commitment.claim({ ...input, nowMs: Date.now() })).toBeUndefined()
+      }).pipe(provideInstance(profile.directory))
+    }).pipe(
+      Effect.provideService(Companion.directory, path.join(directory, "companions")),
+      Effect.provideService(Soul.directory, path.join(directory, "souls")),
+    )
+  }),
+)
+
+it.live("companion memory flush sends attributed excerpts before saving diary entries", () =>
+  Effect.gen(function* () {
+    const directory = yield* tmpdirScoped()
+    const llm = yield* TestLLMServer
+    const flag = "REDCODE_EXPERIMENTAL_COMPANION_MEMORY_FLUSH"
+    const previous = process.env[flag]
+    process.env[flag] = "1"
+    yield* Effect.addFinalizer(() => Effect.sync(() => {
+      if (previous === undefined) delete process.env[flag]
+      else process.env[flag] = previous
+    }))
+    yield* Effect.gen(function* () {
+      const companions = yield* Companion.Service
+      const { profile } = yield* companions.initialize()
+      yield* ensureDir(path.join(profile.directory, ".git"))
+      yield* writeConfig(profile.directory, providerCfg(llm.url))
+      yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const prompt = yield* SessionPrompt.Service
+        const compaction = yield* SessionCompaction.Service
+        const chat = yield* sessions.create({ title: "Attributed diary", mode: "chat", companionID: profile.id })
+        yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+        yield* llm.text("I like running.")
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          model: ref,
+          parts: [{ type: "text", text: "I dislike running. ".repeat(13).trim() }],
+        })
+        const [original, answer] = yield* sessions.messages({ sessionID: chat.id })
+        const note = "The user dislikes running."
+        const isFlush = (body: Record<string, unknown>) => JSON.stringify(body.messages).includes("Conversation excerpt (JSON lines):")
+        yield* llm.textMatch((hit) => isFlush(hit.body), JSON.stringify({ entries: [{ text: note }] }))
+        yield* llm.text("Conversation summary.")
+        yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+        const messages = yield* sessions.messages({ sessionID: chat.id })
+        yield* compaction.process({ sessionID: chat.id, parentID: messages.at(-1)!.info.id, messages, auto: false })
+
+        const request = (yield* llm.inputs).find(isFlush)
+        const wire = JSON.stringify(request?.messages)
+        expect(wire).toContain(JSON.stringify({ role: "user", messageID: original!.info.id, createdAt: original!.info.time.created }).slice(1, -1).replaceAll('"', '\\"'))
+        expect(wire).toContain(JSON.stringify({ role: "assistant", messageID: answer!.info.id, createdAt: answer!.info.time.created }).slice(1, -1).replaceAll('"', '\\"'))
+        expect((yield* companions.bootstrap(profile.id)).text).toContain(note)
+      }).pipe(provideInstance(profile.directory))
     }).pipe(
       Effect.provideService(Companion.directory, path.join(directory, "companions")),
       Effect.provideService(Soul.directory, path.join(directory, "souls")),

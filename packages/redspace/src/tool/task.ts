@@ -21,6 +21,9 @@ import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
+import * as Database from "@/storage/db"
+import { MessageTable } from "@/session/session.sql"
+import { and, eq, sql } from "drizzle-orm"
 import { profileCapabilitySet } from "./capability"
 import {
   boundedTaskText,
@@ -611,12 +614,17 @@ export const TaskTool = Tool.define(
           new Error("Background subagents require REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"),
         )
       }
+      const next = yield* agent.get(params.subagent_type)
+      if (!next) {
+        return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
+      }
+      const isExplore = next.name === "explore"
       const isolated = params.isolation === "worktree"
       // 261107 Red D1（docs/agent-dispatch-plan.md D1，本方案核心）：explore+isolation
       // 参数校验直接拒绝——只读工种与文件隔离正交，唯一「效果」是读到过时代码视图；
       // 文案写明原因防模型重试。execute+isolation 保留（并行实验分支），其边界在
       // schema description 里声明。
-      if (params.subagent_type === "explore" && isolated) {
+      if (isExplore && isolated) {
         return yield* Effect.fail(
           new Error(
             'explore is read-only and does not accept isolation="worktree"; isolation only gates file writes and would just serve a stale code view. Re-dispatch without isolation.',
@@ -642,76 +650,100 @@ export const TaskTool = Tool.define(
         }
       }
 
-      const explorePacket =
-        params.subagent_type === "explore"
-          ? compileExploreTaskPacket({ goal: params.prompt, directory: parent.directory })
-          : undefined
-      if (params.subagent_type === "explore" && !explorePacket) {
-        return yield* Effect.fail(new Error("Explore task packet is invalid and was not started"))
-      }
-      if (explorePacket && params.task_id) {
+      if (isExplore && params.task_id !== undefined) {
         // 261107 Red 文案如实：explore 续跑当前不支持（D2 缓办待观察数据），旧文案
         // 「requires its canonical task packet」指向不存在的机制，误导排查。
         return yield* Effect.fail(new Error("Explore tasks cannot be resumed via task_id; dispatch a new explore task instead"))
+      }
+      const explorePacket = isExplore
+        ? compileExploreTaskPacket({ goal: params.prompt, directory: parent.directory })
+        : undefined
+      if (isExplore && !explorePacket) {
+        return yield* Effect.fail(new Error("Explore task packet is invalid and was not started"))
       }
 
       if (!ctx.extra?.bypassAgentCheck) {
         yield* ctx.ask({
           permission: id,
-          patterns: [params.subagent_type],
+          patterns: [next.name],
           always: ["*"],
           metadata: {
             description: params.description,
-            subagent_type: params.subagent_type,
+            subagent_type: next.name,
           },
         })
       }
 
-      const next = yield* agent.get(params.subagent_type)
-      if (!next) {
-        return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
-      }
-
-      const taskID = params.task_id
-      const session = taskID
-        ? yield* sessions.get(SessionID.make(taskID)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
-      const parentAgent = parent.agent
-        ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
-      const nextSession =
-        session ??
-        (yield* Effect.gen(function* () {
-          const permission = [
-            ...deriveSubagentSessionPermission({
-              parentSessionPermission: parent.permission ?? [],
-              parentAgent,
-              subagent: next,
-            }),
-            ...(cfg.experimental?.primary_tools?.map((item) => ({
+      const currentParent = yield* sessions.get(ctx.sessionID)
+      const permission = [
+        ...deriveSubagentSessionPermission({
+          parentSessionPermission: currentParent.permission ?? [],
+          parentAgent: yield* agent.get(ctx.agent),
+          subagent: next,
+        }),
+        ...(cfg.experimental?.primary_tools?.map((item) => ({
+          pattern: "*",
+          action: "allow" as const,
+          permission: item,
+        })) ?? []),
+        // 261011 Red bash 从硬 deny 摘除：explore 的 bash 改由 md 白名单收口（仅六个 git
+        // 只读子命令，docs/agent-dispatch-plan.md D4）。运行层仍硬 deny 其余写类工具——
+        // 只读红线不依赖权限层单一闸门。曾经 bash: allow 是假门票（443c92b1 的 guard 在
+        // findLast 末位掀翻声明），本次是 guard 与白名单同步摘/加，缺一则另一侧失效。
+        ...(explorePacket
+          ? ["edit", "write", "apply_patch", "task", "commit", "push"].map((permission) => ({
               pattern: "*",
-              action: "allow" as const,
-              permission: item,
-            })) ?? []),
-            // 261011 Red bash 从硬 deny 摘除：explore 的 bash 改由 md 白名单收口（仅六个 git
-            // 只读子命令，docs/agent-dispatch-plan.md D4）。运行层仍硬 deny 其余写类工具——
-            // 只读红线不依赖权限层单一闸门。曾经 bash: allow 是假门票（443c92b1 的 guard 在
-            // findLast 末位掀翻声明），本次是 guard 与白名单同步摘/加，缺一则另一侧失效。
-            ...(explorePacket
-              ? ["edit", "write", "apply_patch", "task", "commit", "push"].map((permission) => ({
-                  pattern: "*",
-                  action: "deny" as const,
-                  permission,
-                }))
-              : []),
-          ]
-          return yield* sessions
-            .create({
-              parentID: ctx.sessionID,
-              title: params.description + ` (@${next.name} subagent)`,
+              action: "deny" as const,
               permission,
-            })
-        }))
+            }))
+          : []),
+      ]
+      const nextSession = yield* Effect.gen(function* () {
+        if (params.task_id === undefined)
+          return yield* sessions.create({
+            parentID: ctx.sessionID,
+            agent: next.name,
+            title: params.description + ` (@${next.name} subagent)`,
+            permission,
+          })
+
+        const child = yield* sessions
+          .get(SessionID.make(params.task_id))
+          .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)))
+        if (child?.parentID !== ctx.sessionID || child.projectID !== currentParent.projectID)
+          return yield* Effect.fail(new Error("task_id does not identify a task owned by this session"))
+
+        // 261120 Red 会话 agent 会随引导消息切换。优先用原派发消息的 agent，
+        // 并查看弃岛数据，避免消息树切换悄悄改变续跑工种。
+        const first = Database.use((db) =>
+          db
+            .select({ data: MessageTable.data })
+            .from(MessageTable)
+            .where(
+              and(eq(MessageTable.session_id, child.id), sql`json_extract(${MessageTable.data}, '$.role') = 'user'`),
+            )
+            .orderBy(MessageTable.time_created, MessageTable.id)
+            .limit(1)
+            .get(),
+        )
+        const originalAgent = first?.data.role === "user" ? first.data.agent : child.agent
+        if (!originalAgent || (yield* agent.get(originalAgent))?.name !== next.name)
+          return yield* Effect.fail(new Error("task_id was dispatched with a different or unknown subagent type"))
+
+        // 261120 Red 权限规则最后命中者优先。拒绝权限已漂移的续跑，避免覆盖子会话独立授权。
+        const saved = child.permission ?? []
+        if (
+          saved.length !== permission.length ||
+          !permission.every(
+            (rule, index) =>
+              rule.permission === saved[index]?.permission &&
+              rule.pattern === saved[index]?.pattern &&
+              rule.action === saved[index]?.action,
+          )
+        )
+          return yield* Effect.fail(new Error("Task permissions have changed; dispatch a new task under the current permissions"))
+        return child
+      })
 
       if (explorePacket) {
         if (Option.isNone(storage)) {

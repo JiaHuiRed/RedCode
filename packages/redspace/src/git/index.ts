@@ -354,7 +354,7 @@ export const layer = Layer.effect(
 
     const patch = Effect.fn("Git.patch")(function* (cwd: string, ref: string, file: string, options?: PatchOptions) {
       const result = yield* run(
-        ["diff", "--patch", "--no-ext-diff", "--no-renames", `--unified=${options?.context ?? 3}`, ref, "--", file],
+        ["--literal-pathspecs", "diff", "--patch", "--no-ext-diff", "--no-renames", `--unified=${options?.context ?? 3}`, ref, "--", file],
         { cwd, maxOutputBytes: options?.maxOutputBytes },
       )
       return { text: result.truncated ? "" : result.text(), truncated: result.truncated } satisfies Patch
@@ -418,7 +418,7 @@ export const layer = Layer.effect(
         // --empty 不依赖 HEAD，空仓也能建立基线；失败说明临时索引不可用，回退。
         const tree = yield* run(["read-tree", "--empty"], { cwd, env })
         if (tree.exitCode !== 0) return
-        const added = yield* run(["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], {
+        const added = yield* run(["--literal-pathspecs", "add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], {
           cwd,
           env,
           stdin: stdin(input),

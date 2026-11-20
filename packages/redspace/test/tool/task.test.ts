@@ -299,29 +299,43 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
       const tool = yield* TaskTool
       const def = yield* tool.init()
       let seen: SessionPrompt.PromptInput | undefined
       const promptOps = stubOps({ text: "resumed", onPrompt: (input) => (seen = input) })
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const initial = yield* def.execute(
+        { description: "inspect bug", prompt: "start the investigation", subagent_type: "general" },
+        context,
+      )
+      const child = yield* sessions.get(SessionID.make(initial.metadata.sessionId))
+      expect(child.agent).toBe("execute")
+      yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: child.id,
+        agent: "general",
+        model: ref,
+        time: { created: Date.now() },
+      })
 
       const result = yield* def.execute(
         {
           description: "inspect bug",
           prompt: "look into the cache key path",
-          subagent_type: "general",
+          subagent_type: "execute",
           task_id: child.id,
         },
-        {
-          sessionID: chat.id,
-          messageID: assistant.id,
-          agent: "build",
-          abort: new AbortController().signal,
-          extra: { promptOps },
-          messages: [],
-          metadata: () => Effect.void,
-          ask: () => Effect.void,
-        },
+        context,
       )
 
       const kids = yield* sessions.children(chat.id)
@@ -333,7 +347,7 @@ describe("tool.task", () => {
     }),
   )
 
-  explore.instance("persists an Explore result before returning it", () =>
+  explore.instance("persists an Explore result through a legacy agent alias", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const storage = yield* Storage.Service
@@ -344,7 +358,7 @@ describe("tool.task", () => {
         {
           description: "inspect provider",
           prompt: "inspect the provider resolution path",
-          subagent_type: "explore",
+          subagent_type: "scout",
         },
         {
           sessionID: chat.id,
@@ -523,11 +537,11 @@ describe("tool.task", () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]).toEqual({
         permission: "task",
-        patterns: ["general"],
+        patterns: ["execute"],
         always: ["*"],
         metadata: {
           description: "inspect bug",
-          subagent_type: "general",
+          subagent_type: "execute",
         },
       })
     }),
@@ -586,40 +600,48 @@ describe("tool.task", () => {
     }),
   )
 
-  it.instance("execute creates a child when task_id does not exist", () =>
+  it.instance("execute rejects unavailable tasks, different workers and changed permissions", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
-      let seen: SessionPrompt.PromptInput | undefined
-      const promptOps = stubOps({ text: "created", onPrompt: (input) => (seen = input) })
-
-      const result = yield* def.execute(
-        {
-          description: "inspect bug",
-          prompt: "look into the cache key path",
-          subagent_type: "general",
-          task_id: "ses_missing",
-        },
-        {
-          sessionID: chat.id,
-          messageID: assistant.id,
-          agent: "build",
-          abort: new AbortController().signal,
-          extra: { promptOps },
-          messages: [],
-          metadata: () => Effect.void,
-          ask: () => Effect.void,
-        },
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: stubOps() },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const task = { description: "inspect bug", prompt: "look into the cache key path", subagent_type: "general" }
+      const root = yield* sessions.create()
+      const child = yield* def.execute(task, context)
+      const childID = SessionID.make(child.metadata.sessionId)
+      yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: childID,
+        agent: "reviewer",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      for (const task_id of ["", "ses_missing", root.id, childID]) {
+        const exit = yield* def.execute({ ...task, task_id }, context).pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+      const current = yield* def.execute(task, context)
+      yield* sessions.setPermission({
+        sessionID: chat.id,
+        permission: [{ permission: "edit", pattern: "*", action: "deny" }],
+      })
+      const changed = yield* def.execute({ ...task, task_id: current.metadata.sessionId }, context).pipe(Effect.exit)
+      expect(Exit.isFailure(changed) && Cause.pretty(changed.cause)).toContain("Task permissions have changed")
+      expect((yield* sessions.children(chat.id)).map((item) => item.id).sort()).toEqual(
+        [childID, current.metadata.sessionId].sort(),
       )
-
-      const kids = yield* sessions.children(chat.id)
-      expect(kids).toHaveLength(1)
-      expect(kids[0]?.id).toBe(result.metadata.sessionId)
-      expect(result.metadata.sessionId).not.toBe("ses_missing")
-      expect(result.output).toContain(`task_id: ${result.metadata.sessionId}`)
-      expect(seen?.sessionID).toBe(result.metadata.sessionId)
     }),
   )
 
@@ -683,7 +705,7 @@ describe("tool.task", () => {
           {
             description: "inspect bug",
             prompt: "look into the cache key path",
-            subagent_type: "reviewer",
+            subagent_type: "permission-worker",
           },
           {
             sessionID: chat.id,
@@ -723,9 +745,10 @@ describe("tool.task", () => {
         })
       }),
     {
+      files: { ".redcode/agent/permission-worker.md": subagentMd("Permission Worker") },
       config: {
         agent: {
-          reviewer: {
+          "permission-worker": {
             mode: "subagent",
             permission: {
               task: "allow",

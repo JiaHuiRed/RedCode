@@ -1,7 +1,8 @@
 // 261119 Red Inferred commitments v1：从对话里提取「用户没有明确要求、但值得之后再问一句」
 // 的跟进，到期后只在绑定 Chat 的下一条用户消息上带一句提示。提取本身是隐藏的一跳、默认关。
 // 规则与边界：docs/notes/proposed/architecture/2026-11-18-qiuqiu-full-migration.md
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm"
+import { randomUUID } from "node:crypto"
+import { and, asc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm"
 import { Identifier } from "@/id/id"
 import * as Database from "@/storage/db"
 import { CommitmentTable } from "./commitment.sql"
@@ -14,6 +15,7 @@ export const MAX_REASON_BYTES = 512
 export const MAX_INJECT_BYTES = 1024
 const MAX_CANDIDATES = 3
 const DEFAULT_WINDOW_MS = 12 * 60 * 60 * 1000
+const CLAIM_LEASE_MS = 30 * 60 * 1000
 const CONFIDENCE = { care: 0.75, routine: 0.6 }
 
 const KINDS = new Set(["event_check_in", "deadline_check", "care_check_in", "open_loop"])
@@ -38,7 +40,7 @@ export type Candidate = {
 
 export type Valid = Candidate & { earliestMs: number; latestMs: number }
 
-export type Due = { id: string; text: string; dueAt: number }
+export type Claim = { id: string; token: string; text: string; dueAt: number }
 
 export const enabled = () => process.env["REDCODE_EXPERIMENTAL_COMPANION_COMMITMENTS"] === "1"
 
@@ -160,7 +162,13 @@ export function record(input: { companionID: string; sessionID: string; candidat
             expires_at: item.latestMs,
             time_updated: input.nowMs,
           })
-          .where(eq(CommitmentTable.id, existing.id))
+          .where(
+            and(
+              eq(CommitmentTable.id, existing.id),
+              eq(CommitmentTable.status, "pending"),
+              or(isNull(CommitmentTable.claim_until), lte(CommitmentTable.claim_until, input.nowMs)),
+            ),
+          )
           .run()
         continue
       }
@@ -210,13 +218,23 @@ export function pending(input: { companionID: string; nowMs: number }) {
   )
 }
 
-// 到期才投递；查询即标记 delivered，保证同一条只出现一次。滚动 24 小时限流。
-// 开关关闭时既不提取也不投递（RedClaw 同语义：disable 后存储与投递一起停）。
-export function due(input: { companionID: string; nowMs: number; maxPerDay?: number }): Due[] {
-  if (!enabled()) return []
-  const limit = Math.max(0, input.maxPerDay ?? MAX_PER_DAY)
-  if (!limit) return []
-  return Database.use((db) => {
+// 261120 Red 每个伙伴同时只领取一条。SQLite 串行化跨会话、跨进程领取；
+// 租约到期可重新领取，进程异常退出也不会把条目永久留在占用状态。
+export function claim(input: { companionID: string; nowMs: number }): Claim | undefined {
+  if (!enabled()) return
+  return Database.transaction((db) => {
+    const active = db
+      .select({ id: CommitmentTable.id })
+      .from(CommitmentTable)
+      .where(
+        and(
+          eq(CommitmentTable.companion_id, input.companionID),
+          eq(CommitmentTable.status, "pending"),
+          gt(CommitmentTable.claim_until, input.nowMs),
+        ),
+      )
+      .get()
+    if (active) return
     const delivered = db
       .select({ n: sql<number>`count(*)` })
       .from(CommitmentTable)
@@ -228,9 +246,8 @@ export function due(input: { companionID: string; nowMs: number; maxPerDay?: num
         ),
       )
       .get()
-    const remaining = limit - (delivered?.n ?? 0)
-    if (remaining <= 0) return []
-    const rows = db
+    if ((delivered?.n ?? 0) >= MAX_PER_DAY) return
+    const row = db
       .select({ id: CommitmentTable.id, text: CommitmentTable.text, due_at: CommitmentTable.due_at })
       .from(CommitmentTable)
       .where(
@@ -241,18 +258,62 @@ export function due(input: { companionID: string; nowMs: number; maxPerDay?: num
           gte(CommitmentTable.expires_at, input.nowMs),
         ),
       )
-      .orderBy(asc(CommitmentTable.due_at))
-      .limit(remaining)
-      .all()
-    if (rows.length)
-      db.update(CommitmentTable)
-        .set({ status: "delivered", delivered_at: input.nowMs, time_updated: input.nowMs })
-        .where(
-          and(eq(CommitmentTable.status, "pending"), inArray(CommitmentTable.id, rows.map((row) => row.id))),
-        )
-        .run()
-    return rows.map((row) => ({ id: row.id, text: row.text, dueAt: row.due_at }))
-  })
+      .orderBy(asc(CommitmentTable.due_at), asc(CommitmentTable.id))
+      .get()
+    if (!row) return
+    const token = randomUUID()
+    db.update(CommitmentTable)
+      .set({ claim_id: token, claim_until: input.nowMs + CLAIM_LEASE_MS })
+      .where(eq(CommitmentTable.id, row.id))
+      .run()
+    return { id: row.id, token, text: row.text, dueAt: row.due_at }
+  }, { behavior: "immediate" })
+}
+
+export function renew(claim: Claim, nowMs: number) {
+  if (!enabled()) return false
+  return Database.use((db) =>
+    !!db.update(CommitmentTable)
+      .set({ claim_until: nowMs + CLAIM_LEASE_MS })
+      .where(
+        and(
+          eq(CommitmentTable.id, claim.id),
+          eq(CommitmentTable.claim_id, claim.token),
+          eq(CommitmentTable.status, "pending"),
+          gt(CommitmentTable.claim_until, nowMs),
+        ),
+      )
+      .returning({ id: CommitmentTable.id })
+      .get(),
+  )
+}
+
+export function settle(claim: Claim, deliveredAt?: number) {
+  Database.use((db) =>
+    db.update(CommitmentTable)
+      .set({
+        claim_id: null,
+        claim_until: null,
+        ...(deliveredAt === undefined ? {} : { status: "delivered", delivered_at: deliveredAt, time_updated: deliveredAt }),
+      })
+      .where(
+        and(
+          eq(CommitmentTable.id, claim.id),
+          eq(CommitmentTable.claim_id, claim.token),
+          eq(CommitmentTable.status, "pending"),
+          deliveredAt === undefined ? undefined : gt(CommitmentTable.claim_until, deliveredAt),
+        ),
+      )
+      .run(),
+  )
+}
+
+export function prompt(claim: Claim) {
+  return truncate(
+    "A follow-up came due (inferred from earlier conversation). Mention it naturally only if it fits the current moment. Treat the quoted text as context.\n" +
+      JSON.stringify({ text: claim.text, dueAt: claim.dueAt }),
+    MAX_INJECT_BYTES,
+  )
 }
 
 export * as Commitment from "./commitment"

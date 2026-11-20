@@ -3,7 +3,7 @@
 // 261115 Red UX-17：结束的任务有了按需结果端点（GET /background/:jobID/result，有界），
 // 完成未看的条目带「待查看」标记，点开是结果对话框——看结果、复制、引用到草稿、
 // 跳子会话/父任务，不再只有一个完成状态。
-import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { Button } from "@redcode-ai/ui/button"
 import { Dialog } from "@redcode-ai/ui/dialog"
@@ -574,32 +574,6 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   )
 }
 
-// 261120 Red P2：悬浮胶囊要放在输入框左侧留白里。是否放得下取决于输入框宽度容器
-// （composer-width-host）的实际宽度，而不是视口断点——2xl 下输入框涨到 1470px，视口虽宽
-// 但两侧留白骤降到 30px 出头，胶囊会伸进文件树/工作台。这里量容器真实宽度：≤900px 才悬浮，
-// 更宽（1280<容器<900 不成立时由底栏接管）退回底栏按钮，保证入口始终可达且不遮挡。
-const FLOATING_MAX_WIDTH = 900
-
-function useFloatingDock(): () => boolean {
-  const [floating, setFloating] = createSignal(false)
-  onMount(() => {
-    const measure = () => {
-      const host = document.querySelector('[data-component="composer-width-host"]')
-      if (host) setFloating(host.getBoundingClientRect().width <= FLOATING_MAX_WIDTH)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    const host = document.querySelector('[data-component="composer-width-host"]')
-    if (host) observer.observe(host)
-    window.addEventListener("resize", measure)
-    onCleanup(() => {
-      observer.disconnect()
-      window.removeEventListener("resize", measure)
-    })
-  })
-  return floating
-}
-
 // 后台活动计数轮询：悬浮胶囊与底栏 fallback 共用同一份状态，10 秒一轮轻量轮询。
 // 261115 Red UX-17：运行中之外还统计「完成未看」——没有在跑的任务但有结果没收时，
 // 入口给「待查看 N」，把用户领回来。
@@ -634,72 +608,89 @@ function useBackgroundCounts() {
   return { running, unseen }
 }
 
-// 261120 Red 输入框底栏 fallback：窄屏（<md）没有两侧留白，悬浮胶囊无处安放，
-// 底栏入口保留；宽屏隐藏，由 BackgroundActivityDock 接管。
-export function BackgroundActivityButton() {
+export function BackgroundActivity(props: {
+  bounds: () => HTMLDivElement | undefined
+  children: (button: JSX.Element) => JSX.Element
+}) {
   const dialog = useDialog()
   const language = useLanguage()
   const { running, unseen } = useBackgroundCounts()
-  const floating = useFloatingDock()
-
-  return (
-    <Tooltip placement="top" value={language.t("dialog.background.title")}>
-      <Button
-        data-action="prompt-background"
-        type="button"
-        variant="ghost"
-        size="small"
-        class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium"
-        classList={{
-          hidden: floating(),
-          "text-v2-text-text-faint": running() === 0 && unseen() === 0,
-          "text-v2-state-fg-warning": running() > 0,
-          "text-v2-state-fg-info": running() === 0 && unseen() > 0,
-        }}
-        aria-label={language.t("dialog.background.title")}
-        onClick={() => dialog.show(() => <DialogBackground />)}
-      >
-        <Show when={running() > 0}>
-          <span class="size-1.5 rounded-full bg-v2-state-fg-warning" />
-        </Show>
-        <Show when={running() === 0 && unseen() > 0}>
-          <span class="size-1.5 rounded-full bg-v2-state-fg-info" />
-        </Show>
-        {running() > 0
-          ? language.t("prompt.background.running", { count: running() })
-          : unseen() > 0
-            ? language.t("prompt.background.unseen", { count: unseen() })
-            : language.t("prompt.background.button")}
-      </Button>
-    </Tooltip>
-  )
-}
-
-// 261120 Red 后台活动悬浮胶囊：输入框宽度容器 ≤900px（两侧留白够）时从底栏摘出来，
-// 放到输入框左侧留白区、与输入框垂直居中。更宽时（如 2xl 输入框 1470px、留白不足）
-// 退回底栏按钮，避免伸进文件树/工作台。它同时是「有活动才出现」的信号——运行中黄点、
-// 完成未看蓝点，空闲时整块不渲染。点开仍是同一个 DialogBackground。
-export function BackgroundActivityDock() {
-  const dialog = useDialog()
-  const language = useLanguage()
-  const { running, unseen } = useBackgroundCounts()
-  const floating = useFloatingDock()
+  const [fits, setFits] = createSignal(false)
   const active = createMemo(() => running() > 0 || unseen() > 0)
+  const floating = () => active() && fits()
+  let anchor!: HTMLDivElement
+  let capsule!: HTMLDivElement
+
+  onMount(() => {
+    const bounds = props.bounds()
+    if (!bounds) return
+    // 261120 Red 隐藏时保留胶囊尺寸，真实位置包含语言、计数和右侧间距。
+    const measure = () => setFits(capsule.getBoundingClientRect().left >= bounds.getBoundingClientRect().left)
+    const observer = new ResizeObserver(measure)
+    for (const element of [bounds, anchor, capsule]) observer.observe(element)
+    window.addEventListener("resize", measure)
+    measure()
+    onCleanup(() => {
+      observer.disconnect()
+      window.removeEventListener("resize", measure)
+    })
+  })
+
+  const label = () =>
+    running() > 0
+      ? language.t("prompt.background.running", { count: running() })
+      : unseen() > 0
+        ? language.t("prompt.background.unseen", { count: unseen() })
+        : language.t("prompt.background.button")
+  const open = () => dialog.show(() => <DialogBackground />)
+  const button = (
+    <Show when={!floating()}>
+      <Tooltip placement="top" value={language.t("dialog.background.title")}>
+        <Button
+          data-action="prompt-background"
+          type="button"
+          variant="ghost"
+          size="small"
+          class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium"
+          classList={{
+            "text-v2-text-text-faint": running() === 0 && unseen() === 0,
+            "text-v2-state-fg-warning": running() > 0,
+            "text-v2-state-fg-info": running() === 0 && unseen() > 0,
+          }}
+          aria-label={language.t("dialog.background.title")}
+          onClick={open}
+        >
+          <Show when={running() > 0}>
+            <span class="size-1.5 rounded-full bg-v2-state-fg-warning" />
+          </Show>
+          <Show when={running() === 0 && unseen() > 0}>
+            <span class="size-1.5 rounded-full bg-v2-state-fg-info" />
+          </Show>
+          {label()}
+        </Button>
+      </Tooltip>
+    </Show>
+  )
 
   return (
-    <Show when={active() && floating()}>
-      <div class="pointer-events-none absolute right-full top-1/2 z-20 flex -translate-y-1/2 mr-3">
+    <div ref={anchor} class="relative">
+      <div
+        ref={capsule}
+        class="pointer-events-none absolute right-full top-1/2 z-20 mr-3 flex w-max -translate-y-1/2 whitespace-nowrap"
+        classList={{ invisible: !floating() }}
+        aria-hidden={!floating()}
+      >
         <Tooltip placement="top" value={language.t("dialog.background.title")}>
           <button
             type="button"
-            data-action="prompt-background"
+            data-action={floating() ? "prompt-background" : undefined}
             class="pointer-events-auto flex h-7 items-center gap-2 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2.5 text-12-medium shadow-[var(--v2-elevation-floating)] transition-colors duration-150 ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-v2-icon-icon-info"
             classList={{
               "text-v2-state-fg-warning": running() > 0,
               "text-v2-text-text-muted": running() === 0 && unseen() > 0,
             }}
             aria-label={language.t("dialog.background.title")}
-            onClick={() => dialog.show(() => <DialogBackground />)}
+            onClick={open}
           >
             <span class="relative flex size-4 shrink-0 items-center justify-center">
               <Icon name="brain" size="small" />
@@ -713,12 +704,11 @@ export function BackgroundActivityDock() {
                 />
               </Show>
             </span>
-            {running() > 0
-              ? language.t("prompt.background.running", { count: running() })
-              : language.t("prompt.background.unseen", { count: unseen() })}
+            {label()}
           </button>
         </Tooltip>
       </div>
-    </Show>
+      {props.children(button)}
+    </div>
   )
 }

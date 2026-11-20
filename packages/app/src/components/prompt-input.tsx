@@ -12,6 +12,7 @@ import {
   createResource,
   For,
   type Accessor,
+  type JSX,
   Suspense,
 } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -39,7 +40,6 @@ import { DockShellForm } from "@redcode-ai/ui/dock-surface"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { BackgroundActivityButton } from "@/components/background-activity"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -95,6 +95,7 @@ interface PromptInputProps {
   class?: string
   variant?: "dock" | "new-session"
   ref?: (el: HTMLDivElement) => void
+  backgroundActivity?: JSX.Element
   newSessionWorktree?: string
   // 261114 Red UX-03 评审：Soul 选择挪到新会话页上下文行（设计视图），提交经此读取
   newSessionSoul?: Accessor<string | undefined>
@@ -1943,7 +1944,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
                开上下文面板走右侧常驻 tab。 */}
             <SessionContextUsage placement="top" />
-            <BackgroundActivityButton />
+            {props.backgroundActivity}
             <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
               {/* 261116 Red C01：显示的是真正生效的投递方式（临时覆盖优先，否则取
                  busy_enter 默认）。点一下只改这一条，提交成功后回到默认。 */}

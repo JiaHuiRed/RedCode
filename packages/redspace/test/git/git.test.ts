@@ -201,6 +201,27 @@ describe("Git", () => {
     }),
   )
 
+  it.live("patches use literal paths for bracketed filenames", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      const git = yield* Git.Service
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a1.txt"), "original\n"))
+      yield* Effect.promise(() => $`git add a1.txt`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => $`git commit --no-gpg-sign -m baseline`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a1.txt"), "modified\n"))
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "a[1].txt"), "new file\n"))
+
+      const batch = yield* git.patchUntrackedBatch(tmp.path, ["a[1].txt"])
+      expect(batch?.text).toContain("+new file")
+      expect(batch?.text).not.toContain("a1.txt")
+
+      yield* Effect.promise(() => $`git --literal-pathspecs add -- a[1].txt`.cwd(tmp.path).quiet())
+      const tracked = yield* git.patch(tmp.path, "HEAD", "a[1].txt")
+      expect(tracked.text).toContain("+new file")
+      expect(tracked.text).not.toContain("a1.txt")
+    }),
+  )
+
   it.live("show() returns empty text for binary blobs", () =>
     Effect.gen(function* () {
       const tmp = yield* scopedTmpdir({ git: true })

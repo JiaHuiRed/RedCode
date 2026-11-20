@@ -3,6 +3,8 @@
 // 提取「还没落盘、值得长期保留」的事实，经既有 Companion.remember 路径写入日记。
 // 默认关 REDCODE_EXPERIMENTAL_COMPANION_MEMORY_FLUSH=1；失败不阻断压缩。
 // 决策：docs/notes/proposed/architecture/2026-11-18-qiuqiu-full-migration.md
+import type { MessageV2 } from "@/session/message-v2"
+
 export const MAX_ENTRIES = 3
 export const MAX_ENTRY_BYTES = 1024
 export const MAX_CONTEXT_BYTES = 12_000
@@ -41,34 +43,50 @@ export function parse(raw: string): string[] {
     .slice(0, MAX_ENTRIES)
 }
 
-// 从展示序消息里倒序收集可见正文，总量有界；只给模型看最近这一段，不回放整库。
-export function contextText(
-  messages: { parts: { type: string; text?: string; synthetic?: boolean }[] }[],
+// 261120 Red 每条记录用独立 JSON 行，避免正文伪造角色边界，裁剪也保留完整的消息元数据。
+export function context(
+  messages: readonly {
+    info:
+      | Pick<MessageV2.User, "role" | "id" | "time" | "delivery">
+      | Pick<MessageV2.Assistant, "role" | "id" | "time" | "summary">
+    parts: readonly { type: string; text?: string; synthetic?: boolean; ignored?: boolean }[]
+  }[],
   bytes = MAX_CONTEXT_BYTES,
 ) {
   const blocks: string[] = []
   let used = 0
+  let contentBytes = 0
   for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (!message) continue
+    const message = messages[index]!
+    const info = message.info
+    if (info.role === "user" && (info.delivery === "queued" || info.delivery === "pending_steer")) continue
     const text = message.parts
-      .flatMap((part) => (part.type === "text" && !part.synthetic && part.text ? [part.text.trim()] : []))
+      .flatMap((part) => (part.type === "text" && !part.synthetic && !part.ignored && part.text ? [part.text.trim()] : []))
       .filter(Boolean)
       .join("\n")
     if (!text) continue
-    const separator = blocks.length ? Buffer.byteLength("\n\n") : 0
-    const remaining = bytes - used - separator
-    if (remaining <= 0) break
-    const size = Buffer.byteLength(text)
-    if (size > remaining) {
-      const clipped = Buffer.from(text).subarray(0, remaining).toString("utf8").replace(/\uFFFD+$/, "")
-      if (clipped) blocks.unshift(clipped)
-      break
+    const header = JSON.stringify({
+      role: info.role === "assistant" && info.summary ? "summary" : info.role,
+      messageID: info.id,
+      createdAt: info.time.created,
+    })
+    const prefix = header.slice(0, -1) + ',"text":'
+    const overhead = (blocks.length ? 1 : 0) + Buffer.byteLength(prefix) + 1
+    const remaining = bytes - used - overhead
+    if (remaining <= 2) break
+    let clipped = truncate(text, remaining - 2)
+    let encoded = JSON.stringify(clipped)
+    while (Buffer.byteLength(encoded) > remaining) {
+      clipped = truncate(clipped, Math.floor((Buffer.byteLength(clipped) * remaining) / Buffer.byteLength(encoded)))
+      encoded = JSON.stringify(clipped)
     }
-    blocks.unshift(text)
-    used += separator + size
+    if (!clipped) break
+    blocks.unshift(prefix + encoded + "}")
+    used += overhead + Buffer.byteLength(encoded)
+    contentBytes += Buffer.byteLength(clipped)
+    if (clipped !== text) break
   }
-  return blocks.join("\n\n")
+  return { text: blocks.join("\n"), contentBytes }
 }
 
 export * as MemoryFlush from "./memory-flush"
