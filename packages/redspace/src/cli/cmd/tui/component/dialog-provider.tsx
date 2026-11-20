@@ -226,6 +226,9 @@ export function createDialogProviderOptions() {
 
 export function DialogProvider() {
   const sync = useSync()
+  // 261120 Red 启动不再预取全量目录：由外层弹窗发起首次加载，列表只在 ready 后挂载。
+  // 不能只依赖 createDialogProviderOptions 里的兜底——那个在 ready 之后才执行。
+  void sync.ensureProviderList()
   return (
     <Show
       when={sync.data.provider_next_status === "ready"}
@@ -448,7 +451,8 @@ function ApiMethod(props: ApiMethodProps) {
         await sync.bootstrap()
         // 261022 Red 目录懒加载：先等目录就位再判重，否则「还没回来」会被误判成「未配置」。
         //   目录加载失败时 status 不是 ready，这时不弹这条提示（无法区分两种原因）。
-        if (props.custom) await sync.ensureProviderList()
+        //   261120 Red 启动不再预取，这里必须强制刷新——否则拿到的是保存凭据前的旧目录。
+        if (props.custom) await sync.ensureProviderList(true)
         if (
           props.custom &&
           sync.data.provider_next_status === "ready" &&

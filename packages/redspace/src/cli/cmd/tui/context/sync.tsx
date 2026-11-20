@@ -649,8 +649,9 @@ export const {
     // 261022 Red 全量供应商目录（provider.list）只服务「连接 Provider / 选择模型」弹窗，
     //   普通聊天要的已连接模型来自 config.providers。原实现把它放进阻塞组，等于每次启动
     //   都要等整个目录下载完才能进首屏，且它一失败就 throw 掉整条 bootstrap。
-    //   改为幂等懒加载：启动后台预取一次，弹窗打开时再兜一次；失败只把目录标成 error，
-    //   不影响聊天（弹窗里可重试）。
+    //   改为幂等懒加载：弹窗打开时再取（由 DialogProvider 发起），失败只把目录标成 error，
+    //   不影响聊天（弹窗里可重试）。261120 Red 启动不再预取——目录体量随配置增长，冷启动
+    //   多付一次序列化与传输没有收益；工作区切换时组件随 scope 重挂，缓存自然作废。
     let providerListInFlight: Promise<void> | undefined
     function ensureProviderList(force = false) {
       if (force) providerListInFlight = undefined
@@ -801,8 +802,6 @@ export const {
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
-      // 261022 Red 全量目录退出阻塞组（见 ensureProviderList）：后台预取，不 await。
-      void ensureProviderList(true)
       // 261113 Red console.state 只服务「Provider 弹窗」的 console 托管标记，不参与首屏：
       // 留在阻塞组里，一次悬挂就把整个第一/第二阶段拦在 loading/partial。改为落地即写
       // （见 startBackground）；失败不写 store（保留既有值），由 current 按 endpoint 记录。
