@@ -185,6 +185,7 @@ export function SessionComposerRegion(props: {
       aria-busy={status() === "busy"}
     >
       <div
+        data-component="composer-width-host"
         classList={{
           "w-full px-3 pointer-events-auto": true,
           "max-w-[756px] px-0": props.placement === "inline",

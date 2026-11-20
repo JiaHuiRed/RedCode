@@ -574,9 +574,37 @@ function JobResultDialog(props: { row: Row; onSeen?: () => void }) {
   )
 }
 
-// 后台任务计数轮询：悬浮胶囊与底栏 fallback 共用同一份状态，10 秒一轮轻量轮询。
+// 261120 Red P2：悬浮胶囊要放在输入框左侧留白里。是否放得下取决于输入框宽度容器
+// （composer-width-host）的实际宽度，而不是视口断点——2xl 下输入框涨到 1470px，视口虽宽
+// 但两侧留白骤降到 30px 出头，胶囊会伸进文件树/工作台。这里量容器真实宽度：≤900px 才悬浮，
+// 更宽（1280<容器<900 不成立时由底栏接管）退回底栏按钮，保证入口始终可达且不遮挡。
+const FLOATING_MAX_WIDTH = 900
+
+function useFloatingDock(): () => boolean {
+  const [floating, setFloating] = createSignal(false)
+  onMount(() => {
+    const measure = () => {
+      const host = document.querySelector('[data-component="composer-width-host"]')
+      if (host) setFloating(host.getBoundingClientRect().width <= FLOATING_MAX_WIDTH)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    const host = document.querySelector('[data-component="composer-width-host"]')
+    if (host) observer.observe(host)
+    window.addEventListener("resize", measure)
+    onCleanup(() => {
+      observer.disconnect()
+      window.removeEventListener("resize", measure)
+    })
+  })
+  return floating
+}
+
+// 后台活动计数轮询：悬浮胶囊与底栏 fallback 共用同一份状态，10 秒一轮轻量轮询。
 // 261115 Red UX-17：运行中之外还统计「完成未看」——没有在跑的任务但有结果没收时，
 // 入口给「待查看 N」，把用户领回来。
+// 261120 Red P1：与 DialogBackground 同源，同时统计 PTY 终端。只算 background 任务时，
+// 「没有子代理、只有后台终端在跑」会让胶囊 active=false、底栏又 xl:hidden，入口彻底消失。
 function useBackgroundCounts() {
   const sdk = useSDK()
   const [running, setRunning] = createSignal(0)
@@ -584,15 +612,18 @@ function useBackgroundCounts() {
 
   onMount(() => {
     const tick = () => {
-      void sdk.client.background
-        .list()
-        .then((result) => {
-          const jobs = result.data ?? []
-          setRunning(jobs.filter((job) => job.status === "running").length)
+      void Promise.all([sdk.client.background.list(), sdk.client.pty.list()])
+        .then(([jobsResult, ptyResult]) => {
+          const jobs = jobsResult.data ?? []
+          const terminals = ptyResult.data ?? []
+          const runningJobs = jobs.filter((job) => job.status === "running").length
+          const runningTerminals = terminals.filter((pty) => pty.status === "running").length
+          setRunning(runningJobs + runningTerminals)
+          // 终端没有「结果未看」概念，unseen 只针对任务；orphaned 终端是遗留快照，不计运行。
           setUnseen(jobs.filter((job) => job.status !== "running" && !seenResults.has(job.id)).length)
         })
         .catch(() => {
-          // 旧服务端没有 /background 路由：入口仍然可点，只是不显示计数。
+          // 旧服务端缺少 /background 或 /pty 路由：入口仍然可点，只是不显示计数。
         })
     }
     tick()
@@ -609,6 +640,7 @@ export function BackgroundActivityButton() {
   const dialog = useDialog()
   const language = useLanguage()
   const { running, unseen } = useBackgroundCounts()
+  const floating = useFloatingDock()
 
   return (
     <Tooltip placement="top" value={language.t("dialog.background.title")}>
@@ -617,8 +649,9 @@ export function BackgroundActivityButton() {
         type="button"
         variant="ghost"
         size="small"
-        class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium xl:hidden"
+        class="h-6 shrink-0 gap-1.5 rounded-md px-1.5 text-12-medium"
         classList={{
+          hidden: floating(),
           "text-v2-text-text-faint": running() === 0 && unseen() === 0,
           "text-v2-state-fg-warning": running() > 0,
           "text-v2-state-fg-info": running() === 0 && unseen() > 0,
@@ -642,19 +675,20 @@ export function BackgroundActivityButton() {
   )
 }
 
-// 261120 Red 后台活动悬浮胶囊：宽屏（≥xl，留白 ≥220px 才放得下）从输入框底栏
-// 摘出来，放到输入框左侧留白区、与输入框垂直居中。它是「有活动才出现」的信号——
-// 运行中黄点、完成未看蓝点，空闲时整块不渲染。点开仍是同一个 DialogBackground，
-// 与底栏 fallback 共用计数逻辑与已看集合。
+// 261120 Red 后台活动悬浮胶囊：输入框宽度容器 ≤900px（两侧留白够）时从底栏摘出来，
+// 放到输入框左侧留白区、与输入框垂直居中。更宽时（如 2xl 输入框 1470px、留白不足）
+// 退回底栏按钮，避免伸进文件树/工作台。它同时是「有活动才出现」的信号——运行中黄点、
+// 完成未看蓝点，空闲时整块不渲染。点开仍是同一个 DialogBackground。
 export function BackgroundActivityDock() {
   const dialog = useDialog()
   const language = useLanguage()
   const { running, unseen } = useBackgroundCounts()
+  const floating = useFloatingDock()
   const active = createMemo(() => running() > 0 || unseen() > 0)
 
   return (
-    <Show when={active()}>
-      <div class="pointer-events-none absolute right-full top-1/2 z-20 hidden -translate-y-1/2 mr-3 xl:flex">
+    <Show when={active() && floating()}>
+      <div class="pointer-events-none absolute right-full top-1/2 z-20 flex -translate-y-1/2 mr-3">
         <Tooltip placement="top" value={language.t("dialog.background.title")}>
           <button
             type="button"
