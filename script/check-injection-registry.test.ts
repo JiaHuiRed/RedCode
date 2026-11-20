@@ -27,7 +27,7 @@ const PROMPT =
   "export const x = 1 // TOKEN_ANCHOR\n" +
   Array.from({ length: 39 }, (_, i) => `const line${i} = ${i}\n`).join("")
 // 脚本里 PROMPT_TS 写死为 packages/redspace/src/session/prompt.ts，fixture 必须镜像该布局
-// 261120 Red 此前误写成 packages/opencode（迁移前旧路径），导致 fixture 缺该文件、门禁必红。
+// 261120 Red 此前误写成迁移前的旧引擎目录名，导致 fixture 缺该文件、门禁必红。
 const SESSION_PROMPT_REL = path.join("packages", "redspace", "src", "session", "prompt.ts")
 
 let fixtureRoot: string
