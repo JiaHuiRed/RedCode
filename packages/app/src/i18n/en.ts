@@ -995,6 +995,8 @@ export const dict = {
   "file.view.browser": "Open in browser",
   "file.view.previewUnavailable": "This client cannot open a browser preview. Update the desktop client and retry.",
   "file.view.htmlHint": "Scripts run only after opening. The isolated preview does not load relative local resources.",
+  // 261121 Red 方案④：后台刷新失败但旧正文还在时，状态条只给一句说明。
+  "file.view.staleNotice": "Couldn't refresh the file — showing the last version that was read.",
   "task.steer.title": "Add guidance",
   "task.steer.parent": "Parent task: {{id}}",
   "task.steer.hint":

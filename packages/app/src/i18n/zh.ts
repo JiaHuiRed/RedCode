@@ -923,6 +923,8 @@ export const dict = {
   "file.view.browser": "浏览器打开",
   "file.view.previewUnavailable": "当前客户端无法打开浏览器预览，请更新桌面客户端后重试。",
   "file.view.htmlHint": "点击打开后才运行脚本；隔离预览不加载本地相对资源。",
+  // 261121 Red 方案④：后台刷新失败但旧正文还在时，状态条只给一句说明。
+  "file.view.staleNotice": "文件暂时刷新失败，显示的是上次读到的内容。",
   "task.steer.title": "补充要求",
   "task.steer.parent": "所属主任务：{{id}}",
   "task.steer.hint": "在下一安全执行点投递，不会立即打断工具。目标冲突以用户新要求为准，仍遵守子任务权限。",

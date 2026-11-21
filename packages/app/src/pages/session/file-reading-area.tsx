@@ -117,6 +117,19 @@ export function FileReadingArea(props: { path: string }) {
         </div>
       </Show>
       {/* 261121 Red 预览渲染异常只在弹窗内现错，不影响背后的聊天操作。 */}
+      {/* 261121 Red 方案④：正文还在时的刷新失败只挂状态条，不接管整个视图——
+          文件暂时读不到就保留旧文，恢复成功后 setLoaded 会自动替换。 */}
+      <Show when={state()?.error && contents()}>
+        <div class="flex shrink-0 items-center gap-3 border-b border-border-weak-base bg-surface-raised-base px-6 py-1.5">
+          <p class="min-w-0 flex-1 truncate text-12-regular text-text-weak">{language.t("file.view.staleNotice")}</p>
+          <Button size="small" variant="ghost" onClick={retry}>
+            {language.t("common.retry")}
+          </Button>
+        </div>
+      </Show>
+      {/* 261121 Red 方案④：占位只在第一次打开（还没有任何正文）时出现。后台刷新
+          （watcher 强刷 / 重试）期间保留最后成功读到的正文，正文不卸载，滚动位置
+          自然保住——连续保存不再把正在读的文档顶回空白。 */}
       <ErrorBoundary
         fallback={(error) => (
           <div class="flex-1 overflow-auto px-6 py-4 text-13-regular text-text-critical-base">
@@ -126,10 +139,10 @@ export function FileReadingArea(props: { path: string }) {
       >
         <ScrollView class="min-h-0 flex-1">
           <Switch>
-            <Match when={state()?.loading}>
+            <Match when={state()?.loading && !contents()}>
               <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
             </Match>
-            <Match when={state()?.error}>
+            <Match when={state()?.error && !contents()}>
               <div class="flex flex-col items-start gap-2 px-6 py-4">
                 <p class="text-13-regular text-text-critical-base">{state()?.error}</p>
                 <p class="font-mono text-12-regular text-text-weak" title={props.path}>

@@ -71,6 +71,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const tabs = layout.tabs(() => frozenTabsKey)
 
     const inflight = new Map<string, Promise<void>>()
+    // 261121 Red 方案④：强制刷新在在途读取期间到达时不能只复用旧 promise——那次读取
+    // 开始于本次保存之前，结果必然偏旧，最后一次保存会漏掉补读。标记 dirty，读取完成后
+    // 立即补读一次（在途期间的多次保存合并成一次）。
+    const pendingRerun = new Set<string>()
     const [store, setStore] = createStore<{
       file: Record<string, FileState>
     }>({
@@ -224,7 +228,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       if (!options?.force && current?.loaded) return Promise.resolve()
 
       const pending = inflight.get(key)
-      if (pending) return pending
+      if (pending) {
+        if (options?.force) pendingRerun.add(key)
+        return pending
+      }
 
       setLoading(file)
 
@@ -245,6 +252,8 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         })
         .finally(() => {
           inflight.delete(key)
+          // 261121 Red 方案④：在途期间的更新合并成一次补读；换工作区后不再追。
+          if (pendingRerun.delete(key) && scope() === directory) void load(file, { force: true })
         })
 
       inflight.set(key, promise)
