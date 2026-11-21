@@ -7,7 +7,7 @@ import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentFits, archiveFits, presentBudget, type PendingBudget } from "./attachment-budget"
 import { attachmentMime, isArchiveFile, extName } from "./files"
-import { normalizePaste, pasteMode } from "./paste"
+import { classifyClipboard, normalizePaste, pasteMode } from "./paste"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -236,7 +236,13 @@ export function createPromptAttachmentsWithContext(
     prompt.set(next, prompt.cursor())
   }
 
-  const handlePaste = async (event: ClipboardEvent) => {
+  // 261121 Red 方案①：混合粘贴此前 files.length > 0 直接 return，text/plain 里的说明文字
+  // 被整段丢掉（首页 textarea 已在 a3254530 修过，这里是共享 PromptInput 的同一病灶）。
+  // 现在同步段一次取全文件与文字：有文字先按纯文字同款语义插进正文（execCommand 保留
+  // 撤销，失败回退 addPart），附件再异步补读——超限、读文件失败、读图中途换会话都只
+  // 影响附件，文字已落草稿。共享剪贴板分类 → classifyClipboard（paste.ts）。
+  // 返回值是附件处理的尾随 Promise（onPaste 不消费它，单测用 await 等附件落定）。
+  const handlePaste = (event: ClipboardEvent): void | Promise<void> => {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
 
@@ -244,47 +250,34 @@ export function createPromptAttachmentsWithContext(
     event.preventDefault()
     event.stopPropagation()
 
-    const files = Array.from(clipboardData.items).flatMap((item) => {
-      if (item.kind !== "file") return []
-      const file = item.getAsFile()
-      return file ? [file] : []
-    })
+    const { files, text: plainText } = classifyClipboard(clipboardData)
 
-    if (files.length > 0) {
-      await addAttachmentsInScope(files, target)
-      return
+    const insert = (raw: string) => {
+      const text = normalizePaste(raw)
+      const put = () => {
+        if (input.addPart({ type: "text", content: text, start: 0, end: 0 })) return
+        input.focusEditor()
+        input.addPart({ type: "text", content: text, start: 0, end: 0 })
+      }
+      if (pasteMode(text) === "manual") return put()
+      if (typeof document.execCommand === "function" && document.execCommand("insertText", false, text)) return
+      put()
     }
 
-    const plainText = clipboardData.getData("text/plain") ?? ""
+    if (files.length > 0) {
+      if (plainText) insert(plainText)
+      return addAttachmentsInScope(files, target).then(() => undefined)
+    }
 
     // Desktop: Browser clipboard has no images and no text, try platform's native clipboard for images
     if (input.readClipboardImage && !plainText) {
-      const file = await input.readClipboardImage()
-      if (file) {
-        await addAttachment(file, target)
-        return
-      }
+      return input.readClipboardImage().then((file) => {
+        if (file) return addAttachment(file, target).then(() => undefined)
+      })
     }
 
     if (!plainText) return
-
-    const text = normalizePaste(plainText)
-
-    const put = () => {
-      if (input.addPart({ type: "text", content: text, start: 0, end: 0 })) return true
-      input.focusEditor()
-      return input.addPart({ type: "text", content: text, start: 0, end: 0 })
-    }
-
-    if (pasteMode(text) === "manual") {
-      put()
-      return
-    }
-
-    const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, text)
-    if (inserted) return
-
-    put()
+    insert(plainText)
   }
 
   const handleGlobalDragOver = (event: DragEvent) => {

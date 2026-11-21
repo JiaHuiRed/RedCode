@@ -23,6 +23,7 @@ import { errorMessage } from "@/utils/session-helpers"
 import { Identifier } from "@/utils/id"
 import { recordCompanionMessageAccepted } from "@/utils/companion-onboarding"
 import { createChatAttachments } from "@/utils/chat-attachments"
+import { classifyClipboard } from "@/components/prompt-input/paste"
 import { createChatHomeSubmit } from "@/utils/chat-home-submit"
 import { requireCompanionModel, sendCompanionMessage } from "@/utils/chat-send-ack"
 import { introductionState, selectCompanion, upsertCompanion } from "@/utils/companion-workspace"
@@ -465,15 +466,15 @@ export default function Chat() {
                 disabled={submission()?.sending || !ready() || missing()}
                 onInput={(event) => workspace.setDraft(draftKey(), event.currentTarget.value)}
                 onPaste={(event) => {
-                  const pasted = Array.from(event.clipboardData?.files ?? [])
+                  if (!event.clipboardData) return
+                  // 261121 Red 混合粘贴：剪贴板同时有文件和 text/plain 时，此前只处理文件、
+                  // 说明文字被丢弃。现在文字按原生粘贴语义进入受控草稿——替换选区、光标落
+                  // 新文字末尾，再手动同步 DOM 值（preventDefault 已拦掉原生插入）；同一批
+                  // 文件随后交给附件读取。纯文字仍走原生路径（保留系统选区与撤销行为），空
+                  // 文本沿用纯文件分支，不插占位文字。剪贴板分类与会话侧共享（261121 方案①）。
+                  const { files: pasted, text: pastedText } = classifyClipboard(event.clipboardData)
                   if (pasted.length === 0) return
                   event.preventDefault()
-                  // 261121 Red 混合粘贴（方案二）：剪贴板同时有文件和 text/plain 时，此前
-                  // 只处理文件、说明文字被丢弃。现在文字按原生粘贴语义进入受控草稿——
-                  // 替换选区、光标落新文字末尾，再手动同步 DOM 值（preventDefault 已拦掉
-                  // 原生插入）；同一批文件随后交给附件读取。纯文字仍走原生路径（保留系统
-                  // 选区与撤销行为），空文本沿用纯文件分支，不插占位文字。
-                  const pastedText = event.clipboardData?.getData("text/plain") ?? ""
                   const el = event.currentTarget
                   if (pastedText) {
                     const start = el.selectionStart ?? el.value.length

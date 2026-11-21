@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
-import type { Prompt, Scope } from "@/context/prompt"
+import type { ContentPart, Prompt, Scope } from "@/context/prompt"
 import { attachmentMime, isArchiveFile } from "./files"
 import { pasteMode } from "./paste"
 import { createPromptAttachmentsWithContext } from "./attachments"
@@ -12,6 +12,7 @@ function mountAttachmentActions(input: {
   writeAttachment: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   readClipboardImage?: () => Promise<File | null>
   onTranslate?: (key: string) => void
+  addPart?: (part: ContentPart) => boolean
 }) {
   const editor = document.createElement("div")
   editor.contentEditable = "true"
@@ -37,7 +38,7 @@ function mountAttachmentActions(input: {
         isDialogActive: () => false,
         setDraggingType: () => undefined,
         focusEditor: () => undefined,
-        addPart: () => false,
+        addPart: input.addPart ?? (() => false),
         sessionDirectory: "/repo",
         scope: input.scope,
         writeAttachment: input.writeAttachment,
@@ -223,6 +224,75 @@ describe("attachment prompt scope", () => {
       const bad = new File([Uint8Array.of(0, 255, 1, 2)], "blob.bin", { type: "application/octet-stream" })
       expect(await mounted.actions.addAttachments([ok, bad])).toBe(true)
       expect(translated).toContain("prompt.toast.attachmentPartial.title")
+    } finally {
+      mounted.dispose()
+      mounted.editor.remove()
+    }
+  })
+
+  // 261121 Red 方案①：混合粘贴（文件 + text/plain）此前在 files 分支直接 return，说明文字
+  // 被丢。现在文字先落正文（addPart 同步段执行），附件异步补读；附件读取失败也不影响
+  // 已插入的文字。
+  test("mixed paste inserts the note into the draft before attachments resolve", async () => {
+    const addedParts: ContentPart[] = []
+    const mounted = mountAttachmentActions({
+      scope: () => undefined,
+      // bun 的 DOM 没有 execCommand：insert 走 addPart 回退，插入内容可直接断言
+      addPart: (part) => {
+        addedParts.push(part)
+        return true
+      },
+      writeAttachment: async (directory, filename) => `${directory}/${filename}`,
+    })
+
+    try {
+      const shot = new File([Uint8Array.of(0x89, 0x50)], "shot.png", { type: "image/png" })
+      const paste = mounted.actions.handlePaste({
+        clipboardData: {
+          items: [{ kind: "file", getAsFile: () => shot }],
+          getData: () => "请看右下角",
+        },
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+      } as unknown as ClipboardEvent)
+      // 文字插入在同步段完成——不 await 附件也已在 addPart 里
+      expect(addedParts).toEqual([{ type: "text", content: "请看右下角", start: 0, end: 0 }])
+      await paste
+      const stored = mounted.stores.get("current") ?? []
+      expect(stored.filter((part) => part.type === "image").length).toBe(1)
+    } finally {
+      mounted.dispose()
+      mounted.editor.remove()
+    }
+  })
+
+  // 261121 Red 方案①：附件超限被拒时，混合粘贴的说明文字必须已经落草稿——数据丢失
+  // 的底线是文字保住。
+  test("mixed paste keeps the note when the attachment is rejected", async () => {
+    const addedParts: ContentPart[] = []
+    const mounted = mountAttachmentActions({
+      scope: () => undefined,
+      addPart: (part) => {
+        addedParts.push(part)
+        return true
+      },
+      writeAttachment: async (directory, filename) => `${directory}/${filename}`,
+    })
+
+    try {
+      // 超过 10 MiB 内联线的二进制文件会被 size 检查拒绝
+      const big = new File([new Uint8Array(11 * 1024 * 1024).fill(0)], "huge.png", { type: "image/png" })
+      const paste = mounted.actions.handlePaste({
+        clipboardData: {
+          items: [{ kind: "file", getAsFile: () => big }],
+          getData: () => "附件超限这段也要在",
+        },
+        preventDefault: () => undefined,
+        stopPropagation: () => undefined,
+      } as unknown as ClipboardEvent)
+      expect(addedParts).toEqual([{ type: "text", content: "附件超限这段也要在", start: 0, end: 0 }])
+      await paste
+      expect((mounted.stores.get("current") ?? []).filter((part) => part.type === "image").length).toBe(0)
     } finally {
       mounted.dispose()
       mounted.editor.remove()

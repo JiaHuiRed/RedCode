@@ -454,6 +454,86 @@ test("mixed paste keeps both the screenshot and the typed note", async ({ browse
   expect(String(body.parts[1].url)).toContain("data:image/png;base64,")
 })
 
+test("session composer keeps the note when pasting a screenshot with text", async ({ browser }) => {
+  // 261121 Red 方案①：共享 PromptInput（Chat 会话 / Code 新建与已有会话）此前混合粘贴
+  // 只收文件、说明文字被丢。真实剪贴板走一遍会话输入框，最终发出的消息必须文字、附件都有。
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] })
+  const page = await context.newPage()
+  const profile = {
+    id: "friend-s",
+    name: "Ses",
+    soulID: "soul-s",
+    directory: fixture.directory,
+    createdAt: 1,
+    files: 2,
+    warnings: [],
+    timezone: "UTC",
+    introduction: "complete",
+  }
+  const session = { ...fixture.sessions[0]!, id: "ses_paste_session", mode: "chat", companionID: profile.id, soul: profile.soulID }
+  await mockRedCodeServer(page, { ...fixture, sessions: [session], pageMessages: () => ({ items: [] }) })
+  let acknowledged: { messageID: string; parts: { type: string }[] } | undefined
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (route.request().method() === "OPTIONS") return route.fallback()
+    const reply = (body: unknown, status = 200) =>
+      route.fulfill({
+        status,
+        contentType: "application/json",
+        headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*" },
+        body: JSON.stringify(body),
+      })
+    if (url.pathname === "/companion") return reply([profile])
+    if (url.pathname === `/companion/${profile.id}`)
+      return reply({ profile, paths: { soul: "", identity: "", user: "", memory: "" } })
+    if (url.pathname === "/instructions") return reply({ sources: [] })
+    if (url.pathname === "/config/providers") return reply({ providers: fixture.provider.all })
+    if (url.pathname === `/session/${session.id}/prompt_async`) {
+      acknowledged = route.request().postDataJSON()
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    }
+    if (acknowledged && url.pathname === `/session/${session.id}/message/${acknowledged.messageID}`)
+      return reply({ info: { id: acknowledged.messageID, role: "user" }, parts: acknowledged.parts })
+    return route.fallback()
+  })
+  await page.goto(`/${base64Encode(fixture.directory)}/session/${session.id}`)
+  const editor = page.locator('[data-component="prompt-input"]')
+  await editor.click()
+  await page.evaluate(() =>
+    navigator.clipboard.write([
+      new ClipboardItem({
+        "text/plain": new Blob(["说明文字"], { type: "text/plain" }),
+        "image/png": new Blob(
+          [
+            new Uint8Array(
+              atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+                .split("")
+                .map((ch) => ch.charCodeAt(0)),
+            ),
+          ],
+          { type: "image/png" },
+        ),
+      }),
+    ]),
+  )
+  await editor.press("Control+V")
+  // 编辑器里有说明文字，附件条恰好一张（Chromium 会把剪贴板图改名为 image.png）
+  await expect(editor).toContainText("说明文字")
+  const composer = page.locator('[class*="group/prompt-input"]')
+  await expect(composer.locator("img")).toHaveCount(1)
+  // 发出的同一条消息：最终文字 + 唯一附件。dev 构建的 DebugBar（DEV-only）压在右下角
+  // 发送钮上，点击会被浮层拦截——走编辑器内 Enter 提交，与真实用户路径一致。
+  const sent = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/prompt_async"))
+  await editor.press("Enter")
+  const body = (await sent).postDataJSON()
+  const texts = body.parts.filter((part: { type: string }) => part.type === "text")
+  const files = body.parts.filter((part: { type: string }) => part.type === "file")
+  expect(texts.some((part: { text?: string }) => part.text === "说明文字")).toBe(true)
+  expect(files).toHaveLength(1)
+  expect(files[0]).toMatchObject({ mime: "image/png" })
+})
+
 test("Chat remembers each conversation's model, filters the catalogue and uses both bubble colors", async ({
   page,
 }) => {
