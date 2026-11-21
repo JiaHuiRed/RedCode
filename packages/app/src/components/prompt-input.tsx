@@ -1854,10 +1854,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                组件自带 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。
                261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
                开上下文面板走右侧常驻 tab。 */}
-            <Show when={!companionChat()}>
-              <SessionContextUsage placement="top" />
-              {props.backgroundActivity}
-            </Show>
+            {/* 261121 Red：Chat 会话也显示（哥哥要求与 Code 同款）——数据来自消息 tokens，
+               伙伴会话同样可算；组件自带 params.id 守卫，Chat 首页/新建会话页不渲染。
+               后台活动仍只在 Code 会话显示。 */}
+            <SessionContextUsage placement="top" />
+            <Show when={!companionChat()}>{props.backgroundActivity}</Show>
             <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
               {/* 261116 Red C01：显示的是真正生效的投递方式（临时覆盖优先，否则取
                  busy_enter 默认）。点一下只改这一条，提交成功后回到默认。 */}
