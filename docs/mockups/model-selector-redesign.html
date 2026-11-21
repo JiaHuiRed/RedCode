@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模型选择器重设计 · review 稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 0%, #1d1620 0%, #101012 60%);
+    font-family: Inter, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    color: #efeded;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 480px;
+    overflow: hidden;
+  }
+  .caption {
+    position: fixed; top: 16px; left: 24px;
+    font-size: 12px; color: #6f6a73; line-height: 1.8;
+  }
+  .caption b { color: #a9a4ac; font-weight: 600; }
+
+  /* ---------- composer 卡片 ---------- */
+  .composer {
+    width: 695px;
+    background: #1c1c1f;
+    border: 1px solid #2c2c31;
+    border-radius: 21px;
+    box-shadow: 0 5px 22px #0000001a;
+    padding: 14px 14px 10px;
+    position: relative;
+  }
+  .composer .placeholder {
+    color: #8a8590; font-size: 16px; padding: 4px 8px 26px;
+  }
+  .composer-row {
+    display: flex; align-items: center; gap: 4px; padding: 2px 2px 0;
+  }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px; border: none;
+    background: transparent; color: #a9a4ac; cursor: pointer;
+    display: grid; place-items: center; font-size: 15px;
+  }
+  .icon-btn:hover { background: #302d31; }
+  .trigger {
+    display: flex; align-items: center; gap: 6px;
+    border: none; background: transparent; cursor: pointer;
+    color: #c9c4cd; font-size: 13.5px; font-family: inherit;
+    padding: 5px 8px; border-radius: 8px;
+    max-width: 240px; white-space: nowrap;
+  }
+  .trigger:hover { background: #302d31; }
+  .trigger .chev { color: #8a8590; font-size: 10px; }
+  .trigger.effort { color: #e79a9e; }
+  .sparkle { color: #a9a4ac; font-size: 13px; }
+  .spacer { flex: 1; }
+  .send {
+    width: 34px; height: 34px; border-radius: 50%; border: none;
+    background: #4b474f; color: #8a8590; cursor: pointer;
+    display: grid; place-items: center; font-size: 14px;
+  }
+
+  /* ---------- 弹层 ---------- */
+  .popover {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 10px;
+    width: 340px;
+    background: #232326;
+    border: 1px solid #39383d;
+    border-radius: 14px;
+    box-shadow: 0 14px 40px #00000066, inset 0 1px 0 #ffffff14;
+    padding: 6px;
+    z-index: 10;
+  }
+
+  /* 供应商行（悬停出右侧飞出层） */
+  .provider-zone { position: relative; }
+  .provider-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 10px; border-radius: 9px; cursor: pointer;
+  }
+  .provider-row:hover { background: #302d31; }
+  .p-icon {
+    width: 20px; height: 20px; border-radius: 5px; flex: none;
+    display: grid; place-items: center; font-size: 12px; color: #fff;
+  }
+  .p-name { font-size: 14px; font-weight: 600; }
+  .chip {
+    font-size: 11px; color: #a9a4ac; border: 1px solid #39383d;
+    border-radius: 6px; padding: 1px 7px; background: #26262a; flex: none;
+  }
+  .chip.accent { color: #e79a9e; border-color: #4b3540; }
+  .provider-row .go {
+    margin-left: auto; color: #8a8590; font-size: 12px; flex: none;
+  }
+
+  /* 右侧飞出层 */
+  .flyout {
+    display: none;
+    position: absolute;
+    left: calc(100% - 4px);
+    top: -6px;
+    width: 248px;
+    background: #232326;
+    border: 1px solid #39383d;
+    border-radius: 14px;
+    box-shadow: 0 14px 40px #00000066, inset 0 1px 0 #ffffff14;
+    padding: 6px;
+    z-index: 20;
+  }
+  .provider-zone:hover .flyout { display: block; }
+  .fly-label {
+    font-size: 11.5px; color: #8a8590; padding: 7px 10px 4px;
+  }
+  .fly-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 10px; border-radius: 9px; cursor: pointer;
+  }
+  .fly-row:hover { background: #302d31; }
+  .fly-row .p-icon { width: 18px; height: 18px; font-size: 11px; }
+  .fly-row .p-name { font-size: 13.5px; font-weight: 500; }
+  .fly-row .chip { font-size: 10.5px; padding: 0 6px; }
+  .fly-row .ok { margin-left: auto; color: #efeded; font-size: 13px; }
+  .fly-manage {
+    border-top: 1px solid #2e2e33; margin-top: 5px; padding-top: 5px;
+  }
+
+  /* 模型区 */
+  .divider { border-top: 1px solid #2e2e33; margin: 5px 4px; }
+  .section-label {
+    font-size: 11.5px; color: #8a8590; padding: 8px 10px 2px;
+  }
+  .model-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 9px; cursor: pointer;
+    font-size: 13.5px;
+  }
+  .model-row:hover { background: #302d31; }
+  .model-row .ok { margin-left: auto; color: #efeded; font-size: 14px; }
+
+  /* 默认模型（仅 Chat 首页有，可砍） */
+  .auto-row {
+    display: flex; align-items: center; padding: 8px 10px;
+    border-radius: 9px; cursor: pointer; font-size: 12.5px; color: #a9a4ac;
+    border-top: 1px solid #2e2e33; margin-top: 5px;
+  }
+  .auto-row:hover { background: #302d31; }
+
+  /* 思考强度区 */
+  .effort-head {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 10px 10px 8px;
+  }
+  .effort-head .lab { font-size: 12.5px; color: #8a8590; }
+  .effort-head .val { font-size: 13.5px; font-weight: 700; }
+  .effort-head kbd {
+    margin-left: auto; font-family: inherit; font-size: 10.5px; color: #8a8590;
+    border: 1px solid #39383d; border-radius: 6px; padding: 1px 7px; background: #26262a;
+  }
+
+  /* 渐变粒子条（复刻 EffortSliderV2 视觉） */
+  .slider {
+    position: relative;
+    margin: 0 10px 12px;
+    height: 26px; border-radius: 999px;
+    background: #26262a;
+    box-shadow: 0 1px 3px #00000040;
+    cursor: pointer;
+    user-select: none;
+  }
+  .slider .fill {
+    position: absolute; inset: 0; border-radius: 999px;
+    background:
+      linear-gradient(180deg, #ffffff24, #ffffff00),
+      linear-gradient(90deg, #2f9e6e 0%, #4d8dea 50%, #9a6cf0 100%);
+    clip-path: inset(0 calc((1 - var(--p, 1)) * (100% - 26px) + 13px) 0 0);
+    transition: clip-path .18s ease;
+  }
+  .spark {
+    position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%;
+    background: #f4f4f6; box-shadow: 0 0 4px 1px #ffffff59;
+    transform: translate(-50%, -50%);
+    opacity: 0; transition: opacity .3s;
+  }
+  .spark.on { opacity: .8; animation: tw 2.4s ease-in-out infinite; }
+  .spark.on.slow { animation-duration: 3.2s; }
+  @keyframes tw { 0%,100% { opacity: .25; } 50% { opacity: .95; } }
+  .tick {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 3px; height: 3px; border-radius: 50%; background: #4b474f;
+  }
+  .tick.on { background: #d7d3da; }
+  .thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 26px; height: 26px; border-radius: 50%;
+    background: #ecebee; border: .5px solid #55505a;
+    box-shadow: 0 1px 4px #00000059;
+    left: calc(13px + (100% - 26px) * var(--p, 1));
+    transition: left .18s ease;
+  }
+  .slider.max { box-shadow: 0 0 14px #4d8dea40, 0 1px 3px #00000040; }
+
+  .svgicon { width: 1em; height: 1em; fill: currentColor; }
+</style>
+</head>
+<body>
+  <div class="caption">
+    <b>模型选择器重设计 · review 稿</b><br>
+    同一弹层用于四个输入框：Chat 首页 / Chat 会话 / Code 新建会话 / Code 会话<br>
+    顶部供应商行悬停出右侧飞出层（最近使用 → 全部供应商 → 管理模型）；<br>
+    中间是当前供应商的模型；底部思考强度直接拖。胶囊底已去掉。
+  </div>
+
+  <div class="composer">
+    <div class="placeholder">说点什么...</div>
+    <div class="composer-row">
+      <button class="icon-btn" title="添加附件">＋</button>
+
+      <button class="trigger" id="modelTrigger">
+        <span class="sparkle">✦</span>
+        <span id="triggerModel">GLM-5.3-Flash</span>
+        <span class="chev">▼</span>
+      </button>
+
+      <button class="trigger effort" id="effortTrigger">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4a4 4 0 0 0-4 4 4 4 0 0 0-3 6.5A4 4 0 0 0 8 20a4 4 0 0 0 4-1 4 4 0 0 0 4 1 4 4 0 0 0 3-5.5A4 4 0 0 0 16 8a4 4 0 0 0-4-4z"/><path d="M12 4v15"/></svg>
+        <span id="triggerEffort">最高</span>
+        <span class="chev">▼</span>
+      </button>
+
+      <span class="spacer"></span>
+      <button class="send" title="发送">➤</button>
+
+      <div class="popover" id="popover">
+        <div class="provider-zone" id="providerZone">
+          <div class="provider-row">
+            <div class="p-icon" id="curPIcon" style="background:#4d8dea">B</div>
+            <span class="p-name" id="curPName">BigModel</span>
+            <span class="chip" id="curPTag">自定义</span>
+            <span class="go">›</span>
+          </div>
+          <div class="flyout" id="flyout"></div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="section-label">模型</div>
+        <div id="modelList"></div>
+        <div class="auto-row" id="autoRow">默认模型（由服务端决定，仅 Chat 首页显示）</div>
+
+        <div class="divider"></div>
+        <div class="effort-head">
+          <span class="lab">思考强度</span>
+          <span class="val" id="effortVal">最高</span>
+          <kbd>⇧Ctrl+D</kbd>
+        </div>
+        <div class="slider" id="slider">
+          <div class="fill"></div>
+          <div id="sparks"></div>
+          <div id="ticks"></div>
+          <div class="thumb"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ---- mock 数据（按本仓真实模型 Landscape 取形） ----
+  const PROVIDERS = [
+    { id: "bigmodel",  name: "BigModel",  tag: "自定义", color: "#4d8dea",
+      models: [
+        { name: "GLM-5.3",        tags: ["最新"] },
+        { name: "GLM-5.3-Flash",  tags: ["视觉"] },
+        { name: "GLM-5.3-Air",    tags: [] },
+      ] },
+    { id: "deepseek",  name: "DeepSeek",  tag: "API", color: "#4b474f",
+      models: [
+        { name: "V4.1 Flash",          tags: [] },
+        { name: "V4.1 Flash 1017",     tags: [] },
+        { name: "V4.1 Flash 多模态",   tags: ["视觉"] },
+      ] },
+    { id: "hyper",     name: "Hyperbolic", tag: "API", color: "#2f9e6e",
+      models: [
+        { name: "Hy4 flash Free", tags: ["免费"] },
+        { name: "Hy4 preview",    tags: [] },
+      ] },
+    { id: "moonshot",  name: "Moonshot",  tag: "API", color: "#1c1c1f",
+      models: [{ name: "Kimi K3.1 Pro", tags: [] }] },
+    { id: "openai",    name: "OpenAI",    tag: "API", color: "#10a37f",
+      models: [
+        { name: "GPT-6 Luna",      tags: ["最新"] },
+        { name: "GPT-6 Luna Fast", tags: [] },
+      ] },
+    { id: "xai",       name: "xAI",       tag: "API", color: "#1c1c1f",
+      models: [{ name: "Grok 4.7", tags: [] }] },
+    { id: "redcode",   name: "RedCode",   tag: "推荐", accent: true, color: "#a54853",
+      models: [
+        { name: "LongCat 2.5 Free", tags: ["免费"] },
+        { name: "MiMo-V2.6-Pro",    tags: [] },
+      ] },
+  ]
+  const RECENT_IDS = ["bigmodel", "deepseek", "hyper"]   // 由最近使用的模型推导出的供应商
+  const STEPS = ["低", "中", "高", "最高"]
+
+  const state = { provider: "bigmodel", model: "GLM-5.3-Flash", step: 3, flyoutPinned: false }
+
+  const $ = (id) => document.getElementById(id)
+
+  const byId = (id) => PROVIDERS.find((p) => p.id === id)
+
+  function renderFlyout() {
+    const recent = RECENT_IDS.map(byId).filter(Boolean)
+    const rest = PROVIDERS.filter((p) => !RECENT_IDS.includes(p.id))
+    const row = (p) => `
+      <div class="fly-row" data-p="${p.id}">
+        <div class="p-icon" style="background:${p.color}">${p.name[0]}</div>
+        <span class="p-name">${p.name}</span>
+        <span class="chip ${p.accent ? "accent" : ""}">${p.tag}</span>
+        ${p.id === state.provider ? '<span class="ok">✓</span>' : ""}
+      </div>`
+    $("flyout").innerHTML =
+      `<div class="fly-label">最近使用</div>` +
+      recent.map(row).join("") +
+      `<div class="fly-label">全部供应商</div>` +
+      rest.map(row).join("") +
+      `<div class="fly-manage"><div class="fly-row" data-manage>⚙️<span class="p-name" style="font-weight:400">管理模型</span></div></div>`
+    $("flyout").querySelectorAll("[data-p]").forEach((el) => {
+      el.addEventListener("click", () => {
+        switchProvider(el.dataset.p)
+        hideFlyout()
+      })
+    })
+    const manage = $("flyout").querySelector("[data-manage]")
+    if (manage) manage.addEventListener("click", hideFlyout)
+  }
+  function hideFlyout() {
+    // 点击后立刻收起：抢在 :hover 展示规则之前
+    $("flyout").style.display = "none"
+    requestAnimationFrame(() => {
+      const zone = $("providerZone")
+      const once = () => { $("flyout").style.display = ""; zone.removeEventListener("mouseleave", once) }
+      zone.addEventListener("mouseleave", once)
+    })
+  }
+
+  function renderModels() {
+    const p = byId(state.provider)
+    $("curPIcon").style.background = p.color
+    $("curPIcon").textContent = p.name[0]
+    $("curPName").textContent = p.name
+    $("curPTag").textContent = p.tag
+    $("curPTag").className = "chip" + (p.accent ? " accent" : "")
+    $("modelList").innerHTML = p.models
+      .map(
+        (m) => `
+      <div class="model-row" data-m="${m.name}">
+        <span>${m.name}</span>
+        ${m.tags.map((t) => `<span class="chip">${t}</span>`).join("")}
+        ${m.name === state.model && state.provider === state.provider ? '<span class="ok">✓</span>' : ""}
+      </div>`,
+      )
+      .join("")
+    $("modelList").querySelectorAll("[data-m]").forEach((el) => {
+      el.addEventListener("click", () => {
+        state.model = el.dataset.m
+        $("triggerModel").textContent = state.model
+        renderModels()
+        renderFlyout()
+      })
+    })
+  }
+
+  function switchProvider(id) {
+    state.provider = id
+    const p = byId(id)
+    state.model = p.models[0].name
+    $("triggerModel").textContent = state.model
+    renderModels()
+    renderFlyout()
+  }
+
+  // ---- 渐变粒子条 ----
+  const SPARK_POS = [8, 16, 27, 38, 46, 58, 67, 79, 88, 94]
+  const MAX_SPARK_POS = [12, 22, 33, 43, 52, 62, 72, 82, 90, 97]
+
+  function renderSlider() {
+    const p = state.step / (STEPS.length - 1)
+    const slider = $("slider")
+    slider.style.setProperty("--p", p)
+    slider.classList.toggle("max", state.step === STEPS.length - 1)
+    $("effortVal").textContent = STEPS[state.step]
+    $("triggerEffort").textContent = STEPS[state.step]
+    // 刻度点
+    $("ticks").innerHTML = STEPS
+      .map((_, i) => {
+        const t = i / (STEPS.length - 1)
+        return `<div class="tick ${i <= state.step ? "on" : ""}" style="left:calc(13px + (100% - 26px) * ${t})"></div>`
+      })
+      .join("")
+    // 粒子：进度过半渐次亮起，满档全亮 + 补一组
+    const sparkEls =
+      SPARK_POS.map((x, i) => ({ x, on: p >= (x + 6) / 100, max: false })).concat(
+        MAX_SPARK_POS.map((x) => ({ x, on: state.step === STEPS.length - 1, max: true })),
+      )
+    $("sparks").innerHTML = sparkEls
+      .map(
+        (s) =>
+          `<div class="spark ${s.on ? "on" : ""} ${s.max ? "slow" : ""}" style="left:${s.x}%"></div>`,
+      )
+      .join("")
+  }
+
+  function sliderPick(clientX) {
+    const rect = $("slider").getBoundingClientRect()
+    const t = Math.min(1, Math.max(0, (clientX - rect.left - 13) / (rect.width - 26)))
+    state.step = Math.round(t * (STEPS.length - 1))
+    renderSlider()
+  }
+  const sliderEl = $("slider")
+  sliderEl.addEventListener("pointerdown", (e) => {
+    sliderPick(e.clientX)
+    const move = (ev) => sliderPick(ev.clientX)
+    const up = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  })
+
+  $("autoRow").addEventListener("click", () => {
+    state.model = ""
+    $("triggerModel").textContent = "默认模型"
+    renderModels()
+  })
+
+  renderFlyout()
+  renderModels()
+  renderSlider()
+</script>
+</body>
+</html>
