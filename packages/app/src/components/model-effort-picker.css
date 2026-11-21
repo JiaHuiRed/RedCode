@@ -55,7 +55,9 @@
   color: var(--text-weak);
 }
 
-/* 右侧飞出层：贴着供应商行右缘，4px 重叠保证鼠标从行内滑过去不断触 */
+/* 右侧飞出层：贴着供应商行右缘，4px 重叠保证鼠标从行内滑过去不断触。
+   261121 Red 方案③：打开时量过几何，右缘放不下贴左（data-side="left"），
+   两侧都放不下则整个不渲染飞出层（面板内切换视图）。 */
 .mep-flyout {
   position: absolute;
   left: calc(100% - 4px);
@@ -70,6 +72,14 @@
   /* 浮在任意内容上，必须是不透明面板（与外层弹层同一材质），透明叠加层会透底。 */
   background: var(--surface-raised-stronger-non-alpha);
   box-shadow: 0 14px 40px #00000059;
+}
+.mep-flyout[data-side="left"] {
+  left: auto;
+  right: calc(100% - 4px);
+}
+/* 261121 Red 方案③：窄窗面板内供应商视图——占模型区位置，同样的滚动边界 */
+.mep-panel-providers {
+  max-height: min(26rem, 60vh);
 }
 .mep-fly-label {
   padding: 7px 10px 4px;

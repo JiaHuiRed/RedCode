@@ -62,6 +62,25 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
   const language = useLanguage()
   const [browse, setBrowse] = createSignal("")
   const [flyout, setFlyout] = createSignal(false)
+  // 261121 Red 方案③：飞出层固定贴右侧、宽 248px——弹层靠近屏幕右缘（分屏/窄窗/
+  // 125% 缩放）时子层整个出界，最后一个供应商选不到。现在打开时量一次：右侧放得下
+  // 贴右，放不下贴左，两侧都放不下就不飞出，改为面板内切换「供应商 → 模型」两个视图。
+  // 触屏没有 hover：供应商行点击=打开/切换，选完供应商收起并把焦点移到模型列表。
+  const [side, setSide] = createSignal<"right" | "left" | "panel">("right")
+  const [panelProviders, setPanelProviders] = createSignal(false)
+  let zoneRef: HTMLDivElement | undefined
+  let modelListRef: HTMLDivElement | undefined
+
+  const FLYOUT_WIDTH = 248
+  const FLYOUT_MARGIN = 8
+
+  const measureSide = (): "right" | "left" | "panel" => {
+    const rect = zoneRef?.getBoundingClientRect()
+    if (!rect) return "right"
+    if (rect.right + FLYOUT_WIDTH <= window.innerWidth - FLYOUT_MARGIN) return "right"
+    if (rect.left - FLYOUT_WIDTH >= FLYOUT_MARGIN) return "left"
+    return "panel"
+  }
 
   // 打开即重置浏览态：当前模型的供应商优先，没有就落第一个可用供应商。
   createEffect(() => {
@@ -72,16 +91,23 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
     } else {
       setBrowse(props.providers()[0]?.id ?? "")
     }
+    setSide(measureSide())
+    setPanelProviders(false)
     setFlyout(false)
   })
 
   // 悬停开合（含少量延迟防误触）；飞出层是行的兄弟节点，鼠标滑过去不断触。
+  // 面板模式不悬停自动展开——悬停就换走整个面板正文太吵，点击才切换。
   let openTimer: ReturnType<typeof setTimeout> | undefined
   let closeTimer: ReturnType<typeof setTimeout> | undefined
   const enter = () => {
     if (closeTimer !== undefined) clearTimeout(closeTimer)
     if (flyout()) return
-    openTimer = setTimeout(() => setFlyout(true), 120)
+    openTimer = setTimeout(() => {
+      const measured = measureSide()
+      setSide(measured)
+      if (measured !== "panel") setFlyout(true)
+    }, 120)
   }
   const leave = () => {
     if (openTimer !== undefined) clearTimeout(openTimer)
@@ -91,6 +117,23 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
     if (openTimer !== undefined) clearTimeout(openTimer)
     if (closeTimer !== undefined) clearTimeout(closeTimer)
   })
+
+  // 供应商行的点击=打开（触屏/键盘主路径）。飞出模式展开子层；面板模式在
+  // 「供应商 → 模型」两个视图间切换。
+  const openFlyout = () => {
+    const measured = measureSide()
+    setSide(measured)
+    if (measured === "panel") setPanelProviders((value) => !value)
+    else setFlyout(true)
+  }
+
+  // 选供应商：只换浏览态不提交模型；子层/面板供应商视图收起，焦点移到模型列表。
+  const chooseProvider = (id: string) => {
+    setBrowse(id)
+    setFlyout(false)
+    setPanelProviders(false)
+    modelListRef?.focus({ preventScroll: true })
+  }
 
   const browsed = () => props.providers().find((p) => p.id === browse())
   const browseModels = () => (browse() ? props.models(browse()) : [])
@@ -123,7 +166,7 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
   }
 
   const flyRow = (provider: PickerProvider) => (
-    <button type="button" class="mep-fly-row" onClick={() => setBrowse(provider.id)}>
+    <button type="button" class="mep-fly-row" onClick={() => chooseProvider(provider.id)}>
       <ProviderIcon id={provider.id} class="size-4.5 shrink-0" role="img" aria-hidden />
       <span class="p-name">{provider.name}</span>
       <Show when={providerTag(provider)}>
@@ -141,20 +184,69 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
     </button>
   )
 
+  // 供应商列表内容（最近使用 → 全部 → 管理/连接），飞出层与面板内供应商视图共用。
+  const providerRows = () => (
+    <>
+      <Show when={recent().length > 0}>
+        <p class="mep-fly-label">{language.t("dialog.model.recent")}</p>
+        <For each={recent()}>{flyRow}</For>
+      </Show>
+      <Show when={rest().length > 0}>
+        <p class="mep-fly-label">{language.t("dialog.provider.group.all")}</p>
+        <For each={rest()}>{flyRow}</For>
+      </Show>
+      <div class="mep-fly-manage">
+        <button
+          type="button"
+          class="mep-fly-row"
+          onClick={() => {
+            setFlyout(false)
+            setPanelProviders(false)
+            props.onManage()
+          }}
+        >
+          <Icon name="sliders" size="small" class="shrink-0" />
+          <span class="p-name">{language.t("dialog.model.manage")}</span>
+        </button>
+        <Show when={props.onConnect}>
+          <button
+            type="button"
+            class="mep-fly-row"
+            onClick={() => {
+              setFlyout(false)
+              setPanelProviders(false)
+              props.onConnect?.()
+            }}
+          >
+            <Icon name="plus-small" size="small" class="shrink-0" />
+            <span class="p-name">{language.t("command.provider.connect")}</span>
+          </button>
+        </Show>
+      </div>
+    </>
+  )
+
   return (
     <div data-component="model-effort-picker">
       <div
         class="mep-provider-zone"
+        ref={zoneRef}
         onMouseEnter={enter}
         onMouseLeave={leave}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && flyout()) {
+          if (event.key === "Escape" && (flyout() || panelProviders())) {
             event.stopPropagation()
             setFlyout(false)
+            setPanelProviders(false)
           }
         }}
       >
-        <button type="button" class="mep-provider-row" onClick={() => setFlyout(true)}>
+        <button
+          type="button"
+          class="mep-provider-row"
+          onClick={openFlyout}
+          aria-expanded={flyout() || (side() === "panel" && panelProviders())}
+        >
           <Show when={browsed()} fallback={<span class="p-name">{language.t("dialog.model.select.title")}</span>}>
             {(provider) => (
               <>
@@ -175,107 +267,87 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
           </span>
         </button>
         <Show when={flyout() && (recent().length > 0 || rest().length > 0)}>
-          <div class="mep-flyout" onMouseEnter={enter} onMouseLeave={leave}>
-            <Show when={recent().length > 0}>
-              <p class="mep-fly-label">{language.t("dialog.model.recent")}</p>
-              <For each={recent()}>{flyRow}</For>
-            </Show>
-            <Show when={rest().length > 0}>
-              <p class="mep-fly-label">{language.t("dialog.provider.group.all")}</p>
-              <For each={rest()}>{flyRow}</For>
-            </Show>
-            <div class="mep-fly-manage">
-              <button
-                type="button"
-                class="mep-fly-row"
-                onClick={() => {
-                  setFlyout(false)
-                  props.onManage()
-                }}
-              >
-                <Icon name="sliders" size="small" class="shrink-0" />
-                <span class="p-name">{language.t("dialog.model.manage")}</span>
-              </button>
-              <Show when={props.onConnect}>
-                <button
-                  type="button"
-                  class="mep-fly-row"
-                  onClick={() => {
-                    setFlyout(false)
-                    props.onConnect?.()
-                  }}
-                >
-                  <Icon name="plus-small" size="small" class="shrink-0" />
-                  <span class="p-name">{language.t("command.provider.connect")}</span>
-                </button>
-              </Show>
-            </div>
+          <div class="mep-flyout" data-side={side()} onMouseEnter={enter} onMouseLeave={leave}>
+            {providerRows()}
           </div>
         </Show>
       </div>
 
-      <div class="mep-divider" />
-      <p class="mep-section-label">{language.t("dialog.model.section.models")}</p>
-      <div class="mep-model-list">
-        <For each={browseModels()}>
-          {(model) => (
-            <button type="button" class="mep-model-row" onClick={() => props.onModelSelect(model)}>
-              <span class="m-name">{model.name}</span>
-              <span class="mep-row-tags">
-                <Show when={isFree(model.providerID, model.cost)}>
-                  <Tag>{language.t("model.tag.free")}</Tag>
-                </Show>
-                <Show when={model.latest}>
-                  <Tag>{language.t("model.tag.latest")}</Tag>
-                </Show>
-              </span>
-              <Show when={current()?.providerID === model.providerID && current()?.modelID === model.modelID}>
-                <span class="m-ok" aria-hidden="true">
-                  <Icon name="check-small" size="small" />
-                </span>
+      <Show
+        when={side() === "panel" && panelProviders()}
+        fallback={
+          <>
+            <div class="mep-divider" />
+            <p class="mep-section-label">{language.t("dialog.model.section.models")}</p>
+            <div class="mep-model-list" ref={modelListRef} tabindex="-1">
+              <For each={browseModels()}>
+                {(model) => (
+                  <button type="button" class="mep-model-row" onClick={() => props.onModelSelect(model)}>
+                    <span class="m-name">{model.name}</span>
+                    <span class="mep-row-tags">
+                      <Show when={isFree(model.providerID, model.cost)}>
+                        <Tag>{language.t("model.tag.free")}</Tag>
+                      </Show>
+                      <Show when={model.latest}>
+                        <Tag>{language.t("model.tag.latest")}</Tag>
+                      </Show>
+                    </span>
+                    <Show when={current()?.providerID === model.providerID && current()?.modelID === model.modelID}>
+                      <span class="m-ok" aria-hidden="true">
+                        <Icon name="check-small" size="small" />
+                      </span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+              <Show when={browseModels().length === 0}>
+                <p class="mep-section-label">{language.t("dialog.model.empty")}</p>
               </Show>
-            </button>
-          )}
-        </For>
-        <Show when={browseModels().length === 0}>
-          <p class="mep-section-label">{language.t("dialog.model.empty")}</p>
-        </Show>
-      </div>
+            </div>
 
-      <Show when={props.onReset}>
-        <button type="button" class="mep-model-row mep-auto-row" onClick={() => props.onReset?.()}>
-          {language.t("chat.composer.model.auto")}
-        </button>
-      </Show>
+            <Show when={props.onReset}>
+              <button type="button" class="mep-model-row mep-auto-row" onClick={() => props.onReset?.()}>
+                {language.t("chat.composer.model.auto")}
+              </button>
+            </Show>
 
-      <Show when={effortSteps().length > 0}>
+            <Show when={effortSteps().length > 0}>
+              <div class="mep-divider" />
+              <div class="mep-effort-head">
+                <span class="e-label">{language.t("prompt.effort.label")}</span>
+                <span
+                  class="e-value"
+                  data-effort-tone={effortIndex() >= 0 ? effortStepTone(effortIndex()) : undefined}
+                >
+                  {effortValue()}
+                </span>
+                <Show when={props.keybindHint?.()}>
+                  {(hint) => <kbd>{hint()}</kbd>}
+                </Show>
+              </div>
+              <EffortSliderV2
+                class="mep-effort-slider"
+                steps={effortSteps()}
+                current={props.effort.current()}
+                label={props.effort.label}
+                title={language.t("settings.agents.variant.title")}
+                unselectedLabel={props.effort.unselectedLabel}
+                onChange={props.effort.onChange}
+                style={{
+                  "--effort-slider-v2-width": "100%",
+                  "--effort-slider-v2-height": "24px",
+                  "--effort-slider-v2-thumb-size": "28px",
+                }}
+              />
+            </Show>
+          </>
+        }
+      >
+        {/* 261121 Red 方案③：两侧都放不下时的面板内供应商视图——替换模型区，选中即回模型列表 */}
         <div class="mep-divider" />
-        <div class="mep-effort-head">
-          <span class="e-label">{language.t("prompt.effort.label")}</span>
-          <span
-            class="e-value"
-            data-effort-tone={effortIndex() >= 0 ? effortStepTone(effortIndex()) : undefined}
-          >
-            {effortValue()}
-          </span>
-          <Show when={props.keybindHint?.()}>
-            {(hint) => <kbd>{hint()}</kbd>}
-          </Show>
+        <div class="mep-model-list mep-panel-providers" tabindex="-1">
+          {providerRows()}
         </div>
-        <EffortSliderV2
-          class="mep-effort-slider"
-          steps={effortSteps()}
-          current={props.effort.current()}
-          label={props.effort.label}
-          title={language.t("settings.agents.variant.title")}
-          unselectedLabel={props.effort.unselectedLabel}
-          onChange={props.effort.onChange}
-          style={{
-            "--effort-slider-v2-width": "100%",
-            "--effort-slider-v2-height": "24px",
-            "--effort-slider-v2-thumb-size": "28px",
-          }}
-        />
       </Show>
     </div>
   )

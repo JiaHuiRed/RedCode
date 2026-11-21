@@ -668,3 +668,75 @@ test("Code uses the paper-plane send icon in its existing composer", async ({ pa
   await expect(page.locator('[data-action="prompt-submit"] use')).toHaveAttribute("href", "#redcode-icon-paper-plane")
   await expect(page.locator(".companion-frame")).toHaveCount(0)
 })
+
+test.describe("model picker on narrow windows", () => {
+  test.use({ viewport: { width: 390, height: 800 } })
+
+  // 261121 Red 方案③验收：390px 视口（半屏/触屏/125% 缩放的代理场景）下，供应商子层
+  // 两侧都放不下时不再向屏幕外飞出，改为面板内切换「供应商 → 模型」；最后一个供应商
+  // 与「连接提供商」都可见可达，选完供应商回到模型列表。
+  test("switches providers inside the panel when the flyout does not fit", async ({ page }) => {
+    const profile = { id: "friend", soulID: "soul-friend", name: "Luna", directory: fixture.directory }
+    const providers = [
+      {
+        id: "studio",
+        name: "Studio",
+        models: {
+          alpha: { id: "alpha", name: "Alpha", variants: {}, limit: { context: 32_000 } },
+          beta: { id: "beta", name: "Beta", variants: {}, limit: { context: 32_000 } },
+        },
+      },
+      {
+        id: "otherco",
+        name: "Otherco",
+        models: { gamma: { id: "gamma", name: "Gamma", variants: {}, limit: { context: 32_000 } } },
+      },
+    ]
+    const sessions = fixture.sessions.map((s) => ({ ...s, mode: "chat", companionID: profile.id, soul: profile.soulID }))
+    await mockRedCodeServer(page, {
+      ...fixture,
+      sessions,
+      provider: { all: providers, connected: ["studio", "otherco"], default: { studio: "alpha" } },
+      pageMessages: () => ({ items: [] }),
+    })
+    await page.route("**/*", (route) => {
+      const url = new URL(route.request().url())
+      if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+      if (url.pathname === "/companion") return json(route, [profile])
+      if (url.pathname === "/config/providers") return json(route, { providers, default: { studio: "alpha" } })
+      return route.fallback()
+    })
+    await page.goto("/chat?companion=friend")
+    const homeModel = page.locator('[data-action="chat-choose-model"]')
+    await homeModel.click()
+    const menu = page.locator('[data-component="chat-model-popover"]')
+    await expect(menu.getByText("Models", { exact: true })).toBeVisible()
+
+    // 供应商行点击 → 面板内供应商视图（无飞出层），弹层整体不出视口
+    await menu.locator(".mep-provider-row").click()
+    const panel = menu.locator(".mep-panel-providers")
+    await expect(panel).toBeVisible()
+    await expect(menu.locator(".mep-flyout")).toHaveCount(0)
+    const overflow = await menu.evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return rect.right > window.innerWidth + 1 || rect.left < -1
+    })
+    expect(overflow).toBe(false)
+    // 最后一个供应商、管理模型、连接提供商都可见可达
+    await expect(panel.getByText("Otherco", { exact: true })).toBeVisible()
+    await expect(panel.getByText("Manage models", { exact: true })).toBeVisible()
+    await expect(panel.getByText("Connect provider", { exact: true })).toBeVisible()
+
+    // 选供应商 → 收起供应商视图、焦点回模型列表；先切 Studio 验证切换，再回 Otherco
+    await panel.getByText("Studio", { exact: true }).click()
+    await expect(menu.locator(".mep-panel-providers")).toHaveCount(0)
+    const modelsList = menu.locator(".mep-model-list")
+    await expect(modelsList).toBeFocused()
+    await expect(menu.getByText("Alpha", { exact: true })).toBeVisible()
+    await menu.locator(".mep-provider-row").click()
+    await panel.getByText("Otherco", { exact: true }).click()
+    await expect(menu.getByText("Gamma", { exact: true })).toBeVisible()
+    await menu.getByText("Gamma", { exact: true }).click()
+    await expect(homeModel).toContainText("Gamma")
+  })
+})
