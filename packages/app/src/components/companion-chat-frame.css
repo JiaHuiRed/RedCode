@@ -209,6 +209,13 @@
 [data-app-frost] .companion-frame {
   background: transparent;
 }
+/* 261121 Red Chat 首页壁纸柔化（哥哥反馈壁纸太抢焦点）：首页整片滚动区在壁纸之上，
+   补一层与 Code 会话同半径的 backdrop 模糊——首页没有会话页那道渐变罩，这里就是
+   它的对应物。滚动容器的 backdrop 取的是壁纸透过 main 之后的合成，模糊稳定。 */
+[data-app-frost] .companion-home-scroll {
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
+}
 [data-app-frost] .companion-rail {
   background-color: color-mix(in srgb, var(--chat-rail) var(--frost-alpha-aside), transparent);
   backdrop-filter: blur(var(--frost-blur-chrome));
@@ -245,8 +252,9 @@
   line-height: 1.4;
 }
 .companion-greeting [data-component="avatar"] {
-  width: 52px;
-  height: 52px;
+  /* 261121 Red 哥哥要求放大 25%：52 → 65px，欢迎区的身份感更强 */
+  width: 65px;
+  height: 65px;
 }
 .companion-frame [data-component="avatar"] {
   border-radius: 50%;

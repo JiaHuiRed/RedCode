@@ -2124,7 +2124,10 @@ export default function Page() {
       data-chat-frost={!chatSession() && settings.appearance.chatBackground() ? "" : undefined}
     >
       {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
-      <Show when={!chatSession() && settings.appearance.chatBackground()}>
+      {/* 261121 Red：Chat 会话也吃这层罩（哥哥反馈壁纸太抢焦点，与 Code 会话对齐）；
+          Chat 侧挂 data-wallpaper-soften 额外做 backdrop 模糊——Code 的柔化还来自气泡
+          磨砂（毛玻璃 A）与边缘模糊带，那些对伙伴框架不生效，Chat 在罩上补齐。 */}
+      <Show when={settings.appearance.chatBackground()}>
         {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
         {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
         {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
@@ -2132,6 +2135,7 @@ export default function Page() {
                 的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
         <div
           aria-hidden="true"
+          data-wallpaper-soften={chatSession() ? "" : undefined}
           class="absolute inset-0 z-0 pointer-events-none"
           style={{
             background:

@@ -393,6 +393,15 @@
   );
 }
 
+/* 261121 Red Chat 壁纸柔化：会话页的渐变罩在伙伴会话侧挂 data-wallpaper-soften，
+   额外做 backdrop 模糊。Code 会话的柔化还来自气泡磨砂（毛玻璃 A）与边缘模糊带，
+   那些对伙伴框架不生效——Chat 会话在罩上补齐，否则壁纸透出区域保持原锐度，
+   视觉焦点被壁纸抢走。 */
+[data-wallpaper-soften] {
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
+}
+
 /* ---------- 260829 cc 一条实测过的边界，动磨砂面之前先读。
 
    带 backdrop-filter 的元素会成为其后代 position:fixed 的**包含块**（CSS 规范行为，
