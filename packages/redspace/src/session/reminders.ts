@@ -23,6 +23,18 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   const userMessage = input.messages.findLast((msg) => isUserTurn(msg.info, msg.parts))
   if (!userMessage) return input.messages
 
+  // 261121 Red 方案⑧：切回提醒绑在模式转换上（Codex #62857 把提示绑在模式转换上的同款
+  // 思路）。此前桌面分支判「历史里出现过 plan」，普通 → Plan → 普通×3 实测每个普通轮都
+  // 重复注入同一段 BUILD_SWITCH。现在按最近一次有效模式判断：最后一次非摘要 assistant
+  // 是 plan 才提醒一次；压缩摘要 assistant 恒为 agent "compaction"（compaction.ts 三处
+  // 创建点同值），跳过 summary 取保留尾里最近的真实轮次——压缩后首次离开照常提醒一次，
+  // 且摘要期不会误判。两条分支（非实验桌面/CLI 实验）同一判据。
+  const lastTurnAgent = () =>
+    input.messages.findLast(
+      (msg): msg is MessageV2.WithParts & { info: MessageV2.Assistant } =>
+        msg.info.role === "assistant" && msg.info.summary !== true,
+    )?.info.agent
+
   // 261108 Red 审计 RC-P3-04：plan_exit 只在 CLI 注册（registry.ts 按 flags.client 过滤），
   // 桌面端却会收到要求调用它的 plan-mode 提示词。客户端不是 CLI 时退回非实验路径，
   // 让引导与真实工具表一致。
@@ -37,10 +49,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
         synthetic: true,
       })
     }
-    const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
-    // 260828 cc 判「不是 plan」而不是判具体姿态名：build 已并进 redmind，而下面 experimentalPlanMode
-    // 开启时那条姐妹分支（:51 附近）本来就是这个写法。子代理会话不会误触发——wasPlan 要求本会话里
-    // 有 agent === "plan" 的 assistant 消息。
+    const wasPlan = lastTurnAgent() === "plan"
     if (wasPlan && input.agent.name !== "plan") {
       userMessage.parts.push({
         id: PartID.ascending(),
@@ -54,8 +63,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     return input.messages
   }
 
-  const assistantMessage = input.messages.findLast((msg) => msg.info.role === "assistant")
-  if (input.agent.name !== "plan" && assistantMessage?.info.agent === "plan") {
+  if (input.agent.name !== "plan" && lastTurnAgent() === "plan") {
     const ctx = yield* InstanceState.context
     const plan = Session.plan(input.session, ctx)
     const exists = yield* fsys.existsSafe(plan)
@@ -73,7 +81,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     return input.messages
   }
 
-  if (input.agent.name !== "plan" || assistantMessage?.info.agent === "plan") return input.messages
+  if (input.agent.name !== "plan" || lastTurnAgent() === "plan") return input.messages
 
   const ctx = yield* InstanceState.context
   const plan = Session.plan(input.session, ctx)
