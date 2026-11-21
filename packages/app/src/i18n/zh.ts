@@ -917,6 +917,7 @@ export const dict = {
   "common.pinTab": "固定标签页",
   "file.returnToChanges": "返回变更列表",
   "file.returnToTool": "返回工具",
+  "file.empty": "文件为空",
   "file.view.reading": "阅读",
   "file.view.source": "源码",
   "file.view.browser": "浏览器打开",

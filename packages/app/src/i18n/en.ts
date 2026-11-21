@@ -989,6 +989,7 @@ export const dict = {
   "common.pinTab": "Keep tab open",
   "file.returnToChanges": "Back to changes",
   "file.returnToTool": "Back to tool",
+  "file.empty": "File is empty",
   "file.view.reading": "Read",
   "file.view.source": "Source",
   "file.view.browser": "Open in browser",

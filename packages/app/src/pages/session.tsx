@@ -3,6 +3,7 @@ import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
 import type { MessageVersions } from "@redcode-ai/ui/message-part"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { FileTabContent } from "@/pages/session/file-tabs"
+import { FileReadingArea } from "@/pages/session/file-reading-area"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
@@ -1015,13 +1016,22 @@ export default function Page() {
     if (chatSession()) {
       takeFileOpenSource?.()
       void file.load(path)
-      dialog.show(() => (
-        <Dialog title={path} size="large">
-          <div class="h-[65vh] min-h-0 overflow-auto">
-            <FileTabContent tab={file.tab(path)} />
-          </div>
-        </Dialog>
-      ))
+      // 261121 Red Chat 弹窗用独立阅读区：FileTabContent 的 Tabs.Content 需要 Code
+      // 标签页上下文，普通 Dialog 里挂它正文空白（useTabsContext 错误）。这个弹层走
+      // dialog.show 直挂、没有 trigger，Kobalte 关闭时不自动归还焦点——打开前先记住
+      // 当前焦点（即阅读入口按钮），onClose 时还回去。加载按路径绑定，前一个请求
+      // 迟到只更新自己的缓存。
+      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+      dialog.show(
+        () => (
+          <Dialog title={path} size="large">
+            <div class="h-[65vh] min-h-0">
+              <FileReadingArea path={path} />
+            </div>
+          </Dialog>
+        ),
+        () => opener?.focus(),
+      )
       return
     }
     const panel = view().reviewPanel

@@ -45,7 +45,6 @@ function init() {
     const current = id ? items.find((item) => item.id === id) : items.at(-1)
     if (!current || lock.value) return
     lock.value = true
-    current.onClose?.()
     current.setClosing(true)
 
     const closed = current.id
@@ -57,6 +56,11 @@ function init() {
     timer.current = setTimeout(() => {
       timer.current = undefined
       current.dispose()
+      // 261121 Red onClose 挪到 dispose 之后：此前在 close 开始时同步调用，consumer 在
+      // 回调里把焦点还给弹窗打开者时，100ms 退出动画结束、portal 卸载会把焦点冲回
+      // body。卸载完再调用，回调里的 focus() 才站得住（当前唯一消费者是 Chat 文件
+      // 阅读弹窗归还焦点）。改动时无既有 onClose 使用者。
+      current.onClose?.()
       setStack((items) => items.filter((item) => item.id !== closed))
       lock.value = false
     }, 100)

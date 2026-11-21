@@ -160,3 +160,112 @@ test("turn outputs open a document and retain the producing tool as the return t
   await expect(page.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true")
   expect(errors).toEqual([])
 })
+
+test("chat deliverable opens a standalone reading dialog with the document body", async ({ page }) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  const sessionID = "ses_chat_deliverable"
+  const userID = "msg_chat_deliverable_user"
+  const assistantID = "msg_chat_deliverable_assistant"
+  const now = Date.now()
+  const profile = { id: "scribe", soulID: "soul-scribe", name: "Scribe", directory: fixture.directory }
+  const messages = [
+    {
+      info: {
+        id: userID,
+        sessionID,
+        role: "user",
+        time: { created: now },
+        agent: "build",
+        model: { providerID: "redcode", modelID: "claude-opus-4-6" },
+      },
+      parts: [
+        { id: "prt_chat_deliverable_user", sessionID, messageID: userID, type: "text", text: "Write today's diary." },
+      ],
+    },
+    {
+      info: {
+        id: assistantID,
+        sessionID,
+        role: "assistant",
+        parentID: userID,
+        time: { created: now + 1, completed: now + 20 },
+        providerID: "redcode",
+        modelID: "claude-opus-4-6",
+        agent: "build",
+        mode: "build",
+        finish: "stop",
+        cost: 0,
+        path: { cwd: fixture.directory, root: fixture.directory },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+      parts: [
+        {
+          id: "prt_chat_deliverable_write",
+          sessionID,
+          messageID: assistantID,
+          type: "tool",
+          tool: "write",
+          callID: "call_chat_deliverable",
+          state: {
+            status: "completed",
+            input: { filePath: `${fixture.directory}/memory/2026-11-21.md`, content: "# Diary title" },
+            metadata: { filepath: `${fixture.directory}/memory/2026-11-21.md`, exists: false },
+            output: "Wrote memory/2026-11-21.md",
+            title: "memory/2026-11-21.md",
+            time: { start: now + 2, end: now + 3 },
+          },
+        },
+        { id: "prt_chat_deliverable_text", sessionID, messageID: assistantID, type: "text", text: "Diary saved." },
+      ],
+    },
+  ]
+  const sessions = [
+    {
+      ...fixture.sessions[0]!,
+      id: sessionID,
+      title: "Chat deliverable",
+      mode: "chat",
+      companionID: profile.id,
+      soul: profile.soulID,
+    },
+  ]
+  await mockRedCodeServer(page, {
+    ...fixture,
+    sessions,
+    pageMessages: () => ({ items: messages }),
+  })
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (url.pathname === "/companion") return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify([profile]),
+    })
+    return route.fallback()
+  })
+  await page.route("**/file/content?**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify({
+        type: "text",
+        content: "# Diary title\n\nA line only the reading dialog can show.",
+        mimeType: "text/markdown",
+      }),
+    }),
+  )
+  await page.goto(`/${base64Encode(fixture.directory)}/session/${sessionID}`)
+  const opener = page.getByRole("button", { name: /^(Read document|阅读文档|文書を読む) memory\/2026-11-21\.md$/ })
+  await opener.click()
+  const dialog = page.getByRole("dialog", { name: /memory\/2026-11-21\.md/ })
+  // 方案一验收：断言正文里的独有文字，不能只断言弹窗存在。
+  await expect(dialog.getByText("A line only the reading dialog can show.")).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeHidden()
+  await expect(opener).toBeFocused()
+  expect(errors).toEqual([])
+})

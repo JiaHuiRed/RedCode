@@ -768,6 +768,7 @@ export const dict = {
   "common.pinTab": "タブを固定",
   "file.returnToChanges": "変更一覧に戻る",
   "file.returnToTool": "ツールに戻る",
+  "file.empty": "ファイルは空です",
   "file.view.reading": "閲覧",
   "file.view.source": "ソース",
   "file.view.browser": "ブラウザーで開く",
