@@ -250,6 +250,28 @@
   border-width: 0;
 }
 
+/* 261121 Red 档位文字按等级着色（白绿蓝紫金红，见 tsx 的 effortStepTone）：
+   滑杆弹层里的档位读数与 composer 触发钮上的档位名共用这一段。调用方不要再往
+   同一元素上挂会抢 color 的工具类。 */
+[data-effort-tone="white"] {
+  color: var(--v2-text-text-base);
+}
+[data-effort-tone="green"] {
+  color: var(--v2-green-600);
+}
+[data-effort-tone="blue"] {
+  color: var(--v2-blue-500);
+}
+[data-effort-tone="purple"] {
+  color: var(--v2-purple-500);
+}
+[data-effort-tone="gold"] {
+  color: var(--v2-yellow-700);
+}
+[data-effort-tone="red"] {
+  color: var(--v2-red-500);
+}
+
 @media (hover: hover) and (pointer: fine) {
   [data-slot="effort-slider-v2"]:hover:not([data-disabled]) [data-slot="effort-slider-v2-thumb"] {
     box-shadow:

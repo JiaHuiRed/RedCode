@@ -1,90 +1,50 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { For, Show, createMemo, createSignal, type Component, type JSX } from "solid-js"
+import { Show, createMemo, createSignal, type Component } from "solid-js"
 import { Button } from "@redcode-ai/ui/button"
 import { Icon } from "@redcode-ai/ui/icon"
-import { List } from "@redcode-ai/ui/list"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
-import { EffortSliderV2, availableEffortSteps } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
-import type { useModels, ModelKey } from "@/context/models"
+import { availableEffortSteps, effortStepTone } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
+import { useModels, type ModelKey } from "@/context/models"
+import { useProviders } from "@/hooks/use-providers"
 import { useLanguage } from "@/context/language"
-
-type Entry = {
-  providerID: string
-  providerName: string
-  modelID: string
-  name: string
-  variants: string[]
-}
+import { ModelEffortPicker, type PickerModel, type PickerProvider } from "./model-effort-picker"
+import { popularFirstProviders, recentProviderIDs } from "@/utils/model-recents"
 
 export const ChatComposerTools: Component<{
-  catalog: ReturnType<ReturnType<typeof useModels>["catalog"]>
   disabled?: boolean
+  /** 伙伴所在目录，供应商连接状态按它取。 */
+  directory: () => string
+  catalog: ReturnType<ReturnType<typeof useModels>["catalog"]>
   model: ModelKey | undefined
   variant: string | undefined
   onModelChange: (value: ModelKey | undefined) => void
   onVariantChange: (value: string | undefined) => void
+  /** 管理模型 / 连接供应商入口（Chat 首页没有 LocalProvider，走设置弹窗对应页签）。 */
+  onManage: () => void
+  onConnect: () => void
   class?: string
 }> = (props) => {
   const language = useLanguage()
-  const [open, setOpen] = createSignal<"model" | "variant" | null>(null)
+  const models = useModels()
+  const providers = useProviders(props.directory)
+  // 261121 Red 推理强度与模型收紧成一个弹层（ModelEffortPicker），两个触发钮都开它。
+  const [open, setOpen] = createSignal(false)
 
-  const entries = createMemo((): Entry[] => {
-    return props.catalog
+  const current = createMemo(() => (props.model ? props.catalog.find(props.model) : undefined))
+  const steps = createMemo(() => availableEffortSteps(Object.keys(current()?.variants ?? {})))
+
+  const providersList = (): PickerProvider[] =>
+    popularFirstProviders(providers.connected().map((p) => ({ id: p.id, name: p.name, source: p.source })))
+  const recentList = () => recentProviderIDs(models.recent.list().map(models.find), (item) => item.provider.id)
+  const modelsFor = (providerID: string): PickerModel[] =>
+    props.catalog
       .list()
-      .filter((model) => props.catalog.visible({ providerID: model.provider.id, modelID: model.id }))
-      .map((model) => ({
-        providerID: model.provider.id,
-        providerName: model.provider.name,
-        modelID: model.id,
-        name: model.name,
-        variants: Object.keys(model.variants ?? {}),
-      }))
-  })
-
-  const current = createMemo(() =>
-    props.model
-      ? entries().find((item) => item.providerID === props.model!.providerID && item.modelID === props.model!.modelID)
-      : undefined,
-  )
-
-  const steps = createMemo(() => availableEffortSteps(current()?.variants ?? []))
-
-  const select = (entry: Entry | undefined) => {
-    if (!entry) return
-    props.onModelChange({ providerID: entry.providerID, modelID: entry.modelID })
-    setOpen(null)
-  }
-
-  const modelList = (action?: JSX.Element) => (
-    <List
-      class="h-96 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
-      virtual
-      search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true, action }}
-      emptyMessage={language.t("dialog.model.empty")}
-      key={(item: Entry) => `${item.providerID}:${item.modelID}`}
-      items={entries()}
-      current={current()}
-      filterKeys={["providerName", "name", "modelID"]}
-      sortBy={(a, b) => a.name.localeCompare(b.name)}
-      groupBy={(item: Entry) => item.providerName}
-      onSelect={(item) => select(item as Entry | undefined)}
-    >
-      {(item: Entry) => (
-        <div class="flex w-full items-center gap-x-2 text-13-regular">
-          <span class="truncate">{item.name}</span>
-        </div>
-      )}
-    </List>
-  )
+      .filter((m) => m.provider.id === providerID && props.catalog.visible({ providerID: m.provider.id, modelID: m.id }))
+      .map((m) => ({ providerID: m.provider.id, modelID: m.id, name: m.name, cost: m.cost, latest: m.latest }))
 
   return (
     <div class={`flex min-w-0 flex-wrap items-center gap-1 ${props.class ?? ""}`}>
-      <Kobalte
-        open={open() === "model"}
-        onOpenChange={(value) => setOpen(value ? "model" : null)}
-        placement="top-start"
-        gutter={8}
-      >
+      <Kobalte open={open()} onOpenChange={setOpen} placement="top-start" gutter={8}>
         <Kobalte.Trigger
           as={Button}
           variant="ghost"
@@ -93,7 +53,7 @@ export const ChatComposerTools: Component<{
           data-action="chat-choose-model"
           class="min-w-0 max-w-[220px] justify-start gap-1.5 text-12-regular text-text-weak"
         >
-          <Show when={current()?.providerID}>
+          <Show when={current()?.provider.id}>
             {(providerID) => <ProviderIcon id={providerID()} class="size-3.5 shrink-0" role="img" aria-hidden />}
           </Show>
           <span class="truncate">{current()?.name ?? language.t("chat.composer.model.auto")}</span>
@@ -102,71 +62,54 @@ export const ChatComposerTools: Component<{
         <Kobalte.Portal>
           <Kobalte.Content
             data-component="chat-model-popover"
-            class="z-50 flex max-h-[min(32rem,72vh)] w-80 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base p-2 shadow-lg"
+            class="flex max-h-[min(32rem,72vh)] w-80 flex-col overflow-visible rounded-xl border border-border-weak-base bg-surface-raised-base p-2 shadow-lg z-50 outline-none"
           >
-            {modelList()}
-            <Show when={props.model}>
-              <div class="mt-2 shrink-0 border-t border-border-weak-base pt-2">
-                <Button
-                  variant="ghost"
-                  size="small"
-                  class="w-full justify-start text-12-regular text-text-weak"
-                  onClick={() => {
-                    props.onModelChange(undefined)
-                    setOpen(null)
-                  }}
-                >
-                  {language.t("chat.composer.model.auto")}
-                </Button>
-              </div>
-            </Show>
+            <ModelEffortPicker
+              open={open}
+              providers={providersList}
+              recentProviderIDs={recentList}
+              models={modelsFor}
+              currentModel={() =>
+                props.model ? { providerID: props.model.providerID, modelID: props.model.modelID } : undefined
+              }
+              onModelSelect={(picked) => {
+                // 选中即记入最近使用，与 Code 选择器一致；「默认模型」重置不记。
+                models.recent.push({ providerID: picked.providerID, modelID: picked.modelID })
+                props.onModelChange({ providerID: picked.providerID, modelID: picked.modelID })
+                setOpen(false)
+              }}
+              onReset={() => {
+                props.onModelChange(undefined)
+                setOpen(false)
+              }}
+              onManage={props.onManage}
+              onConnect={props.onConnect}
+              effort={{
+                steps: steps(),
+                current: () => props.variant,
+                onChange: props.onVariantChange,
+                unselectedLabel: language.t("prompt.variant.modelDefault"),
+              }}
+            />
           </Kobalte.Content>
         </Kobalte.Portal>
       </Kobalte>
 
       <Show when={steps().length > 0}>
-        <Kobalte
-          open={open() === "variant"}
-          onOpenChange={(value) => setOpen(value ? "variant" : null)}
-          placement="top-start"
-          gutter={8}
+        <Button
+          type="button"
+          variant="ghost"
+          size="small"
+          disabled={props.disabled}
+          data-action="chat-choose-variant"
+          data-effort-tone={props.variant ? effortStepTone(Math.max(0, steps().indexOf(props.variant))) : undefined}
+          class={`min-w-0 max-w-[140px] justify-start gap-1.5 text-12-regular capitalize ${props.variant ? "" : "text-text-weak"}`}
+          onClick={() => setOpen(!open())}
         >
-          <Kobalte.Trigger
-            as={Button}
-            variant="ghost"
-            size="small"
-            disabled={props.disabled}
-            data-action="chat-choose-variant"
-            class="min-w-0 max-w-[140px] justify-start gap-1.5 text-12-regular capitalize text-text-accent"
-          >
-            <Icon name="brain" size="small" class="shrink-0" />
-            <span class="truncate">{props.variant ?? language.t("prompt.variant.modelDefault")}</span>
-            <Icon name="chevron-down" size="small" class="shrink-0" />
-          </Kobalte.Trigger>
-          <Kobalte.Portal>
-            <Kobalte.Content
-              data-component="chat-variant-popover"
-              class="z-50 flex w-64 flex-col gap-3 rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-lg"
-            >
-              <EffortSliderV2
-                steps={steps()}
-                current={props.variant}
-                title={language.t("settings.agents.variant.title")}
-                unselectedLabel={language.t("prompt.variant.modelDefault")}
-                onChange={(value) => props.onVariantChange(value)}
-                style={{
-                  "--effort-slider-v2-width": "100%",
-                  "--effort-slider-v2-height": "24px",
-                  "--effort-slider-v2-thumb-size": "28px",
-                }}
-              />
-              <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weak">
-                <span>{language.t("prompt.variant.faster")}</span>
-                <span>{language.t("prompt.variant.smarter")}</span>
-              </div>
-            </Kobalte.Content>
-          </Kobalte.Portal>
-        </Kobalte>
+          <Icon name="brain" size="small" class="shrink-0" />
+          <span class="truncate">{props.variant ?? language.t("prompt.variant.modelDefault")}</span>
+          <Icon name="chevron-down" size="small" class="shrink-0" />
+        </Button>
       </Show>
     </div>
   )

@@ -1,0 +1,213 @@
+/* 261121 Red 统一模型选择弹层（model-effort-picker）：供应商行 → 模型区 → 默认模型行 →
+   思考强度区。供应商行悬停出右侧飞出层——飞出层是普通绝对定位子元素（不是 Portal 弹层），
+   所以外层弹层内容容器不能加 overflow-hidden，否则飞出层会被裁掉。 */
+
+[data-component="model-effort-picker"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  color: var(--text-strong);
+}
+
+/* 供应商行 */
+.mep-provider-zone {
+  position: relative;
+  flex: none;
+}
+.mep-provider-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  text-align: start;
+}
+.mep-provider-row:hover,
+.mep-provider-row:focus-visible {
+  background: var(--chat-hover, var(--surface-base-hover));
+}
+.mep-provider-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.mep-provider-row .p-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.mep-provider-row .p-name {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mep-provider-row .p-go {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-weak);
+}
+
+/* 右侧飞出层：贴着供应商行右缘，4px 重叠保证鼠标从行内滑过去不断触 */
+.mep-flyout {
+  position: absolute;
+  left: calc(100% - 4px);
+  top: -6px;
+  z-index: 10;
+  width: 248px;
+  max-height: min(26rem, 60vh);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--border-weak-base);
+  /* 浮在任意内容上，必须是不透明面板（与外层弹层同一材质），透明叠加层会透底。 */
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: 0 14px 40px #00000059;
+}
+.mep-fly-label {
+  padding: 7px 10px 4px;
+  font-size: 11.5px;
+  color: var(--text-weak);
+}
+.mep-fly-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  text-align: start;
+}
+.mep-fly-row:hover,
+.mep-fly-row:focus-visible {
+  background: var(--chat-hover, var(--surface-base-hover));
+}
+.mep-fly-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.mep-fly-row .p-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mep-fly-row .p-ok {
+  margin-left: auto;
+  flex: none;
+}
+.mep-fly-manage {
+  border-top: 1px solid var(--border-weak-base);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+/* 模型区 */
+.mep-divider {
+  border-top: 1px solid var(--border-weak-base);
+  margin: 5px 4px;
+  flex: none;
+}
+.mep-section-label {
+  padding: 7px 10px 2px;
+  font-size: 11.5px;
+  color: var(--text-weak);
+  flex: none;
+}
+.mep-model-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mep-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  text-align: start;
+  font-size: 13.5px;
+}
+.mep-model-row:hover,
+.mep-model-row:focus-visible {
+  background: var(--chat-hover, var(--surface-base-hover));
+}
+.mep-model-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.mep-model-row .m-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mep-model-row .m-ok {
+  margin-left: auto;
+  flex: none;
+}
+.mep-auto-row {
+  border-top: 1px solid var(--border-weak-base);
+  margin-top: 5px;
+  padding: 8px 10px;
+  border-radius: 0;
+  font-size: 12.5px;
+  color: var(--text-weak);
+}
+
+/* 思考强度区 */
+.mep-effort-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  flex: none;
+}
+.mep-effort-head .e-label {
+  font-size: 12.5px;
+  color: var(--text-weak);
+}
+.mep-effort-head .e-value {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.mep-effort-head kbd {
+  margin-left: auto;
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-weak);
+  border: 1px solid var(--border-weak-base);
+  border-radius: 6px;
+  padding: 1px 7px;
+  background: var(--surface-raised-base);
+}
+.mep-effort-slider {
+  margin: 0 10px 12px;
+  flex: none;
+}
+
+/* 小标签（免费/最新/推荐/自定义）沿用 ui 包 Tag；这里只补弹层行内的间距 */
+.mep-row-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}

@@ -41,7 +41,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
-import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
+import { availableEffortSteps, effortStepTone } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -1591,73 +1591,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return language.t("prompt.quota.consumed", { amount: costFormatter().costBuckets(acc) })
   })
 
-  // 260930 Red 一个入口选择模型与推理档，供应商标志与推理图标在概览两侧对应。
-  const modelOverview = (selectModel: () => void) => (
-    <div class="flex flex-col gap-3 py-1">
-      <div class="relative flex min-w-0 flex-col items-center gap-0.5 px-5 text-center">
-        <Show when={variants().length > 0}>
-          <div class="absolute left-0 top-0.5">
-            <Icon name="brain" size="small" class="text-v2-icon-icon-muted" />
-          </div>
-        </Show>
-        <Show when={local.model.current()?.provider?.id}>
-          <div class="absolute right-0 top-0.5">
-            <ProviderIcon
-              id={local.model.current()?.provider?.id ?? ""}
-              class="size-4 text-v2-icon-icon-muted"
-              role="img"
-              aria-label={local.model.current()?.provider?.name}
-            />
-          </div>
-        </Show>
-        <Show when={variants().length > 0}>
-          <span class="w-full truncate capitalize text-base font-medium text-v2-text-text-accent">
-            {currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}
-          </span>
-        </Show>
-        <Button
-          variant="ghost"
-          size="small"
-          data-action="prompt-choose-model"
-          class="h-auto min-w-0 max-w-full gap-1 px-0 py-0.5 text-sm font-medium text-v2-text-text-muted"
-          aria-label={language.t("dialog.model.select.title")}
-          onClick={() => {
-            if (providers.paid().length > 0) {
-              selectModel()
-              return
-            }
-            void import("@/components/dialog-select-model-unpaid").then((x) => {
-              dialog.show(() => <x.DialogSelectModelUnpaid model={local.model} />)
-            })
-          }}
-        >
-          <span class="truncate">{local.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
-          <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-        </Button>
-      </div>
-      <Show when={variants().length > 0}>
-        <EffortSliderV2
-          steps={variants()}
-          current={currentVariant()}
-          label={variantLabel}
-          title={language.t("settings.agents.variant.title")}
-          unselectedLabel={language.t("prompt.variant.modelDefault")}
-          onChange={(value) => local.model.variant.set(value)}
-          style={{
-            "--effort-slider-v2-width": "100%",
-            "--effort-slider-v2-height": "24px",
-            "--effort-slider-v2-thumb-size": "28px",
-          }}
-        />
-        <Show when={variants().length > 1}>
-          <div class="flex items-baseline justify-between gap-2 text-sm text-v2-text-text-muted">
-            <span>{language.t("prompt.variant.faster")}</span>
-            <span>{language.t("prompt.variant.smarter")}</span>
-          </div>
-        </Show>
-      </Show>
-    </div>
-  )
+  // 261121 Red 未连接付费供应商时不进统一弹层，改走免费模型引导对话框（原概览态里的
+  // 分支上移到开弹层前：两个触发钮共用同一个拦截）。
+  const interceptUnpaid = (): boolean => {
+    if (providers.paid().length > 0) return false
+    void import("@/components/dialog-select-model-unpaid").then((x) => {
+      dialog.show(() => <x.DialogSelectModelUnpaid model={local.model} />)
+    })
+    return true
+  }
 
   const modelControl = () => (
     // 261011 Red B1.1（审计 ZW-06）：已有 current 模型时保持稳定挂载——不再因 agents/
@@ -1687,7 +1629,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           }
         >
           <ModelSelectorPopover
-            model={local.model}
+            interceptOpen={interceptUnpaid}
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
@@ -1712,17 +1654,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </Tooltip>
         <Show when={variants().length > 0}>
           <ModelSelectorPopover
-            model={local.model}
-            overview={modelOverview}
-            overviewTitle={language.t("settings.agents.variant.title")}
+            interceptOpen={interceptUnpaid}
+            keybindHint={() => command.keybind("model.variant.cycle") || undefined}
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
               size: "normal",
               style: control(),
-              class:
-                "min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize text-v2-text-text-accent @max-[380px]:max-w-[88px]",
+              class: `min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize @max-[380px]:max-w-[88px] ${
+                // 261121 Red 档位文字按等级着色（白绿蓝紫金红）；未显式选档回退中性色。
+                currentVariant()
+                  ? ""
+                  : "text-v2-text-text-muted"
+              }`,
               "data-action": "prompt-variant",
+              "data-effort-tone": currentVariant()
+                ? effortStepTone(Math.max(0, variants().indexOf(currentVariant() ?? "")))
+                : undefined,
             }}
             onClose={restoreFocus}
           >

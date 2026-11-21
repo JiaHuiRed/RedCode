@@ -500,9 +500,12 @@ export default function Chat() {
                   />
                   <ChatComposerTools
                     disabled={submission()?.sending || !ready() || missing()}
+                    directory={directory}
                     catalog={catalog}
                     model={choice()}
                     variant={choice()?.variant}
+                    onManage={() => openSettings("models")}
+                    onConnect={() => openSettings("providers")}
                     onModelChange={chooseModel}
                     onVariantChange={(variant) => {
                       const current = choice()

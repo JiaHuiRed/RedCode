@@ -4,16 +4,22 @@ import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { anonKey, guiDiagnostics } from "@/context/gui-diagnostics"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
-import { popularProviders } from "@/hooks/use-providers"
+import { useProviders } from "@/hooks/use-providers"
 import { Button } from "@redcode-ai/ui/button"
-import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Tag } from "@redcode-ai/ui/tag"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { List } from "@redcode-ai/ui/list"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { ModelTooltip } from "./model-tooltip"
+import { ModelEffortPicker, type PickerModel, type PickerProvider } from "./model-effort-picker"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import {
+  mergeRecentItems,
+  popularFirstProviders,
+  recentProviderIDs,
+  sortGroupsRecentFirst,
+} from "@/utils/model-recents"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "redcode" && (!cost || cost.input === 0)
@@ -54,8 +60,7 @@ const ModelList: Component<{
       .filter((m) => model.visible({ modelID: m.id, providerID: m.provider.id }))
       .filter((m) => (props.provider ? m.provider.id === props.provider : true))
     if (props.provider) return base
-    const recentIDs = new Set(recents().map((x) => `${x.provider.id}:${x.id}`))
-    return [...recents(), ...base.filter((m) => !recentIDs.has(`${m.provider.id}:${m.id}`))]
+    return mergeRecentItems(recents(), base, (m) => `${m.provider.id}:${m.id}`)
   })
 
   const recentGroupLabel = language.t("dialog.model.recent")
@@ -74,18 +79,7 @@ const ModelList: Component<{
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       groupBy={(x) => ((x as ModelItem).recent ? recentGroupLabel : x.provider.name)}
-      sortGroupsBy={(a, b) => {
-        // 261114 Red UX-05：最近分组恒排最前。
-        const aRecent = (a.items[0] as ModelItem).recent === true
-        const bRecent = (b.items[0] as ModelItem).recent === true
-        if (aRecent && !bRecent) return -1
-        if (!aRecent && bRecent) return 1
-        const aProvider = a.items[0].provider.id
-        const bProvider = b.items[0].provider.id
-        if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1
-        if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
-        return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
-      }}
+      sortGroupsBy={sortGroupsRecentFirst<ModelItem>((x) => x.provider.id)}
       itemWrapper={(item, node) => (
         <Tooltip
           class="w-full"
@@ -123,34 +117,29 @@ type ModelSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "a
 type Dismiss = "escape" | "outside" | "select" | "manage" | "provider"
 
 export function ModelSelectorPopover(props: {
-  provider?: string
-  model?: ModelState
   children?: JSX.Element
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
-  overview?: (selectModel: () => void) => JSX.Element
-  /** 260930 Red 概览态的读屏标题。无 reasoning 档的模型概览里没有 slider，
-   *  标题不能恒为「推理档」，由调用方按当前模型有没有 variants 决定；缺省沿用「推理档」。 */
-  overviewTitle?: string
+  /** 返回 true 表示本次打开已被拦截（如未连接付费供应商时改走引导对话框），弹层不开。 */
+  interceptOpen?: () => boolean
+  /** 思考强度循环快捷键提示，展示在弹层思考强度行尾。 */
+  keybindHint?: () => string | undefined
   onClose?: (cause: "escape" | "select") => void
 }) {
-  const [store, setStore] = createStore<{
-    open: boolean
-    dismiss: Dismiss | null
-    selecting: boolean
-  }>({
+  const [store, setStore] = createStore<{ open: boolean; dismiss: Dismiss | null }>({
     open: false,
     dismiss: null,
-    selecting: false,
   })
   const dialog = useDialog()
   const globalSync = useServerSync()
-  let overviewRef: HTMLDivElement | undefined
+  const model = useLocal().model
+  const providers = useProviders()
+  const language = useLanguage()
 
   // 261011 Red B1.1（审计 ZW-07）：Popover 取证统一走 recordPopover——关闭/打开记录
-  // 此前记 Boolean(props.model)（恒 true，只是"传了 state 对象"），现记真实 current
-  // 存在性与目录匿名 ID；关闭路径补 trigger 再点（toggle）与开着被卸载（unmount）。
-  const hasCurrent = () => Boolean(props.model?.current()?.id)
+  // 真实 current 存在性与目录匿名 ID；关闭路径补 trigger 再点（toggle）与
+  // 开着被卸载（unmount）。
+  const hasCurrent = () => Boolean(model.current()?.id)
   const dirKey = () => {
     const directory = globalSync.data.path.directory
     return directory ? anonKey(directory) : "root"
@@ -165,17 +154,6 @@ export function ModelSelectorPopover(props: {
   onCleanup(() => {
     if (store.open) recordPopover("unmount")
   })
-
-  // 260930 Red 模型列表与推理概览共用一个弹层；选完模型返回概览，继续调整强度。
-  const showModels = () => {
-    globalSync.wantProviderCatalog()
-    setStore("selecting", true)
-    recordPopover("selecting")
-  }
-  const showOverview = () => {
-    setStore("selecting", false)
-    requestAnimationFrame(() => overviewRef?.focus())
-  }
 
   const close = (dismiss: Dismiss) => {
     // 261011 Red B0: 弹窗关停留痕（关闭原因 + 当时是否已有选中模型）
@@ -197,15 +175,33 @@ export function ModelSelectorPopover(props: {
       dialog.show(() => <x.DialogSelectProvider />)
     })
   }
-  const language = useLanguage()
 
+  // 261121 Red 供应商飞出层数据：已连接供应商按常用清单排序；「最近使用」由模型
+  // 最近记录推导（recentProviderIDs），不下真实供应商级 recency。
+  const providersList = (): PickerProvider[] =>
+    popularFirstProviders(providers.connected().map((p) => ({ id: p.id, name: p.name, source: p.source })))
+  const recentList = () => recentProviderIDs(model.recent(), (item) => item.provider.id)
+  const modelsFor = (providerID: string): PickerModel[] =>
+    model
+      .list()
+      .filter((m) => m.provider.id === providerID && model.visible({ modelID: m.id, providerID: m.provider.id }))
+      .map((m) => ({ providerID: m.provider.id, modelID: m.id, name: m.name, cost: m.cost, latest: m.latest }))
+  const currentKey = () => {
+    const item = model.current()
+    return item ? { providerID: item.provider.id, modelID: item.id } : undefined
+  }
+
+  // 261121 Red 概览/列表两态机换成统一弹层：供应商行悬停飞出层 + 浏览供应商模型 +
+  // 思考强度滑杆一屏呈现。内容容器不能加 overflow-hidden——供应商飞出层是普通
+  // 绝对定位子元素，加了会被裁掉。
   return (
     <Kobalte
       open={store.open}
       onOpenChange={(next) => {
-        if (next && !props.overview) globalSync.wantProviderCatalog()
-        if (next) setStore({ dismiss: null, selecting: !props.overview })
-        if (next) recordPopover("open", { overview: Boolean(props.overview) })
+        if (next && props.interceptOpen?.()) return
+        if (next) globalSync.wantProviderCatalog()
+        if (next) setStore("dismiss", null)
+        if (next) recordPopover("open")
         // 261011 Red B1.1（审计 ZW-07）：trigger 再点击（toggle）的关闭此前无任何记录；
         // 其余关闭路径（escape/outside/select/manage/provider）都经 close() 已记录——
         // dismiss 非空即表示本次关闭已记录过，跳过避免重复。
@@ -227,15 +223,9 @@ export function ModelSelectorPopover(props: {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
-          data-component={props.overview ? "popover-content" : undefined}
-          class={
-            props.overview
-              ? `max-w-[calc(100vw-24px)] flex flex-col rounded-xl z-50 outline-none overflow-hidden ${store.selecting ? "w-72 h-80 p-2" : "w-[260px]"}`
-              : "w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
-          }
+          class="flex max-h-[min(32rem,72vh)] w-80 flex-col rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none"
           onEscapeKeyDown={(event) => {
-            if (props.overview && store.selecting) showOverview()
-            else close("escape")
+            close("escape")
             event.preventDefault()
             event.stopPropagation()
           }}
@@ -251,70 +241,27 @@ export function ModelSelectorPopover(props: {
             setStore("dismiss", null)
           }}
         >
-          {/* 260930 Red 读屏标题跟随弹层状态与可见内容：概览是调推理档，列表才是选模型；
-              无 reasoning 档的模型概览只剩选模型入口，标题由调用方经 overviewTitle 给出。 */}
-          <Kobalte.Title class="sr-only">
-            {props.overview && !store.selecting
-              ? (props.overviewTitle ?? language.t("settings.agents.variant.title"))
-              : language.t("dialog.model.select.title")}
-          </Kobalte.Title>
-          <Show
-            when={!props.overview || store.selecting}
-            fallback={
-              <div
-                ref={overviewRef}
-                data-slot="popover-body"
-                data-component="model-effort-overview"
-                tabIndex={-1}
-                class="outline-none"
-              >
-                {props.overview?.(showModels)}
-              </div>
-            }
-          >
-            <Show when={props.overview}>
-              <div class="flex shrink-0 items-center gap-1 pb-1">
-                <IconButton
-                  icon="chevron-left"
-                  variant="ghost"
-                  size="small"
-                  aria-label={language.t("common.goBack")}
-                  onClick={showOverview}
-                />
-                <span class="text-sm font-medium text-text-base">{language.t("dialog.model.select.title")}</span>
-              </div>
-            </Show>
-            <ModelList
-              provider={props.provider}
-              model={props.model}
-              onSelect={() => (props.overview ? showOverview() : close("select"))}
-              class="p-1"
-              action={
-                <div class="flex items-center gap-1">
-                  <Tooltip placement="top" value={language.t("command.provider.connect")}>
-                    <IconButton
-                      icon="plus-small"
-                      variant="ghost"
-                      iconSize="normal"
-                      class="size-6"
-                      aria-label={language.t("command.provider.connect")}
-                      onClick={handleConnectProvider}
-                    />
-                  </Tooltip>
-                  <Tooltip placement="top" value={language.t("dialog.model.manage")}>
-                    <IconButton
-                      icon="sliders"
-                      variant="ghost"
-                      iconSize="normal"
-                      class="size-6"
-                      aria-label={language.t("dialog.model.manage")}
-                      onClick={handleManage}
-                    />
-                  </Tooltip>
-                </div>
-              }
-            />
-          </Show>
+          <Kobalte.Title class="sr-only">{language.t("dialog.model.select.title")}</Kobalte.Title>
+          <ModelEffortPicker
+            open={() => store.open}
+            providers={providersList}
+            recentProviderIDs={recentList}
+            models={modelsFor}
+            currentModel={currentKey}
+            onModelSelect={(picked) => {
+              model.set({ providerID: picked.providerID, modelID: picked.modelID }, { recent: true })
+              close("select")
+            }}
+            onManage={handleManage}
+            onConnect={handleConnectProvider}
+            effort={{
+              steps: model.variant.list(),
+              current: () => model.variant.current(),
+              onChange: (value) => model.variant.set(value),
+              unselectedLabel: language.t("prompt.variant.modelDefault"),
+            }}
+            keybindHint={props.keybindHint}
+          />
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

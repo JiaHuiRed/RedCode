@@ -24,6 +24,18 @@ export const availableEffortSteps = (steps: readonly string[]) => steps.filter((
 export const selectedEffortIndex = (steps: readonly string[], current?: string) =>
   current === undefined ? -1 : steps.indexOf(current)
 
+export type EffortTone = "white" | "green" | "blue" | "purple" | "gold" | "red"
+
+/**
+ * 261121 Red 档位文字按等级着色：白→绿→蓝→紫→金→红，六档封顶。档位集合是每个模型
+ * 自己的（见组件注释），所以按**下标**从最低档升到最高档取色，只有 N 档的模型取前
+ * N 个颜色——档内区分足够。返回值落在元素 data-effort-tone 上，颜色见 css 的 tone 段。
+ */
+const EFFORT_TONES: readonly EffortTone[] = ["white", "green", "blue", "purple", "gold", "red"]
+
+export const effortStepTone = (index: number): EffortTone =>
+  EFFORT_TONES[Math.max(0, Math.min(index, EFFORT_TONES.length - 1))] ?? "white"
+
 /**
  * 260902 cc 推理强度滑杆。
  *
