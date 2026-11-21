@@ -2282,6 +2282,8 @@ export function MessageTimeline(props: {
         }}
       >
         {/* 261116 Red A04：没有选区时也能明确范围——按行引用整条消息/片段。 */}
+        {/* 261121 Red 文字按钮直接浮在气泡右上角，行拉宽后与正文重叠；收成图标芯片
+            （配方同下方 2676 行的行内悬浮芯片），说明文字收进 hover tooltip。 */}
         <Show
           when={
             hoverRowKey() === TimelineRow.key(input.row()) &&
@@ -2293,13 +2295,13 @@ export function MessageTimeline(props: {
             data-action="quote-row"
             aria-label={language.t("dialog.background.result.quote")}
             title={language.t("dialog.background.result.quote")}
-            class="absolute right-2 top-1 z-10 rounded px-1.5 py-0.5 text-sm text-text-weak hover:bg-surface-raised hover:text-text-strong"
+            class="absolute right-2 top-1 z-10 flex h-6 w-7 items-center justify-center rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] text-text-weak backdrop-blur-[0.75px] transition-colors hover:border-[var(--border-weak-base)] hover:text-text-strong"
             onClick={(event) => {
               event.stopPropagation()
               quoteRow(input.row())
             }}
           >
-            {language.t("dialog.background.result.quote")}
+            <Icon name="speech-bubble" size="small" />
           </button>
         </Show>
         <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
