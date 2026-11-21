@@ -300,9 +300,11 @@
   min-width: 0;
   background: transparent;
 }
+/* 261121 Red 会话区拉宽：745px 窄列在宽屏上两侧空太多，放宽到 1400px 封顶、
+   窄窗口留 24px 边距；头像贴着气泡外缘，随内容列一起到边。 */
 .companion-frame [data-timeline-row],
 .companion-frame [data-component="composer-width-host"] {
-  max-width: 745px;
+  max-width: min(calc(100% - 48px), 1400px);
   margin-inline: auto;
 }
 .companion-frame [data-component="session-prompt-dock"] {
@@ -376,11 +378,9 @@
 .companion-frame [data-component="session-turn"] [data-slot="session-turn-assistant-content"] {
   padding: 0;
 }
-.companion-frame [data-slot="session-turn-assistant-avatar"] [data-component="avatar"],
-.companion-frame [data-slot="user-message-avatar"] [data-component="avatar"] {
-  width: 30px;
-  height: 30px;
-}
+/* 261121 Red 消息头像对齐 Code mode 的 64px（4rem）：轻量化时压到 30px 的覆盖删除，
+   由 ui 包 avatar.css 的默认尺寸接管；圆形轮廓（.companion-frame [data-component="avatar"]
+   的 border-radius 覆盖）保持不变。 */
 .companion-arrival {
   margin: 8px 0;
   color: var(--chat-muted);
