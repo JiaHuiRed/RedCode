@@ -150,9 +150,14 @@
   font-size: 14px;
 }
 .companion-profile > svg,
+.companion-settings,
 .companion-more {
-  margin-inline-start: auto;
   flex: none;
+}
+/* 261121 Red 顶栏齿轮接手把右侧控件推到行尾的角色；「…」紧随其后，不再各占一份 auto 边距。 */
+.companion-profile > svg,
+.companion-settings {
+  margin-inline-start: auto;
 }
 .companion-stage {
   flex: 1;

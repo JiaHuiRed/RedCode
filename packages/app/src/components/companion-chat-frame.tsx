@@ -268,6 +268,17 @@ export function CompanionChatFrame(props: {
           <a href={home()}>Chat</a>
           <span aria-hidden="true">/</span>
           <span class="companion-page-title">{props.session?.title || language.t("chat.ui.new")}</span>
+          {/* 261121 Red 设置回归常驻按钮：轻量化改造时被收进右上角「…」浮层，用户找不到了。
+              标签用 settings.title 而非 chat.native.settings——后者是「…」浮层里那行的
+              aria-label（"Companion settings"），同名会让 e2e 的 getByRole 命中两个按钮。 */}
+          <button
+            type="button"
+            class="chat-icon companion-settings"
+            onClick={() => void settings()}
+            aria-label={language.t("settings.title")}
+          >
+            <Icon name="settings-gear" />
+          </button>
           <Popover open={ui.menu} onOpenChange={(open) => setUI("menu", open)} placement="bottom-end" gutter={6}>
             <Popover.Trigger class="chat-icon companion-more" aria-label={language.t("chat.ui.options")}>
               <Icon name="dot-grid" />
