@@ -6,7 +6,7 @@ Chat continues an existing companion's identity and long-term memory, and can se
 
 Beginning with 0.19.0, RedCode evolves into RedSpace: one runtime for identity, conversations, and meaningful work.
 
-[![Version](https://badgen.net/badge/Version/0.20.0/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.20.1/blue)](CHANGELOG.md)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
