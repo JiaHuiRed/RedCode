@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
@@ -24,6 +24,7 @@ import { Identifier } from "@/utils/id"
 import { recordCompanionMessageAccepted } from "@/utils/companion-onboarding"
 import { createChatAttachments } from "@/utils/chat-attachments"
 import { classifyClipboard } from "@/components/prompt-input/paste"
+import { pickChatGreetingKey } from "@/utils/greeting"
 import { createChatHomeSubmit } from "@/utils/chat-home-submit"
 import { requireCompanionModel, sendCompanionMessage } from "@/utils/chat-send-ack"
 import { introductionState, selectCompanion, upsertCompanion } from "@/utils/companion-workspace"
@@ -36,6 +37,9 @@ export default function Chat() {
   const dialog = useDialog()
   const workspace = useCompanionWorkspace()
   const settings = useSettings()
+  // 261121 Red 时段问候：进页面抽一次（greeting.ts 注释的 signal 语义——createMemo 会把
+  // Math.random() 永久缓存，signal 初值恰好是「每次挂载抽一次」，也不会被后续渲染改掉）。
+  const [greetingKey] = createSignal(pickChatGreetingKey(new Date().getHours()))
   const [search, setSearch] = useSearchParams<{ companion?: string }>()
   const queryClient = useQueryClient()
   const [state, setState] = createStore({
@@ -384,11 +388,7 @@ export default function Chat() {
           <div class="companion-home-center">
             <div class="companion-greeting">
               <Show when={profile()}>{(selected) => <SoulAvatar id={selected().soulID} soul={soul()} />}</Show>
-              <h1>
-                {settings.userProfile.displayName()
-                  ? language.t("chat.ui.greetingNamed", { name: settings.userProfile.displayName() })
-                  : language.t("chat.ui.greeting")}
-              </h1>
+              <h1>{language.t(greetingKey())}</h1>
             </div>
             <Show when={state.createError}>
               <div role="alert" class="flex flex-wrap items-center gap-3 text-13-regular text-text-on-critical-base">

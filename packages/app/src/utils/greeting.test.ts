@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { pickGreetingKey } from "./greeting"
+import { pickChatGreetingKey, pickGreetingKey } from "./greeting"
 import { dict as zh } from "@/i18n/zh"
 
 // 260828 cc 时段分档的闸门。边界（11 点算早上还是中午、23 点算晚上还是深夜）是这类
@@ -47,6 +47,41 @@ describe("pickGreetingKey 时段分档", () => {
       keys.add(pickGreetingKey(hour, 0.99))
     }
     expect(keys.size).toBe(10)
+    for (const key of keys) {
+      expect((zh as Record<string, string>)[key], key).toBeTruthy()
+    }
+  })
+})
+
+// 261121 Red Chat 首页时段问候（生活区文案）：分档复用同一套边界，每档六句，
+// key 必须全部能翻出文案。
+describe("pickChatGreetingKey", () => {
+  const bucketOf = (hour: number) => pickChatGreetingKey(hour, 0).split(".")[2]
+
+  test("分档边界与 Code 同一套", () => {
+    expect(bucketOf(5)).toBe("morning")
+    expect(bucketOf(11)).toBe("noon")
+    expect(bucketOf(13)).toBe("afternoon")
+    expect(bucketOf(18)).toBe("evening")
+    expect(bucketOf(23)).toBe("night")
+    expect(bucketOf(3)).toBe("night")
+  })
+
+  test("每档六句都抽得到，roll=1 不越界", () => {
+    for (const hour of [8, 12, 15, 20, 2]) {
+      const first = pickChatGreetingKey(hour, 0)
+      const last = pickChatGreetingKey(hour, 0.99)
+      expect(first).not.toBe(last)
+      expect(pickChatGreetingKey(hour, 1)).toBe(first)
+    }
+  })
+
+  test("30 个 key 在词典里都有对应文案", () => {
+    const keys = new Set<string>()
+    for (let hour = 0; hour < 24; hour++) {
+      for (const roll of [0, 0.2, 0.4, 0.6, 0.8, 0.99]) keys.add(pickChatGreetingKey(hour, roll))
+    }
+    expect(keys.size).toBe(30)
     for (const key of keys) {
       expect((zh as Record<string, string>)[key], key).toBeTruthy()
     }

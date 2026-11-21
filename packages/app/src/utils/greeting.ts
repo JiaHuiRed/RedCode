@@ -74,3 +74,54 @@ export function pickGreetingKey(hour: number, roll = Math.random()): string {
   const options = GREETINGS[greetingBucket(hour)]
   return options[Math.floor(roll * options.length)] ?? options[0]
 }
+
+/* 261121 Red Chat 首页问候（哥哥要求）：Chat 是生活区，文案比 Code 那套更生活化——
+   分档复用同一个 greetingBucket（早/中午/下午/晚上/深夜），句子单独成组，不与
+   Code 的新建会话页共用。每档六句，进页面时抽一次（同 pickGreetingKey 的语义）。 */
+const CHAT_GREETINGS = {
+  morning: [
+    "chat.greeting.morning.a",
+    "chat.greeting.morning.b",
+    "chat.greeting.morning.c",
+    "chat.greeting.morning.d",
+    "chat.greeting.morning.e",
+    "chat.greeting.morning.f",
+  ],
+  noon: [
+    "chat.greeting.noon.a",
+    "chat.greeting.noon.b",
+    "chat.greeting.noon.c",
+    "chat.greeting.noon.d",
+    "chat.greeting.noon.e",
+    "chat.greeting.noon.f",
+  ],
+  afternoon: [
+    "chat.greeting.afternoon.a",
+    "chat.greeting.afternoon.b",
+    "chat.greeting.afternoon.c",
+    "chat.greeting.afternoon.d",
+    "chat.greeting.afternoon.e",
+    "chat.greeting.afternoon.f",
+  ],
+  evening: [
+    "chat.greeting.evening.a",
+    "chat.greeting.evening.b",
+    "chat.greeting.evening.c",
+    "chat.greeting.evening.d",
+    "chat.greeting.evening.e",
+    "chat.greeting.evening.f",
+  ],
+  night: [
+    "chat.greeting.night.a",
+    "chat.greeting.night.b",
+    "chat.greeting.night.c",
+    "chat.greeting.night.d",
+    "chat.greeting.night.e",
+    "chat.greeting.night.f",
+  ],
+} as const
+
+export function pickChatGreetingKey(hour: number, roll = Math.random()): string {
+  const options = CHAT_GREETINGS[greetingBucket(hour)]
+  return options[Math.floor(roll * options.length)] ?? options[0]
+}
