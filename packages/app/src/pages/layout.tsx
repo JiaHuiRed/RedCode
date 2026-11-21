@@ -1218,7 +1218,10 @@ export default function Layout(props: ParentProps) {
   // 回滚：git revert/checkout 至本次 0.4.5 提交之前即可恢复。
   // 260610 Red 0.5.0 整窗背景图按视图分流：进会话(params.id)用聊天背景图，首页/无会话用主界面背景图
   //   —— 哥哥的痛点：主界面满屏壁纸在公司很尴尬，主/聊分开后公司可单独把主界面背景留空或换中性图
-  const appBackground = () => (params.id ? settings.appearance.chatBackground() : settings.appearance.homeBackground())
+  // 261121 Red Chat 首页(/chat)也是聊天视图，与会话页共用聊天背景图；否则聊天壁纸在 Chat 模式永不出现。
+  const chatRoute = useMatch(() => "/chat")
+  const appBackground = () =>
+    params.id || chatRoute() ? settings.appearance.chatBackground() : settings.appearance.homeBackground()
 
   // ⑤ 光标辉光。不按 appBackground() 开关监听：无壁纸时 CSS 里 [data-app-frost] 那条
   // 选择器不命中、光斑本就不显示，这里再加一层响应式反而要处理装卸时序。

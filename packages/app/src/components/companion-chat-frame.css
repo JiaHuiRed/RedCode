@@ -197,6 +197,21 @@
   color: var(--text-strong);
   background: var(--background-base);
 }
+/* 261121 Red 壁纸模式：根布局已整窗铺壁纸（祖先带 data-app-frost），Chat 框架去实色底，
+   透出主卡片磨砂与壁纸；侧栏按「外壳」身份改半透明磨砂（68% 与首页侧栏同档，配方同
+   index.css 那条 [data-frost-surface="home-sidebar"]），输入 dock 随主面透明。
+   无壁纸时这些规则不命中，实色底照常生效。 */
+[data-app-frost] .companion-frame {
+  background: transparent;
+}
+[data-app-frost] .companion-rail {
+  background-color: color-mix(in srgb, var(--chat-rail) var(--frost-alpha-aside), transparent);
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
+}
+[data-app-frost] .companion-frame [data-component="session-prompt-dock"] {
+  background: transparent;
+}
 .companion-home-scroll {
   flex: 1;
   min-height: 0;
