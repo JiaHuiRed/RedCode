@@ -325,20 +325,22 @@ export const ModelEffortPicker: Component<ModelEffortPickerProps> = (props) => {
                   {(hint) => <kbd>{hint()}</kbd>}
                 </Show>
               </div>
-              <EffortSliderV2
-                class="mep-effort-slider"
-                steps={effortSteps()}
-                current={props.effort.current()}
-                label={props.effort.label}
-                title={language.t("settings.agents.variant.title")}
-                unselectedLabel={props.effort.unselectedLabel}
-                onChange={props.effort.onChange}
-                style={{
-                  "--effort-slider-v2-width": "100%",
-                  "--effort-slider-v2-height": "24px",
-                  "--effort-slider-v2-thumb-size": "28px",
-                }}
-              />
+        <div class="mep-effort-slider-wrap">
+          <EffortSliderV2
+            class="mep-effort-slider"
+            steps={effortSteps()}
+            current={props.effort.current()}
+            label={props.effort.label}
+            title={language.t("settings.agents.variant.title")}
+            unselectedLabel={props.effort.unselectedLabel}
+            onChange={props.effort.onChange}
+            style={{
+              "--effort-slider-v2-width": "100%",
+              "--effort-slider-v2-height": "24px",
+              "--effort-slider-v2-thumb-size": "28px",
+            }}
+          />
+        </div>
             </Show>
           </>
         }

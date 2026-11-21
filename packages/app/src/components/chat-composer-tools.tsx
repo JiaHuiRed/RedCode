@@ -3,7 +3,7 @@ import { Show, createMemo, createSignal, type Component } from "solid-js"
 import { Button } from "@redcode-ai/ui/button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
-import { availableEffortSteps, effortStepTone } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
+import { availableEffortSteps } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { useModels, type ModelKey } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
 import { useLanguage } from "@/context/language"
@@ -94,23 +94,8 @@ export const ChatComposerTools: Component<{
           </Kobalte.Content>
         </Kobalte.Portal>
       </Kobalte>
-
-      <Show when={steps().length > 0}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="small"
-          disabled={props.disabled}
-          data-action="chat-choose-variant"
-          data-effort-tone={props.variant ? effortStepTone(Math.max(0, steps().indexOf(props.variant))) : undefined}
-          class={`min-w-0 max-w-[140px] justify-start gap-1.5 text-12-regular capitalize ${props.variant ? "" : "text-text-weak"}`}
-          onClick={() => setOpen(!open())}
-        >
-          <Icon name="brain" size="small" class="shrink-0" />
-          <span class="truncate">{props.variant ?? language.t("prompt.variant.modelDefault")}</span>
-          <Icon name="chevron-down" size="small" class="shrink-0" />
-        </Button>
-      </Show>
+      {/* 261121 Red picker v2：高强度 chip 删除（哥哥确认与统一弹层重复）——推理强度只在
+          弹层里调，模型触发钮一个入口。 */}
     </div>
   )
 }

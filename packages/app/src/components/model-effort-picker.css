@@ -55,12 +55,13 @@
   color: var(--text-weak);
 }
 
-/* 右侧飞出层：贴着供应商行右缘，4px 重叠保证鼠标从行内滑过去不断触。
-   261121 Red 方案③：打开时量过几何，右缘放不下贴左（data-side="left"），
-   两侧都放不下则整个不渲染飞出层（面板内切换视图）。 */
+/* 右侧飞出层：贴着供应商行右缘 +8px 间距（261121 Red picker v2，哥哥反馈此前 -4px
+   重叠压在主面板上）。悬停连续性靠 ::before 的透明桥——盖住 8px 间隙，鼠标滑过去
+   不断触。打开时量过几何，右缘放不下贴左（data-side="left"，桥对称换边），两侧都
+   放不下则整个不渲染飞出层（面板内切换视图）。 */
 .mep-flyout {
   position: absolute;
-  left: calc(100% - 4px);
+  left: calc(100% + 8px);
   top: -6px;
   z-index: 10;
   width: 248px;
@@ -73,11 +74,50 @@
   background: var(--surface-raised-stronger-non-alpha);
   box-shadow: 0 14px 40px #00000059;
 }
+.mep-flyout::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+}
 .mep-flyout[data-side="left"] {
   left: auto;
-  right: calc(100% - 4px);
+  right: calc(100% + 8px);
 }
-/* 261121 Red 方案③：窄窗面板内供应商视图——占模型区位置，同样的滚动边界 */
+.mep-flyout[data-side="left"]::before {
+  left: auto;
+  right: -12px;
+}
+/* 261121 Red picker v2：滚动条换设置面板同款（ScrollView 的 4px 圆角细条，主题色）
+   ——原生粗滚动条 + 箭头在弹层里太重。 8px 槽 + 2px 透明边出 4px 视觉宽。 */
+.mep-flyout::-webkit-scrollbar,
+.mep-model-list::-webkit-scrollbar,
+.mep-panel-providers::-webkit-scrollbar {
+  width: 8px;
+}
+.mep-flyout::-webkit-scrollbar-thumb,
+.mep-model-list::-webkit-scrollbar-thumb,
+.mep-panel-providers::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.mep-flyout:hover::-webkit-scrollbar-thumb,
+.mep-model-list:hover::-webkit-scrollbar-thumb,
+.mep-panel-providers:hover::-webkit-scrollbar-thumb {
+  background: var(--border-strong-base);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.mep-flyout::-webkit-scrollbar-track,
+.mep-model-list::-webkit-scrollbar-track,
+.mep-panel-providers::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 261121 Red picker v2：窄窗面板内供应商视图——占模型区位置，同样的滚动边界 */
 .mep-panel-providers {
   max-height: min(26rem, 60vh);
 }
@@ -139,6 +179,9 @@
 }
 .mep-model-list {
   min-height: 0;
+  /* 261121 Red picker v2：一次正好 4 行（哥哥定的视口高度），其余交给滚动条；
+     弹层整体随之收矮。行高 9+9 padding + ~19 行高 ≈ 37px。 */
+  max-height: 148px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -209,8 +252,14 @@
   padding: 1px 7px;
   background: var(--surface-raised-base);
 }
+/* 261121 Red picker v2：滑杆溢出的根因——宽度 100% 又带左右 margin，百分比宽度按
+   包含块解析、margin 加在其上，恰好右溢 20px（哥哥截图里粒子条越界）。改用外层
+   padding 包裹，滑杆 width:100% 贴齐面板内容宽。 */
+.mep-effort-slider-wrap {
+  padding: 0 10px 12px;
+  flex: none;
+}
 .mep-effort-slider {
-  margin: 0 10px 12px;
   flex: none;
 }
 

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>模型选择弹层 v2 — 收紧单组件 · 四行视口 · 细滚动条 · 间距修正</title>
+<style>
+  :root {
+    --bg: #17111f;
+    --panel: #221a2e;
+    --panel-2: #2a2138;
+    --border: #3a2f4a;
+    --text: #e8e2f0;
+    --text-weak: #a89cb8;
+    --hover: rgba(255, 255, 255, 0.06);
+    --thumb-pink: #b0627a;
+    --thumb-pink-strong: #d48ba0;
+    --green: #34d377;
+    --blue: #4da3ff;
+    --purple: #a06bff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 70% 30%, #241a33 0%, var(--bg) 60%);
+    min-height: 100vh;
+    font-family: "Inter", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    padding: 40px 48px;
+  }
+  h1 { font-size: 17px; font-weight: 650; margin-bottom: 6px; }
+  .sub { font-size: 12.5px; color: var(--text-weak); margin-bottom: 28px; line-height: 1.7; }
+  .sub b { color: var(--text); font-weight: 600; }
+
+  .stage { position: relative; display: block; width: 880px; height: 560px; }
+
+  /* ============ 输入框（只保留一个模型触发钮） ============ */
+  .composer {
+    position: absolute; left: 0; bottom: 0;
+    width: 460px; height: 108px; border-radius: 14px;
+    background: rgba(20, 15, 28, 0.92);
+    border: 1px solid var(--border);
+    padding: 14px 16px 10px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .ph { color: #7c7090; font-size: 13.5px; }
+  .composer-row { display: flex; align-items: center; gap: 10px; }
+  .icon-btn {
+    width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent;
+    color: var(--text-weak); font-size: 15px; cursor: pointer;
+  }
+  .trigger {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 0; background: transparent; color: var(--text);
+    font-size: 12.5px; cursor: pointer; padding: 4px 6px; border-radius: 7px;
+  }
+  .trigger:hover { background: var(--hover); }
+  .trigger .spark { color: #cbb7ff; font-size: 12px; }
+  .trigger .chev { color: var(--text-weak); font-size: 9px; }
+  .trigger.free { color: #ff9d8f; }
+  .spacer { flex: 1; }
+  .send { width: 28px; height: 28px; border-radius: 8px; border: 0; background: var(--panel-2); color: var(--text-weak); cursor: pointer; font-size: 13px; }
+  .removed-note { position: absolute; left: 118px; bottom: -26px; font-size: 11px; color: #e58fa0; white-space: nowrap; }
+
+  /* ============ 弹层主体（收紧高度） ============ */
+  .popover {
+    position: absolute; left: 76px; bottom: 128px;
+    width: 316px; border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--border);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    padding: 8px; z-index: 10;
+  }
+  .provider-row {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 10px; border-radius: 9px; cursor: pointer; border: 0; background: transparent;
+    color: var(--text); text-align: left; font-size: 14px; font-weight: 600;
+  }
+  .provider-row:hover { background: var(--hover); }
+  .p-icon { width: 20px; height: 20px; border-radius: 6px; background: #4d8dea; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .p-icon.sparkbg { background: #3b2c55; }
+  .go { margin-left: auto; color: var(--text-weak); font-size: 13px; }
+  .divider { border-top: 1px solid var(--border); margin: 5px 4px; }
+  .section-label { padding: 6px 10px 4px; font-size: 11.5px; color: var(--text-weak); }
+
+  /* 模型区：一次正好 4 行，细滚动条 */
+  .model-list {
+    max-height: 158px; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--thumb-pink) transparent;
+  }
+  .model-list::-webkit-scrollbar { width: 8px; }
+  .model-list::-webkit-scrollbar-track { background: transparent; }
+  .model-list::-webkit-scrollbar-thumb {
+    background: var(--thumb-pink); border-radius: 999px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  .model-list::-webkit-scrollbar-thumb:hover { background: var(--thumb-pink-strong); background-clip: padding-box; border: 2px solid transparent; }
+  .row {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 9px 10px; border-radius: 9px; border: 0; background: transparent;
+    color: var(--text); text-align: left; font-size: 13.5px; cursor: pointer;
+  }
+  .row:hover { background: var(--hover); }
+  .row[data-current="true"] { background: rgba(255, 255, 255, 0.07); }
+  .row .ok { margin-left: auto; color: var(--text-weak); font-size: 12px; }
+  .row .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .auto-row {
+    display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent;
+    color: var(--text-weak); font-size: 12.5px; text-align: left; cursor: pointer;
+    border-top: 1px solid var(--border); margin-top: 5px;
+  }
+  .auto-row:hover { background: var(--hover); border-radius: 0 0 9px 9px; }
+
+  /* 思考强度区：滑杆在面板宽度内，不再右溢 */
+  .effort-head { display: flex; align-items: baseline; gap: 8px; padding: 10px 10px 8px; }
+  .effort-head .lab { font-size: 12.5px; color: var(--text-weak); }
+  .effort-head .val { font-size: 13.5px; font-weight: 700; color: var(--green); }
+  .slider-wrap { padding: 0 10px 12px; }   /* 用 padding 包住滑杆，宽度 100% 不再越界 */
+  .slider {
+    position: relative; height: 24px; width: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #2f5d46 0%, #2b4a66 55%, #3d2f66 100%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+  }
+  .slider .fill {
+    position: absolute; inset: 3px; width: 82%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--green) 0%, var(--blue) 55%, var(--purple) 100%);
+    box-shadow: 0 0 10px rgba(120, 140, 255, 0.35);
+  }
+  .slider .spark { position: absolute; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: 0.8; transform: translateY(-50%); }
+  .slider .knob {
+    position: absolute; top: 50%; right: 8%; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; transform: translate(50%, -50%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ============ 供应商飞出层：+8px 间距，不再压住主面板 ============ */
+  .flyout {
+    position: absolute; left: 400px; top: 78px;
+    width: 250px; max-height: 464px; overflow-y: auto;
+    border-radius: 14px; border: 1px solid var(--border);
+    background: var(--panel); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+    padding: 6px; z-index: 11;
+    scrollbar-width: thin; scrollbar-color: var(--thumb-pink) transparent;
+  }
+  .flyout::-webkit-scrollbar { width: 8px; }
+  .flyout::-webkit-scrollbar-track { background: transparent; }
+  .flyout::-webkit-scrollbar-thumb { background: var(--thumb-pink); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  .flyout:hover::-webkit-scrollbar-thumb { background: var(--thumb-pink-strong); background-clip: padding-box; }
+  /* 悬停桥：跨过 8px 间隙鼠标不断触（透明，视觉上就是干净的一段间隔） */
+  .flyout::before { content: ""; position: absolute; left: -10px; top: 0; bottom: 0; width: 10px; }
+  .fly-label { padding: 7px 10px 4px; font-size: 11.5px; color: var(--text-weak); }
+  .fly-row {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 10px; border-radius: 9px; border: 0; background: transparent;
+    color: var(--text); text-align: left; font-size: 13.5px; cursor: pointer;
+  }
+  .fly-row:hover { background: var(--hover); }
+  .fly-row .tag { font-size: 10.5px; color: var(--text-weak); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; margin-left: 6px; }
+  .fly-row .ok { margin-left: auto; color: var(--text-weak); }
+  .fly-manage { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; }
+
+  /* 标注 */
+  .note {
+    position: absolute; font-size: 11px; color: #d4a5b5; line-height: 1.5;
+    width: 150px; pointer-events: none;
+  }
+  .note .n-tag { color: #e58fa0; font-weight: 650; }
+  .legend { margin-top: 34px; font-size: 12.5px; color: var(--text-weak); line-height: 2; max-width: 720px; }
+  .legend b { color: var(--text); }
+  .legend .k { color: #e58fa0; font-weight: 650; }
+</style>
+</head>
+<body>
+  <h1>模型选择弹层 v2 — 单组件 · 收紧高度 · 细滚动条 · 间距修正</h1>
+  <div class="sub">
+    改动：<b>① 输入框只留模型一个触发钮</b>（推理强度 chip 删除，弹层里已有强度条，快捷键 Shift+Ctrl+D 保留）
+    · <b>② 弹层收紧</b>：模型区一次正好显示 4 行
+    · <b>③ 滚动条换成设置面板同款</b>（4px 圆角细条，实现直接换 ScrollView 组件、自动跟主题色走）
+    · <b>④ 供应商飞出层改 +8px 间距</b>，不再压在主面板上（中间有隐形悬停桥，鼠标滑过去不断触）
+    · <b>⑤ 粒子条宽度收进面板</b>（根因：宽度 100% 又带左右 margin，改用 padding 包裹）。
+  </div>
+
+  <div class="stage">
+    <div class="popover" id="popover">
+      <div class="provider-row" id="providerRow">
+        <div class="p-icon sparkbg">✦</div>
+        <span>OpenCode Go</span>
+        <span class="go">›</span>
+      </div>
+      <div class="divider"></div>
+      <div class="section-label">模型</div>
+      <div class="model-list" id="modelList">
+        <button class="row"><span class="name">MiMo-V2.6-Flash</span></button>
+        <button class="row"><span class="name">MiMo-V2.6-Pro</span></button>
+        <button class="row"><span class="name">GLM-5.3-Flash</span></button>
+        <button class="row"><span class="name">Claude Haiku 5.5</span></button>
+        <button class="row"><span class="name">Hy4</span></button>
+        <button class="row"><span class="name">Hy4 preview</span></button>
+        <button class="row" data-current="true"><span class="name">Hy4 flash</span><span class="ok">✓</span></button>
+        <button class="row"><span class="name">Kimi K2 Thinking</span></button>
+        <button class="row"><span class="name">Step 3.5 Flash</span></button>
+      </div>
+      <button class="auto-row">默认模型</button>
+      <div class="divider"></div>
+      <div class="effort-head">
+        <span class="lab">思考强度</span>
+        <span class="val">high</span>
+        <span style="margin-left:auto; font-size:10.5px; color:var(--text-weak); border:1px solid var(--border); border-radius:6px; padding:1px 7px;">⇧Ctrl+D</span>
+      </div>
+      <div class="slider-wrap">
+        <div class="slider" id="slider">
+          <div class="fill"></div>
+          <span class="spark" style="left:12%"></span><span class="spark" style="left:26%; top:38%"></span>
+          <span class="spark" style="left:41%; top:64%"></span><span class="spark" style="left:55%"></span>
+          <span class="spark" style="left:68%; top:36%"></span><span class="spark" style="left:79%; top:62%"></span>
+          <div class="knob"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flyout" id="flyout">
+      <div class="fly-label">最近使用</div>
+      <button class="fly-row" data-p="spark"><div class="p-icon sparkbg" style="width:18px;height:18px;font-size:10px;">✦</div><span>OpenCode Go</span><span class="ok">✓</span></button>
+      <button class="fly-row" data-p="z"><div class="p-icon" style="background:#2b2b2b;">Z</div><span>Zhipu AI Coding Plan</span></button>
+      <button class="fly-row" data-p="d"><div class="p-icon" style="background:#3a6ff0;">🐳</div><span>DeepSeek</span></button>
+      <button class="fly-row" data-p="o"><div class="p-icon" style="background:#1a1a1a;">◎</div><span>OpenAI</span><span class="tag">自定义</span></button>
+      <div class="fly-label">全部供应商</div>
+      <button class="fly-row" data-p="r"><div class="p-icon" style="background:#333;">◑</div><span>OpenRouter</span></button>
+      <button class="fly-row" data-p="ol"><div class="p-icon" style="background:#3b2c55;">✦</div><span>ollama</span></button>
+      <button class="fly-row" data-p="s"><div class="p-icon" style="background:#3b2c55;">✦</div><span>SCNet Token Plan</span></button>
+      <button class="fly-row" data-p="sn"><div class="p-icon" style="background:#3b2c55;">✦</div><span>SenseNova</span></button>
+      <button class="fly-row" data-p="sf"><div class="p-icon" style="background:#3b2c55;">✦</div><span>StepFun Step Plan (China)</span></button>
+      <div class="fly-manage">
+        <button class="fly-row" data-p="m">≡<span style="margin-left:9px;">管理模型</span></button>
+        <button class="fly-row" data-p="c">＋<span style="margin-left:9px;">连接提供商</span></button>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="ph">说点什么...</div>
+      <div class="composer-row">
+        <button class="icon-btn">＋</button>
+        <button class="trigger free"><span class="spark">✦</span><span>Hy4 flash</span><span style="font-size:10px;">Free</span><span class="chev">▼</span></button>
+        <span class="spacer"></span>
+        <button class="send">➤</button>
+      </div>
+    </div>
+    <div class="removed-note">↑ 高强度 chip 已删——推理强度只在弹层里调</div>
+
+    <div class="note" style="right: -180px; top: 40px;"><span class="n-tag">+8px 间距</span><br>飞出层不再压主面板</div>
+    <div class="note" style="right: -180px; top: 130px;"><span class="n-tag">同款细滚动条</span><br>4px 圆角，跟主题色</div>
+    <div class="note" style="right: -180px; top: 232px;"><span class="n-tag">一次 4 行</span><br>其余滚动，弹层整体变矮</div>
+    <div class="note" style="right: -180px; top: 330px;"><span class="n-tag">粒子条收进面板</span><br>右端不再越界</div>
+  </div>
+
+  <div class="legend">
+    <b>四个入口统一行为</b>：Chat 首页 / Chat 会话 / Code 新建会话 / Code 会话都只用这一个弹层；输入框行里只剩<b>模型名一个触发钮</b>（当前档位看弹层内「思考强度」行，或直接按 <span class="k">⇧Ctrl+D</span> 循环）。<br>
+    <b>供应商飞出层</b>内容不变（最近使用 → 全部供应商 → 管理/连接），只改间距与滚动条；窄窗放不下时仍走面板内「供应商 → 模型」切换。<br>
+    <b>滚动条</b>：实现时模型区与飞出层都换 ui 包 ScrollView（设置面板同款），颜色自动跟当前主题，不写死粉色。
+  </div>
+
+<script>
+  // 轻交互：悬停供应商行出飞出层，点供应商行切换；滑杆可拖
+  const row = document.getElementById("providerRow")
+  const flyout = document.getElementById("flyout")
+  let hideTimer
+  row.addEventListener("mouseenter", () => { clearTimeout(hideTimer); flyout.style.display = "block" })
+  document.getElementById("popover").addEventListener("mouseleave", (e) => {
+    if (e.relatedTarget && flyout.contains(e.relatedTarget)) return
+    hideTimer = setTimeout(() => (flyout.style.display = "none"), 150)
+  })
+  flyout.addEventListener("mouseleave", (e) => {
+    if (e.relatedTarget && document.getElementById("popover").contains(e.relatedTarget)) return
+    hideTimer = setTimeout(() => (flyout.style.display = "none"), 150)
+  })
+  flyout.addEventListener("click", (e) => {
+    const btn = e.target.closest(".fly-row")
+    if (!btn || btn.dataset.p === "m" || btn.dataset.p === "c") return
+    flyout.style.display = "none"
+    alert("选中供应商：" + btn.textContent.trim() + "（只切换浏览列表，不改已选模型）")
+  })
+  const slider = document.getElementById("slider")
+  const fill = slider.querySelector(".fill")
+  const knob = slider.querySelector(".knob")
+  const setP = (p) => {
+    p = Math.max(0.02, Math.min(0.98, p))
+    fill.style.width = (p * 100 - 4) + "%"
+    knob.style.right = (100 - p * 100) + "%"
+    knob.style.transform = "translate(-" + knob.offsetWidth * (p > 0.9 ? 1 : 0) + "%, -50%)"
+  }
+  let dragging = false
+  slider.addEventListener("pointerdown", (e) => { dragging = true; slider.setPointerCapture(e.pointerId); move(e) })
+  slider.addEventListener("pointermove", (e) => dragging && move(e))
+  slider.addEventListener("pointerup", () => (dragging = false))
+  function move(e) {
+    const r = slider.getBoundingClientRect()
+    setP((e.clientX - r.left) / r.width)
+  }
+</script>
+</body>
+</html>

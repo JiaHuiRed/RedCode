@@ -613,7 +613,7 @@ test("Chat remembers each conversation's model, filters the catalogue and uses b
   const first = sessions[0]!
   await page.getByRole("link", { name: first.title }).click()
   await expect(page.locator('[data-action="prompt-model"]')).toContainText("Alpha")
-  await expect(page.locator('[data-action="prompt-variant"]')).toContainText(/high/i)
+  // 261121 Red picker v2：推理强度 chip 已删，档位只在统一弹层里看
   for (const scheme of ["light", "dark"]) {
     await page.evaluate((scheme) => (document.documentElement.dataset.colorScheme = scheme), scheme)
     const mine = page.locator('[data-slot="user-message-text"]').first()
@@ -625,7 +625,6 @@ test("Chat remembers each conversation's model, filters the catalogue and uses b
   }
   await page.locator(".companion-new").click()
   await expect(homeModel).toContainText("Alpha")
-  await expect(page.locator('[data-action="chat-choose-variant"]')).toContainText(/high/i)
   await page.getByRole("link", { name: sessions[1]!.title }).click()
   await expect(page.locator('[data-action="prompt-model"]')).toContainText("Beta")
   await page.locator(".companion-new").click()

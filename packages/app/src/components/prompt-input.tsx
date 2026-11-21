@@ -41,7 +41,6 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
-import { availableEffortSteps, effortStepTone } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -1157,16 +1156,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     />
   )
 
-  const variants = createMemo(() => availableEffortSteps(local.model.variant.list()))
-  const variantLabel = (value: string) => value
-  const currentVariant = () => {
-    const value = local.model.variant.current()
-    return value === "default" ? undefined : value
-  }
-  const currentVariantLabel = () => {
-    const value = currentVariant()
-    return value ? variantLabel(value) : language.t("common.default")
-  }
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1652,35 +1641,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
           </ModelSelectorPopover>
         </Tooltip>
-        <Show when={variants().length > 0}>
-          <ModelSelectorPopover
-            interceptOpen={interceptUnpaid}
-            keybindHint={() => command.keybind("model.variant.cycle") || undefined}
-            triggerAs={Button}
-            triggerProps={{
-              variant: "ghost",
-              size: "normal",
-              style: control(),
-              class: `min-w-0 max-w-[120px] justify-start px-1 text-sm font-medium leading-4 capitalize @max-[380px]:max-w-[88px] ${
-                // 261121 Red 档位文字按等级着色（白绿蓝紫金红）；未显式选档回退中性色。
-                currentVariant()
-                  ? ""
-                  : "text-v2-text-text-muted"
-              }`,
-              "data-action": "prompt-variant",
-              "data-effort-tone": currentVariant()
-                ? effortStepTone(Math.max(0, variants().indexOf(currentVariant() ?? "")))
-                : undefined,
-            }}
-            onClose={restoreFocus}
-          >
-            <Icon name="brain" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-            <span class="truncate">
-              {currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}
-            </span>
-            <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-          </ModelSelectorPopover>
-        </Show>
+        {/* 261121 Red picker v2：推理强度 chip 删除——统一弹层内已有思考强度条（哥哥确认
+            两处重复），档位调节只走弹层；⇧Ctrl+D 循环快捷键保留在弹层与 use-session-commands。 */}
       </div>
     </Show>
   )
