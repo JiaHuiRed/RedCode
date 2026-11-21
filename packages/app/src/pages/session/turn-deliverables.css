@@ -182,6 +182,108 @@
     display: flex;
     gap: 8px;
   }
+
+  /* 261121 Red 单文件紧凑卡（方案四）：两行横卡替换整个 header+网格+footer 结构，
+     成果区高度压到原来的 60% 以下。强调色沿用各 kind 的既有配色。 */
+  &[data-single] {
+    padding: 8px;
+  }
+  .turn-deliverable-compact {
+    --deliverable-accent: var(--text-interactive-base);
+    min-width: 0;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface-raised-base);
+    transition: border-color 120ms ease;
+  }
+  .turn-deliverable-compact[data-kind="document"] {
+    --deliverable-accent: light-dark(#4669a6, #a1bdf0);
+  }
+  .turn-deliverable-compact[data-kind="page"] {
+    --deliverable-accent: light-dark(#8852a3, #c8a4e8);
+  }
+  .turn-deliverable-compact[data-kind="image"] {
+    --deliverable-accent: light-dark(#2f7c6b, #8bcaba);
+  }
+  .turn-deliverable-compact[data-kind="audio"] {
+    --deliverable-accent: light-dark(#a5692b, #dfb27e);
+  }
+  .turn-deliverable-compact:hover,
+  .turn-deliverable-compact:focus-within {
+    border-color: var(--deliverable-accent);
+  }
+  .turn-deliverable-compact-open {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 9px 12px;
+    text-align: left;
+    background: linear-gradient(120deg, color-mix(in srgb, var(--deliverable-accent) 7%, transparent), transparent 75%);
+  }
+  .turn-deliverable-compact-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 24px;
+    height: 28px;
+    border: 1px solid color-mix(in srgb, var(--deliverable-accent) 24%, transparent);
+    border-radius: 6px;
+    background: var(--background-base);
+  }
+  .turn-deliverable-compact-icon [data-component="file-icon"] {
+    width: 16px;
+    height: 16px;
+  }
+  /* 文件名优先保留末尾与扩展名：rtl + ellipsis 让省略号落在开头。 */
+  .turn-deliverable-compact-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .turn-deliverable-compact-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    font-size: var(--font-size-small);
+    color: var(--deliverable-accent);
+  }
+  .turn-deliverable-compact-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0 12px 8px 44px;
+    font-size: var(--font-size-x-small);
+    color: var(--text-weak);
+  }
+  .turn-deliverable-compact-dir {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .turn-deliverable-compact-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex: none;
+    padding: 2px 3px;
+    color: var(--text-base);
+  }
+  .turn-deliverable-compact-source:hover {
+    color: var(--text-strong);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1024,7 +1024,7 @@ export default function Page() {
       const opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
       dialog.show(
         () => (
-          <Dialog title={path} size="large">
+          <Dialog title={path} description={language.t("session.deliverables.currentVersion")} size="large">
             <div class="h-[65vh] min-h-0">
               <FileReadingArea path={path} />
             </div>
