@@ -739,3 +739,43 @@ test.describe("model picker on narrow windows", () => {
     await expect(homeModel).toContainText("Gamma")
   })
 })
+
+test("chat home loads companion directory providers on first entry", async ({ page }) => {
+  // 261121 Red 哥哥报的纯 bug：首次进 Chat 首页弹层只剩「默认模型」，进过一次会话才加载。
+  // 根因：伙伴目录没有路由 :dir，activeMcpDirectory 恒空，目录级 /config/providers 查询
+  // 永不启用；全局（无 directory）那份又可能是空的。复现：无 directory 的请求回空列表、
+  // 带目录的请求才有数据——修复后首页首挂就按目录主动拉一次，不进会话也能选模型。
+  const profile = { id: "friend-fp", soulID: "soul-fp", name: "Luna", directory: fixture.directory }
+  const provider = {
+    id: "studio",
+    name: "Studio",
+    models: {
+      alpha: { id: "alpha", name: "Alpha", variants: {}, limit: { context: 32_000 } },
+      beta: { id: "beta", name: "Beta", variants: {}, limit: { context: 32_000 } },
+    },
+  }
+  const sessions = fixture.sessions.map((s) => ({ ...s, mode: "chat", companionID: profile.id, soul: profile.soulID }))
+  await mockRedCodeServer(page, {
+    ...fixture,
+    sessions,
+    provider: { all: [provider], connected: ["studio"], default: { studio: "alpha" } },
+    pageMessages: () => ({ items: [] }),
+  })
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (url.pathname === "/config/providers") {
+      const directory = url.searchParams.get("directory")
+      return json(route, directory ? { providers: [provider], default: { studio: "alpha" } } : { providers: [], default: {} })
+    }
+    if (url.pathname === "/companion") return json(route, [profile])
+    return route.fallback()
+  })
+  await page.goto("/chat?companion=friend-fp")
+  const homeModel = page.locator('[data-action="chat-choose-model"]')
+  await homeModel.click()
+  const menu = page.locator('[data-component="chat-model-popover"]')
+  await expect(menu.getByText("Alpha", { exact: true })).toBeVisible()
+  await menu.getByText("Alpha", { exact: true }).click()
+  await expect(homeModel).toContainText("Alpha")
+})

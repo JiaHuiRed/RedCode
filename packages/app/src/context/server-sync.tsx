@@ -761,6 +761,17 @@ export function createServerSyncContext() {
     // 需要「未连接的厂商」的界面（连接对话框、popular 列表、设置页）在挂载时调一次。
     // 空闲预取通常已经跑过了，这句是覆盖「刚启动就点开连接对话框」那个窗口。
     wantProviderCatalog,
+    // 261121 Red Chat 首页的伙伴目录没有路由 :dir（activeMcpDirectory 恒空），目录级
+    // providers 查询永远不启用——弹层只剩「默认模型」，进会话一次才加载（哥哥报的
+    // 纯 bug）。按会话页同款 queryKey 主动灌一次缓存（fetchQuery 补法与 260706 的
+    // mcp/path/lsp 同型）；已有数据不重拉，避免每次回首页都重打 105KB。
+    ensureProviders: (directory: string) => {
+      const key = directoryKey(directory) as PathKey
+      if (!key) return
+      const options = queryOptionsApi.providers(key)
+      if (queryClient.getQueryData(options.queryKey) !== undefined) return
+      void queryClient.fetchQuery(options)
+    },
     // 261031 Red MCP 面板的删除走独立端点（mcp.remove），不经过 updateConfig，
     // 拿不到 onSuccess 里的重拉；这里暴露同一个入口，否则删掉的服务器会留在列表里。
     refreshGlobal: () => {

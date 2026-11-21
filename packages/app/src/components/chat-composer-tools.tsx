@@ -6,6 +6,7 @@ import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { availableEffortSteps } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { useModels, type ModelKey } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { ModelEffortPicker, type PickerModel, type PickerProvider } from "./model-effort-picker"
 import { popularFirstProviders, recentProviderIDs } from "@/utils/model-recents"
@@ -27,8 +28,16 @@ export const ChatComposerTools: Component<{
   const language = useLanguage()
   const models = useModels()
   const providers = useProviders(props.directory)
-  // 261121 Red 推理强度与模型收紧成一个弹层（ModelEffortPicker），两个触发钮都开它。
+  const sync = useServerSync()
+  // 261121 Red 统一弹层：两个触发钮收紧成一个（推理强度只在弹层里调，哥哥确认重复）。
   const [open, setOpen] = createSignal(false)
+  // 261121 Red 打开弹层时兜底拉一次目录级 providers——首页首挂的 bootstrap 若失败或
+  // 被队列饿死（哥哥报的「只剩默认模型」），这里就是每次打开都重试的用户侧恢复向量；
+  // ensureProviders 内部有缓存守卫，已加载时零开销。
+  const openPicker = (next: boolean) => {
+    setOpen(next)
+    if (next) sync.ensureProviders(props.directory())
+  }
 
   const current = createMemo(() => (props.model ? props.catalog.find(props.model) : undefined))
   const steps = createMemo(() => availableEffortSteps(Object.keys(current()?.variants ?? {})))
@@ -44,7 +53,7 @@ export const ChatComposerTools: Component<{
 
   return (
     <div class={`flex min-w-0 flex-wrap items-center gap-1 ${props.class ?? ""}`}>
-      <Kobalte open={open()} onOpenChange={setOpen} placement="top-start" gutter={8}>
+      <Kobalte open={open()} onOpenChange={openPicker} placement="top-start" gutter={8}>
         <Kobalte.Trigger
           as={Button}
           variant="ghost"

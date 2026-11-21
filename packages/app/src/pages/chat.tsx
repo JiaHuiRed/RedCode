@@ -160,6 +160,13 @@ export default function Chat() {
   const sessions = useCompanionHistory(profile)
   const models = useModels()
   const directory = () => profile()?.directory ?? ""
+  // 261121 Red 首挂拉伙伴目录的 providers：路由没有 :dir，activeMcpDirectory 恒空，
+  // 目录级 providers 查询不启用——弹层只剩「默认模型」，进会话一次才加载（哥哥报的
+  // 纯 bug）。ensureProviders 只在无缓存时拉一次，回首页不重打。
+  createEffect(() => {
+    const dir = profile()?.directory
+    if (dir) sync.ensureProviders(dir)
+  })
   const catalog = models.catalog(useProviders(directory))
   const preferred = createMemo(() => {
     const stored = models.chat.get(directory())
