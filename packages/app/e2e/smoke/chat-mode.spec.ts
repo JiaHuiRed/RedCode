@@ -379,6 +379,81 @@ test("first-chat attachments follow the selected companion and the outgoing requ
   ])
 })
 
+test("mixed paste keeps both the screenshot and the typed note", async ({ browser }) => {
+  // Chromium 构造的 ClipboardEvent 会把传入 DataTransfer 克隆成保护态：File 保留、
+  // text/plain 的 getData 返回空——合成事件带不了文字。走真实剪贴板（授权后
+  // navigator.clipboard.write 图+文，再真实 Ctrl+V），顺带覆盖「Windows 剪贴板实测」。
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] })
+  const page = await context.newPage()
+  const profile = {
+    id: "friend-p",
+    name: "Pix",
+    soulID: "soul-p",
+    directory: fixture.directory,
+    createdAt: 1,
+    files: 2,
+    warnings: [],
+    timezone: "UTC",
+    introduction: "complete",
+  }
+  const session = { ...fixture.sessions[0]!, id: "ses_mixed_paste", mode: "chat", companionID: profile.id }
+  await mockRedCodeServer(page, { ...fixture, pageMessages: () => ({ items: [] }) })
+  await page.route("**/*", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.port !== (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096")) return route.fallback()
+    if (route.request().method() === "OPTIONS") return route.fallback()
+    if (url.pathname === "/companion") return json(route, [profile])
+    if (url.pathname === "/config/providers") return json(route, { providers: fixture.provider.all })
+    if (url.pathname === "/session" && route.request().method() === "POST") return json(route, session)
+    if (url.pathname.endsWith("/prompt_async"))
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    return route.fallback()
+  })
+  await page.goto(`/chat?companion=${profile.id}`)
+  const home = page.locator('[data-component="chat-home"]')
+  const input = home.locator('[data-action="chat-first-message"]')
+  await input.fill("请看这里的错误")
+  // 选中「这里」，随后一次粘贴同时注入一张图和说明文字（可控 text/plain + File）
+  await input.evaluate((el) => {
+    const box = el as HTMLTextAreaElement
+    const start = box.value.indexOf("这里")
+    box.setSelectionRange(start, start + 2)
+    box.focus()
+  })
+  await page.evaluate(() =>
+    navigator.clipboard.write([
+      new ClipboardItem({
+        "text/plain": new Blob(["第二行"], { type: "text/plain" }),
+        // 1x1 透明 PNG：剪贴板写入要求 image blob 可解码，塞字符串会 DataError
+        "image/png": new Blob(
+          [
+            new Uint8Array(
+              atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+                .split("")
+                .map((ch) => ch.charCodeAt(0)),
+            ),
+          ],
+          { type: "image/png" },
+        ),
+      }),
+    ]),
+  )
+  await input.press("Control+V")
+  // 说明文字替换选区，光标落在新文字末尾；截图只出现一次
+  await expect(input).toHaveValue("请看第二行的错误")
+  const caret = await input.evaluate((el) => (el as HTMLTextAreaElement).selectionStart)
+  expect(caret).toBe("请看第二行".length)
+  // Chromium 会把剪贴板里的图重命名为 image.png，断言附件条数与类型而不是写入名
+  await expect(home.locator("li")).toHaveCount(1)
+  // 发送后同一条消息含最终文字和一张图
+  const sent = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/prompt_async"))
+  await home.locator('button[type="submit"]').click()
+  const body = (await sent).postDataJSON()
+  expect(body.parts[0]).toEqual({ type: "text", text: "请看第二行的错误" })
+  expect(body.parts[1]).toMatchObject({ type: "file", mime: "image/png" })
+  expect(String(body.parts[1].url)).toContain("data:image/png;base64,")
+})
+
 test("Chat remembers each conversation's model, filters the catalogue and uses both bubble colors", async ({
   page,
 }) => {
